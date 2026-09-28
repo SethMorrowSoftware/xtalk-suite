@@ -78,6 +78,17 @@ plants each fix's OLD spelling back into the shipped source (wallet-core,
 and coin-wallet's handlers lifted out of the shipped stack) and requires its
 vectors to fail, and runs the vectors under it.
 
+THE WALLET'S OWN NUMBERS ARE BOUNDED WHERE THEY ARE READ (rows #9 and #11,
+2026-09-26). A backend's integers (a coin's value, vout and height, a chain
+tip, a history row's fee and weight, the Core replies' counts) are settled
+as digits at most their bound before any arithmetic, every sum of coin
+values goes through cwAmountAdd, and the mBTC form moves its point in text.
+wallet-core's half runs as vectors; coin-wallet's through its handlers
+lifted out of the shipped stack (check_backend_numbers), with the handlers
+too tangled with signing to lift held by their source. check_bounds_fire
+plants each fix's OLD spelling back into the shipped text and requires its
+block to fail, every run: a vector that cannot see its site fails the gate.
+
 Usage:
   python3 tools/check-wallet-vectors.py            # per-check detail
   python3 tools/check-wallet-vectors.py --check    # terse (the gate set)
@@ -1721,12 +1732,17 @@ def check_exact_integers(c, ip):
             c.ck("and the oracle refuses %s too" % text, "accepted", "refused")
         except ValueError:
             c.ck("and the oracle refuses %s too" % text, "refused", "refused")
-    # the mBTC form reads its text through cwBtcToSat, so it has the same
-    # ceiling counted in mBTC: 90071992.54740992 of them, 2^53 / 1000 satoshi
-    c.ck("90071992.54740992 mBTC is the most the mBTC form reads",
-         run("cwParseAmount", ["90071992.54740992", "mBTC"]), top // 1000)
-    c.ck("and one past it is refused by cwBtcToSat's bound",
-         run("cwParseAmount", ["90071992.54740993", "mBTC"]),
+    # the mBTC form moves its point three places in TEXT and reads the BTC
+    # result through cwBtcToSat (work-plan row #11, 2026-09-26), so its
+    # ceiling is the same 2^53 satoshi, counted in mBTC: 90071992547.40992.
+    # Until then it read the mBTC text AS BTC and divided by 1000, and its
+    # ceiling was 90071992.54740992 mBTC, a thousandth of the bound; that
+    # number has eight mBTC decimals, finer than a satoshi, and is refused
+    # now (check_mbtc_amounts holds the rest of the form).
+    c.ck("90071992547.40992 mBTC is 2^53 satoshi, the most the mBTC form reads",
+         run("cwParseAmount", ["90071992547.40992", "mBTC"]), top)
+    c.ck("and one past it is refused by cwBtcToSat's bound, on the BTC it moved to",
+         run("cwParseAmount", ["90071992547.40993", "mBTC"]),
          over_btc("90071992.54740993"))
 
     # ---- (c) cwParseAmount's satoshi form: digits, at most 2^53 --------------
@@ -1837,6 +1853,142 @@ def check_exact_integers(c, ip):
     c.ck("and summarises two inputs that total exactly 2^53, fee and all",
          isinstance(got, str) and ("(%d sat)" % (top - 1000)) in got,
          True)
+
+
+# ---- rows #9 and #11 (2026-09-26): the wallet's own sums, and mBTC ----------
+#
+# WORK-PLAN coinxt #9 and #11. Every block here has a MUTATION in
+# check_bounds_fire below: the fix it holds is planted back to its old line
+# in the shipped text and the block must fail, so a revert, a rename or a
+# vector that cannot see its site fails the gate. run() turns a refusal into
+# its text and the interpreter's own stops (its 2^53 guard, a refused
+# comparison, an engine error) into a named stop, so an old line fails a
+# ROW rather than ending the run.
+def _run(ip, name, args):
+    try:
+        return ip.call(name, args)
+    except LCS.Thrown as thrown:
+        return "refused: %s" % thrown.msg
+    except LCS.Imprecise:
+        return "let past 2^53 (the interpreter's stop fired)"
+    except LCS.Indistinct:
+        return "the interpreter refused to decide (engine notes 2.10, 2.11)"
+    except Exception as exc:                            # noqa: BLE001
+        return "stopped: %s: %s" % (type(exc).__name__, str(exc)[:80])
+
+
+def _sum_refused(who):
+    return ("refused: wallet-core: %s: the amounts add up to more than 2^53 "
+            "satoshi, which cannot be held exactly." % who)
+
+
+def _vec_selection_sums(c, ip):
+    """cwSelectionResult's total and cwBranchAndBound's suffix sums, through
+    cwAmountAdd: each coin fits, two of them need not."""
+    top = 2 ** 53
+    big = 2 ** 52 + 1000
+
+    def coins(value):
+        return [{"value": value, "txid": ch * 64, "vout": 0, "confirmations": 6}
+                for ch in ("a", "b")]
+
+    def select(value, target, strat):
+        return _run(ip, "cwSelectCoins", [lst(coins(value)), target, 1, "p2wpkh",
+                                          lst(["p2wpkh"]), "p2wpkh", strat, 0, 0])
+
+    def oracle(value, target, strat):
+        try:
+            REF.select_coins(coins(value), target, 1, "p2wpkh", ["p2wpkh"],
+                             "p2wpkh", strategy=strat)
+            return "accepted"
+        except ValueError:
+            return "refused"
+
+    # branch and bound sums the pool's effective values first (tRemain):
+    # two coins of 2^52 + 1000 at 1 sat/vB are worth 2^53 + ~1860 together
+    c.ck("cwSelectCoins (bnb) refuses a pool whose effective value passes 2^53, "
+         "by name", select(big, 1000, "bnb"), _sum_refused("cwSelectCoins"))
+    c.ck("and the oracle refuses it too", oracle(big, 1000, "bnb"), "refused")
+    # largest-first sums a PREFIX: one coin cannot pay 2^52 + 5000, two sum
+    # past 2^53
+    c.ck("cwSelectCoins (largest) refuses a selection whose total passes 2^53, "
+         "by name", select(big, 2 ** 52 + 5000, "largest"),
+         _sum_refused("cwSelectCoins"))
+    c.ck("and the oracle refuses it too", oracle(big, 2 ** 52 + 5000, "largest"),
+         "refused")
+    # the control: two coins just under half of 2^53 each, a target only both
+    # can pay; the totals stay exact and agree with the oracle
+    half = top // 2 - 1000
+    for strat in ("largest", "bnb"):
+        got = select(half, top // 2, strat)
+        want = REF.select_coins(coins(half), top // 2, 1, "p2wpkh", ["p2wpkh"],
+                                "p2wpkh", strategy=strat)
+        c.ck("cwSelectCoins (%s) pays from two coins totalling 2^53 - 2000, "
+             "exactly as the oracle does" % strat,
+             (got["totalin"], got["fee"], got["change"]) if isinstance(got, dict)
+             else got, (want["total_in"], want["fee"], want["change"]))
+
+
+def _vec_mbtc(c, ip):
+    """cwParseAmount's mBTC form and cwFormatAmount's, both moving the point
+    in TEXT (row #11), against the oracle, and past 90072 BTC."""
+    top = 2 ** 53
+
+    def parse(text):
+        return _run(ip, "cwParseAmount", [text, "mBTC"])
+
+    def past_satoshi(text):
+        return ("refused: wallet-core: cwParseAmount: a satoshi is the smallest "
+                "unit, and in mBTC it is the fifth decimal; \"%s\" goes past it."
+                % text)
+
+    for text, want in (("1.5", 150000), ("0.00001", 1), ("-1.5", -150000),
+                       (".5", 50000), (" 2.5 ", 250000), ("0.123450", 12345),
+                       ("0.10000000", 10000), ("1500.00000000", 150000000),
+                       ("0000000001.00001", 100001), ("90071992547.40992", top)):
+        c.ck("%r mBTC reads as %d satoshi" % (text, want), parse(text), want)
+        c.ck("and the oracle agrees about %r" % text, REF.mbtc_to_sat(text), want)
+    # THE ROW'S OWN CASES: the old form read these as 12 and 0 satoshi
+    for text, old in (("0.00012345", 12), ("0.000001", 0), ("1.000001", 100000),
+                      ("90071992.54740992", top // 1000)):
+        c.ck("%s mBTC is refused as finer than a satoshi (it read as %d)"
+             % (text, old), parse(text), past_satoshi(text))
+        try:
+            REF.mbtc_to_sat(text)
+            c.ck("and the oracle refuses %s too" % text, "accepted", "refused")
+        except ValueError:
+            c.ck("and the oracle refuses %s too" % text, "refused", "refused")
+    c.ck("one satoshi past 2^53 in mBTC is refused by cwBtcToSat's bound, "
+         "on the BTC it moved to", parse("90071992547.40993"),
+         "refused: wallet-core: cwBtcToSat: \"90071992.54740993\" is more than "
+         "90071992.54740992 BTC (2^53 satoshi), the most a number here holds "
+         "to the satoshi.")
+    for text in ("abc", "1e5", "1,5", "0x10"):
+        c.ck("%r is not an mBTC amount, and the refusal quotes it" % text,
+             parse(text),
+             "refused: wallet-core: cwParseAmount: \"%s\" is not a decimal amount."
+             % text)
+    c.ck("two decimal points are refused", parse("1.2.3"),
+         "refused: wallet-core: cwParseAmount: more than one decimal point.")
+    c.ck("an empty mBTC amount is refused", parse("  "),
+         "refused: wallet-core: cwParseAmount: an empty amount.")
+    # WRITING: the point moved in text, so past 9007199254741 sat (about
+    # 90072 BTC), where pSat * 1000 passed 2^53, the display is exact; and
+    # every one reads back to the satoshi
+    for sat in (0, 1, 546, 123456789, -5, 9007199254741, 2100000000000000, top):
+        c.ck("%d satoshi in mBTC" % sat, _run(ip, "cwFormatAmount", [sat, "mBTC"]),
+             REF.sat_to_mbtc(sat) + " mBTC")
+        c.ck("and %s mBTC reads back as %d satoshi" % (REF.sat_to_mbtc(sat), sat),
+             parse(REF.sat_to_mbtc(sat)), sat)
+    c.ck("cwSatToMbtc is the bare form", _run(ip, "cwSatToMbtc", [top]),
+         "90071992547.40992000")
+
+
+def check_wallet_sums_and_mbtc(c, ip):
+    """Rows #9 (wallet-core's half) and #11, against the shipped wallet-core."""
+    c.note("\nthe wallet's own sums, and mBTC moved in text (rows #9, #11)")
+    _vec_selection_sums(c, ip)
+    _vec_mbtc(c, ip)
 
 
 def check_messages(c, ip):
@@ -4057,6 +4209,8 @@ def check_hex_compares(c, ip):
 _WALLET_LIFT = ("waEmptyList", "waHoldsCoin", "waCoinsNotFrom", "waPendingSpenderOf",
                 "waIsOwnBroadcast", "waCpfpCoins", "waNoteBroadcast", "waUnnoteBroadcast",
                 "waWholeAtLeast", "waNumAtLeast", "waCoreMempoolRecord", "waStoreRawTx",
+                # waWholeAtLeast decides on the digits since 2026-09-26 (row #9)
+                "waIsWhole", "waIsDigits",
                 "waBumpFee", "waSelfTestHexCompares",
                 # the second pass's five (2026-09-26): the inspect wait is in
                 # waStoreRawTx above; these hold the other four
@@ -4411,6 +4565,842 @@ def check_wallet_hex_compares(c, ip, fx=None):
     _vec_wallet_xkey_parent(c, fx)
 
 
+# ---- row #9's coin-wallet half, lifted out of the SHIPPED stack ------------
+#
+# WORK-PLAN coinxt #9 (2026-09-26): the integers a backend reports, bounded
+# at their parse, and the wallet's own sums through cwAmountAdd. The merges,
+# the predicates and the sums are lifted by name, as tier 5 lifts its
+# sixteen, over the real CoinXT script layer and wallet-core; the stack's
+# script locals are planted and its UI stubbed (waStrategy and
+# waSelectedInputSpecs answer for waMaxSpend's screen). Handlers too tangled
+# with signing to lift (waBuildSpend, waReviewText, waPaintCoins,
+# waCpfpBuild, waBumpFee) are held by their SOURCE: no bare sum of a value is
+# left in any of them, and each sums through cwAmountAdd. check_bounds_fire
+# plants every fix's old line back and requires its block to fail.
+_BOUNDS_LIFT = ("waEmptyList", "waIsDigits", "waIsInt", "waIsWhole", "waWholeAtLeast",
+                "waWholeInRange", "waCheckedCount", "waCoinTotal", "waCheckedHeight",
+                "waMergeUtxos", "waMergeHistory", "waMergeCoreUnspent",
+                "waMergeCoreHistory", "waMergeScan", "waIsOwnBroadcast",
+                "waRecomputeBalance", "waBalanceByAddress", "waLeafHeld", "waMaxSpend",
+                "waAmountBare")
+_BOUNDS_STUBS = """
+local sWaUtxos, sWaSpentBy, sWaFrozen, sWaHistory, sWaTipHeight, sWaBalance
+local sWaNetwork, sWaUnit, sFxLog, sFxStrategy
+constant kWaCoreTxPage = 100
+
+command waLog pText
+   put pText & return after sFxLog
+end waLog
+
+function waIsMine pAddress
+   return pAddress is not "foreign"
+end waIsMine
+
+function waAmount pSat
+   return pSat
+end waAmount
+
+function waStrategy
+   return sFxStrategy
+end waStrategy
+
+function waSelectedInputSpecs pSel
+   local tOut, tI, tCount, tSpec
+   put waEmptyList() into tOut
+   put cwListCount(pSel) into tCount
+   repeat with tI = 1 to tCount
+      put "p2wpkh" into tSpec["type"]
+      put cwListAdd(tOut, tSpec) into tOut
+   end repeat
+   return tOut
+end waSelectedInputSpecs
+"""
+# the handlers whose sums are held by source, and what each must not say
+_SUM_SOURCES = ("waBuildSpend", "waReviewText", "waPaintCoins", "waCpfpBuild",
+                "waBumpFee", "waMaxSpend", "waRecomputeBalance", "waBalanceByAddress",
+                "waLeafHeld", "waMergeCoreUnspent", "waMergeScan")
+_BARE_VALUE_SUM = re.compile(r"(?im)^\s*add\s+(?:t\w+\[\"value\"\]|tNewChange)\s+to\b")
+# A COIN VALUE SUMMED WITH A BARE `+` (the 2026-09-26 review): the `add`
+# rule above cannot see `put tTotalIn + tRec["value"] into tTotalIn`, the
+# spelling a hand "fixing" an `add` most plausibly writes, and the per-handler
+# "cwAmountAdd( appears in the body" test passed it wherever the handler had
+# another sum (waBumpFee has three). Subtraction stays legal (a coin's value
+# less its fee is not a sum), and so is `+ 0`, the number coercion.
+_PLUS_VALUE_SUM = re.compile(
+    r"(?i)(?:\+\s*t\w+\[\"value\"\]|t\w+\[\"value\"\]\s*\+(?!\s*0(?![\w.])))")
+# EVERY WRITE TO EACH SOURCE-PINNED SUM, by accumulator: (handler, the
+# variable, how many cwAmountAdd writes it has). The only writes allowed are
+# `put 0 into` it and `put cwAmountAdd(<it>, ...) into <it>`, and the count
+# must match, so a sum rewritten any other way - `add`, a bare `+`, a sum
+# moved into a helper variable - fails by name. Held by check_bounds_fire's
+# wrong-fix rows, which plant a bare `+` into each.
+_SUM_ACCUMULATORS = (("waBuildSpend", "tTarget", 1), ("waReviewText", "tTotalOut", 1),
+                     ("waPaintCoins", "tSelValue", 1), ("waCpfpBuild", "tTotalIn", 1),
+                     ("waBumpFee", "tTotalIn", 1), ("waBumpFee", "tTotalOut", 2))
+
+
+def _accumulator_writes(body, acc):
+    """(allowed writes through cwAmountAdd, the writes that are neither that
+    nor `put 0 into`) for variable `acc` in one handler's source. Comments
+    are dropped and continued lines joined first, as the engine reads them."""
+    stmts, buf = [], ""
+    for ln in body.split("\n"):
+        s = ln.strip()
+        if s.startswith("--") or not s:
+            continue
+        if s.endswith("\\"):
+            buf += s[:-1].rstrip() + " "
+            continue
+        stmts.append(buf + s)
+        buf = ""
+    a = re.escape(acc)
+    write = re.compile(r"(?i)^(?:put\b.*\binto\s+%s|add\b.*\bto\s+%s|subtract\b.*\bfrom\s+%s"
+                       r"|(?:multiply|divide)\s+%s\b.*)$" % (a, a, a, a))
+    zero = re.compile(r"(?i)^put\s+0\s+into\s+%s$" % a)
+    summed = re.compile(r"(?i)^put\s+cwAmountAdd\(\s*%s\s*,.*\)\s+into\s+%s$" % (a, a))
+    good, bad = 0, []
+    for s in stmts:
+        if not write.match(s) or zero.match(s):
+            continue
+        if summed.match(s):
+            good += 1
+        else:
+            bad.append(s)
+    return good, bad
+
+
+def _bounds_fixture(core_text=None, wallet_text=None):
+    core_text = core_text if core_text is not None else open(CORE, encoding="utf-8").read()
+    wallet_text = wallet_text if wallet_text is not None else \
+        _wallet_own_code(open(WALLET, encoding="utf-8").read())
+    body = "\n".join(ln for ln in core_text.split("\n") if not ln.startswith('script "'))
+    lifted = "\n\n".join(_lift(wallet_text, n) for n in _BOUNDS_LIFT)
+    coin = open(COIN, encoding="utf-8").read()
+    fx = _WalletFixtureInterp(_BOUNDS_STUBS + "\n" + coin + "\n" + body + "\n\n" + lifted)
+    fx.wallet_text = wallet_text
+    return fx
+
+
+def _bx_reset(fx, **state):
+    for name in ("swautxos", "swaspentby", "swafrozen", "swahistory", "swabalance",
+                 "sfxlog"):
+        fx.globals[name] = ""
+    fx.globals["swatipheight"] = "800009"
+    fx.globals["swanetwork"] = "mainnet"
+    fx.globals["swaunit"] = "BTC"
+    fx.globals["sfxstrategy"] = "largest"
+    for k, v in state.items():
+        fx.globals[k.lower()] = LCS._copy(v)
+
+
+def _bx_json(fx, text):
+    return fx.call("cwJsonParse", [text])
+
+
+def _bx_failed(got):
+    """Did a command _run refused or stopped? (A command answers empty.)"""
+    return isinstance(got, str) and got.startswith(
+        ("refused: ", "stopped: ", "let past 2^53", "the interpreter refused"))
+
+
+def _bx_coin(txid, vout, value, address="addr1", conf=6):
+    return {"txid": txid, "vout": vout, "value": value, "address": address,
+            "confirmations": conf}
+
+
+_BX_TXID = "ab" * 32
+_BX_TXID2 = "cd" * 32
+_BX_SPK = "0014" + "75" * 20        # a P2WPKH script the scan can address
+
+
+def _vec_backend_whole(c, fx):
+    """waIsWhole and the two predicates every Core guard asks: whole,
+    decided on the digits, at most 2^53 - never `is an integer`."""
+    for value, want in (("5", True), (" 5 ", True), ("-3", True),
+                        ("9007199254740992", True), ("0009007199254740992", True),
+                        ("9007199254740993", False), ("99999999999999999999", False),
+                        ("1e20", False), ("3.0", False), ("+3", False), ("0x1F", False),
+                        ("", False), ("-", False), ("abc", False)):
+        c.ck("waIsWhole(%r) is %s" % (value, want), _run(fx, "waIsWhole", [value]), want)
+    for value, least, want in (("1e20", 0, False), ("99999999999999999999", 0, False),
+                               ("3.0", 1, False), ("+3", 1, False), (" 7 ", 7, True),
+                               ("6", 7, False), ("9007199254740992", 1, True)):
+        c.ck("waWholeAtLeast(%r, %d) is %s" % (value, least, want),
+             _run(fx, "waWholeAtLeast", [value, least]), want)
+    for value, want in (("10", True), ("1e1", False), ("10.0", False), ("11", False)):
+        c.ck("waWholeInRange(%r, 1, 10) is %s" % (value, want),
+             _run(fx, "waWholeInRange", [value, 1, 10]), want)
+    # the Core scan's height is asked through waWholeAtLeast: "1e20" was a tip
+    _bx_reset(fx)
+    _run(fx, "waMergeScan", [_bx_json(fx, '{"success":true,"height":1e20,"unspents":[]}')])
+    c.ck("a node's scan at height 1e20 does not become the chain tip",
+         str(LCS._disp(fx.globals.get("swatipheight"))), "800009")
+    _bx_reset(fx)
+    _run(fx, "waMergeScan", [_bx_json(fx, '{"success":true,"height":800100,"unspents":[]}')])
+    c.ck("and one at 800100 does (control)",
+         str(LCS._disp(fx.globals.get("swatipheight"))), "800100")
+
+
+def _vec_backend_height(c, fx):
+    """waCheckedHeight, the one handler every transport's chain tip goes
+    through (trap 37): digits, at most 2^53."""
+    def tip(text):
+        return _run(fx, "waCheckedHeight", [text, "test"])
+
+    def refused(text, why=""):
+        return ("refused: the test backend answered the chain-tip request with "
+                "something that is not a height%s: %s" % (why, text))
+
+    c.ck("a height of 812345 is taken", tip("812345"), 812345)
+    c.ck("with its edge blanks forgiven", tip(" 812345\n"), 812345)
+    c.ck("and 2^53, the bound itself", tip("9007199254740992"), 2 ** 53)
+    for text in ("1e20", "3.0", "+3", "0x10", "", "abc", "1 2"):
+        c.ck("a tip of %r is not a height" % text, tip(text), refused(text))
+    for text in ("9007199254740993", "99999999999999999999"):
+        c.ck("a tip of %s is refused as past 2^53, by name" % text, tip(text),
+             refused(text, ", being past 2^53"))
+    c.ck("a negative tip keeps its own words", tip("-1"),
+         refused("-1", ", being negative"))
+
+
+def _utxo_reply(items):
+    return "[" + ",".join(
+        '{"txid":"%s","vout":%s,"value":%s,"status":{"block_height":%s}}'
+        % (t, v, val, h) for (t, v, val, h) in items) + "]"
+
+
+def _vec_backend_coins(c, fx):
+    """waMergeUtxos: the value, the vout, the height, the reply's total, and
+    a refused reply changes nothing (trap 38), the marks included."""
+    top = 2 ** 53
+
+    def merge(items, **state):
+        _bx_reset(fx, **state)
+        return _run(fx, "waMergeUtxos", ["addr1", _bx_json(fx, _utxo_reply(items)),
+                                         "esplora"])
+
+    def coins():
+        return [(r["txid"], int(LCS._n(r["vout"])), int(LCS._n(r["value"])),
+                 int(LCS._n(r["confirmations"])))
+                for r in unlst(fx.globals.get("swautxos") or {})]
+
+    merge([(_BX_TXID, 0, 1000, 800000)])
+    c.ck("a coin is taken, 10 confirmations under a tip of 800009 (control)",
+         coins(), [(_BX_TXID, 0, 1000, 10)])
+    merge([(_BX_TXID, 4294967295, top, 800000)])
+    c.ck("a coin of 2^53 satoshi at vout 4294967295 is taken, exactly",
+         coins(), [(_BX_TXID, 4294967295, top, 10)])
+    c.ck("a coin value of twenty nines is refused by name, before `+ 0`",
+         merge([(_BX_TXID, 0, "9" * 20, 800000)]),
+         "refused: the backend listed a coin value of more than 9007199254740992, "
+         "which no real one is: " + "9" * 20)
+    c.ck("a coin value of 2^53 + 1 is refused the same way",
+         merge([(_BX_TXID, 0, top + 1, 800000)]),
+         "refused: the backend listed a coin value of more than 9007199254740992, "
+         "which no real one is: %d" % (top + 1))
+    c.ck("a coin vout past four bytes is refused by name",
+         merge([(_BX_TXID, 4294967296, 1000, 800000)]),
+         "refused: the backend listed a coin vout of more than 4294967295, which "
+         "no real one is: 4294967296")
+    c.ck("a coin at a height of twenty nines is refused by name",
+         merge([(_BX_TXID, 0, 1000, "9" * 20)]),
+         "refused: the backend listed a coin at a height past 2^53, which no "
+         "chain has: " + "9" * 20)
+    c.ck("two coins of 2^52 + 1 are refused as a SUM, by name",
+         merge([(_BX_TXID, 0, 2 ** 52 + 1, 800000), (_BX_TXID, 1, 2 ** 52 + 1, 800000)]),
+         _sum_refused("waMergeUtxos"))
+    other = lst([_bx_coin(_BX_TXID2, 0, 2 ** 52 + 1, address="addr2")])
+    c.ck("and the total is the WALLET's: a coin elsewhere counts",
+         merge([(_BX_TXID, 0, 2 ** 52 + 1, 800000)], sWaUtxos=other),
+         _sum_refused("waMergeUtxos"))
+    c.ck("and that refused reply left the coin table as it was",
+         [r["txid"] for r in unlst(fx.globals.get("swautxos") or {})], [_BX_TXID2])
+    # A REFUSED REPLY TAKES NO MARK OFF (trap 38): coin 0 is marked spent by
+    # our own broadcast, and the reply that lists it is refused by its
+    # second coin
+    marks = {_BX_TXID + ":0": _BX_TXID2}
+    got = merge([(_BX_TXID, 0, 1000, 800000), ("zz" * 32, 0, 1000, 800000)],
+                sWaSpentBy=marks)
+    c.ck("a reply refused by its second coin is refused",
+         str(got).startswith("refused: the backend listed a coin whose txid"), True)
+    c.ck("and keeps the mark it would have taken off the first",
+         str(LCS._disp((fx.globals.get("swaspentby") or {}).get(_BX_TXID + ":0", ""))),
+         _BX_TXID2)
+    merge([(_BX_TXID, 0, 1000, 800000)], sWaSpentBy=marks)
+    c.ck("an accepted reply still takes it off, and says so (control)",
+         (str(LCS._disp((fx.globals.get("swaspentby") or {}).get(_BX_TXID + ":0", ""))),
+          "offering it again" in str(fx.globals.get("sfxlog"))), ("", True))
+
+
+def _vec_backend_history(c, fx):
+    """waMergeHistory: the height, the fee and the weight Esplora offers."""
+    def merge(item):
+        _bx_reset(fx)
+        return _run(fx, "waMergeHistory", ["addr1", _bx_json(fx, "[" + item + "]"),
+                                           "esplora"])
+
+    def row():
+        rows = unlst(fx.globals.get("swahistory") or {})
+        r = rows[0] if rows else {}
+        return (str(LCS._disp(r.get("confirmations", ""))),
+                str(LCS._disp(r.get("fee", ""))), str(LCS._disp(r.get("vsize", ""))))
+
+    merge('{"txid":"%s","status":{"block_height":800000},"fee":546,"weight":561}'
+          % _BX_TXID)
+    c.ck("a history row: 10 confirmations, its fee and vsize (control)", row(),
+         ("10", "546", "141"))
+    got = merge('{"txid":"%s","status":{"block_height":"abc"},"fee":546}' % _BX_TXID)
+    c.ck("a history height that is no number is taken as unconfirmed, not an "
+         "engine error from inside the reply (`and` evaluates both sides)",
+         (_bx_failed(got), row()[0]), (False, "0"))
+    c.ck("a history height of twenty nines refuses the reply, by name",
+         merge('{"txid":"%s","status":{"block_height":%s}}' % (_BX_TXID, "9" * 20)),
+         "refused: the backend listed a transaction at a height past 2^53, which "
+         "no chain has: " + "9" * 20)
+    merge('{"txid":"%s","status":{"block_height":800000},"fee":1e20,"weight":1e20}'
+          % _BX_TXID)
+    c.ck("a fee and a weight of 1e20 are not kept (the bump asks again)", row(),
+         ("10", "", ""))
+    merge('{"txid":"%s","status":{"block_height":800000},"fee":%s,"weight":%s}'
+          % (_BX_TXID, "9" * 20, "9" * 20))
+    c.ck("nor twenty nines of either", row(), ("10", "", ""))
+
+
+def _vec_backend_core(c, fx):
+    """The Core merges: listunspent, listtransactions and a scan."""
+    big = "45035996.27370497"                  # 2^52 + 1 satoshi, in BTC
+
+    def unspent(items):
+        _bx_reset(fx)
+        return _run(fx, "waMergeCoreUnspent", [_bx_json(fx, "[" + ",".join(items) + "]")])
+
+    def one(vout, amount, conf, txid=_BX_TXID):
+        return ('{"address":"addr1","txid":"%s","vout":%s,"amount":%s,'
+                '"confirmations":%s}' % (txid, vout, amount, conf))
+
+    got = unspent([one(0, "0.001", 3)])
+    c.ck("listunspent: a coin is taken (control)",
+         [(int(LCS._n(r["value"])), int(LCS._n(r["confirmations"])))
+          for r in unlst(fx.globals.get("swautxos") or {})], [(100000, 3)])
+    c.ck("listunspent: a vout that is no number is refused by name",
+         unspent([one('"x"', "0.001", 3)]),
+         "refused: the backend listed a coin vout that is not a whole number: x")
+    unspent([one(0, "0.001", "1e20")])
+    c.ck("listunspent: 1e20 confirmations reads as none, never as arithmetic",
+         [int(LCS._n(r["confirmations"])) for r in unlst(fx.globals.get("swautxos") or {})],
+         [0])
+    c.ck("listunspent: two coins of 2^52 + 1 are refused as a sum, by name",
+         unspent([one(0, big, 3), one(1, big, 3)]), _sum_refused("waMergeCoreUnspent"))
+    # A NEGATIVE COIN (the 2026-09-26 review): Core's amount is BTC, read by
+    # cwBtcToSat, which takes a leading minus, so listunspent and the scan
+    # stored -100000 where Electrum and Esplora, through waCheckedCount,
+    # refuse it (trap 37). One handler, one refusal, the same words
+    neg = ("refused: the backend listed a coin value that is not a whole "
+           "number: -100000")
+    c.ck("listunspent: a negative amount is refused as a coin value, in the "
+         "words Esplora's gets", unspent([one(0, "-0.001", 3)]), neg)
+    c.ck("and the coin table is left as it was",
+         unlst(fx.globals.get("swautxos") or {}), [])
+    _bx_reset(fx)
+    _run(fx, "waMergeCoreHistory", [_bx_json(fx, '[{"address":"addr1","txid":"%s",'
+                                                 '"confirmations":"abc"}]' % _BX_TXID)])
+    c.ck("listtransactions: confirmations that are no number read as none",
+         [str(LCS._disp(r.get("confirmations", "")))
+          for r in unlst(fx.globals.get("swahistory") or {})], ["0"])
+
+    def scan(items):
+        _bx_reset(fx)
+        return _run(fx, "waMergeScan", [_bx_json(
+            fx, '{"success":true,"height":800009,"unspents":[' + ",".join(items) + "]}")])
+
+    def spent(vout, amount):
+        return ('{"txid":"%s","vout":%s,"scriptPubKey":"%s","amount":%s,"height":800000}'
+                % (_BX_TXID, vout, _BX_SPK, amount))
+
+    scan([spent(0, "0.001")])
+    c.ck("scan: a coin is taken, 10 confirmations (control)",
+         [int(LCS._n(r["confirmations"])) for r in unlst(fx.globals.get("swautxos") or {})],
+         [10])
+    c.ck("scan: a vout past four bytes is refused by name",
+         scan([spent(4294967296, "0.001")]),
+         "refused: the backend listed a coin vout of more than 4294967295, which "
+         "no real one is: 4294967296")
+    c.ck("scan: two coins of 2^52 + 1 are refused as a sum, by name",
+         scan([spent(0, big), spent(1, big)]), _sum_refused("waMergeScan"))
+    c.ck("scan: a negative amount is refused as a coin value, as listunspent's is",
+         scan([spent(0, "-0.001")]), neg)
+    # a coin's height of digits past 2^53 refuses a scan as it refuses an
+    # Electrum or Esplora reply (trap 37); the scan read it as unconfirmed
+    _bx_reset(fx)
+    got = _run(fx, "waMergeScan", [_bx_json(
+        fx, '{"success":true,"height":800009,"unspents":[{"txid":"%s","vout":0,'
+            '"scriptPubKey":"%s","amount":0.001,"height":%s}]}'
+            % (_BX_TXID, _BX_SPK, "9" * 20))])
+    c.ck("scan: a coin at a height of twenty nines is refused by name", got,
+         "refused: the backend listed a coin at a height past 2^53, which no "
+         "chain has: " + "9" * 20)
+    # A REFUSED SCAN MOVES NOTHING, THE TIP INCLUDED (trap 38; the review):
+    # the scan's height became the chain tip before any coin was read, so a
+    # reply refused by its coins still moved it. The tip starts at 800009
+    def tip_after(reply):
+        _bx_reset(fx)
+        return (_bx_failed(_run(fx, "waMergeScan", [_bx_json(fx, reply)])),
+                str(LCS._disp(fx.globals.get("swatipheight"))))
+    c.ck("scan: a reply at height 800100 refused by a vout past four bytes "
+         "leaves the tip at 800009",
+         tip_after('{"success":true,"height":800100,"unspents":[%s]}'
+                   % spent(4294967296, "0.001")), (True, "800009"))
+    c.ck("and one with no unspents list at all",
+         tip_after('{"success":true,"height":800100}'), (True, "800009"))
+    c.ck("and an accepted one at 800100 moves it (control)",
+         tip_after('{"success":true,"height":800100,"unspents":[%s]}'
+                   % spent(0, "0.001")), (False, "800100"))
+
+
+class _EngineNumberFormat:
+    """The engine's text for a computed number, for one block: the default
+    numberFormat, "0.######" (the LiveCode dictionary), so a non-integral
+    number is written with at most six decimals and its trailing zeros
+    dropped - 1.41e-05 as "0.000014" - where the interpreter writes Python's
+    repr and keeps every digit (trap 21: NOT modelled). A CONTEXT, patching
+    the interpreter's one text door (`_disp`) and restoring it on the way
+    out, so no other block runs under it. INFERRED from the documented
+    default; no engine run has read it (row #9's review, 2026-09-28)."""
+
+    def __enter__(self):
+        self.orig = LCS._disp
+        orig = self.orig
+
+        def disp(v):
+            if isinstance(v, float) and v == v and abs(v) != float("inf") \
+                    and v != int(v):
+                s = ("%.6f" % v).rstrip("0").rstrip(".")
+                return "0" if s in ("", "-0") else s
+            return orig(v)
+        LCS._disp = disp
+        return self
+
+    def __exit__(self, *exc):
+        LCS._disp = self.orig
+        return False
+
+
+def _vec_core_fee(c, fx):
+    """listtransactions' fee: Core writes a send's as a NEGATIVE BTC amount,
+    and the minus comes off as TEXT (row #9's review, 2026-09-28). It came
+    off by arithmetic, `cwBtcToSat(cwExpandExponent(-tFee))`, which hands
+    the parser a COMPUTED number, and the engine writes one through the
+    numberFormat: six decimals, so 0.00001410 BTC read as 1400 sat. Run
+    under that model (_EngineNumberFormat), where the old line fails; the
+    plain interpreter, which keeps every digit, would pass it."""
+    def fees(fee):
+        _bx_reset(fx)
+        got = _run(fx, "waMergeCoreHistory", [_bx_json(
+            fx, '[{"address":"addr1","txid":"%s","category":"send",'
+                '"confirmations":3,"fee":%s}]' % (_BX_TXID, fee))])
+        if _bx_failed(got):
+            return got
+        return [str(LCS._disp(r.get("fee", "")))
+                for r in unlst(fx.globals.get("swahistory") or {})]
+
+    with _EngineNumberFormat():
+        c.ck("the model writes a computed 0.0000141 as the engine's default "
+             "numberFormat does, six decimals", str(LCS._disp(-(-1.41e-05))),
+             "0.000014")
+        c.ck("and a whole number as its digits", str(LCS._disp(float(2 ** 52))),
+             str(2 ** 52))
+        for fee, want in (("-0.00001410", "1410"), ("-0.00012345", "12345"),
+                          ("-0.00000001", "1"), ("-1.50000000", "150000000"),
+                          ("-1e-05", "1000")):
+            c.ck("listtransactions: a fee of %s BTC is kept as %s sat, to the "
+                 "satoshi" % (fee, want), fees(fee), [want])
+        for fee, why in (("0.00001410", "a receive's, positive"),
+                         ("-0.00000000", "zero"), ('"abc"', "no number"),
+                         ('"-abc"', "a minus before no number")):
+            c.ck("and a fee that is %s is not kept (control)" % why, fees(fee), [""])
+    c.ck("and the model is taken off again after the block",
+         str(LCS._disp(1.41e-05)) != "0.000014", True)
+
+
+def _vec_wallet_sums(c, fx):
+    """The sums coin-wallet takes of its coins, and waAmountBare's mBTC."""
+    half = 2 ** 52 + 1
+    two = lst([_bx_coin(_BX_TXID, 0, half), _bx_coin(_BX_TXID, 1, half)])
+    _bx_reset(fx, sWaUtxos=two)
+    c.ck("waRecomputeBalance refuses a confirmed balance past 2^53, by name",
+         _run(fx, "waRecomputeBalance", []), _sum_refused("waRecomputeBalance"))
+    _bx_reset(fx, sWaUtxos=lst([_bx_coin(_BX_TXID, 0, half, conf=0),
+                                _bx_coin(_BX_TXID, 1, half, conf=0)]))
+    c.ck("and an unconfirmed one", _run(fx, "waRecomputeBalance", []),
+         _sum_refused("waRecomputeBalance"))
+    _bx_reset(fx, sWaUtxos=two,
+              sWaFrozen={_BX_TXID + ":0": "true", _BX_TXID + ":1": "true"})
+    c.ck("and a frozen one", _run(fx, "waRecomputeBalance", []),
+         _sum_refused("waRecomputeBalance"))
+    three = lst([_bx_coin(_BX_TXID, 0, 1000), _bx_coin(_BX_TXID, 1, 2000, conf=0),
+                 _bx_coin(_BX_TXID, 2, 4000)])
+    _bx_reset(fx, sWaUtxos=three, sWaFrozen={_BX_TXID + ":2": "true"})
+    _run(fx, "waRecomputeBalance", [])
+    bal = fx.globals.get("swabalance") or {}
+    c.ck("and splits an ordinary one three ways (control)",
+         tuple(int(LCS._n(bal.get(k, 0))) for k in ("confirmed", "unconfirmed", "frozen")),
+         (1000, 2000, 4000))
+    _bx_reset(fx, sWaUtxos=two)
+    c.ck("waBalanceByAddress refuses one address's sum past 2^53, by name",
+         _run(fx, "waBalanceByAddress", []), _sum_refused("waBalanceByAddress"))
+    c.ck("waLeafHeld refuses the same, by name",
+         _run(fx, "waLeafHeld", ["addr1"]), _sum_refused("waLeafHeld"))
+    _bx_reset(fx, sWaUtxos=three)
+    got = _run(fx, "waBalanceByAddress", [])
+    c.ck("and both sum an ordinary address (control)",
+         (int(LCS._n(got.get("addr1", 0))) if isinstance(got, dict) else got,
+          _run(fx, "waLeafHeld", ["addr1"])), (7000, 7000))
+    _bx_reset(fx)
+    c.ck("waMaxSpend refuses coins that sum past 2^53, by name",
+         _run(fx, "waMaxSpend", [two, lst(["p2wpkh"]), 1, 0]), _sum_refused("waMaxSpend"))
+    c.ck("and a fee plus fixed outputs past 2^53, by name",
+         _run(fx, "waMaxSpend", [lst([_bx_coin(_BX_TXID, 0, 100000)]),
+                                 lst(["p2wpkh", "p2wpkh"]), 1, 2 ** 53]),
+         _sum_refused("waMaxSpend"))
+    got = _run(fx, "waMaxSpend", [lst([_bx_coin(_BX_TXID, 0, 100000)]),
+                                  lst(["p2wpkh"]), 1, 0])
+    c.ck("and spends an ordinary coin (control)",
+         (got.get("ok"), int(LCS._n(got.get("totalin", 0)))) if isinstance(got, dict)
+         else got, (True, 100000))
+    _bx_reset(fx)
+    fx.globals["swaunit"] = "mBTC"
+    c.ck("waAmountBare writes 2^53 satoshi as mBTC exactly (the Send box pays it)",
+         _run(fx, "waAmountBare", [2 ** 53]), "90071992547.40992000")
+    c.ck("and 1.5 BTC as 1500 mBTC, eight decimals (control)",
+         _run(fx, "waAmountBare", [150000000]), "1500.00000000")
+
+
+def _vec_wallet_sum_sources(c, fx):
+    """The sums too tangled with signing and screens to lift, held by their
+    SOURCE: no bare `add` of a value in any of them, cwAmountAdd in each."""
+    text = fx.wallet_text
+    c.ck("coin-wallet's own code adds no coin value with a bare `add`",
+         _BARE_VALUE_SUM.findall(text), [])
+    code = [ln.strip() for ln in text.split("\n")
+            if ln.strip() and not ln.strip().startswith("--")]
+    c.ck("nor with a bare `+` (the review's wrong fix: `put tTotalIn + "
+         "tRec[\"value\"] into tTotalIn`)",
+         [ln for ln in code if _PLUS_VALUE_SUM.search(ln)], [])
+    for name, acc, want in _SUM_ACCUMULATORS:
+        try:
+            body = _lift(text, name)
+        except LookupError:
+            body = ""
+        c.ck("%s's %s is written only as 0 or through cwAmountAdd (%d time(s))"
+             % (name, acc, want), (bool(body),) + _accumulator_writes(body, acc),
+             (True, want, []))
+    for name in _SUM_SOURCES:
+        try:
+            body = _lift(text, name)
+        except LookupError:
+            body = ""
+        c.ck("%s sums through cwAmountAdd (or waCoinTotal, which does)" % name,
+             (bool(body), "cwAmountAdd(" in body or "waCoinTotal(" in body,
+              bool(_BARE_VALUE_SUM.search(body))),
+             (True, True, False))
+    body = _lift(text, "waMaxSpend") if "waMaxSpend" in text else ""
+    c.ck("waMaxSpend's fee plus fixed outputs is a cwAmountAdd, not a bare `+`",
+         "tFee + pFixedSat" in body, False)
+    body = _lift(text, "waBuildSpend") if "waBuildSpend" in text else ""
+    c.ck("waBuildSpend reads the locktime field trimmed (CoinXT's encoders take "
+         "digits only since row #10)",
+         'put cwTrim(field "sd_locktime") into tLock' in body, True)
+
+
+def check_backend_numbers(c, ip, fx=None):
+    """Row #9's coin-wallet half, through the lifted handlers. `ip` is
+    unused: the fixture is its own unit."""
+    c.note("\nbackend numbers and the wallet's sums in coin-wallet's own code (row #9)")
+    fx = fx or _bounds_fixture()
+    _vec_backend_whole(c, fx)
+    _vec_backend_height(c, fx)
+    _vec_backend_coins(c, fx)
+    _vec_backend_history(c, fx)
+    _vec_backend_core(c, fx)
+    _vec_core_fee(c, fx)
+    _vec_wallet_sums(c, fx)
+    _vec_wallet_sum_sources(c, fx)
+
+
+# ROWS #9 AND #11, EACH FIX UNDONE (2026-09-26). (label, file, [(the shipped
+# text, the old spelling), ...], the vector block that must fail on the old
+# spelling). Unlike tier 5's table these need no engine model: the plain
+# interpreter already stops, errs or answers wrongly on every old line, which
+# is what each block's rows are written to see. The shipped text must occur
+# exactly once, so a rename or a revert fails here before a mutation can
+# pass vacuously; a line that is its own old spelling reads as "undone".
+_BOUND_MUTATIONS = (
+    ("cwSelectionResult's total, a bare add", "core",
+     [('      put cwAmountAdd(tTotal, tCoin["value"], "cwSelectCoins") into tTotal\n',
+       '      add tCoin["value"] to tTotal\n')], _vec_selection_sums),
+    ("cwBranchAndBound's suffix sums, a bare +", "core",
+     [('      put cwAmountAdd(tRemain[tI + 1], tValues[tI], "cwSelectCoins") into tRemain[tI]\n',
+       '      put tRemain[tI + 1] + tValues[tI] into tRemain[tI]\n')], _vec_selection_sums),
+    ("cwParseAmount's mBTC form, read as BTC and divided", "core",
+     [('      return cwMbtcToSat(pText, tText)\n',
+       '      return cwIntDiv(cwBtcToSat(tText), 1000)\n')], _vec_mbtc),
+    ("cwFormatAmount's mBTC form, multiplied by 1000", "core",
+     [('      return cwSatToMbtc(pSat) & " mBTC"\n',
+       '      return cwSatToBtc(pSat * 1000) & " mBTC"\n')], _vec_mbtc),
+    ("waWholeAtLeast asking `is an integer`", "wallet",
+     [("   if not waIsWhole(pValue) then\n      return false\n   end if\n"
+       "   return cwTrim(pValue) + 0 >= pMin\n",
+       "   if pValue is not an integer then\n      return false\n   end if\n"
+       "   return pValue >= pMin\n")], _vec_backend_whole),
+    ("waWholeInRange asking `is an integer`", "wallet",
+     [("   if not waIsWhole(pValue) then\n      return false\n   end if\n"
+       "   put cwTrim(pValue) + 0 into tValue\n",
+       "   if pValue is not an integer then\n      return false\n   end if\n"
+       "   put pValue into tValue\n")], _vec_backend_whole),
+    ("waCheckedHeight asking `is an integer`, unbounded", "wallet",
+     [('   if not waIsDigits(tText) then\n      throw "the " & pWhere & " backend '
+       'answered the chain-tip request with " & \\\n',
+       '   if tText is not an integer then\n      throw "the " & pWhere & " backend '
+       'answered the chain-tip request with " & \\\n'),
+      ('   if cwDecCompare(tText, "9007199254740992") > 0 then\n      throw "the " & '
+       'pWhere & " backend answered the chain-tip request with " & \\\n',
+       '   if false then\n      throw "the " & pWhere & " backend answered the '
+       'chain-tip request with " & \\\n')], _vec_backend_height),
+    ("waMergeUtxos's value, digits unbounded", "wallet",
+     [('      put waCheckedCount(tValue, "9007199254740992", "a coin value") '
+       'into tValue\n',
+       '      if not waIsDigits(tValue) then\n         throw "the backend listed a '
+       'coin value that is not a whole number: " & tValue\n      end if\n'
+       '      put tValue + 0 into tValue\n')], _vec_backend_coins),
+    ("waMergeUtxos's vout, digits unbounded", "wallet",
+     [('      put waCheckedCount(tVout, "4294967295", "a coin vout") into tVout\n',
+       '      if not waIsDigits(tVout) then\n         throw "the backend listed a '
+       'coin vout that is not a whole number: " & tVout\n      end if\n'
+       '      put tVout + 0 into tVout\n')], _vec_backend_coins),
+    # anchored on the line before it, `put 0 into tConf`: waMergeScan carries
+    # the same guard since the 2026-09-26 review (trap 37), with its own row
+    ("waMergeUtxos's height, digits unbounded", "wallet",
+     [('      put 0 into tConf\n      if waIsInt(tHeight) then\n'
+       '         if not waIsWhole(tHeight) then\n            throw "the backend listed '
+       'a coin at a height',
+       '      put 0 into tConf\n      if waIsInt(tHeight) then\n'
+       '         if false then\n            throw "the backend listed a coin at a '
+       'height')], _vec_backend_coins),
+    ("waMergeUtxos with no bound on the reply's total", "wallet",
+     [('   get waCoinTotal(tList, "waMergeUtxos")\n', '')], _vec_backend_coins),
+    ("waMergeUtxos taking marks off before the last check", "wallet",
+     [('      if sWaSpentBy[tKey] is not "" then\n         put cwListAdd(tUnmark, tKey) '
+       'into tUnmark\n      end if\n      put cwListAdd(tList, tRec) into tList\n'
+       '   end repeat\n   -- THE WALLET\'S TOTAL',
+       '      if sWaSpentBy[tKey] is not "" then\n         waLog "offering it again"\n'
+       '         put "" into sWaSpentBy[tKey]\n      end if\n'
+       '      put cwListAdd(tList, tRec) into tList\n   end repeat\n'
+       '   -- THE WALLET\'S TOTAL')], _vec_backend_coins),
+    ("waMergeHistory's height, `+ 0` on whatever came", "wallet",
+     [('      if waIsInt(tHeight) then\n         if not waIsWhole(tHeight) then\n'
+       '            throw "the backend listed a transaction',
+       '      if false then\n         if not waIsWhole(tHeight) then\n'
+       '            throw "the backend listed a transaction'),
+      ('      if waWholeAtLeast(tHeight, 1) then\n         if sWaTipHeight is not "" then\n',
+       '      if tHeight is not "" and tHeight + 0 > 0 then\n'
+       '         if sWaTipHeight is not "" then\n')], _vec_backend_history),
+    ("waMergeHistory's fee and weight, kept as they came", "wallet",
+     [('         if waWholeAtLeast(tFee, 0) then\n            put cwTrim(tFee) + 0 '
+       'into tRec["fee"]\n         end if\n', '         put tFee into tRec["fee"]\n'),
+      ('         if waWholeAtLeast(tWeight, 0) then\n            put cwCeilDiv(cwTrim(tWeight) '
+       '+ 0, 4) into tRec["vsize"]\n',
+       '         if tWeight is an integer then\n            put cwCeilDiv(tWeight, 4) '
+       'into tRec["vsize"]\n')], _vec_backend_history),
+    ("waMergeCoreUnspent's vout, `+ 0`", "wallet",
+     [('      put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \\\n'
+       '            "a coin vout") into tRec["vout"]\n      -- THE VALUE IS',
+       '      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]\n      -- THE VALUE IS')],
+     _vec_backend_core),
+    # the 2026-09-26 review's rows: Core's coin value through cwBtcToSat alone
+    # (a negative coin taken), the scan's height unrefused past 2^53, and the
+    # scan's tip committed before the checks that can refuse its reply
+    ("waMergeCoreUnspent's value, cwBtcToSat alone", "wallet",
+     [('      put waCheckedCount(cwBtcToSat(cwJsonGet(tItem, "amount")), \\\n'
+       '            "9007199254740992", "a coin value") into tRec["value"]\n'
+       '      put cwJsonGet(tItem, "confirmations") into tConfText\n',
+       '      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]\n'
+       '      put cwJsonGet(tItem, "confirmations") into tConfText\n')], _vec_backend_core),
+    ("waMergeScan's value, cwBtcToSat alone", "wallet",
+     [('      put waCheckedCount(cwBtcToSat(cwJsonGet(tItem, "amount")), \\\n'
+       '            "9007199254740992", "a coin value") into tRec["value"]\n'
+       '      put cwJsonGet(tItem, "height") into tHeight\n',
+       '      put cwBtcToSat(cwJsonGet(tItem, "amount")) into tRec["value"]\n'
+       '      put cwJsonGet(tItem, "height") into tHeight\n')], _vec_backend_core),
+    ("waMergeScan's height, unrefused past 2^53", "wallet",
+     [('      if waIsInt(tHeight) then\n         if not waIsWhole(tHeight) then\n'
+       '            throw "the backend listed a coin at a height past 2^53, which no " & \\\n'
+       '                  "chain has: " & char 1 to 40 of tHeight\n         end if\n'
+       '      end if\n      if waWholeAtLeast(tHeight, 1) and waWholeAtLeast(tScanHeight, 0)',
+       '      if waWholeAtLeast(tHeight, 1) and waWholeAtLeast(tScanHeight, 0)')],
+     _vec_backend_core),
+    ("waMergeScan committing the tip before the last check", "wallet",
+     [('   put cwJsonGet(pNode, "height") into tScanHeight\n',
+       '   put cwJsonGet(pNode, "height") into tScanHeight\n'
+       '   if waWholeAtLeast(tScanHeight, 0) then\n'
+       '      if sWaTipHeight is "" or tScanHeight > sWaTipHeight then\n'
+       '         put tScanHeight into sWaTipHeight\n      end if\n   end if\n')],
+     _vec_backend_core),
+    ("waMergeCoreUnspent's confirmations, `+ 0`", "wallet",
+     [('      put cwJsonGet(tItem, "confirmations") into tConfText\n      put 0 into '
+       'tRec["confirmations"]\n      if waIsWhole(tConfText) then\n         put '
+       'cwTrim(tConfText) + 0 into tRec["confirmations"]\n      end if\n      if '
+       'tRec["confirmations"] > 0 and sWaTipHeight',
+       '      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]\n'
+       '      if tRec["confirmations"] > 0 and sWaTipHeight')], _vec_backend_core),
+    ("waMergeCoreUnspent's total, a bare add", "wallet",
+     [('   put waCoinTotal(tList, "waMergeCoreUnspent") into tTotal\n',
+       '   put 0 into tTotal\n   repeat with tI = 1 to cwListCount(tList)\n'
+       '      put tList[tI] into tRec\n      add tRec["value"] to tTotal\n'
+       '   end repeat\n')], _vec_backend_core),
+    ("waMergeCoreHistory's confirmations, `+ 0`", "wallet",
+     [('      put cwJsonGet(tItem, "confirmations") into tConfText\n      put 0 into '
+       'tRec["confirmations"]\n      if waIsWhole(tConfText) then\n         put '
+       'cwTrim(tConfText) + 0 into tRec["confirmations"]\n      end if\n      put '
+       'cwJsonGet(tItem, "blockheight") into tHeight\n',
+       '      put cwJsonGet(tItem, "confirmations") + 0 into tRec["confirmations"]\n'
+       '      put cwJsonGet(tItem, "blockheight") into tHeight\n')], _vec_backend_core),
+    ("waMergeScan's vout, `+ 0`", "wallet",
+     [('      put waCheckedCount(cwJsonGet(tItem, "vout"), "4294967295", \\\n'
+       '            "a coin vout") into tRec["vout"]\n      -- Core prints',
+       '      put cwJsonGet(tItem, "vout") + 0 into tRec["vout"]\n      -- Core prints')],
+     _vec_backend_core),
+    ("waMergeScan's total, a bare add", "wallet",
+     [('   put waCoinTotal(tList, "waMergeScan") into tTotal\n',
+       '   put 0 into tTotal\n   repeat with tI = 1 to cwListCount(tList)\n'
+       '      put tList[tI] into tRec\n      add tRec["value"] to tTotal\n'
+       '   end repeat\n'),
+      ('   get waCoinTotal(tList, "waMergeScan")\n', '')], _vec_backend_core),
+    ("waRecomputeBalance's frozen sum, a bare add", "wallet",
+     [('         put cwAmountAdd(tFrozen, tRec["value"], "waRecomputeBalance") into tFrozen\n',
+       '         add tRec["value"] to tFrozen\n')], _vec_wallet_sums),
+    ("waRecomputeBalance's confirmed sum, a bare add", "wallet",
+     [('         put cwAmountAdd(tConfirmed, tRec["value"], "waRecomputeBalance") \\\n'
+       '               into tConfirmed\n', '         add tRec["value"] to tConfirmed\n')],
+     _vec_wallet_sums),
+    ("waRecomputeBalance's pending sum, a bare add", "wallet",
+     [('         put cwAmountAdd(tPending, tRec["value"], "waRecomputeBalance") into tPending\n',
+       '         add tRec["value"] to tPending\n')], _vec_wallet_sums),
+    ("waBalanceByAddress, a bare add", "wallet",
+     [('      put cwAmountAdd(tOut[tRec["address"]] + 0, tRec["value"], \\\n'
+       '            "waBalanceByAddress") into tOut[tRec["address"]]\n',
+       '      add tRec["value"] to tOut[tRec["address"]]\n')], _vec_wallet_sums),
+    ("waLeafHeld, a bare add", "wallet",
+     [('         put cwAmountAdd(tSum, tRec["value"], "waLeafHeld") into tSum\n',
+       '         add tRec["value"] to tSum\n')], _vec_wallet_sums),
+    ("waMaxSpend's total, a bare add", "wallet",
+     [('      put cwAmountAdd(tTotal, tRec["value"], "waMaxSpend") into tTotal\n',
+       '      add tRec["value"] to tTotal\n')], _vec_wallet_sums),
+    ("waMaxSpend's fee plus fixed outputs, a bare +", "wallet",
+     [('   if tTotal <= cwAmountAdd(tFee, pFixedSat, "waMaxSpend") then\n',
+       '   if tTotal <= (tFee + pFixedSat) then\n')], _vec_wallet_sums),
+    ("waAmountBare's mBTC, multiplied by 1000", "wallet",
+     [('      return cwSatToMbtc(pSat)\n', '      return cwSatToBtc(pSat * 1000)\n')],
+     _vec_wallet_sums),
+    ("waBuildSpend's payments, a bare add", "wallet",
+     [('         put cwAmountAdd(tTarget, tRec["value"], "waBuildSpend") into tTarget\n',
+       '         add tRec["value"] to tTarget\n')], _vec_wallet_sum_sources),
+    ("waBuildSpend's locktime field, untrimmed", "wallet",
+     [('   put cwTrim(field "sd_locktime") into tLock\n',
+       '   put field "sd_locktime" into tLock\n')], _vec_wallet_sum_sources),
+    ("waReviewText's total out, a bare add", "wallet",
+     [('      put cwAmountAdd(tTotalOut, tRec["value"], "waReviewText") into tTotalOut\n',
+       '      add tRec["value"] to tTotalOut\n')], _vec_wallet_sum_sources),
+    ("waPaintCoins's ticked total, a bare add", "wallet",
+     [('         put cwAmountAdd(tSelValue, tRec["value"], "waPaintCoins") into tSelValue\n',
+       '         add tRec["value"] to tSelValue\n')], _vec_wallet_sum_sources),
+    ("waCpfpBuild's total in, a bare add", "wallet",
+     [('      put cwAmountAdd(tTotalIn, tRec["value"], "waCpfpBuild") into tTotalIn\n',
+       '      add tRec["value"] to tTotalIn\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's total in, a bare add", "wallet",
+     [('      put cwAmountAdd(tTotalIn, tRec["value"], "waBumpFee") into tTotalIn\n',
+       '      add tRec["value"] to tTotalIn\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's total out, a bare add", "wallet",
+     [('      put cwAmountAdd(tTotalOut, tRec["value"], "waBumpFee") into tTotalOut\n',
+       '      add tRec["value"] to tTotalOut\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's new change into the total, a bare add", "wallet",
+     [('   put cwAmountAdd(tTotalOut, tNewChange, "waBumpFee") into tTotalOut\n',
+       '   add tNewChange to tTotalOut\n')], _vec_wallet_sum_sources),
+    # the 2026-09-28 review: Core's fee with its minus taken off by
+    # arithmetic, which fails under the engine's numberFormat
+    ("waMergeCoreHistory's fee, the minus taken off by arithmetic", "wallet",
+     [('      put cwTrim(cwJsonGet(tItem, "fee")) into tFee\n'
+       '      if char 1 of tFee is "-" then\n'
+       '         put char 2 to -1 of tFee into tFee\n'
+       '         if tFee is a number then\n'
+       '            put cwBtcToSat(cwExpandExponent(tFee)) into tFeeSat\n'
+       '            if tFeeSat > 0 then\n'
+       '               put tFeeSat into tRec["fee"]\n'
+       '            end if\n         end if\n      end if\n',
+       '      put cwJsonGet(tItem, "fee") into tFee\n'
+       '      if tFee is a number then\n'
+       '         if tFee < 0 then\n'
+       '            put cwBtcToSat(cwExpandExponent(-tFee)) into tRec["fee"]\n'
+       '         end if\n      end if\n')], _vec_core_fee),
+    # PLAUSIBLE WRONG FIXES, not reverts (the 2026-09-26 review): each
+    # source-pinned sum rewritten as a bare `+`. The pins first read only
+    # `add ... to` and "cwAmountAdd( somewhere in the body", so waBumpFee's
+    # three sums passed this spelling one at a time; each must fail now.
+    ("waBuildSpend's payments, a bare +", "wallet",
+     [('         put cwAmountAdd(tTarget, tRec["value"], "waBuildSpend") into tTarget\n',
+       '         put tTarget + tRec["value"] into tTarget\n')], _vec_wallet_sum_sources),
+    ("waReviewText's total out, a bare +", "wallet",
+     [('      put cwAmountAdd(tTotalOut, tRec["value"], "waReviewText") into tTotalOut\n',
+       '      put tTotalOut + tRec["value"] into tTotalOut\n')], _vec_wallet_sum_sources),
+    ("waPaintCoins's ticked total, a bare +", "wallet",
+     [('         put cwAmountAdd(tSelValue, tRec["value"], "waPaintCoins") into tSelValue\n',
+       '         put tSelValue + tRec["value"] into tSelValue\n')], _vec_wallet_sum_sources),
+    ("waCpfpBuild's total in, a bare +", "wallet",
+     [('      put cwAmountAdd(tTotalIn, tRec["value"], "waCpfpBuild") into tTotalIn\n',
+       '      put tTotalIn + tRec["value"] into tTotalIn\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's total in, a bare +", "wallet",
+     [('      put cwAmountAdd(tTotalIn, tRec["value"], "waBumpFee") into tTotalIn\n',
+       '      put tTotalIn + tRec["value"] into tTotalIn\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's total out, a bare +", "wallet",
+     [('      put cwAmountAdd(tTotalOut, tRec["value"], "waBumpFee") into tTotalOut\n',
+       '      put tTotalOut + tRec["value"] into tTotalOut\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's new change into the total, a bare +", "wallet",
+     [('   put cwAmountAdd(tTotalOut, tNewChange, "waBumpFee") into tTotalOut\n',
+       '   put tTotalOut + tNewChange into tTotalOut\n')], _vec_wallet_sum_sources),
+    ("waBumpFee's total in, summed into a helper first", "wallet",
+     [('      put cwAmountAdd(tTotalIn, tRec["value"], "waBumpFee") into tTotalIn\n',
+       '      put cwAmountAdd(0, tRec["value"], "waBumpFee") into tSum\n'
+       '      put tTotalIn + tSum into tTotalIn\n')], _vec_wallet_sum_sources),
+)
+
+
+def check_bounds_fire(c):
+    """MUTATION for rows #9 and #11: each fix's old spelling planted back
+    into the shipped wallet-core or coin-wallet, and its block must fail."""
+    c.note("\nrows #9 and #11: every fix, undone, fails its vectors")
+    core = open(CORE, encoding="utf-8").read()
+    wallet = _wallet_own_code(open(WALLET, encoding="utf-8").read())
+    coin = open(COIN, encoding="utf-8").read()
+    for label, where, pairs, block in _BOUND_MUTATIONS:
+        text = wallet if where == "wallet" else core
+        counts = [text.count(new) for new, _old in pairs]
+        c.ck("the shipped %s carries the lines under test exactly once (%s)"
+             % ("coin-wallet" if where == "wallet" else "wallet-core", label),
+             counts, [1] * len(pairs))
+        if counts != [1] * len(pairs):
+            continue
+        mutated = text
+        for new, old in pairs:
+            mutated = mutated.replace(new, old)
+        if where == "core":
+            body = "\n".join(ln for ln in mutated.split("\n")
+                             if not ln.startswith('script "'))
+            unit = LCS.Interp(coin + "\n" + body)
+        else:
+            unit = _bounds_fixture(wallet_text=mutated)
+        failed = _run_quiet(block, unit)
+        c.ck("%s, undone, FAILS its vectors" % label, len(failed.problems) > 0, True)
+
+
 # EACH FIX, UNDONE. (label, file, the shipped text, the old spelling, the
 # vector block that must fail on the old spelling under the engine's parse).
 # The shipped text must occur exactly once, so a rename or a revert of the
@@ -4731,15 +5721,20 @@ def main(argv):
                 check_script_framing(ck, interp)
                 check_wide_reads(ck, interp)
                 check_exact_integers(ck, interp)
+                check_wallet_sums_and_mbtc(ck, interp)
+                check_backend_numbers(ck, interp)
                 check_hex_compares(ck, interp)
                 check_wallet_hex_compares(ck, interp)
 
             # the vectors whose answers rest on HOW the engine compares:
             # tier 4 re-runs them under each tolerance, tier 5 under the
-            # engine's text parse
+            # engine's text parse (rows #9 and #11's bounds among them: each
+            # is decided on digits or 32-bit halves, so no model may move it)
             def comparison_set(ck, interp):
                 check_wide_reads(ck, interp)
                 check_exact_integers(ck, interp)
+                check_wallet_sums_and_mbtc(ck, interp)
+                check_backend_numbers(ck, interp)
                 check_hex_compares(ck, interp)
                 check_wallet_hex_compares(ck, interp)
 
@@ -4757,6 +5752,7 @@ def main(argv):
                       "the wide-integer and hex-compare vectors"))
             check_tolerance_fires(c)
             check_exact_integer_fixtures(c)
+            check_bounds_fire(c)
             check_tolerance_models(c, ip, run_all if every else comparison_set)
             # tier 5: the engine's TEXT PARSE (engine note 2.11), proven to
             # read the recorded parse answers and to fail every hex fix

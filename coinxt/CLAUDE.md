@@ -163,6 +163,60 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   passed only two arguments, and the empty spec threw whatever the guard did, so none could fail.
   `cxBech32EncodeValues`'s guard and those lines ran green on an engine on 2026-09-26 (Linux; the ledger); the
   rest of this entry is verified statically; needs an OXT pass.
+- **The rest of the class, closed 2026-09-26 (work-plan rows #9, #10, #11): what an encoder writes, what a backend
+  reports, what the wallet sums, and mBTC.** (a) The LIBRARY's encoders took any number: `cxUIntToBytesLE` (every
+  amount, vout, sequence, version and locktime), `cxVarInt` and `cxHexOfInt` (nonce, gas, chain id, recovery id)
+  wrote digit text past 2^53 as the bytes of its rounded neighbour and `"1e3"`, `"3.0"`, `"+3"` or an empty value as
+  a number. `cxCheckedWhole` settles each on its characters: a leading minus is the old "must not be negative"
+  refusal word for word, anything else not a run of ASCII digits is "not written in digits", then the digits are
+  compared with 2^53 (length, then byte for byte). `cxEthLegacyEncode` COMPUTES v = recid + 2 * chain id + 35, so it
+  takes a recovery id of 0 or 1, EIP-155's two, and a chain id of at most 4503599627370478 (v at most 2^53): any
+  larger id writes another chain's v, 2 on chain 1 being v = 39, chain 2's at id 0 byte for byte. The first bound
+  (at most 3, secp256k1's ids) let 2 and 3 through to that; the same day's review narrowed it, and
+  `check_row10_fires` plants the 3 back as a wrong fix that must fail. The review then read by value origin what
+  the library USES as an index, still range-checked as a number and then used as given: `cxHdDeriveChild` took
+  `"1e1"` as child 10, `"3.5"`, `" 3"` and `"+3"` as child 3 and an EMPTY index as child 0, and the three sighash
+  builders took an input index of 1.5 through `pIndex < 1 or pIndex > tCount` to `item 1.5 of` (an input chosen by
+  chunk rounding: BIP-143, and BIP-341 under ANYONECANPAY) or to `tI is 1.5` (the legacy preimage then carried no
+  scriptCode at all). `cxCheckedIndex` (2026-09-28) settles each on its digits, and a minus or an out-of-range value
+  keeps each handler's old refusal word for word; `check_row10_fires` plants each old range test back, and `is an
+  integer` in front of one as a wrong fix. `cxEth1559Encode`'s y-parity took the legacy recovery id's rule the same
+  day, 0 or 1 (a 2, or a legacy v of 27, was written into a transaction no node accepts). The family interpreter
+  itself rounds
+  `"9007199254740993"` to 2^53 without its stop firing: the old `cxVarInt` wrote `ff0000000000002000` for it
+  headlessly (the suite's work plan, suite-wide #27). (b) A BACKEND's integers: `waCheckedCount` (one handler, trap
+  37) reads a coin's value (at most 2^53) and vout (at most 4294967295) on every transport that lists coins, Core's
+  included (Core's value after `cwBtcToSat` reads its BTC: until the review, Core's listunspent and scan took
+  `cwBtcToSat`'s answer alone, and so a NEGATIVE coin the Electrum and Esplora paths refuse); `waCheckedHeight` takes
+  a tip of digits at most 2^53 (`is an integer` made "1e20" a tip); `waIsWhole` now decides `waWholeAtLeast` /
+  `waWholeInRange` on the digits, so no Core guard takes "1e20"; a history row's height, fee and weight and Core's
+  confirmation counts are kept only as whole numbers held exactly (a history height that was no number was an
+  engine error from inside the reply, `and` evaluating both sides); digits past 2^53 in a coin's or a transaction's
+  height refuse the reply, a Core scan's included since the review. Core's listtransactions FEE had its minus taken
+  off by arithmetic, `cwBtcToSat(cwExpandExponent(-tFee))`, which hands the parser a COMPUTED number, and the engine
+  writes one as text through the default numberFormat, six decimals (0.00001410 BTC read as 1400 sat; INFERRED from
+  the documented default, trap 21): the minus comes off as TEXT since 2026-09-28, held by `check-wallet-vectors.py`'s
+  `_EngineNumberFormat`, a one-block model of that default under which the old line fails. (c) The wallet's SUMS:
+  `waCoinTotal` refuses a merge whose coins would sum past 2^53 BEFORE it commits, and the merges take a broadcast
+  mark off, and a scan moves the chain tip, only after that (trap 38; the scan moved its tip before reading a coin
+  until the review); a coin typed on the offline Coins screen (`waAddManualCoin`) is appended without it (work-plan
+  coinxt #13), so there the sums' own bound is the backstop; every other sum of coin values (coin selection's total and branch and
+  bound's suffix sums, the balance, an address's and a leaf's holding, MAX and its fee plus fixed outputs, the
+  payments, the review, the ticked total, CPFP, RBF) goes through `cwAmountAdd`. (d) mBTC:
+  `cwParseAmount` read mBTC as BTC and divided by 1000, dropping a sixth to eighth decimal ("0.00012345" mBTC read
+  as 12 sat) and stopping at a thousandth of the bound; `cwMbtcToSat` moves the point in text, refuses a nonzero
+  digit past the fifth decimal by name and reads to 90071992547.40992 mBTC. Beside it, `cwFormatAmount` and
+  coin-wallet's `waAmountBare` wrote mBTC as `cwSatToBtc(pSat * 1000)`, which rounded above about 90072 BTC and put
+  that amount into the Send box: `cwSatToMbtc` re-points `cwSatToBtc`'s text. HOW EACH IS HELD: every fix's old
+  spelling is planted back into the shipped text on every gate run and its vectors must fail
+  (`check-script-vectors.py`'s `check_row10_fires`, `check-wallet-vectors.py`'s `check_bounds_fire`), coin-wallet's
+  handlers lifted out of the shipped stack (`check_backend_numbers`, in the tier-4 and tier-5 re-runs) and the ones
+  tangled with signing held by their source, every write to each of their sums (`put 0` or `cwAmountAdd` only, so
+  many times): the source pin first read only `add ... to` and "a `cwAmountAdd(` somewhere in the body", which
+  passed `put tTotalIn + tRec["value"] into tTotalIn` in any of `waBumpFee`'s three sums (the review), and that
+  spelling is now planted into each pinned sum as a wrong fix that must fail. coin-selftest's fail-closed section
+  carries row #10's lines for the next paste run, the review's recovery id of 2 among them. Verified statically;
+  needs an OXT pass.
 - Base58 is long division over the byte array (nothing exceeds 58 * 255), not a bit repack.
 - **Look up alphabet characters by BYTE VALUE with `cxCharIndex`, never `offset()` or `is`**: `the caseSensitive`
   defaults to false, and in Base58 `a` and `A` are different digits - the file's "most dangerous line".
@@ -399,8 +453,9 @@ Symptom -> cause -> fix. Engine behaviour gets one line and its engine note.
     moves the answer; the orderings do read empty as 0); a Boolean is never a number to a comparison; `is an
     integer` is EXACT (`d == floor(d)`, no tolerance) on both. A Boolean in ARITHMETIC still reads as 1 or 0 here,
     where the engine throws (named, not changed). NOT modelled: `round()`, `repeat for each line`, the
-    `numberFormat` (a non-integral number's text is Python's). `ip.call` reaches natives only through script. Hot
-    paths use `_rx` / `_rxi`.
+    `numberFormat` (a non-integral number's text is Python's; `check-wallet-vectors.py`'s `_EngineNumberFormat` models
+    its documented default, six decimals, for one block, the Core fee's, 2026-09-28). `ip.call` reaches natives only
+    through script. Hot paths use `_rx` / `_rxi`.
 22. **`is` is modelled case-SENSITIVELY whatever `the caseSensitive` says** (the property reaches array keys only,
     as a per-handler local), so `check-wallet-vectors.py` runs every vector twice, the second time with `is` and
     `offset()` folded, and `check-script-vectors.py` tier 2b runs coinxt-demo's EIP-55 handlers both ways (a demo
@@ -635,8 +690,13 @@ the `x86_64-win32` DLL (2026-09-24 and 2026-09-25; 64-bit by the maintainer's ac
 never have executed; the wallet surface added from 2026-09-04 (the Ordinals and Vault screens, testnet4, BIP-329,
 BIP-322, silent-payment receiving, Runes, BOLT11, the Core backends, the 2026-09-10 fixes, the 2026-09-24 byte-level
 2^53 bound in `cwLeRead` / `cwBeRead`, the 2026-09-25 exact-integer bounds of work-plan row #8, coinxt-demo's
-`cdWholeField`, the 2026-09-26 `cwExpandExponent` bound and the 2026-09-26 hex compares through `cwSameHex` /
-`cwHexCompare`); coinxt-demo's 2026-09-26 EIP-55 mixed-case test (`cdIsMixedCase`) and coin-selftest's asserts
+`cdWholeField`, the 2026-09-26 `cwExpandExponent` bound, the 2026-09-26 hex compares through `cwSameHex` /
+`cwHexCompare`, and the 2026-09-26 bounds of rows #9 and #11: a backend's integers at their parse, the wallet's
+sums through `cwAmountAdd`, mBTC moved in text); the library encoders' integer arguments settled as digits at
+most 2^53 (`cxCheckedWhole`, row #10, 2026-09-26; the paste carries it, and no engine has run it yet) and the
+indexes it uses settled as digits (`cxCheckedIndex`, the review's, 2026-09-28; the paste carries it too), with the
+wallet's Core fee read from its own characters the same day;
+coinxt-demo's 2026-09-26 EIP-55 mixed-case test (`cdIsMixedCase`) and coin-selftest's asserts
 rewritten through `stSameText` / `stSameHex` the same day (the 296/296 above read their bare spellings; the
 2026-09-26 Windows paste was presumably `a812580`'s, which carries them, but its report reads the same either way); and what the logs did not reach (the update swap, mainnet
 Electrum on port 110, the stale-answer skip, paint/pump timing, the mixed tip+fees batch, the three corrected menu
