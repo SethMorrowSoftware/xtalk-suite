@@ -335,8 +335,12 @@ Body schemas (all byte-pinned in `tools/protocol-kat.py`):
   ascending, the button among them. `dealLevel` (host):
   `level=0,dealer=<seat>,count=N` (the dealer is the button seat's player; `count` is
   the number of dealt seats); the oracle's form is `level=1,dealer=0` (7.2).
-- `seedCommit` / `seedSeal` / `seedReveal`: `pos=<seat>` plus payload from the seat's
-  own key. `holeDeliver` (dealer): `seat=N,sealed=<hex>`, the two card names sealed to
+- `seedCommit` / `seedSeal` / `seedReveal`: `pos=<P>` plus payload from the seat's
+  own key. `P` is the contributor POSITION, not the seat number: the seat's 1-based
+  index in the hand's ascending dealt-seat list (`heNetSeatPos`; the oracle's is
+  count+1, 7.2), so at a hand dealt to seats 1, 3, 4, 5 and 6, seat 3 is `pos=2`. The
+  seed XOR and the commit arrays are position-indexed (7.1), and the hotseat
+  transcript writes the same `pos`. `holeDeliver` (dealer): `seat=N,sealed=<hex>`, the two card names sealed to
   seat N's session box pub. `board` (dealer): `street=..,cards=a|b|c`.
 - `settle` (host): the deltas, verified by every client against its own `heSettleOf`
   before folding (8.3).
