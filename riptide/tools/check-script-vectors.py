@@ -1675,7 +1675,12 @@ def check_seq_order_bridge(c, ip, src, fail):
 # took only the first key in sort order, which would have left a second
 # platform's record and rows unproven); one that read DIFFERENTLY on the same
 # date would need a key this record does not have yet, and fails the check
-# until then.
+# until then. A row that names "Probe 4" must quote a reading the regex can
+# read (review, 2026-09-28): with two rows under one record, a quote spelled
+# `ture` or cut to five items in ONE of them left the other row's quote to
+# satisfy the record, so the check itself stayed green and only a seed's
+# side effect went red, under another seed's name. Such a row is now named,
+# and the misspelling is seeded in every row of every key.
 
 HARNESS = os.path.join(MEMBER, "tests", "riptide-selftest.livecodescript")
 PROBE4_PREFIX = "numeric compare probe 4 (diagnostic;"
@@ -1952,6 +1957,9 @@ def probe4_recorded_problems(recorded, prediction):
 _LEDGER_PROBE4_RX = re.compile(
     r'[Pp]robe 4\b.{0,240}?`((?:true|false)(?:,(?:true|false)){5})`')
 _LEDGER_ROW_DATE_RX = re.compile(r'^\| (20\d\d-\d\d-\d\d)\b')
+# a row that names the line at all (a quote the regex above cannot read, a
+# misspelled item or one item short, still names it)
+_LEDGER_PROBE4_MENTION_RX = re.compile(r'[Pp]robe 4\b')
 
 
 def _probe4_ledger_rows(ledger):
@@ -1997,7 +2005,12 @@ def probe4_ledger_problems(recorded, ledger):
             bad.append("%s %s: the ledger quotes %s, the record %s"
                        % (platform, date, " and ".join(quoted),
                           recorded[key]))
-    for date, named, quotes, _row in rows:
+    for date, named, quotes, row in rows:
+        if not quotes and _LEDGER_PROBE4_MENTION_RX.search(row):
+            bad.append("the ledger row of %s (%s) names Probe 4 but quotes "
+                       "no reading (six booleans in backticks, within 240 "
+                       "characters after it)"
+                       % (date, ", ".join(named) or "no platform named"))
         for q in quotes:
             if not any(recorded.get((p, date)) == q for p in named):
                 bad.append("the ledger row of %s (%s) quotes %s, which no "
@@ -2018,7 +2031,9 @@ def _probe4_ledger_seeds(recorded, ledger, fail):
     deleting the run's rows means all of them. Every recorded KEY is seeded,
     not the first alone: two platforms can read the same six answers on one
     date, and a seed set built from one of them would prove nothing about
-    the other's record or rows."""
+    the other's record or rows. Each row's quote is also misspelled in turn
+    (one item `ture`), which no regex reads as a reading: the row must be
+    named, not covered by its sibling row's quote."""
     def flipped(reading, n):
         out = reading.split(",")
         out[n - 1] = "false" if out[n - 1] == "true" else "true"
@@ -2050,6 +2065,13 @@ def _probe4_ledger_seeds(recorded, ledger, fail):
                                        "`%s`" % flipped(one, n))),
                     "%s: ledger row %d of %d's item %d flipped"
                     % (where, k, len(rows), n), "the ledger quotes"))
+        for k, (_d, _p, (one,), each) in enumerate(rows, 1):
+            seeds.append((recorded, ledger.replace(
+                each, each.replace("`%s`" % one,
+                                   "`%s`" % one.replace("true", "ture", 1))),
+                "%s: ledger row %d of %d's quote misspelled"
+                % (where, k, len(rows)),
+                "names Probe 4 but quotes no reading"))
         gone = ledger
         for each in rows:
             gone = gone.replace(each[3] + "\n", "")
