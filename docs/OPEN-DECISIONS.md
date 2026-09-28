@@ -195,8 +195,9 @@ work plan.
   - build or strike BEP44 profiles and standings, seven to nine seats, and the optional direct-TCP lane;
   - schedule the Level 2 played-hand wiring;
   - name the non-author who does the Phase 5 hostile review;
-  - close runbook row 14 at inference strength (its asserts ran green in every folded run from
-    2026-08-17 on, and engine note 3.1 is OBSERVED);
+  - (moot since 2026-09-26: runbook row 14 closed on evidence, not inference, when the
+    standalone stack's `heRunSelftest` ran section 11 green and a hotseat session's four deals
+    re-derived from their seeds; runbook section 8);
   - allow the one-word fix to the frozen `holde-em/assets/sounds/NOTICE.md`, whose cardShuffle row
     reads as wired when it is not.
 - **box2dxt:** the platformer polish pass needs the owner's eye on an engine: feel, facing, scenery,
