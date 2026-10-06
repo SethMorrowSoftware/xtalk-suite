@@ -1047,7 +1047,14 @@ jobs:
     # visible choice, and the bundle then simply carries no torrentxt/
     # datachannelxt mac dylib to install); a FAILED mac-lipo still refuses
     # the commit like any other failure - a broken build is not a choice.
+    # `!cancelled()` is load-bearing: without a status function GitHub
+    # prepends an implicit success(), which is false whenever ANY need was
+    # skipped, so a mac_lipo=false run skipped this job silently and the
+    # explicit skipped-is-fine clause below never got to answer (run
+    # 37413026408, 2026-10-06). The per-need success checks still refuse a
+    # failed or cancelled lane.
     if: >-
+      !cancelled() &&
       github.event.inputs.commit_mode != 'none' &&
       needs.cmake-members.result == 'success' &&
       needs.coinxt.result == 'success' &&
