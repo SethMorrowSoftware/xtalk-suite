@@ -15,7 +15,8 @@ tests the full platform matrix; this script handles the one platform you are on.
 
 The platform ids are architecture-FIRST and Windows is "-win32" for BOTH
 bitnesses:
-    x86_64-linux   x86-linux   x86_64-win32   x86-win32   universal-mac
+    x86_64-linux   x86-linux   arm64-linux   x86_64-win32   x86-win32
+    universal-mac
 
 Usage:
     python3 tools/package-extension.py --build-dir build

@@ -55,6 +55,7 @@ LCB_SRC = "src/box2dxt.lcb"
 CODE_LAYOUT = {
     "x86_64-linux":  ("linux64", "box2dxt.so"),
     "x86-linux":     ("linux32", "box2dxt.so"),
+    "arm64-linux":   ("linuxarm64", "box2dxt.so"),
     "x86_64-win32":  ("win64",   "box2dxt.dll"),
     "x86-win32":     ("win32",   "box2dxt.dll"),
     "universal-mac": ("mac",     "box2dxt.dylib"),
@@ -65,6 +66,7 @@ def main():
     ap = argparse.ArgumentParser(description="Refresh src/code/<platform-id>/ from per-platform native libraries.")
     ap.add_argument("--linux64", help="source .so for code/x86_64-linux/")
     ap.add_argument("--linux32", help="source .so for code/x86-linux/")
+    ap.add_argument("--linuxarm64", help="source .so for code/arm64-linux/")
     ap.add_argument("--win64", help="source .dll for code/x86_64-win32/")
     ap.add_argument("--win32", help="source .dll for code/x86-win32/")
     ap.add_argument("--mac", help="source .dylib for code/universal-mac/")
@@ -134,7 +136,7 @@ def main():
             problems.append(f"--{attr}: not a file: {src}")
 
     if not plan and not problems:
-        print("Nothing to do. Pass --linux64/--linux32/--win64/--win32/--mac to refresh a", file=sys.stderr)
+        print("Nothing to do. Pass --linux64/--linux32/--linuxarm64/--win64/--win32/--mac to refresh a", file=sys.stderr)
         print("platform, or --check to validate the committed tree. (src/code/ is committed,", file=sys.stderr)
         print("so a fresh clone is already build-ready.)", file=sys.stderr)
         return 1
