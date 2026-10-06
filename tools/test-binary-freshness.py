@@ -745,7 +745,16 @@ def main():
         # guarded decoder. The gate's decode_abi must say exactly the same;
         # comparing decode_abi with itself would pass a gate whose wiring
         # never reached the guarded decoder at all (it did, as a mutant).
-        before = GATE.decode_return_constant(code_at(member["abi_symbol"], 24))
+        # An AArch64 ELF (arm64-linux, 2026-10-06) is a leaf in its own
+        # instruction set, so its expectation comes from the arm64 leaf
+        # decoder: the x86 one reads None there, and a None expectation
+        # against the gate's 10 is a false "does not reach the decoder".
+        if fmt == "elf" and getattr(code_at, "machine", None) == "arm64":
+            before = GATE.decode_return_constant_arm64(
+                code_at(member["abi_symbol"], 24))
+        else:
+            before = GATE.decode_return_constant(
+                code_at(member["abi_symbol"], 24))
         expect, expect_shape = before, "leaf"
         if before is None and fmt == "pe":
             fn_va = code_at.export_va(member["abi_symbol"])
