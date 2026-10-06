@@ -59,6 +59,7 @@ MANIFEST = os.path.join(CODE_ROOT, "MANIFEST.sha256")
 PLATFORM_SUFFIX = {
     "x86_64-linux": ".so",
     "x86-linux": ".so",
+    "arm64-linux": ".so",
     "x86_64-win32": ".dll",
     "x86-win32": ".dll",
     "universal-mac": ".dylib",
