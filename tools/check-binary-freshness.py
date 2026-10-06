@@ -366,6 +366,7 @@ MEMBERS = [
 PLATFORMS = {
     "x86-linux": ("so", "elf"),
     "x86_64-linux": ("so", "elf"),
+    "arm64-linux": ("so", "elf"),
     "x86-win32": ("dll", "pe"),
     "x86_64-win32": ("dll", "pe"),
     "universal-mac": ("dylib", "macho"),
@@ -439,7 +440,10 @@ NON_LIBRARY_FILES = {"MANIFEST.sha256", "README.md"}
 # loaded. None simply means the ABI decoder runs unconfirmed on this host,
 # which prints as a skip rather than passing silently.
 if sys.platform.startswith("linux"):
-    HOST_PLATFORM = "x86_64-linux" if struct.calcsize("P") == 8 else "x86-linux"
+    if os.uname().machine in ("aarch64", "arm64"):
+        HOST_PLATFORM = "arm64-linux"
+    else:
+        HOST_PLATFORM = "x86_64-linux" if struct.calcsize("P") == 8 else "x86-linux"
 else:
     HOST_PLATFORM = None
 
@@ -676,7 +680,14 @@ def read_elf(path):
             return None
         return image[offset:offset + count]
 
+    # e_machine, so decode_abi reads an AArch64 library (arm64-linux, added
+    # 2026-10-06) with the AArch64 decoder instead of the x86 one.
+    code_at.machine = ELF_MACHINES.get(u16(18), "e_machine %#x" % u16(18))
+
     return exports, code_at
+
+
+ELF_MACHINES = {0x03: "x86", 0x3E: "x86_64", 0xB7: "arm64"}
 
 
 # COFF Machine values this file reads (winnt.h IMAGE_FILE_MACHINE_*). The
@@ -1551,6 +1562,12 @@ def decode_abi(fmt, code_at, symbol):
     WHICH shapes read, never how loosely either one does. One function, so
     check_member and tools/test-binary-freshness.py run the same path.
     """
+    if fmt == "elf" and getattr(code_at, "machine", None) == "arm64":
+        # The same leaf, in AArch64: GCC folds the guard away here too.
+        decoded = decode_return_constant_arm64(code_at(symbol, 24))
+        if decoded is not None:
+            return decoded, "leaf", None
+        return None, None, "does not begin `MOVZ w0, #imm16 ; ret`"
     decoded = decode_return_constant(code_at(symbol, 24))
     if decoded is not None:
         return decoded, "leaf", None

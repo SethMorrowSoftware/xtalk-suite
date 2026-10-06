@@ -85,6 +85,11 @@ on:
         options: [branch, pr, none]
         default: branch
         required: false
+      platforms:
+        description: "Platform ids to INSTALL and commit, space-separated (e.g. 'arm64-linux'), or 'all'. Every lane still builds and tests; the libraries of the other platforms are left as committed."
+        type: string
+        default: all
+        required: false
       mac_lipo:
         description: "Run the two-slice-lipo mac lanes (torrentxt, datachannelxt) - the heaviest, newest lanes. 'false' skips them DELIBERATELY (the skip is visible in the run), for a first dispatch that proves the rest before betting on these."
         type: choice
@@ -150,6 +155,16 @@ jobs:
             # CFLAGS and a configure --host; without them the sub-build stays
             # x86_64 and the link fails "incompatible with i386 output".
             cmake_args: -DCMAKE_C_FLAGS=-m32 -DSODIUMXT_LIBSODIUM_CFLAGS=-m32 -DSODIUMXT_LIBSODIUM_CONFIGURE_EXTRA=--host=i686-pc-linux-gnu
+          # arm64-linux (added 2026-10-06, for OXT-Beyond on 64-bit ARM Linux:
+          # Raspberry Pi 3/4/5 on a 64-bit OS, ARM servers): GitHub's
+          # ubuntu-24.04-arm runner builds and tests it NATIVELY, so every
+          # arm64-linux row is the member's x86_64-linux row on that runner -
+          # the same packages, flags and container shape, with the container's
+          # aarch64 image where the x64 row uses one.
+          - member: sodiumxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            apt: g++ cmake ninja-build
           - member: sodiumxt
             platform_id: x86_64-win32
             os: windows-2025
@@ -200,6 +215,15 @@ jobs:
             cmake_args: -DBOOST_ROOT=/opt/boost-1.86.0 -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
             build_jobs: 2          # libtorrent from source OOMs a runner at -j4
           - member: torrentxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            manylinux_deps: "1"
+            openssl_target: linux-aarch64
+            cmake_args: -DBOOST_ROOT=/opt/boost-1.86.0 -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
+            build_jobs: 2
+          - member: torrentxt
             platform_id: x86-linux
             os: ubuntu-24.04
             apt: g++-multilib gcc-multilib ninja-build libboost-dev
@@ -223,6 +247,10 @@ jobs:
           - member: enetxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
+            apt: g++ cmake ninja-build
+          - member: enetxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
             apt: g++ cmake ninja-build
           - member: enetxt
             platform_id: x86-linux
@@ -268,6 +296,12 @@ jobs:
             container: quay.io/pypa/manylinux_2_28_x86_64
             manylinux: "1"
             cmake_args: -DBOX2D_AVX2=OFF
+          # AVX2 is an x86 switch; on arm64 Box2D picks its NEON path itself.
+          - member: box2dxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
           - member: box2dxt
             platform_id: x86-linux
             os: ubuntu-24.04
@@ -290,6 +324,10 @@ jobs:
           - member: datachannelxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
+            apt: g++ cmake ninja-build libssl-dev
+          - member: datachannelxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
             apt: g++ cmake ninja-build libssl-dev
           - member: datachannelxt
             platform_id: x86-linux
@@ -447,7 +485,7 @@ jobs:
           echo "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  /tmp/openssl.tar.gz" | sha256sum -c -
           tar -C /tmp -xzf /tmp/openssl.tar.gz
           cd /tmp/openssl-3.5.4
-          ./Configure linux-x86_64 no-shared no-module no-tests -fPIC \
+          ./Configure ${{ matrix.openssl_target || 'linux-x86_64' }} no-shared no-module no-tests -fPIC \
             --prefix=/opt/static-openssl --libdir=lib >/dev/null
           make -s -j"$(nproc)" >/dev/null 2>&1
           make -s install_sw >/dev/null 2>&1
@@ -646,6 +684,10 @@ jobs:
           - platform_id: x86-linux
             os: ubuntu-24.04
             acquire: linux32
+          # native on the arm64 runner, so the plain gcc toolchain of linux64
+          - platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            acquire: linux64
           - platform_id: x86_64-win32
             os: ubuntu-24.04
             acquire: mingw64
@@ -1048,6 +1090,25 @@ jobs:
       # Its output is KEPT (tee, with pipefail so the installer's exit status
       # still decides the step): the Commit step below copies the per-library
       # verdicts into the commit message. See the note there for why.
+      # The `platforms` input narrows what lands, never what is built: a run
+      # that adds one platform (arm64-linux, 2026-10-06) should not also
+      # replace every other committed library with a rebuild of the same
+      # source, which would change binaries nobody asked to change.
+      - name: Keep only the platforms this run installs
+        if: github.event.inputs.platforms != '' && github.event.inputs.platforms != 'all'
+        shell: bash
+        env:
+          PLATFORMS: ${{ github.event.inputs.platforms }}
+        run: |
+          set -euo pipefail
+          for d in "$RUNNER_TEMP"/release-bundle/*/*/; do
+            p=$(basename "$d")
+            case " $PLATFORMS " in
+              *" $p "*) echo "installing $d" ;;
+              *) echo "leaving out $d (not in platforms: $PLATFORMS)"; rm -rf "$d" ;;
+            esac
+          done
+
       - name: Verify, then install into each extension
         shell: bash
         run: |

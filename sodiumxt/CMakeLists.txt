@@ -195,7 +195,11 @@ elseif(WIN32)
         set(_sxt_default_id "x86-win32")
     endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    # 64-bit ARM (Raspberry Pi 3/4/5 on a 64-bit OS, the ubuntu-24.04-arm
+    # runner) is its own id, never the x86_64 one its pointer width matches.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+        set(_sxt_default_id "arm64-linux")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(_sxt_default_id "x86_64-linux")
     else()
         set(_sxt_default_id "x86-linux")
