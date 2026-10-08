@@ -8,6 +8,29 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **Every platformer level is now built and played by a gate** (2026-10-08).
+  `tools/check-platformer-levels.py` runs the shipped game headlessly on a
+  model of the engine over the committed Linux library (real Box2D), three
+  ways: the first-run import with the art and its save, that saved stack
+  reopened with no art folder (it must read no file), and Cancel at the
+  folder prompt. Each plays L1 to the L7 win, taking every key, door,
+  switch, coin, gem, star, checkpoint, ?-box and brick, and fails a level
+  built twice or out of order, a level picker `menuPick`, an IDE-facing
+  message sent mid-build with messages unlocked, an error no `try` catches
+  or an undesigned caught one (a silent frame throw above all), a tripped
+  sound system, or a build that never ends (a statement budget stops it in
+  seconds, naming the handler). `tools/test-platformer-levels.py` seeds a
+  defect of each class into a copy of the game, the old level-4 loop and the
+  double build among them, and requires each to fail by name. Both run in
+  `tools/run-gates.sh`, which now needs the riptide and nostrxt members
+  beside this one. All three runs are green on the shipped game.
+- **The no-art build is quiet too** (2026-10-08). With Cancel at the folder
+  prompt, every level build made the placeholder hero's source image again
+  and re-sliced it with messages on (`pfEmbedPlaceholder` ran above the
+  build's `lock messages`): a `newImage` and a `deleteImage` for each old
+  slice, each answered by the IDE (engine note 5.15). It now runs under the
+  lock. Found by the level gate's first run. Verified statically + headless;
+  needs an OXT pass.
 - **Level 4 no longer freezes the IDE as it builds** (2026-10-08).
   `pfL4Scene` tiles the ground with `repeat while tX <= 6592` and skipped
   the lava pit with `if <in the pit> then next repeat`; in a `repeat while`

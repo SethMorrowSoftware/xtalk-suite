@@ -106,7 +106,13 @@ MEMBERS = [
            siblings=["riptide", "nostrxt"],
            mirror_note="the pre-suite home"),
     Member("box2dxt", "Box2Dxt", "extension", OWNER + "/Box2Dxt",
-           native=True, siblings=[],
+           native=True,
+           # tools/check-platformer-levels.py (2026-10-08) plays the
+           # platformer on the family interpreter riptide's runner loads
+           # (nostrxt's, at import), over this member's own committed
+           # library. (The runner's coinxt binary is optional and this gate
+           # never asks for it.)
+           siblings=["riptide", "nostrxt"],
            mirror_note="the family ancestor's own repository, folded home "
                        "2026-08-14"),
     Member("coinxt", "CoinXT", "extension", OWNER + "/CoinXT",

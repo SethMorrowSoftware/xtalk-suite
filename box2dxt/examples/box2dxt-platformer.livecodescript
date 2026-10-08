@@ -2199,6 +2199,13 @@ command pfStartGame
    pfMakeSounds
    if gHeroSkin is empty then put "beige" into gHeroSkin   -- Phase G: the chosen skin persists; default once
    put pfLoadSheets() into gAssetsOK
+   -- quiet again for the build itself (see the top of this handler), the no-art
+   -- hero included: pfWipeStage deleted its source image, so pfEmbedPlaceholder
+   -- makes it again and re-slices "chars" on every no-art build, and it used to
+   -- do that here with messages on (a newImage, and a deleteImage for each old
+   -- slice; found 2026-10-08 by tools/check-platformer-levels.py)
+   lock messages
+   lock screen
    if gAssetsOK is not true then pfEmbedPlaceholder
    -- Wave 1 toys need the tiles atlas (spring/box/brick/lever/key/door
    -- art); without it each level builds its frozen plain-shape fallback
@@ -2209,8 +2216,6 @@ command pfStartGame
    -- the coin total COUNTS ITSELF: pfMakeCoin and every "?-box" add one
    -- as they are built, so totals can never drift from the layout
    put 0 into gCoinsTotal
-   lock messages   -- quiet again for the build itself (see the top of this handler)
-   lock screen
    -- ===== far backdrop: a per-biome scene that PARALLAX-drifts behind the
    -- foreground (slower than the 1:1 scroll, for depth). Built BEFORE b2kCamOn
    -- so the panels live on the CARD (not the scrolling camera group); the

@@ -71,6 +71,23 @@ python3 tools/check-reference-docs.py
 echo "== box2dxt: tools/audit-platformer.py (advisory; gates only that it still parses) =="
 python3 tools/audit-platformer.py
 
+# The platformer, RUN: every level built and played to its flag on a model
+# of the engine over the committed x86_64-linux library, with the art, from
+# the saved stack the first-run import writes, and with no art at all
+# (2026-10-08). Born the day three reports met the game, none of which a
+# static gate could see: art re-imported on every open, each level built
+# twice, and level 4 never finishing its build (gotcha 32). It needs riptide
+# beside the checkout for the boot runner, and nostrxt for the interpreter
+# that runner loads (tools/member-registry.py in the suite). The fixture
+# runs FIRST: it seeds defects of the classes the gate exists for into
+# copies of the game, side by side, and requires each to fail by name, then
+# the untouched copy to pass, because a gate that went blind prints OK. By
+# far the slowest pair in this list: each plays the whole game more than once.
+echo "== box2dxt: tools/test-platformer-levels.py =="
+python3 tools/test-platformer-levels.py
+echo "== box2dxt: tools/check-platformer-levels.py =="
+python3 tools/check-platformer-levels.py
+
 # Committed-extension COMPLETENESS: --check lists src/code/ and exits
 # non-zero if any platform slot is empty. A different question from the
 # MANIFEST below, which proves the blobs that ARE there are unchanged and

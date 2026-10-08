@@ -256,6 +256,24 @@ record has the same shape five times (trap 21 of `coinxt/CLAUDE.md` names the
 guard predicates it uses now).
 **Rule:** nest the guard: `if not guard(X) then refuse` as its own `if`, then
 the arithmetic or comparison.
+**2026-10-08: the engine's source and its dictionary say the opposite.** In
+`livecode/livecode` at 4606a10 (BUILD_SHORT_VERSION 9.7.0-dp-1, the version
+OXT's Linux preflight printed on 2026-09-26), `MCAnd::eval_ctxt` evaluates its
+right operand only when the left is true, and `MCOr::eval_ctxt` only when it is
+false (`engine/src/operator.cpp`, under the comment `CONDITIONAL EVALUATION`);
+the same tree's dictionary entry for `and` (`docs/dictionary/operator/and.lcdoc`)
+says LiveCode "uses what is known as short-circuit evaluation". Both are
+DOCUMENTED, neither is a run, so row P(b) still decides; the source predicts its
+last line prints `true`, the runbook's REWRITE case. The rule above stays
+either way: it costs nothing, and the family interpreter evaluates both
+operands, so a nested guard is what keeps a headless gate and the engine
+agreeing. Two things already lean on the source's reading: box2dxt's Kit
+guards a reused slice with `there is an image tName and the uB2kSig of image
+tName is ...` (`b2kSheetEnsureIcon` and `b2kSheetEnsureFlip`, since
+2026-10-06), which with persistence on throws on each frame's first slice if
+`and` evaluates both operands (work plan box2dxt coding #12 nests it); and
+box2dxt's `tools/check-platformer-levels.py` (2026-10-08) short-circuits as the
+source does, so it cannot see that reliance.
 
 ### 2.6 `the number of <chunks> of X & Y` counts X alone - the target is a factor
 **OBSERVED**, via a holde-em netplay assertion green on two engine runs:
@@ -1261,7 +1279,11 @@ the picker's `menuPick` is a jump that zeroes the run and rebuilds, so every
 level advanced by its flag was built twice and the final run totals counted one
 level (box2dxt `CHANGELOG.md`, 2026-10-08).
 **Rule:** set it under `lock messages` (or have the `menuPick` handler refuse
-while you are syncing). **Gate:** none. **Does NOT mean:** an option menu set to
+while you are syncing). **Gate:** for that game only, box2dxt's
+`tools/check-platformer-levels.py` (2026-10-08), whose engine model sends
+`menuPick` as this function does and fails a run in which the picker's sync
+sends one (its fixture puts the old sync back); no suite-wide gate.
+**Does NOT mean:** an option menu set to
 the line it already shows sends nothing, nor does one the mouse is over or one
 whose menu is a stack (`menuName`); the pulldown, popup and cascade styles are
 the other way round: per the same function they send `menuPick` on EVERY set.
@@ -1291,7 +1313,12 @@ build's time).
 around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
 unlocked, the engine updates the screen after every statement that dirtied it
 (`MCActionsRunAll` after each statement, `engine/src/handler.cpp`), so a
-teardown under a covering card repaints once per delete. **Gate:** none.
+teardown under a covering card repaints once per delete. **Gate:** for that
+game only, box2dxt's `tools/check-platformer-levels.py` (2026-10-08) counts
+these messages where the engine would send them and fails a level build that
+sends one with messages unlocked; its first run found the no-art build making
+its placeholder hero's image and slices that way, outside the lock (fixed the
+same day). No suite-wide gate.
 **Does NOT mean:** that your own calls stop. Calling a handler directly still
 works; `send` and `dispatch` unlock messages for their own delivery
 (`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the

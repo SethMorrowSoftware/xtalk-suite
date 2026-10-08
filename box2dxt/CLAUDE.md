@@ -92,7 +92,11 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
 6. **Stale handles never crash.** Every public handler tolerates a stale or 0
    handle and an empty control ref (getters return 0 or empty, actions no-op).
 7. **Honesty.** Nothing compiles a `.livecodescript` headlessly here; the user
-   tests in OXT. Say "verified statically; needs an OXT pass".
+   tests in OXT. Say "verified statically; needs an OXT pass". One gate RUNS
+   one: `tools/check-platformer-levels.py` (2026-10-08) plays the platformer
+   on a MODEL of the engine over the committed library (section 8). It
+   settles logic, not parsing or feel, so what it has run is "verified
+   statically + headless; needs an OXT pass", never more.
 8. **Style and git.** Why-dense comments; per-task branch, draft PR, never push
    to `main` without permission.
 
@@ -218,7 +222,8 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
     x stopped at 2944 and L4's build never ended: the IDE froze under the
     cover card (reported 2026-10-08, with the art loaded). Guard the work
     instead (`if <outside the pit> then pfTile ...`), or advance before the
-    `next repeat`.
+    `next repeat`. `tools/test-platformer-levels.py` seeds that loop back,
+    and the level gate must stop it on its statement budget, naming L4.
 
 ## 4. Engine facts from the Phase 0 spike (Win32, 2026-06-10)
 
@@ -308,6 +313,9 @@ rule was earned by a measured regression:
   and an unlocked screen repaints after each statement that dirtied it). The
   price: an open project browser lists stale controls until it is reopened.
   The platformer's `pfStartGame` is the model; the Kit itself locks nothing.
+  `tools/check-platformer-levels.py` counts the create, delete and rename
+  messages a build sends unlocked and fails on any (its first run found the
+  no-art build's `pfEmbedPlaceholder` sending them; section 8).
 
 ## 7. Layout, game-design and asset laws
 
@@ -355,27 +363,55 @@ rule was earned by a measured regression:
   (`kPfUIVersion` 11), faded by one send-driven `blendLevel` ramp, NOT named
   `pf_*` (`pfWipeStage` deletes those). Hero select (1-5) is on the title only.
   Per-level screenshots were rejected (levels are ~6,400px scrolling worlds).
-- **First-run import (2026-10-08; verified statically, needs an OXT pass):** a
-  stack not stamped `uPfMediaV` = `kPfMediaV` imports EVERYTHING at the title
-  (`pfImportMedia`: every atlas, every frame the levels draw sliced at its play
-  scale and mirrored where a sprite turns, every cue), stamps itself and offers
-  a save; a stamped stack adopts it all with no folder and no prompt
-  (`pfMedia`, `pfArtFolder`). Bump `kPfMediaV` when the art set or a cue
+- **First-run import (2026-10-08; verified statically + headless, needs an OXT
+  pass):** a stack not stamped `uPfMediaV` = `kPfMediaV` imports EVERYTHING at
+  the title (`pfImportMedia`: every atlas, every frame the levels draw sliced
+  at its play scale and mirrored where a sprite turns, every cue), stamps
+  itself and offers a save; a stamped stack adopts it all with no folder and no
+  prompt (`pfMedia`, `pfArtFolder`). Bump `kPfMediaV` when the art set or a cue
   changes. Level BUILDS are not carried (the Box2D world is native, not in the
   stack); they only create controls and bodies after the import. The title's
   hero preview draws from a second view, `"hero"` (0.9), because rescaling
   `"chars"` deletes its slices. A Cancel at the folder prompt holds for the
   session (`gArtDeclined`); Shift+Reset clears it, the folder and the stamp.
-- **One quiet build per level (2026-10-08; verified statically, needs an OXT
-  pass):** `pfStartGame` tears down and builds with messages and the screen
-  locked, lifting the message lock only around the sheet load (its folder
-  prompt is a dialog), and syncs the level picker while messages are still
-  locked. That sync used to run unlocked after `gBuilding` went false: an
+- **One quiet build per level (2026-10-08; verified statically + headless,
+  needs an OXT pass):** `pfStartGame` tears down and builds with messages and
+  the screen locked, lifting the message lock only around the sheet load (its
+  folder prompt is a dialog), and syncs the level picker while messages are
+  still locked. That sync used to run unlocked after `gBuilding` went false: an
   option menu's `menuHistory` set sends `menuPick` (engine note 5.14), and the
   picker's jump (`pfJumpToLevel`) rebuilt every flag-advanced level a second
-  time and zeroed the run's banks, so the final win screen counted only L7.
-  The debug overlay (`) prints the last level start's `build N ms, first
-  frame M ms`; `pfImportMedia` makes its images under the same lock.
+  time and zeroed the run's banks, so the final win screen counted only L7. The
+  debug overlay (`) prints the last level start's `build N ms, first frame M
+  ms`; `pfImportMedia` makes its images under the same lock.
+- **Every level, played headlessly (2026-10-08):**
+  `tools/check-platformer-levels.py` runs the SHIPPED game on a model of the
+  engine (a closure compiler with the engine's grammar over the family
+  interpreter riptide's runner loads, and the engine's rules read from its
+  source) over the committed `x86_64-linux` library, so the physics is real
+  Box2D. Three profiles: `art` (the first-run import with the repository's
+  `Spritesheets/`, the save taken), `reopen` (that saved stack in a new sandbox
+  with no art folder: it must read no file) and `placeholder` (Cancel at the
+  folder prompt). Each plays L1 to the L7 win: the flag first (it must refuse),
+  then every key, door, switch, coin, gem, star, checkpoint, ?-box and brick,
+  moving the hero to each (b2kMoveTo), so it proves each level builds, works
+  and can be finished, not that a player can reach everything. It fails a level
+  built twice or out of order, a picker `menuPick`, a create/delete/rename
+  message sent mid-build with messages unlocked, an error no `try` catches, any
+  caught error but three designed ones (a frame `try` swallowing a throw,
+  gotcha 31, above all), a tripped sound system, and an event past its
+  statement budget (a build that never ends fails in seconds, naming its
+  handler). Its first run found the no-art build making the placeholder hero's
+  image and slices with messages on (`pfEmbedPlaceholder` above the build's
+  `lock messages`); it now runs under the lock. Its fixture,
+  `tools/test-platformer-levels.py`, seeds a defect of each class it fails on
+  (the L4 loop, the picker sync after the build, a frame throw, an error no
+  `try` catches, that unlocked placeholder, a saved stack that stops adopting
+  its import, a flag that ignores the coins) and requires each to fail by name.
+  `and`/`or` short-circuit in that model, as the engine's source evaluates
+  them; engine note 2.5 says otherwise until its probe runs, and the Kit's
+  slice guards rely on the source's reading (the suite's WORK-PLAN, box2dxt
+  coding #12).
 - `audit-platformer.py` skips the vertical L7 and ignores `pfMakeSnake`/
   `pfMakeSerpent` (harmless); it reported 0 findings on 2026-09-10.
 - **Parked by D-19 (2026-08-27, "triggers stand"; nothing scheduled):** Wave 8
@@ -539,7 +575,10 @@ Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24,
 pre-fold games on Win32 (June 2026); v31 has no per-member record. Harness v33
 and the saved-stack adoption it asserts, and the platformer's first-run
 import and its one quiet build per level: verified statically; need an OXT
-pass. The five game
+pass. The platformer itself is also verified HEADLESS since 2026-10-08:
+`tools/check-platformer-levels.py` plays all seven levels to the win with the
+art, from the saved stack and with no art, on a model of the engine (section
+8); it upgrades no engine label. The five game
 stacks (demo, platformer, slingshot, contraption builder, spike-gamekit) have
 not been re-run on an engine since the 2026-08-14 fold touched nearly every
 script (as of 2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers
@@ -576,5 +615,9 @@ delegates to it) runs fail-fast: `check-livecodescript.py`;
 cover); `check-lcb-signatures.py`; `check-reference-docs.py` (both reference
 pages name every public handler, and nothing stale); `audit-platformer.py` (ADVISORY: never exits
 non-zero, so it holds only that it still parses the platformer);
+`test-platformer-levels.py` then `check-platformer-levels.py` (the
+platformer PLAYED headlessly, section 8; the slowest pair, and the only one
+that needs siblings: `../riptide` for the boot runner and `../nostrxt` for the
+interpreter it loads, an absent one exiting 2);
 `package-extension.py --check` (no empty platform slot); `sha256sum -c
 src/code/MANIFEST.sha256`.
