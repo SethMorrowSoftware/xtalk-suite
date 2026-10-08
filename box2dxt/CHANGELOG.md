@@ -8,6 +8,27 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **The platformer builds each level once, quietly** (2026-10-08). Every
+  flag that advanced a level built the next one TWICE: the end of
+  `pfStartGame` synced the level picker by setting its `menuHistory`, an
+  option menu sends `menuPick` when that changes it, and the picker's
+  `menuPick` jumps (`pfJumpToLevel`), which zeroed the run's banks and
+  rebuilt the level from scratch. So the card stayed up for two builds,
+  "Play again" did the same, and the win screen's run totals counted only
+  the last level. The sync now runs with messages locked, while
+  `gBuilding` still turns a jump away. The teardown and the build also run
+  with messages locked and the screen locked: in the IDE every control a
+  script creates, renames or deletes runs the IDE's front and back scripts
+  and queues an IDE broadcast for after the build (an open project browser
+  walks every row it lists on each), per the LiveCode 9 IDE source OXT grew
+  from, and an unlocked screen repainted after each delete under the card.
+  The lock is lifted around the sheet load, whose folder prompt is a
+  dialog; the first-run import makes its images the same way. The cost: an
+  open project browser keeps listing the controls it last heard of until
+  it is reopened. The debug overlay (`) shows the last level start's build
+  time and time to its first frame.
+  Engine notes 5.14 and 5.15. Example-only (no Kit change, harness stays
+  v33). Verified statically; needs an OXT pass.
 - **The platformer imports all of its media on its first run** (2026-10-08).
   The first open of `examples/box2dxt-platformer` asks once for the art
   folder, slices every frame of the atlases the seven levels draw from (of

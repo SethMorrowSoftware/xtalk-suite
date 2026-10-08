@@ -294,6 +294,13 @@ rule was earned by a measured regression:
   milliseconds`) with a stale-send guard and the defaultStack pin (gotcha 30).
 - Park before disable: move a body off-world first, then disable.
 - Raw handles in hot paths; friendly wrappers for event and build paths.
+- Build quietly (2026-10-08; verified statically, NOT yet measured): a level's
+  bulk create and delete run under `lock messages` and `lock screen`, the
+  message lock lifted around any dialog (engine note 5.15: in the IDE every
+  scripted create, rename and delete runs IDE script and queues a broadcast,
+  and an unlocked screen repaints after each statement that dirtied it). The
+  price: an open project browser lists stale controls until it is reopened.
+  The platformer's `pfStartGame` is the model; the Kit itself locks nothing.
 
 ## 7. Layout, game-design and asset laws
 
@@ -352,6 +359,16 @@ rule was earned by a measured regression:
   hero preview draws from a second view, `"hero"` (0.9), because rescaling
   `"chars"` deletes its slices. A Cancel at the folder prompt holds for the
   session (`gArtDeclined`); Shift+Reset clears it, the folder and the stamp.
+- **One quiet build per level (2026-10-08; verified statically, needs an OXT
+  pass):** `pfStartGame` tears down and builds with messages and the screen
+  locked, lifting the message lock only around the sheet load (its folder
+  prompt is a dialog), and syncs the level picker while messages are still
+  locked. That sync used to run unlocked after `gBuilding` went false: an
+  option menu's `menuHistory` set sends `menuPick` (engine note 5.14), and the
+  picker's jump (`pfJumpToLevel`) rebuilt every flag-advanced level a second
+  time and zeroed the run's banks, so the final win screen counted only L7.
+  The debug overlay (`) prints the last level start's `build N ms, first
+  frame M ms`; `pfImportMedia` makes its images under the same lock.
 - `audit-platformer.py` skips the vertical L7 and ignores `pfMakeSnake`/
   `pfMakeSerpent` (harmless); it reported 0 findings on 2026-09-10.
 - **Parked by D-19 (2026-08-27, "triggers stand"; nothing scheduled):** Wave 8
@@ -514,7 +531,8 @@ Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24,
 2026-09-25 and twice on 2026-09-26) and on Linux x86_64 (385/0, 2026-09-25 and 2026-09-26; section 12), and the
 pre-fold games on Win32 (June 2026); v31 has no per-member record. Harness v33
 and the saved-stack adoption it asserts, and the platformer's first-run
-import: verified statically; need an OXT pass. The five game
+import and its one quiet build per level: verified statically; need an OXT
+pass. The five game
 stacks (demo, platformer, slingshot, contraption builder, spike-gamekit) have
 not been re-run on an engine since the 2026-08-14 fold touched nearly every
 script (as of 2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers

@@ -389,6 +389,15 @@
 --      placeholder shapes, and every cue plays. Cancel at the prompt on a fresh
 --      stack: placeholder art, and no second prompt on later rebuilds that
 --      session. Shift+Reset: it asks for the folder again.
+--  23. ONE QUIET BUILD PER LEVEL (pfStartGame; verified statically, needs an
+--      OXT pass). Press ` for the debug overlay: its "build N ms, first frame
+--      M ms" is the last level start's own clock, so note it for R on L1 and
+--      for a flag advance, with the project browser open and closed. A flag
+--      now builds the next level ONCE (the picker's sync used to send menuPick
+--      and build it a second time), so the card stays up for one build, not
+--      two; and after L7 the win screen's time, falls, gems, stars and coin
+--      score cover the whole run, not just L7. Shift+Reset still asks for the
+--      folder; the level picker still jumps.
 -- =====================================================================
 
 -- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
@@ -451,6 +460,10 @@ local gGate, gGateSprA, gGateSprB, gPlateHoldMS, gPlateLook, gCamOK
 local gIntroPan, gRunStart, gFalls, gWinLock, gFlagHint, gWinSecs
 local gOuches   -- Wave 2: contact hits (knockbacks) - falls stay falls
 local gBuilding, gLands, gPrevState, gHudNextMS, gGateVel, gAirMS
+-- the BUILD CLOCK the debug overlay (`) reads: when pfStartGame began, how long it
+-- ran, and how long until the new level's first frame (which also counts any work
+-- the build queued for later)
+local gBuildT0, gBuildMS, gBuildFirstMS
 -- the five-level game: which level, its width/name, and the banked
 -- totals carried across level clears for the final win screen
 local gLevel, gLevelW, gLevelName, gTotalFalls, gSecsBank
@@ -1439,6 +1452,12 @@ end pfMedia
 function pfImportMedia
    local tErr
    if pfArtFolder() is empty then return false   -- declined or the wrong folder: placeholder art, nothing to keep
+   -- messages LOCKED from here to the save offer, like a level build (pfStartGame
+   -- says why): the import makes several hundred images, and in the IDE each
+   -- create and rename runs the IDE's handlers and queues a broadcast. The folder
+   -- is remembered and real by now, so nothing below asks until pfImportSave,
+   -- whose dialogs need their messages back.
+   lock messages
    pfCardArtClear
    if there is a field "pfCardText" then set the rect of field "pfCardText" to 32, 40, 992, 600
    pfCardShow pfImportCardText("reading the atlases..."), "26,30,44", true
@@ -1451,7 +1470,10 @@ function pfImportMedia
       b2kSoundsWipe
       set the uPfMediaV of this stack to empty
    end if
-   if pfLoadSheets() is not true then return false
+   if pfLoadSheets() is not true then
+      unlock messages
+      return false
+   end if
    pfImportProgress "synthesizing the sound..."
    pfMakeSounds
    try
@@ -1459,9 +1481,11 @@ function pfImportMedia
    catch tErr
       -- the art is loaded, so the game still runs (frames slice lazily, as before
       -- the import existed); without the stamp the next open imports again
+      unlock messages
       put "the import stopped early: " & line 1 of tErr into gLoadNote
       return true
    end try
+   unlock messages
    set the uPfMediaV of this stack to kPfMediaV
    pfImportSave
    return true
@@ -1923,10 +1947,35 @@ command pfStartGame
    local tRef, tW, tH, tDY, tX, tS
    if gBuilding is true then exit pfStartGame   -- ignore R-mash mid-rebuild
    put true into gBuilding
+   put the milliseconds into gBuildT0
+   put empty into gBuildMS
+   put empty into gBuildFirstMS
+   -- A QUIET BUILD: the old level is torn down and the new one built with MESSAGES
+   -- LOCKED. Every control a script creates, renames or deletes makes the engine
+   -- send newButton, nameChanged or deleteButton (and the image and graphic
+   -- twins), and in the IDE each one runs the IDE's own front and back scripts:
+   -- the back script stamps the new control and tells the script editor about a
+   -- delete, and the front script queues an IDE broadcast that runs after the
+   -- build, before the first frame (an OPEN project browser answers each one by
+   -- walking every row it lists and redrawing). So say the sources of the
+   -- LiveCode 9 IDE that OXT grew from (revIdeMessageHandlerLibrary,
+   -- revBackScriptLibrary, revprojectbrowserbehavior): several handlers for each
+   -- of the hundreds of controls a level makes and the hundreds its teardown
+   -- deletes. Nothing in this game listens for those messages; the lock also keeps
+   -- the level picker's sync below from sending menuPick (see there). The one
+   -- cost: an open project browser keeps listing the controls it last heard of
+   -- until it is closed and reopened. The lock is lifted only around the sheet
+   -- load, which can ask for the art folder: a dialog needs its messages. (send
+   -- and dispatch still deliver: the engine unlocks messages for them itself.)
+   lock messages
    -- COVER FIRST: raise the opaque biome card over everything BEFORE the teardown,
    -- so the player never sees the old level clear or the new one assemble. The
    -- whole build below paints behind it; pfCardReveal fades it out at the end.
    pfCardCover
+   -- ...then paint nothing while the old level goes. Unlocked, the engine updates
+   -- the screen after every statement that dirtied it, so each delete under the
+   -- card cost a repaint of its patch. (pfCardCover has put the card on screen.)
+   lock screen
    if the shiftKey is down then
       -- forget the folder AND the import: the load below asks for a folder again
       -- (even after a Cancel this session), and the next open imports from it
@@ -2143,6 +2192,10 @@ command pfStartGame
    put empty into gSlimeFlip
    b2kSetup
    b2kSetScale 60
+   -- the old level is gone: one repaint (still under the card), and messages back
+   -- on for the sheet load, whose folder prompt is a dialog (pfArtFolder)
+   unlock screen
+   unlock messages
    pfMakeSounds
    if gHeroSkin is empty then put "beige" into gHeroSkin   -- Phase G: the chosen skin persists; default once
    put pfLoadSheets() into gAssetsOK
@@ -2156,6 +2209,7 @@ command pfStartGame
    -- the coin total COUNTS ITSELF: pfMakeCoin and every "?-box" add one
    -- as they are built, so totals can never drift from the layout
    put 0 into gCoinsTotal
+   lock messages   -- quiet again for the build itself (see the top of this handler)
    lock screen
    -- ===== far backdrop: a per-biome scene that PARALLAX-drifts behind the
    -- foreground (slower than the 1:1 scroll, for depth). Built BEFORE b2kCamOn
@@ -2373,11 +2427,22 @@ command pfStartGame
    b2kFrameTarget the long id of me
    b2kContactTarget the long id of me
    pfChromeFront
+   -- show this level on the picker, SILENTLY. Setting an option menu's menuHistory
+   -- to a new line sends it menuPick (the engine's MCButton::setmenuhistory), and
+   -- menuPick on the picker is a jump (pfJumpToLevel): it zeroed the run's banks
+   -- and built this level again from scratch. This line used to run after
+   -- gBuilding went false with messages on, so every flag that advanced a level
+   -- (and every Play again) built the new level TWICE - the card just stayed up
+   -- twice as long - and the win screen's run totals counted only the last level.
+   -- Messages are still locked here, and gBuilding, still true, turns away any
+   -- menuPick that got through anyway.
+   if there is a button "pfbtn_level" then set the menuHistory of button "pfbtn_level" to gLevel
    unlock screen
+   unlock messages
    put empty into gHudLast
    put true into gStarted
    put false into gBuilding
-   if there is a button "pfbtn_level" then set the menuHistory of button "pfbtn_level" to gLevel
+   put the milliseconds - gBuildT0 into gBuildMS
    b2kStart
    -- the level is built and framed behind the opaque card: hold it a beat, then
    -- fade the card out to reveal it (control engages as the gIntroPan beat ends)
@@ -5715,6 +5780,7 @@ end pfWipeStage
 on b2kFrame
    local tHud, tPos, tHS, tCamX, tCamY
    if gHero is empty then exit b2kFrame
+   if gBuildFirstMS is empty then put the milliseconds - gBuildT0 into gBuildFirstMS   -- the build clock: this level's first frame
    -- THE HERO SNAPSHOT, once per frame: position and controller state
    -- feed the kill plane, edge failsafe, sound cues and every pf tick
    -- below (one FFI/string round-trip instead of eight)
@@ -5821,6 +5887,8 @@ on b2kFrame
    if gGemsTotal > 0 then put "   gems " & gGems & "/" & gGemsTotal after tHud
    if gStarsTotal > 0 then put "   star " & gStars & "/" & gStarsTotal after tHud
    put "   score " & gScore & "/" & gScoreTotal after tHud
+   -- how long this level took to build, and to its first frame (pfStartGame)
+   put "   |   build " & gBuildMS & " ms, first frame " & gBuildFirstMS & " ms" after tHud
    if gKeysHeld is not empty then put "   [KEYS " & gKeysHeld & "]" after tHud
    if gCamOK is true then
       put the hScroll of b2kCamGroup() into tHS   -- read the scroll once
