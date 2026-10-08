@@ -4855,8 +4855,10 @@ command pfL4Scene
       end repeat
       put 2048 into tX
       repeat while tX <= 6592
-         if tX >= 2944 and tX < 3456 then next repeat   -- leave the WIDE LAVA PIT open
-         pfTile "terrain_purple_block_top", tX, 576
+         -- leave the WIDE LAVA PIT open. Never `next repeat` here: in a `repeat
+         -- while` it skips the `add` below too, and it once held x at 2944 for
+         -- ever - an endless loop that froze the IDE as L4 began (gotcha 32)
+         if tX < 2944 or tX >= 3456 then pfTile "terrain_purple_block_top", tX, 576
          add 64 to tX
       end repeat
       -- the mid-lava stepping-stone, tiled to match its slab (deck y490): L/M/R
