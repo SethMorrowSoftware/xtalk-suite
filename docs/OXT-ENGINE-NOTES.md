@@ -1251,6 +1251,59 @@ do nothing: the field was not opaque.
 **Gate:** none; the UI kit master (`tools/ui-kit.livecodescript`) sets it
 where it fills a field.
 
+### 5.14 Setting an option menu's `menuHistory` to a new line SENDS `menuPick`
+**DOCUMENTED 2026-10-08** (the LiveCode engine source OXT grew from,
+`livecode/livecode` `engine/src/button.cpp`, `MCButton::setmenuhistory`; not
+confirmed on OXT). No error: a scripted "show the current choice" runs the
+menu's own `menuPick` handler, as if the user had picked. Found statically in
+box2dxt's platformer, whose level-build end synced its level picker that way:
+the picker's `menuPick` is a jump that zeroes the run and rebuilds, so every
+level advanced by its flag was built twice and the final run totals counted one
+level (box2dxt `CHANGELOG.md`, 2026-10-08).
+**Rule:** set it under `lock messages` (or have the `menuPick` handler refuse
+while you are syncing). **Gate:** none. **Does NOT mean:** an option menu set to
+the line it already shows sends nothing, nor does one the mouse is over or one
+whose menu is a stack (`menuName`); the pulldown, popup and cascade styles are
+the other way round: per the same function they send `menuPick` on EVERY set.
+
+### 5.15 A scripted create, rename or delete sends an engine message, and the IDE runs script on each
+**DOCUMENTED 2026-10-08** (the LiveCode engine and IDE sources OXT grew from,
+`livecode/livecode` and `livecode/livecode-ide`; not confirmed on OXT). No
+error, only time: `create` sends `new<Type>` (`newButton`, `newImage`, ...;
+`MCControl::newmessage`) and, when it names the control, `nameChanged`
+(`MCObject::SetName`); `delete` sends `delete<Type>`. In the IDE the front
+script `revIdeMessageHandlerLibrary` answers each by queueing
+`send "ideMessageSend ..." in 0 milliseconds` to the IDE library (the project
+browser updates its tree on `ideNewControl`, `ideControlDeleted` and
+`ideNameChanged`), and the back script `revBackScriptLibrary` stamps each new
+control's `cREVGeneral["revUniqueID"]` and tells the script editor about each
+delete. A game that builds a level from hundreds of controls pays several
+handlers per control, plus a queue that runs before its first frame. An OPEN
+project browser that lists the card adds the most: it answers each one by
+walking every row it holds and redrawing (`addControlToProjectBrowser`,
+`refreshProjectView` and `updateListeners` in `revprojectbrowserbehavior`), so
+its share grows with the square of the controls. Found
+statically in box2dxt's platformer (`pfStartGame`, 2026-10-08), whose level
+builds the maintainer reported slow after a save and reopen; how much of that
+these messages were is not measured yet (its debug overlay now prints each
+build's time).
+**Rule:** bulk create, rename and delete under `lock messages`, and lift it
+around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
+unlocked, the engine updates the screen after every statement that dirtied it
+(`MCActionsRunAll` after each statement, `engine/src/handler.cpp`), so a
+teardown under a covering card repaints once per delete. **Gate:** none.
+**Does NOT mean:** that your own calls stop. Calling a handler directly still
+works; `send` and `dispatch` unlock messages for their own delivery
+(`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the
+lock reset, and the lock itself ends when the handler chain returns to idle
+(`MCU_resetprops`); a script error still reaches the error dialog, which is
+queued the same way (`MCscreen->delaymessage`, `engine/src/object.cpp`). What
+it does stop is every ENGINE message your script may rely on: `menuPick` from a
+`menuHistory` set (5.14), `openCard`, `resizeStack`, `setProp` and `getProp`
+handlers. And the IDE stops following: an open project browser keeps listing
+the controls it last heard of until it is closed and reopened (its
+`preOpenStack` rebuilds the tree).
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending
