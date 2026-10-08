@@ -8,6 +8,35 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **The platformer imports all of its media on its first run** (2026-10-08).
+  The first open of `examples/box2dxt-platformer` asks once for the art
+  folder, slices every frame of the atlases the seven levels draw from (of
+  the backgrounds, only the scenes they use) and the mirrors of everything
+  that turns, synthesizes every sound, stamps the stack and
+  offers to save it. A saved copy opens straight to the title with no art
+  folder, no prompt and no re-import. A Cancel at the folder prompt now
+  holds for the session (it used to re-prompt on every level rebuild);
+  Shift+Reset clears the stamp and imports again. The title's hero preview
+  draws from a view of its own ("hero"), so the title no longer rescales
+  "chars", which deleted every sliced hero frame twice a launch. A level's
+  BUILD is not saved: its Box2D world lives in the native library, so each
+  level start still makes its bodies and controls, from art already in the
+  stack. Verified statically; needs an OXT pass.
+- **Kit: a saved stack's atlases and sounds need no asset files**
+  (2026-10-08). Persisting (`b2kSheetPersist`), `b2kSheetLoadAtlas` stamps
+  its regions on the sheet's source image (the rows of the new
+  `b2kSheetAtlasRows`) and a later load from the same paths adopts that
+  stamp before it touches the disk (the internal `b2kSheetAdoptAtlas`).
+  Before, it read the XML first, so a saved stack whose art folder had
+  moved registered nothing, though `docs/kit-guide.md` said it would.
+  `b2kSound`, `b2kSoundLoop` and `b2kSoundIsLoaded` now find a tone saved
+  in the stack by its clip name (the new `b2kSoundClip`), where the
+  script-local registry came back empty after a reopen.
+  `b2kSpriteSweepOrphans` deletes in one backward pass instead of
+  restarting its scan after every delete, which was quadratic over a
+  stack's hundreds of cached frames. 316 Kit handlers. Harness **v33**
+  adds `stTestSheetAdopt` (20 assertions; 405 expected in a green run).
+  Verified statically; needs an OXT pass.
 - `examples/box2dxt-selftest` **v32** (2026-09-24): `stTestCallerDelimiter`
   drives all ten handlers of the 2026-09-09 delimiter fix under a caller's
   tab (11 assertions; 385 expected in a green run), and prints whether a

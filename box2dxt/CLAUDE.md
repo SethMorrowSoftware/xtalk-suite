@@ -44,7 +44,7 @@ Box2D v3.1.0 (CMake FetchContent, GIT_TAG v3.1.0)
   1=kinematic, 2=dynamic`. 376 public handlers over 373 `binds to` lines: 370
   into `c:box2dxt>` plus three POSIX binds (`_dlopen`, `_dlerror`, `_realpath`)
   that `b2LoadNativeLibHere` uses to preload the library by exact path on Linux.
-- **The Kit.** 313 public `b2k*` handlers incl. the game modules.
+- **The Kit.** 316 public `b2k*` handlers incl. the game modules.
 - **Packaging.** `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare
   token; ids `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
   `universal-mac`; architecture FIRST, `-win32` for both bitnesses), committed
@@ -258,6 +258,17 @@ Only Win32 verdicts exist; the Linux and macOS verdicts (risk R1) are open.
 - Audio = imported `audioClip`s (one at a time) + `b2kToneMake` (pure-script
   WAV). Mute and sounds survive `b2kTeardown`; a play failure trips a dead flag
   (`b2kSoundStatus()`), never an error.
+- **A saved stack needs no asset files (2026-10-08, harness v33).** With
+  `b2kSheetPersist` on, an atlas load stamps its parsed regions on its source
+  image (`uB2kAtlasRows`, `uB2kAtlasXml`) and a later load adopts the stamp
+  before touching the disk (`b2kSheetAdoptAtlas`; the paths are then only the
+  key). Before, the XML was read FIRST, so a reopened stack whose art folder had
+  moved registered nothing although every pixel was inside it, and the
+  `b2kSheetPersist` docs claimed the opposite. Sounds: the registry is a script
+  local, so `b2kSoundClip` adopts a saved `b2ksnd_<name>` clip by name. The
+  adopted key list must be EXACT: saved slices are named by key position
+  (`b2kSheetKeyIndex`), so one skipped row would shift every later frame onto
+  its neighbour's pixels.
 
 ## 6. Performance: the single-threaded envelope and playbook
 
@@ -330,6 +341,17 @@ rule was earned by a measured regression:
   (`kPfUIVersion` 11), faded by one send-driven `blendLevel` ramp, NOT named
   `pf_*` (`pfWipeStage` deletes those). Hero select (1-5) is on the title only.
   Per-level screenshots were rejected (levels are ~6,400px scrolling worlds).
+- **First-run import (2026-10-08; verified statically, needs an OXT pass):** a
+  stack not stamped `uPfMediaV` = `kPfMediaV` imports EVERYTHING at the title
+  (`pfImportMedia`: every atlas, every frame the levels draw sliced at its play
+  scale and mirrored where a sprite turns, every cue), stamps itself and offers
+  a save; a stamped stack adopts it all with no folder and no prompt
+  (`pfMedia`, `pfArtFolder`). Bump `kPfMediaV` when the art set or a cue
+  changes. Level BUILDS are not carried (the Box2D world is native, not in the
+  stack); they only create controls and bodies after the import. The title's
+  hero preview draws from a second view, `"hero"` (0.9), because rescaling
+  `"chars"` deletes its slices. A Cancel at the folder prompt holds for the
+  session (`gArtDeclined`); Shift+Reset clears it, the folder and the stamp.
 - `audit-platformer.py` skips the vertical L7 and ignores `pfMakeSnake`/
   `pfMakeSerpent` (harmless); it reported 0 findings on 2026-09-10.
 - **Parked by D-19 (2026-08-27, "triggers stand"; nothing scheduled):** Wave 8
@@ -377,17 +399,21 @@ save-keys unique per kind; selection is non-destructive (`uSelFg`/`uSelLine`).
 
 ## 10. The self-test harness and the suite fold
 
-`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 32**: 387
-`stAssert` call sites in 52 test handlers (385 execute in a green run), driving
+`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 33**: 407
+`stAssert` call sites in 53 test handlers (405 execute in a green run), driving
 the real Kit (paused world, `b2kStepOnce` hand-stepping, `b2kInputInject`
-keys). The first 39 handlers are BEHAVIOUR tests; the 13 added at v23 are
+keys). The first 40 handlers are BEHAVIOUR tests; the 13 added at v23 are
 shallow "Kit API coverage" sections, and a handler that earns a real lesson
 graduates out. The 2026-09-09 Kit change left it at 31, against rule 2; v32
 (2026-09-24) is its assertion, `stTestCallerDelimiter` (11 lines, all ten fixed
 handlers under a caller's tab, plus two printed observations). v32 ran 385/0 on
 Win32 the same day (section 12), its first run on a card wider than its own 860
 window, and 385/0 on Linux and on Win32 again on 2026-09-25 and on Linux again
-on 2026-09-26; v31 never had a count of its own. Record the total a pass prints rather than matching 385.
+on 2026-09-26; v31 never had a count of its own. v33 (2026-10-08) is the
+assertion for the saved-stack adoption above, `stTestSheetAdopt` (20 lines: the
+atlas stamp adopted with no file and refused for another xml path or with
+persistence off, a saved clip adopted by name, the one-pass orphan sweep); it
+has not run on an engine. Record the total a pass prints rather than matching 405.
 
 It is the EIGHTH member folded into the suite paste (2026-08-16):
 
@@ -415,7 +441,7 @@ no-op; 40 steps of fall at 400 px/s^2 is 89 px (step until grounded, max 150).
 
 ## 11. Coverage
 
-- **Kit: 313/313, zero exemptions** in the suite's
+- **Kit: 316/316, zero exemptions** in the suite's
   `tools/check-suite-coverage.py` (harness v23 closed 211 never-named handlers).
 - **Raw `b2*` script layer:** scripts name 131 of 376 and leave **245**
   unnamed with comments stripped and literals blanked; raw tokens give 132/244
@@ -486,7 +512,9 @@ v29, v30, v31 and v32 totals are not comparable. Kit defects the runs found (fix
 
 Engine-proven: the Kit through harness v32 on Win32 (385/0, 2026-09-24,
 2026-09-25 and twice on 2026-09-26) and on Linux x86_64 (385/0, 2026-09-25 and 2026-09-26; section 12), and the
-pre-fold games on Win32 (June 2026); v31 has no per-member record. The five game
+pre-fold games on Win32 (June 2026); v31 has no per-member record. Harness v33
+and the saved-stack adoption it asserts, and the platformer's first-run
+import: verified statically; need an OXT pass. The five game
 stacks (demo, platformer, slingshot, contraption builder, spike-gamekit) have
 not been re-run on an engine since the 2026-08-14 fold touched nearly every
 script (as of 2026-09-23). The 2026-09-09 delimiter fix: its ten Kit handlers

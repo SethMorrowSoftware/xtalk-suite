@@ -2474,8 +2474,12 @@ end b2kFrameMS
 -- and re-warmed frames are already sliced. The Kit's source images are named
 -- deterministically (b2ksheet_<name>) and tagged with their file path, so a
 -- SAVED stack carries them: on reopen the load reuses the in-stack image
--- (skipping the expensive decode) instead of re-importing from disk. Call
--- b2kSheetsWipe to force a clean reload (e.g. after the user picks a new
+-- (skipping the expensive decode) instead of re-importing from disk. An
+-- ATLAS also carries its parsed regions (stamped on that image), so its
+-- reload needs NO file at all -- not the PNG, not the XML (b2kSheetLoadAtlas);
+-- a grid sheet never needed more than the image. Slices are named
+-- deterministically too, so whatever was sliced before the save is reused.
+-- Call b2kSheetsWipe to force a clean reload (e.g. after the user picks a new
 -- asset folder). OFF by default, so single-shot examples are unchanged.
 command b2kSheetPersist pFlag
    put (pFlag is not false) into sSheetKeep
@@ -2566,8 +2570,13 @@ end b2kSheetAddFrame
 -- regions (<SubTexture name=".." x=".." y=".." width=".." height=".."/> --
 -- the Kenney pack format, like Spritesheets/ in this repo). Frames are
 -- addressed BY NAME. pXmlPath defaults to the png path with ".xml".
+-- Persisting (b2kSheetPersist), the first load also STAMPS the parsed regions
+-- onto the Kit's source image, so a SAVED stack carries the whole atlas --
+-- the pixels AND the names -- and a later load ADOPTS it with no file access
+-- at all (b2kSheetAdoptAtlas): the art folder may be gone, renamed, or on
+-- another machine, because the two paths are then only the cache key.
 command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
-   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig
+   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig, tN
    if pXmlPath is empty then
       put pPngPath into pXmlPath
       set the itemDelimiter to "."
@@ -2576,6 +2585,14 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    put pPngPath & "|" & pXmlPath into tSig
    if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
       return the number of lines of sSheetKeys[pName]   -- already loaded (same png+xml): reuse it
+   end if
+   -- ADOPT before touching the disk: the XML used to be read FIRST, so a saved
+   -- stack whose art folder had moved registered nothing at all, even though
+   -- every pixel it needed was already inside it
+   if sSheetKeep is true then
+      b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+      put the result into tN
+      if tN > 0 then return tN
    end if
    put URL ("file:" & pXmlPath) into tXml
    if tXml is empty then put URL ("binfile:" & pXmlPath) into tXml
@@ -2598,8 +2615,79 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    end repeat
    if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
    put tSig into sSheetPath[pName]
+   -- the stamp a later session adopts: which XML the regions came from, and
+   -- the regions themselves (persisting only: otherwise the source image is
+   -- wiped at teardown, so there is nothing to carry)
+   if sSheetKeep is true then
+      set the uB2kAtlasXml of tRef to pXmlPath
+      set the uB2kAtlasRows of tRef to b2kSheetAtlasRows(pName)
+   end if
    return the number of lines of sSheetKeys[pName]
 end b2kSheetLoadAtlas
+
+-- Every frame's region of a sheet, one line each, "x,y,w,h,name" in source
+-- pixels and definition order (the NAME LAST, so a name holding a comma
+-- survives a round trip). Introspection for any sheet; for an atlas it is
+-- also the stamp a persisting load leaves on its source image.
+function b2kSheetAtlasRows pName
+   local tKey, tOut
+   put empty into tOut
+   repeat for each line tKey in sSheetKeys[pName]
+      put sSheetRegion[pName][tKey] & comma & tKey & cr after tOut
+   end repeat
+   if the last char of tOut is cr then delete the last char of tOut
+   return tOut
+end b2kSheetAtlasRows
+
+-- Internal: register an atlas from the stamp its first load left on the
+-- Kit's source image b2ksheet_<name> (b2kSheetLoadAtlas, persisting): the
+-- rows of b2kSheetAtlasRows and the XML path they were parsed from. Adopted
+-- only when the image still answers to the same png path AND the same xml
+-- path -- the provenance rule b2kSheetSliceSig applies to slices -- so a sheet
+-- name reused for different art reads its files instead. The rows rebuild the
+-- key list EXACTLY (order and any duplicate included), because a saved slice
+-- is found by its key's position (b2kSheetKeyIndex): one row skipped would
+-- shift every later frame onto its neighbour's pixels, so a malformed stamp
+-- adopts nothing. Reports the frame count; 0 = nothing to adopt.
+command b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+   local tImg, tRows, tLine, tKeys, tRegion, tCount, i
+   put "b2ksheet_" & pName into tImg
+   if there is no image tImg then return 0
+   if the uB2kSrcPath of image tImg is not pPngPath then return 0
+   if the uB2kAtlasXml of image tImg is not pXmlPath then return 0
+   if the width of image tImg < 2 then return 0
+   put the uB2kAtlasRows of image tImg into tRows
+   if tRows is empty then return 0
+   put empty into tKeys
+   put 0 into tCount
+   set the itemDelimiter to comma
+   repeat for each line tLine in tRows
+      if item 1 of tLine is not a number or item 2 of tLine is not a number then return 0
+      if item 3 of tLine is not a number or item 4 of tLine is not a number then return 0
+      add 1 to tCount
+      put item 1 to 4 of tLine into tRegion[tCount]
+      -- the name is everything after the fourth comma, taken as CHARS, so a
+      -- comma inside it (or trailing it) comes back exactly as it was written
+      put char ((the number of chars of tRegion[tCount]) + 2) to -1 of tLine into tKeys[tCount]
+      if tKeys[tCount] is empty then return 0
+   end repeat
+   -- a different registration of this name earlier in the session goes
+   -- first; detach its source ref so the forget cannot delete the very image
+   -- being adopted
+   put empty into sSheetSrc[pName]
+   b2kSheetForget pName
+   set the lockLoc of image tImg to true
+   put the long id of image tImg into sSheetSrc[pName]
+   put true into sSheetOwned[pName]
+   put empty into sSheetKeys[pName]
+   repeat with i = 1 to tCount
+      put tRegion[i] into sSheetRegion[pName][tKeys[i]]
+      put tKeys[i] & cr after sSheetKeys[pName]
+   end repeat
+   if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
+   put pPngPath & "|" & pXmlPath into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetAdoptAtlas
 
 function b2kSheetFrames pName
    return the number of lines of sSheetKeys[pName]
@@ -3066,6 +3154,8 @@ end b2kSheetsWipe
 -- last frame. Swept by name prefix on every teardown.
 command b2kSpriteSweepOrphans pKeepAssets
    local tAgain, i, tName, tHit
+   -- 1) dissolve dead viewports first. Ungrouping RENUMBERS the card's
+   --    controls, so the scan restarts after each one (there are few).
    put true into tAgain
    repeat while tAgain
       put false into tAgain
@@ -3081,22 +3171,28 @@ command b2kSpriteSweepOrphans pKeepAssets
             put true into tAgain
             exit repeat
          end if
-         put false into tHit
-         if char 1 to 7 of tName is "b2kspr_" then put true into tHit
-         -- sheet ASSET images (sources + sliced frames + flips) are KEPT
-         -- when persisting (b2kSheetPersist); only sprite instances + dead
-         -- viewports go, so the sheet cache survives the teardown
-         if pKeepAssets is not true then
-            if char 1 to 6 of tName is "b2kfr_" then put true into tHit
-            if char 1 to 6 of tName is "b2kfl_" then put true into tHit
-            if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
-         end if
-         if tHit then
-            delete control i of this card
-            put true into tAgain
-            exit repeat
-         end if
       end repeat
+   end repeat
+   -- 2) everything else in ONE backward pass: deleting control i never
+   --    renumbers the controls below it, so nothing restarts. (Restarting
+   --    from control 1 after every delete was quadratic, and a persisted
+   --    sheet cache keeps hundreds of frame images on the card for every
+   --    rescan to walk past.) The guard covers a delete that took more than
+   --    one control with it.
+   repeat with i = the number of controls of this card down to 1
+      if i > the number of controls of this card then next repeat
+      put the short name of control i of this card into tName
+      put false into tHit
+      if char 1 to 7 of tName is "b2kspr_" then put true into tHit
+      -- sheet ASSET images (sources + sliced frames + flips) are KEPT
+      -- when persisting (b2kSheetPersist); only sprite instances + dead
+      -- viewports go, so the sheet cache survives the teardown
+      if pKeepAssets is not true then
+         if char 1 to 6 of tName is "b2kfr_" then put true into tHit
+         if char 1 to 6 of tName is "b2kfl_" then put true into tHit
+         if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
+      end if
+      if tHit then delete control i of this card
    end repeat
 end b2kSpriteSweepOrphans
 
@@ -5104,7 +5200,8 @@ end b2kCamApply
 -- so a self-contained example ships sound with ZERO asset files. Sounds
 -- are assets that SURVIVE b2kTeardown -- clips are tiny and resets must
 -- stay snappy; names are stable, so re-making replaces rather than
--- accumulates, and b2kSoundsWipe purges everything (it also sweeps
+-- accumulates, a SAVED stack's clips are adopted by name when it reopens
+-- (b2kSoundClip), and b2kSoundsWipe purges everything (it also sweeps
 -- b2ksnd_ clips a dead session left in the stack). Failures degrade to
 -- silence, never to errors: the first play that throws trips a
 -- dead-flag and b2kSoundStatus() says why. The mute is a user
@@ -5228,7 +5325,7 @@ command b2kSound pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSound
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSound
    try
       play audioClip tClip
@@ -5243,7 +5340,7 @@ command b2kSoundLoop pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSoundLoop
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSoundLoop
    try
       play audioClip tClip looping
@@ -5283,8 +5380,26 @@ command b2kSoundVolume pPct
 end b2kSoundVolume
 
 function b2kSoundIsLoaded pName
-   return (sSndClip[pName] is not empty)
+   return (b2kSoundClip(pName) is not empty)
 end b2kSoundIsLoaded
+
+-- Internal: the audioClip that plays pName, or empty. The registry is a
+-- script local, so it is EMPTY when a saved stack reopens; the clips were
+-- saved WITH the stack under their stable names (b2ksnd_<name>), so a clip
+-- already in the stack is ADOPTED into the registry instead of being made
+-- again. A game's "already built?" guard (b2kSoundIsLoaded) then holds
+-- across a reopen, where it used to re-synthesize every cue on every launch.
+function b2kSoundClip pName
+   local tClip
+   if pName is empty then return empty
+   if sSndClip[pName] is not empty then return sSndClip[pName]
+   put "b2ksnd_" & pName into tClip
+   if there is an audioClip tClip then
+      put tClip into sSndClip[pName]
+      return tClip
+   end if
+   return empty
+end b2kSoundClip
 
 -- Empty = healthy; otherwise the most recent reason audio degraded
 -- (missing file, import failure, play failure). Plays never throw.
