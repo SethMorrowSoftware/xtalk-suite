@@ -621,7 +621,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "32"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "33"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-8): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -12701,7 +12701,7 @@ command b2kSheetAddFrame pSheet, pFrame, pX, pY, pW, pH
 end b2kSheetAddFrame
 
 command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
-   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig
+   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig, tN
    if pXmlPath is empty then
       put pPngPath into pXmlPath
       set the itemDelimiter to "."
@@ -12710,6 +12710,14 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    put pPngPath & "|" & pXmlPath into tSig
    if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
       return the number of lines of sSheetKeys[pName]   -- already loaded (same png+xml): reuse it
+   end if
+   -- ADOPT before touching the disk: the XML used to be read FIRST, so a saved
+   -- stack whose art folder had moved registered nothing at all, even though
+   -- every pixel it needed was already inside it
+   if sSheetKeep is true then
+      b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+      put the result into tN
+      if tN > 0 then return tN
    end if
    put URL ("file:" & pXmlPath) into tXml
    if tXml is empty then put URL ("binfile:" & pXmlPath) into tXml
@@ -12732,8 +12740,65 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    end repeat
    if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
    put tSig into sSheetPath[pName]
+   -- the stamp a later session adopts: which XML the regions came from, and
+   -- the regions themselves (persisting only: otherwise the source image is
+   -- wiped at teardown, so there is nothing to carry)
+   if sSheetKeep is true then
+      set the uB2kAtlasXml of tRef to pXmlPath
+      set the uB2kAtlasRows of tRef to b2kSheetAtlasRows(pName)
+   end if
    return the number of lines of sSheetKeys[pName]
 end b2kSheetLoadAtlas
+
+function b2kSheetAtlasRows pName
+   local tKey, tOut
+   put empty into tOut
+   repeat for each line tKey in sSheetKeys[pName]
+      put sSheetRegion[pName][tKey] & comma & tKey & cr after tOut
+   end repeat
+   if the last char of tOut is cr then delete the last char of tOut
+   return tOut
+end b2kSheetAtlasRows
+
+command b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+   local tImg, tRows, tLine, tKeys, tRegion, tCount, i
+   put "b2ksheet_" & pName into tImg
+   if there is no image tImg then return 0
+   if the uB2kSrcPath of image tImg is not pPngPath then return 0
+   if the uB2kAtlasXml of image tImg is not pXmlPath then return 0
+   if the width of image tImg < 2 then return 0
+   put the uB2kAtlasRows of image tImg into tRows
+   if tRows is empty then return 0
+   put empty into tKeys
+   put 0 into tCount
+   set the itemDelimiter to comma
+   repeat for each line tLine in tRows
+      if item 1 of tLine is not a number or item 2 of tLine is not a number then return 0
+      if item 3 of tLine is not a number or item 4 of tLine is not a number then return 0
+      add 1 to tCount
+      put item 1 to 4 of tLine into tRegion[tCount]
+      -- the name is everything after the fourth comma, taken as CHARS, so a
+      -- comma inside it (or trailing it) comes back exactly as it was written
+      put char ((the number of chars of tRegion[tCount]) + 2) to -1 of tLine into tKeys[tCount]
+      if tKeys[tCount] is empty then return 0
+   end repeat
+   -- a different registration of this name earlier in the session goes
+   -- first; detach its source ref so the forget cannot delete the very image
+   -- being adopted
+   put empty into sSheetSrc[pName]
+   b2kSheetForget pName
+   set the lockLoc of image tImg to true
+   put the long id of image tImg into sSheetSrc[pName]
+   put true into sSheetOwned[pName]
+   put empty into sSheetKeys[pName]
+   repeat with i = 1 to tCount
+      put tRegion[i] into sSheetRegion[pName][tKeys[i]]
+      put tKeys[i] & cr after sSheetKeys[pName]
+   end repeat
+   if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
+   put pPngPath & "|" & pXmlPath into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetAdoptAtlas
 
 function b2kSheetFrames pName
    return the number of lines of sSheetKeys[pName]
@@ -13160,6 +13225,8 @@ end b2kSheetsWipe
 
 command b2kSpriteSweepOrphans pKeepAssets
    local tAgain, i, tName, tHit
+   -- 1) dissolve dead viewports first. Ungrouping RENUMBERS the card's
+   --    controls, so the scan restarts after each one (there are few).
    put true into tAgain
    repeat while tAgain
       put false into tAgain
@@ -13175,22 +13242,28 @@ command b2kSpriteSweepOrphans pKeepAssets
             put true into tAgain
             exit repeat
          end if
-         put false into tHit
-         if char 1 to 7 of tName is "b2kspr_" then put true into tHit
-         -- sheet ASSET images (sources + sliced frames + flips) are KEPT
-         -- when persisting (b2kSheetPersist); only sprite instances + dead
-         -- viewports go, so the sheet cache survives the teardown
-         if pKeepAssets is not true then
-            if char 1 to 6 of tName is "b2kfr_" then put true into tHit
-            if char 1 to 6 of tName is "b2kfl_" then put true into tHit
-            if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
-         end if
-         if tHit then
-            delete control i of this card
-            put true into tAgain
-            exit repeat
-         end if
       end repeat
+   end repeat
+   -- 2) everything else in ONE backward pass: deleting control i never
+   --    renumbers the controls below it, so nothing restarts. (Restarting
+   --    from control 1 after every delete was quadratic, and a persisted
+   --    sheet cache keeps hundreds of frame images on the card for every
+   --    rescan to walk past.) The guard covers a delete that took more than
+   --    one control with it.
+   repeat with i = the number of controls of this card down to 1
+      if i > the number of controls of this card then next repeat
+      put the short name of control i of this card into tName
+      put false into tHit
+      if char 1 to 7 of tName is "b2kspr_" then put true into tHit
+      -- sheet ASSET images (sources + sliced frames + flips) are KEPT
+      -- when persisting (b2kSheetPersist); only sprite instances + dead
+      -- viewports go, so the sheet cache survives the teardown
+      if pKeepAssets is not true then
+         if char 1 to 6 of tName is "b2kfr_" then put true into tHit
+         if char 1 to 6 of tName is "b2kfl_" then put true into tHit
+         if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
+      end if
+      if tHit then delete control i of this card
    end repeat
 end b2kSpriteSweepOrphans
 
@@ -15048,7 +15121,7 @@ command b2kSound pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSound
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSound
    try
       play audioClip tClip
@@ -15062,7 +15135,7 @@ command b2kSoundLoop pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSoundLoop
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSoundLoop
    try
       play audioClip tClip looping
@@ -15098,8 +15171,20 @@ command b2kSoundVolume pPct
 end b2kSoundVolume
 
 function b2kSoundIsLoaded pName
-   return (sSndClip[pName] is not empty)
+   return (b2kSoundClip(pName) is not empty)
 end b2kSoundIsLoaded
+
+function b2kSoundClip pName
+   local tClip
+   if pName is empty then return empty
+   if sSndClip[pName] is not empty then return sSndClip[pName]
+   put "b2ksnd_" & pName into tClip
+   if there is an audioClip tClip then
+      put tClip into sSndClip[pName]
+      return tClip
+   end if
+   return empty
+end b2kSoundClip
 
 function b2kSoundStatus
    return sSndNote
@@ -27564,6 +27649,7 @@ command b21stRunAll
    b21stRun "b21stTestSprites"
    b21stRun "b21stTestSheetExtras"
    b21stRun "b21stTestSheetPersist"
+   b21stRun "b21stTestSheetAdopt"
    b21stRun "b21stTestSounds"
    b21stRun "b21stTestCamera"
    b21stRun "b21stTestCamScrolledWrite"
@@ -29008,6 +29094,90 @@ command b21stTestSheetPersist
    if there is an image "st_sheetsrc" then delete image "st_sheetsrc"
    if there is an image "st_sheetsrc2" then delete image "st_sheetsrc2"
 end b21stTestSheetPersist
+
+command b21stTestSheetAdopt
+   local b21tPng, b21tXml, b21tImg, b21tRows, b21tN, b21i
+   b21stNewWorld "adopt: a saved stack's atlas and sounds need no files (v33)"
+   put "/box2dxt-selftest/no-such-atlas.png" into b21tPng
+   put "/box2dxt-selftest/no-such-atlas.xml" into b21tXml
+   -- THE WRITER: any registered sheet reads back as rows, the name last
+   b21stEnsureSheetImage
+   b2kSheetFromImage "stadsrc", the long id of image "st_sheet", 0, 0
+   b2kSheetAddFrame "stadsrc", "face", 4, 4, 10, 12
+   b2kSheetAddFrame "stadsrc", "odd,name", 16, 0, 16, 16
+   put b2kSheetAtlasRows("stadsrc") into b21tRows
+   b21stAssert "b2kSheetAtlasRows writes x,y,w,h,name lines (got " & the number of lines of b21tRows \
+         & ": " & line 1 of b21tRows & " / " & line 2 of b21tRows & ")", \
+         (line 1 of b21tRows is "4,4,10,12,face" and line 2 of b21tRows is "16,0,16,16,odd,name")
+   -- THE STAMP a persisting first load leaves, on an image named the Kit's way
+   put "b2ksheet_stadopt" into b21tImg
+   if there is an image b21tImg then delete image b21tImg
+   create image b21tImg
+   set the visible of image b21tImg to false
+   set the rect of image b21tImg to 0, 0, 32, 32
+   set the uB2kSrcPath of image b21tImg to b21tPng
+   set the uB2kAtlasXml of image b21tImg to b21tXml
+   set the uB2kAtlasRows of image b21tImg to b21tRows
+   -- persist OFF: no adoption, so the load still reads its (missing) files
+   b2kSheetLoadAtlas "stadopt", b21tPng, b21tXml
+   put the result into b21tN
+   b21stAssert "persist off: the stamp is ignored and a missing atlas reports 0 (got " & b21tN & ")", (b21tN is 0)
+   b2kSheetPersist true
+   -- the same png under a DIFFERENT xml path is not the art that was stamped
+   b2kSheetLoadAtlas "stadopt", b21tPng, "/box2dxt-selftest/other.xml"
+   put the result into b21tN
+   b21stAssert "a different xml path is not adopted (got " & b21tN & ")", (b21tN is 0)
+   b2kSheetLoadAtlas "stadopt", b21tPng, b21tXml
+   put the result into b21tN
+   b21stAssert "persist on: the stamp registers the atlas with no file (got " & b21tN & " frames)", (b21tN is 2)
+   b21stAssert "...every name intact, a comma included", \
+         (b2kSheetHasFrame("stadopt", "face") is true and b2kSheetHasFrame("stadopt", "odd,name") is true)
+   b21stAssert "...every region intact (face is " & b2kSheetFrameSize("stadopt", "face") & ")", \
+         (b2kSheetFrameSize("stadopt", "face") is "10,12")
+   b21stAssert "...in the stamped order, which names its saved slices (index " \
+         & b2kSheetKeyIndex("stadopt", "odd,name") & ")", (b2kSheetKeyIndex("stadopt", "odd,name") is 2)
+   b2kSheetLoadAtlas "stadopt", b21tPng, b21tXml
+   put the result into b21tN
+   b21stAssert "an identical reload stays a cache no-op (got " & b21tN & ")", (b21tN is 2)
+   b2kSheetAdoptAtlas "stnone", b21tPng, b21tXml
+   put the result into b21tN
+   b21stAssert "b2kSheetAdoptAtlas reports 0 with no stamped image (got " & b21tN & ")", (b21tN is 0)
+   -- an adopted source is the Kit's own: the explicit purge takes it
+   b2kSheetsWipe
+   b21stAssert "b2kSheetsWipe deletes the adopted source image", (there is no image b21tImg)
+   b2kSheetLoadAtlas "stadopt", b21tPng, b21tXml
+   put the result into b21tN
+   b21stAssert "...so nothing is left to adopt (got " & b21tN & ")", (b21tN is 0)
+   b2kSheetPersist false   -- restore the default so the later tests teardown clean
+   -- SOUNDS: a clip in the stack with no registry entry is adopted
+   b2kSoundsWipe
+   b2kToneMake "stadsnd", "440", 30, 30
+   b21stAssert "the tone made its clip (status: " & b2kSoundStatus() & ")", (there is an audioClip "b2ksnd_stadsnd")
+   if there is an audioClip "b2ksnd_stadsnd" then set the name of audioClip "b2ksnd_stadsnd" to "b2ksnd_stadsaved"
+   b21stAssert "a saved clip with no registry entry is adopted (b2kSoundClip gave " \
+         & b2kSoundClip("stadsaved") & ")", (b2kSoundClip("stadsaved") is "b2ksnd_stadsaved")
+   b21stAssert "...so b2kSoundIsLoaded answers true", (b2kSoundIsLoaded("stadsaved") is true)
+   b21stAssert "b2kSoundClip is empty for a sound with no clip", (b2kSoundClip("stnosuchsound") is empty)
+   b2kSoundsWipe
+   b21stAssert "b2kSoundsWipe purges an adopted clip too", (b2kSoundIsLoaded("stadsaved") is false)
+   -- THE SWEEP: a previous session's orphans, several of each, in one call
+   create group "b2kcam_stdead"
+   create button "b2kspr_stchild" in group "b2kcam_stdead"
+   repeat with b21i = 1 to 4
+      create button ("b2kspr_storphan" & b21i)
+      create image ("b2kfr_storphan_" & b21i)
+   end repeat
+   b2kSpriteSweepOrphans true
+   b21stAssert "one sweep clears every orphan sprite", \
+         (there is no button "b2kspr_storphan1" and there is no button "b2kspr_storphan4")
+   b21stAssert "...dissolves a dead viewport and sweeps its child", \
+         (there is no group "b2kcam_stdead" and there is no button "b2kspr_stchild")
+   b21stAssert "...and keeps the frame assets when asked (keepAssets)", \
+         (there is an image "b2kfr_storphan_1" and there is an image "b2kfr_storphan_4")
+   b2kSpriteSweepOrphans false
+   b21stAssert "without keepAssets the frame images go too", \
+         (there is no image "b2kfr_storphan_1" and there is no image "b2kfr_storphan_4")
+end b21stTestSheetAdopt
 
 command b21stTestCallerDelimiter
    local b21tBox, b21tBall, b21tCap, b21tPoly, b21tA, b21tB, b21tJ, b21tErr, b21tPos, b21tM0, b21tPts0

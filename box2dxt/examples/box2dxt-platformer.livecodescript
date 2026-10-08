@@ -25,8 +25,20 @@
 -- HOW TO RUN
 --   1. In OXT, make a new stack. Put this whole file into the STACK script.
 --   2. Make sure the box2dxt extension is loaded. Close and reopen.
---   3. First run asks for the repo's Spritesheets folder (remembered in a
---      stack property; Shift+Reset re-asks; Cancel = placeholder shapes).
+--   3. First run asks for the repo's Spritesheets folder (Cancel = placeholder
+--      shapes) and IMPORTS EVERYTHING into the stack, once, under the title
+--      card with a progress line: every atlas, every frame of the atlases
+--      the seven levels draw from (sliced at its play scale, mirrored where a
+--      sprite turns; of the backgrounds, the scenes they use), every sound
+--      cue. Then it offers to SAVE the stack. A saved stack opens
+--      straight to the title on any machine - no folder, no prompt, nothing
+--      decoded, sliced or synthesized again (pfImportMedia). Levels still
+--      BUILD on each start (the physics world lives in the native library,
+--      not the stack), but only from what is already inside it.
+--      Shift+Reset forgets the folder AND the import (it asks again, and the
+--      next open imports again). The suite launcher (start-here) makes a fresh
+--      in-memory stack on every OXT launch, so after saving from there, open
+--      the saved file itself (File > Open Stack) to skip the import.
 --
 -- CONTROLS  arrows or A/D run / SPACE / UP / W jumps (tap = hop, hold =
 --           full) / jump AGAIN in mid-air = DOUBLE JUMP / jump off a wall
@@ -367,6 +379,16 @@
 --      win screen says ALL SEVEN LEVELS CLEAR. (Multi-key/switch puzzles were
 --      slice 3, and they SHIPPED - into L2, not here; see pfL2Scene and the L7
 --      banner. This line read as a still-to-come pointer; corrected 2026-08-23.)
+--  22. THE FIRST-RUN IMPORT (pfImportMedia; verified statically, needs an OXT
+--      pass). On a FRESH stack: the folder prompt appears once, then the title
+--      card shows "FIRST RUN" with a progress line that climbs (atlases, sound,
+--      then frames n / total) and the save offer follows. Note how long the
+--      import took. Save, QUIT OXT, move or rename the Spritesheets folder,
+--      reopen the saved stack: the title appears with the hero preview and NO
+--      prompt; levels 1-7 (use the level picker) build with full art and no
+--      placeholder shapes, and every cue plays. Cancel at the prompt on a fresh
+--      stack: placeholder art, and no second prompt on later rebuilds that
+--      session. Shift+Reset: it asks for the folder again.
 -- =====================================================================
 
 -- STATUS: verified statically; NEEDS AN OXT PASS. box2dxt's selftest runs
@@ -380,6 +402,10 @@ local gStarted, gHero, gHeroSpr, gHudLast, gHurtLock
 -- left avatar (hud_player_<skin>) showing the choice. Persists across the run.
 local gHeroSkin, gHudPortrait
 local gCoins, gCoinsTotal, gAssetsOK, gLoadNote, gWon
+-- gArtDeclined: the player cancelled the Spritesheets-folder prompt this
+-- session, so no rebuild asks again (pfArtFolder; Shift+Reset clears it).
+-- Before it, a Cancel re-asked on EVERY level build.
+local gArtDeclined
 -- GEM bonus pickups (separate from the coin/flag gate): collect them for a
 -- bonus tally shown in the HUD + the win screen; the flag never depends on them.
 -- gGems/gGemsTotal are per-level; gGemsBank/gGemsAllTotal carry the run total.
@@ -518,6 +544,11 @@ local gSpiderMinX, gSpiderMaxX, gSpiderDir, gSpiderState
 constant kMoveSpeed = 280
 constant kJumpSpeed = 430
 constant kPfUIVersion = "11"   -- Polish: transition card + boot title screen + recomposed win card
+-- The first-run IMPORT's version (pfImportMedia stamps it on the stack as
+-- uPfMediaV once everything is inside; pfMedia checks it). Bump it when the
+-- art set or a cue changes: a stack stamped with an older value re-imports
+-- from scratch on its next open instead of keeping stale pixels or tones.
+constant kPfMediaV = "1"
 -- Phase F health: the forgiving five-heart buffer. A contact hit (pfOuch) costs
 -- ONE pip with a mercy window between hits; emptying the row routes to the
 -- respawn (pfHurt), which REFILLS it - so the hero never hard-fails on contact,
@@ -553,11 +584,12 @@ constant kHeroSheetB64 = "iVBORw0KGgoAAAANSUhEUgAAAYAAAAEACAYAAAC6d6FnAAAI/ElEQV
 -- Lifecycle
 -- =====================================================================
 on openCard
-   -- Load the five Kenney atlases ONCE, not every level: persisted sheets
+   -- Load the Kenney atlases ONCE, not every level: persisted sheets
    -- survive b2kTeardown (like sounds), so a level rebuild reuses them
-   -- instead of re-decoding/re-parsing/re-slicing. They also ride along in
-   -- a SAVED stack, so a reopened stack skips the disk import entirely
-   -- (Shift+Reset purges the cache to re-pick the art folder).
+   -- instead of re-decoding/re-parsing/re-slicing. The FIRST run imports
+   -- everything into the stack (pfShowTitle -> pfImportMedia), so a SAVED
+   -- stack skips the disk entirely, folder or no folder (Shift+Reset purges
+   -- the import to re-pick the art folder).
    b2kSheetPersist true
    if the uPfUIVersionTag of this stack is not kPfUIVersion then buildPfUI
    if gStarted is true then
@@ -1124,9 +1156,18 @@ command pfShowTitle
    b2kStop                                  -- no game loop while the title is up
    if there is no graphic "pfCardShade" then buildPfUI
    if gHeroSkin is empty then put "beige" into gHeroSkin
-   -- load the atlases ONCE (prompts for the folder the first time, then cached +
-   -- persisted into the game); skip the reload once the chars sheet is present
-   if not b2kSheetHasFrame("chars", "character_beige_idle") then put pfLoadSheets() into gAssetsOK
+   -- the art, ONCE per session (skipped once the chars sheet is present): a stack
+   -- that already holds the import adopts it with no file access; otherwise this
+   -- is the FIRST RUN, which imports everything into the stack now, under the
+   -- card, and offers a save (pfImportMedia; Cancel at its folder prompt =
+   -- placeholder art)
+   if not b2kSheetHasFrame("chars", "character_beige_idle") then
+      if pfMedia() then
+         put pfLoadSheets() into gAssetsOK
+      else
+         put pfImportMedia() into gAssetsOK
+      end if
+   end if
    pfCardArtClear                           -- the title has no level scene (just the hero preview)
    if there is a field "pfCardText" then set the rect of field "pfCardText" to 32, 40, 992, 600
    pfCardShow pfTitleCardText(), "26,30,44", true
@@ -1136,7 +1177,11 @@ end pfShowTitle
 -- The title's live hero preview: a single idle frame of the chosen skin, floating
 -- over the card. A Kit sprite created with the camera OFF is a plain card control
 -- (screen-fixed); b2kTeardown sweeps it when the level builds. Degrades silently
--- to text-only when the art is missing.
+-- to text-only when the art is missing. It draws from "hero", a second view of
+-- the characters atlas at the title's larger scale (pfLoadSheets): it used to
+-- rescale "chars" itself (0.9 here, back to 0.75 for play), and every rescale
+-- DELETES the sheet's sliced frames, so each launch threw away and re-sliced the
+-- hero's frames - the saved import's included.
 command pfTitleHero
    local tFrame
    if gTitleHeroSpr is not empty then
@@ -1145,9 +1190,8 @@ command pfTitleHero
    end if
    if gAssetsOK is not true then exit pfTitleHero
    put "character_" & gHeroSkin & "_idle" into tFrame
-   if not b2kSheetHasFrame("chars", tFrame) then exit pfTitleHero
-   b2kSheetScale "chars", 0.9               -- pfStartGame resets this to 0.75 for play
-   b2kSpriteNew "chars", tFrame, 512, 214
+   if not b2kSheetHasFrame("hero", tFrame) then exit pfTitleHero
+   b2kSpriteNew "hero", tFrame, 512, 214
    put the result into gTitleHeroSpr
    if gTitleHeroSpr is empty then exit pfTitleHero
    lock screen
@@ -1185,26 +1229,22 @@ end pfStartFromTitle
 function pfLoadSheets
    local tFolder, tN, tHero
    put empty into gLoadNote
-   put the uSpriteSheetFolderPath of this stack into tFolder
-   if tFolder is empty or there is no file (tFolder & "/spritesheet-characters-default.png") then
-      answer folder "Locate the repo's Spritesheets folder (Cancel = built-in placeholder art):"
-      put it into tFolder
-      if tFolder is empty or the result is "cancel" then
-         put "no folder chosen" into gLoadNote
-         return false
-      end if
-      if there is no file (tFolder & "/spritesheet-characters-default.png") then
-         put "spritesheet-characters-default.png is not inside: " & tFolder into gLoadNote
-         return false
-      end if
-      set the uSpriteSheetFolderPath of this stack to tFolder
-   end if
+   put pfArtFolder() into tFolder
+   if tFolder is empty then return false     -- pfArtFolder wrote the reason into gLoadNote
    b2kSheetLoadAtlas "chars", tFolder & "/spritesheet-characters-default.png"
    put the result into tN
    if tN < 1 then
       put "characters atlas gave 0 frames (png or xml unreadable) in: " & tFolder into gLoadNote
       return false
    end if
+   -- the hero's PLAY scale, set once, right after the load (pfStartGame repeats it
+   -- as a no-op): the import slices "chars" at this scale, and a scale CHANGE
+   -- deletes every frame already sliced (b2kSheetScale)
+   b2kSheetScale "chars", 0.75
+   -- the TITLE's hero preview: a second view of the same atlas at the title's
+   -- larger scale (pfTitleHero), so the title never rescales "chars"
+   b2kSheetLoadAtlas "hero", tFolder & "/spritesheet-characters-default.png"
+   if the result >= 1 then b2kSheetScale "hero", 0.9
    b2kSheetLoadAtlas "foes", tFolder & "/spritesheet-enemies-default.png"
    put the result into tN
    if tN < 1 then put "enemies atlas gave 0 frames. " after gLoadNote
@@ -1291,7 +1331,9 @@ end pfLoadSheets
 
 -- Every sound is SYNTHESIZED (b2kToneMake): zero asset files. Sounds
 -- survive b2kTeardown (Kit policy), so after the first build a reset
--- skips the synthesis entirely. Short and plucky on purpose - the
+-- skips the synthesis entirely - and the clips are saved with the stack,
+-- where the Kit adopts them on reopen (b2kSoundClip), so the guard below
+-- holds across launches too. Short and plucky on purpose - the
 -- engine plays one clip at a time, so a new cue cuts the previous.
 command pfMakeSounds
    -- guard on the NEWEST cue, so a stack upgraded in place re-synthesizes
@@ -1338,6 +1380,222 @@ command pfEmbedPlaceholder
    b2kAnimDef "chars", "hurtpose", "19", 2, true   -- looping twin (knockback)
    b2kAnimDef "chars", "win", "1-4", 6, true
 end pfEmbedPlaceholder
+
+-- =====================================================================
+-- The first-run IMPORT: every sprite and sound, made once, kept in the stack
+-- =====================================================================
+-- Which folder the atlases load from, or empty with the reason in gLoadNote. A
+-- stack that already HOLDS the import (pfMedia) needs no folder on disk: the
+-- remembered path is only the Kit's cache key by then (b2kSheetLoadAtlas adopts
+-- the in-stack images and their stamped regions BY PATH), so it comes back as is,
+-- even on a machine where it does not exist. Otherwise the folder must be real:
+-- the remembered one while it still is, else ONE prompt per session - a Cancel
+-- stands until Shift+Reset (gArtDeclined).
+function pfArtFolder
+   local tFolder
+   put the uSpriteSheetFolderPath of this stack into tFolder
+   if pfMedia() then return tFolder
+   if tFolder is not empty and there is a file (tFolder & "/spritesheet-characters-default.png") then return tFolder
+   if gArtDeclined is true then
+      put "no folder chosen" into gLoadNote
+      return empty
+   end if
+   answer folder "Locate the repo's Spritesheets folder (Cancel = built-in placeholder art):"
+   put it into tFolder
+   if tFolder is empty or the result is "cancel" then
+      put true into gArtDeclined
+      put "no folder chosen" into gLoadNote
+      return empty
+   end if
+   if there is no file (tFolder & "/spritesheet-characters-default.png") then
+      put "spritesheet-characters-default.png is not inside: " & tFolder into gLoadNote
+      return empty
+   end if
+   set the uSpriteSheetFolderPath of this stack to tFolder
+   return tFolder
+end pfArtFolder
+
+-- True when THIS stack already holds the first-run import (pfImportMedia): its
+-- stamp matches kPfMediaV, a folder key is remembered, and the characters source
+-- image is still inside (a Shift+Reset wipe, or a hand edit that removed it,
+-- falls back to a normal load).
+function pfMedia
+   if the uPfMediaV of this stack is not kPfMediaV then return false
+   if the uSpriteSheetFolderPath of this stack is empty then return false
+   return (there is an image "b2ksheet_chars")
+end pfMedia
+
+-- THE FIRST-RUN IMPORT: everything the game draws or plays, made ONCE and kept in
+-- this stack. Every atlas is decoded, its regions stamped on its source image so a
+-- later load needs no XML (b2kSheetLoadAtlas); every frame the seven levels draw
+-- is sliced at its play scale and mirrored where a sprite can turn (pfImportWarm);
+-- every cue is synthesized (pfMakeSounds). Then the stack is stamped (pfMedia) and
+-- the player is offered a save (pfImportSave): a SAVED stack opens straight to the
+-- title on any machine, with no folder, no prompt and no import. Level BUILDS
+-- cannot be carried - the Box2D world lives in the native library, not the stack
+-- - but from here on a build only creates controls and bodies: nothing is decoded,
+-- parsed, sliced or synthesized again. Runs under the title card with a progress
+-- line (pfShowTitle); returns what gAssetsOK should be.
+function pfImportMedia
+   local tErr
+   if pfArtFolder() is empty then return false   -- declined or the wrong folder: placeholder art, nothing to keep
+   pfCardArtClear
+   if there is a field "pfCardText" then set the rect of field "pfCardText" to 32, 40, 992, 600
+   pfCardShow pfImportCardText("reading the atlases..."), "26,30,44", true
+   -- a STALE import (kPfMediaV bumped: new art or new cues) starts from nothing; a
+   -- stack that never imported keeps what its earlier sessions cached, since the
+   -- Kit re-checks every reuse against its path and scale stamps. The stamp comes
+   -- off first, so an import that stops part-way is never taken for a whole one.
+   if the uPfMediaV of this stack is not empty then
+      b2kSheetsWipe
+      b2kSoundsWipe
+      set the uPfMediaV of this stack to empty
+   end if
+   if pfLoadSheets() is not true then return false
+   pfImportProgress "synthesizing the sound..."
+   pfMakeSounds
+   try
+      pfImportWarm
+   catch tErr
+      -- the art is loaded, so the game still runs (frames slice lazily, as before
+      -- the import existed); without the stamp the next open imports again
+      put "the import stopped early: " & line 1 of tErr into gLoadNote
+      return true
+   end try
+   set the uPfMediaV of this stack to kPfMediaV
+   pfImportSave
+   return true
+end pfImportMedia
+
+-- Slice - and mirror, where a sprite can turn - every frame pfWarmWants lists,
+-- NOW: no level ever slices lazily again (a visible hitch, ~250 ms per frame by
+-- pfMakeBonk's note), and a saved stack carries every frame. pfLoadSheets has set
+-- each sheet's scale, so each slice is baked at the scale the game draws it (the
+-- uB2kSig a later session checks, b2kSheetSliceSig). The count paints on the card
+-- every ten frames.
+command pfImportWarm
+   local tSheets, tSheet, tWant, tF, tTotal, tDone, tNext
+   put "chars,hero,foes,tiles,hud,bg,spooks" into tSheets
+   put 0 into tTotal
+   set the itemDelimiter to comma
+   repeat for each item tSheet in tSheets
+      put pfWarmWants(tSheet) into tWant[tSheet]
+      add the number of lines of tWant[tSheet] to tTotal
+   end repeat
+   put 0 into tDone
+   put 0 into tNext
+   lock screen
+   repeat for each item tSheet in tSheets
+      repeat for each line tF in tWant[tSheet]
+         b2kSheetEnsureIcon tSheet, tF
+         if pfWarmFlips(tSheet, tF) then b2kSheetEnsureFlip tSheet, tF
+         add 1 to tDone
+         if tDone >= tNext then
+            unlock screen
+            pfImportProgress "preparing the sprites   " & tDone & " / " & tTotal
+            lock screen
+            put tDone + 10 into tNext
+         end if
+      end repeat
+   end repeat
+   unlock screen
+end pfImportWarm
+
+-- The frames pfImportWarm slices for one sheet, one per line (empty for a sheet
+-- that did not load: an optional one, like "spooks", simply contributes none).
+function pfWarmWants pSheet
+   local tAll, tF, tOut
+   put b2kSheetFrameNames(pSheet) into tAll
+   put empty into tOut
+   repeat for each line tF in tAll
+      if pfWarmWanted(pSheet, tF) then put tF & cr after tOut
+   end repeat
+   if the last char of tOut is cr then delete the last char of tOut
+   return tOut
+end pfWarmWants
+
+-- Every frame of the atlases the levels draw from, except where that would bloat
+-- the stack with art the game never shows: "bg" keeps only the biome scenes the
+-- levels use (pfLevelBgFrame; each is a full 640px panel at its 2.5 scale); "hud"
+-- - the art HUD's second view of the tiles atlas - only its hud_* cells plus the
+-- gem and star it borrows; "tiles" skips those same hud_* cells (they are drawn
+-- only through "hud"); "hero", the title preview, only the five idle frames.
+function pfWarmWanted pSheet, pFrame
+   local tL
+   switch pSheet
+      case "bg"
+         repeat with tL = 1 to 7
+            if pFrame is pfLevelBgFrame(tL) then return true
+         end repeat
+         return false
+      case "hud"
+         return (char 1 to 4 of pFrame is "hud_" or pFrame is "gem_blue" or pFrame is "star")
+      case "tiles"
+         return (char 1 to 4 of pFrame is not "hud_")
+      case "hero"
+         return (char 1 to 10 of pFrame is "character_" and char -5 to -1 of pFrame is "_idle")
+      default
+         return true
+   end switch
+end pfWarmWanted
+
+-- Which warmed frames also get their MIRROR made now: every frame of the sheets
+-- whose sprites turn to face the way they move (the hero's "chars", the walkers
+-- and flyers of "foes" and "spooks"), and the ramp tiles pfTile lays down flipped.
+-- Anything else that ever turns still mirrors on first use (a clone, not a slice).
+function pfWarmFlips pSheet, pFrame
+   if pSheet is "chars" or pSheet is "foes" or pSheet is "spooks" then return true
+   if pSheet is "tiles" then return (pFrame contains "_ramp_")
+   return false
+end pfWarmFlips
+
+-- The import card's text: the title card's look, with pLine the live progress.
+function pfImportCardText pLine
+   return "B O X 2 D X T" & cr & "a Box2D physics platformer demo" & cr & cr & cr & cr & "FIRST RUN  -  bringing every sprite and sound into this stack" & cr & cr & pLine & cr & cr & cr & cr & "This happens once. Save the stack when it offers," & cr & "and every later run opens straight to the title."
+end pfImportCardText
+
+-- Paint one progress line on the import card NOW, mid-handler (pfCardShow's
+-- lock-then-unlock flush), so the player sees the import moving.
+command pfImportProgress pLine
+   if there is no field "pfCardText" then exit pfImportProgress
+   lock screen
+   set the text of field "pfCardText" to pfImportCardText(pLine)
+   unlock screen
+end pfImportProgress
+
+-- Offer to SAVE right after the import: it lives in this stack's images and audio
+-- clips, and only a saved stack carries it into the next run. A stack that was
+-- never saved (a new one, or the one the suite launcher makes in memory) is saved
+-- AS a file the player picks, and so is one whose file is a .livecodescript: a
+-- binary stack must never be written over a script source. A script-only stack
+-- saves its script and nothing else, so it cannot keep the import: say so.
+command pfImportSave
+   local tErr, tFile, tRes
+   answer "Every sprite and sound the platformer uses is now inside this stack." & cr & cr & "Save the stack now? Later runs then open straight to the title, with no folder and no import." with "Not now" or "Save"
+   if it is not "Save" then exit pfImportSave
+   if the scriptOnly of this stack is true then
+      answer "This is a script-only stack: it saves its script and nothing else, so it cannot keep the import. Paste the script into an ordinary stack (HOW TO RUN, at the top of the script) to keep it."
+      exit pfImportSave
+   end if
+   put the effective filename of this stack into tFile
+   if tFile is empty or tFile ends with ".livecodescript" then
+      ask file "Save the platformer, with everything it imported, as:" with "box2dxt-platformer.livecode"
+      put it into tFile
+      if tFile is empty then exit pfImportSave
+   end if
+   put empty into tRes
+   try
+      save this stack as tFile
+      put the result into tRes   -- the very next statement: the result is consumed by the next command (gotcha 27)
+   catch tErr
+      put line 1 of tErr into tRes
+   end try
+   if tRes is not empty then
+      answer "The save failed: " & tRes
+      exit pfImportSave
+   end if
+   answer "Saved:" & cr & tFile & cr & cr & "Next time open that file itself (File > Open Stack): it starts at the title with everything inside."
+end pfImportSave
 
 -- =====================================================================
 -- Wave 8: the PARALLAX backdrop (per-biome scene, drifting for depth)
@@ -1670,7 +1928,11 @@ command pfStartGame
    -- whole build below paints behind it; pfCardReveal fades it out at the end.
    pfCardCover
    if the shiftKey is down then
+      -- forget the folder AND the import: the load below asks for a folder again
+      -- (even after a Cancel this session), and the next open imports from it
       set the uSpriteSheetFolderPath of this stack to empty
+      set the uPfMediaV of this stack to empty
+      put false into gArtDeclined
       b2kSheetsWipe   -- drop the cached sheets so a re-picked folder loads fresh
    end if
    try
@@ -5432,19 +5694,18 @@ command pfChromeFront
    if there is a graphic "pfCardShade" and the visible of graphic "pfCardShade" is true then pfCardRaise
 end pfChromeFront
 
+-- Delete every pf_* control (the level just torn down) in ONE backward pass:
+-- deleting control i never renumbers the controls below it, so nothing restarts.
+-- The old loop rescanned from control 1 after every delete - quadratic - and the
+-- card now also holds the import's several hundred hidden frame images, which
+-- every rescan walked past. The guard covers a delete that took more than one
+-- control with it.
 command pfWipeStage
-   local tAgain, i, tName
-   put true into tAgain
-   repeat while tAgain
-      put false into tAgain
-      repeat with i = 1 to the number of controls of this card
-         put the short name of control i of this card into tName
-         if char 1 to 3 of tName is "pf_" then
-            delete control i of this card
-            put true into tAgain
-            exit repeat
-         end if
-      end repeat
+   local i, tName
+   repeat with i = the number of controls of this card down to 1
+      if i > the number of controls of this card then next repeat
+      put the short name of control i of this card into tName
+      if char 1 to 3 of tName is "pf_" then delete control i of this card
    end repeat
 end pfWipeStage
 
@@ -9672,8 +9933,12 @@ end b2kFrameMS
 -- and re-warmed frames are already sliced. The Kit's source images are named
 -- deterministically (b2ksheet_<name>) and tagged with their file path, so a
 -- SAVED stack carries them: on reopen the load reuses the in-stack image
--- (skipping the expensive decode) instead of re-importing from disk. Call
--- b2kSheetsWipe to force a clean reload (e.g. after the user picks a new
+-- (skipping the expensive decode) instead of re-importing from disk. An
+-- ATLAS also carries its parsed regions (stamped on that image), so its
+-- reload needs NO file at all -- not the PNG, not the XML (b2kSheetLoadAtlas);
+-- a grid sheet never needed more than the image. Slices are named
+-- deterministically too, so whatever was sliced before the save is reused.
+-- Call b2kSheetsWipe to force a clean reload (e.g. after the user picks a new
 -- asset folder). OFF by default, so single-shot examples are unchanged.
 command b2kSheetPersist pFlag
    put (pFlag is not false) into sSheetKeep
@@ -9764,8 +10029,13 @@ end b2kSheetAddFrame
 -- regions (<SubTexture name=".." x=".." y=".." width=".." height=".."/> --
 -- the Kenney pack format, like Spritesheets/ in this repo). Frames are
 -- addressed BY NAME. pXmlPath defaults to the png path with ".xml".
+-- Persisting (b2kSheetPersist), the first load also STAMPS the parsed regions
+-- onto the Kit's source image, so a SAVED stack carries the whole atlas --
+-- the pixels AND the names -- and a later load ADOPTS it with no file access
+-- at all (b2kSheetAdoptAtlas): the art folder may be gone, renamed, or on
+-- another machine, because the two paths are then only the cache key.
 command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
-   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig
+   local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig, tN
    if pXmlPath is empty then
       put pPngPath into pXmlPath
       set the itemDelimiter to "."
@@ -9774,6 +10044,14 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    put pPngPath & "|" & pXmlPath into tSig
    if sSheetKeep is true and sSheetKeys[pName] is not empty and sSheetPath[pName] is tSig then
       return the number of lines of sSheetKeys[pName]   -- already loaded (same png+xml): reuse it
+   end if
+   -- ADOPT before touching the disk: the XML used to be read FIRST, so a saved
+   -- stack whose art folder had moved registered nothing at all, even though
+   -- every pixel it needed was already inside it
+   if sSheetKeep is true then
+      b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+      put the result into tN
+      if tN > 0 then return tN
    end if
    put URL ("file:" & pXmlPath) into tXml
    if tXml is empty then put URL ("binfile:" & pXmlPath) into tXml
@@ -9796,8 +10074,79 @@ command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    end repeat
    if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
    put tSig into sSheetPath[pName]
+   -- the stamp a later session adopts: which XML the regions came from, and
+   -- the regions themselves (persisting only: otherwise the source image is
+   -- wiped at teardown, so there is nothing to carry)
+   if sSheetKeep is true then
+      set the uB2kAtlasXml of tRef to pXmlPath
+      set the uB2kAtlasRows of tRef to b2kSheetAtlasRows(pName)
+   end if
    return the number of lines of sSheetKeys[pName]
 end b2kSheetLoadAtlas
+
+-- Every frame's region of a sheet, one line each, "x,y,w,h,name" in source
+-- pixels and definition order (the NAME LAST, so a name holding a comma
+-- survives a round trip). Introspection for any sheet; for an atlas it is
+-- also the stamp a persisting load leaves on its source image.
+function b2kSheetAtlasRows pName
+   local tKey, tOut
+   put empty into tOut
+   repeat for each line tKey in sSheetKeys[pName]
+      put sSheetRegion[pName][tKey] & comma & tKey & cr after tOut
+   end repeat
+   if the last char of tOut is cr then delete the last char of tOut
+   return tOut
+end b2kSheetAtlasRows
+
+-- Internal: register an atlas from the stamp its first load left on the
+-- Kit's source image b2ksheet_<name> (b2kSheetLoadAtlas, persisting): the
+-- rows of b2kSheetAtlasRows and the XML path they were parsed from. Adopted
+-- only when the image still answers to the same png path AND the same xml
+-- path -- the provenance rule b2kSheetSliceSig applies to slices -- so a sheet
+-- name reused for different art reads its files instead. The rows rebuild the
+-- key list EXACTLY (order and any duplicate included), because a saved slice
+-- is found by its key's position (b2kSheetKeyIndex): one row skipped would
+-- shift every later frame onto its neighbour's pixels, so a malformed stamp
+-- adopts nothing. Reports the frame count; 0 = nothing to adopt.
+command b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
+   local tImg, tRows, tLine, tKeys, tRegion, tCount, i
+   put "b2ksheet_" & pName into tImg
+   if there is no image tImg then return 0
+   if the uB2kSrcPath of image tImg is not pPngPath then return 0
+   if the uB2kAtlasXml of image tImg is not pXmlPath then return 0
+   if the width of image tImg < 2 then return 0
+   put the uB2kAtlasRows of image tImg into tRows
+   if tRows is empty then return 0
+   put empty into tKeys
+   put 0 into tCount
+   set the itemDelimiter to comma
+   repeat for each line tLine in tRows
+      if item 1 of tLine is not a number or item 2 of tLine is not a number then return 0
+      if item 3 of tLine is not a number or item 4 of tLine is not a number then return 0
+      add 1 to tCount
+      put item 1 to 4 of tLine into tRegion[tCount]
+      -- the name is everything after the fourth comma, taken as CHARS, so a
+      -- comma inside it (or trailing it) comes back exactly as it was written
+      put char ((the number of chars of tRegion[tCount]) + 2) to -1 of tLine into tKeys[tCount]
+      if tKeys[tCount] is empty then return 0
+   end repeat
+   -- a different registration of this name earlier in the session goes
+   -- first; detach its source ref so the forget cannot delete the very image
+   -- being adopted
+   put empty into sSheetSrc[pName]
+   b2kSheetForget pName
+   set the lockLoc of image tImg to true
+   put the long id of image tImg into sSheetSrc[pName]
+   put true into sSheetOwned[pName]
+   put empty into sSheetKeys[pName]
+   repeat with i = 1 to tCount
+      put tRegion[i] into sSheetRegion[pName][tKeys[i]]
+      put tKeys[i] & cr after sSheetKeys[pName]
+   end repeat
+   if the last char of sSheetKeys[pName] is cr then delete the last char of sSheetKeys[pName]
+   put pPngPath & "|" & pXmlPath into sSheetPath[pName]
+   return the number of lines of sSheetKeys[pName]
+end b2kSheetAdoptAtlas
 
 function b2kSheetFrames pName
    return the number of lines of sSheetKeys[pName]
@@ -10264,6 +10613,8 @@ end b2kSheetsWipe
 -- last frame. Swept by name prefix on every teardown.
 command b2kSpriteSweepOrphans pKeepAssets
    local tAgain, i, tName, tHit
+   -- 1) dissolve dead viewports first. Ungrouping RENUMBERS the card's
+   --    controls, so the scan restarts after each one (there are few).
    put true into tAgain
    repeat while tAgain
       put false into tAgain
@@ -10279,22 +10630,28 @@ command b2kSpriteSweepOrphans pKeepAssets
             put true into tAgain
             exit repeat
          end if
-         put false into tHit
-         if char 1 to 7 of tName is "b2kspr_" then put true into tHit
-         -- sheet ASSET images (sources + sliced frames + flips) are KEPT
-         -- when persisting (b2kSheetPersist); only sprite instances + dead
-         -- viewports go, so the sheet cache survives the teardown
-         if pKeepAssets is not true then
-            if char 1 to 6 of tName is "b2kfr_" then put true into tHit
-            if char 1 to 6 of tName is "b2kfl_" then put true into tHit
-            if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
-         end if
-         if tHit then
-            delete control i of this card
-            put true into tAgain
-            exit repeat
-         end if
       end repeat
+   end repeat
+   -- 2) everything else in ONE backward pass: deleting control i never
+   --    renumbers the controls below it, so nothing restarts. (Restarting
+   --    from control 1 after every delete was quadratic, and a persisted
+   --    sheet cache keeps hundreds of frame images on the card for every
+   --    rescan to walk past.) The guard covers a delete that took more than
+   --    one control with it.
+   repeat with i = the number of controls of this card down to 1
+      if i > the number of controls of this card then next repeat
+      put the short name of control i of this card into tName
+      put false into tHit
+      if char 1 to 7 of tName is "b2kspr_" then put true into tHit
+      -- sheet ASSET images (sources + sliced frames + flips) are KEPT
+      -- when persisting (b2kSheetPersist); only sprite instances + dead
+      -- viewports go, so the sheet cache survives the teardown
+      if pKeepAssets is not true then
+         if char 1 to 6 of tName is "b2kfr_" then put true into tHit
+         if char 1 to 6 of tName is "b2kfl_" then put true into tHit
+         if char 1 to 9 of tName is "b2ksheet_" then put true into tHit
+      end if
+      if tHit then delete control i of this card
    end repeat
 end b2kSpriteSweepOrphans
 
@@ -12302,7 +12659,8 @@ end b2kCamApply
 -- so a self-contained example ships sound with ZERO asset files. Sounds
 -- are assets that SURVIVE b2kTeardown -- clips are tiny and resets must
 -- stay snappy; names are stable, so re-making replaces rather than
--- accumulates, and b2kSoundsWipe purges everything (it also sweeps
+-- accumulates, a SAVED stack's clips are adopted by name when it reopens
+-- (b2kSoundClip), and b2kSoundsWipe purges everything (it also sweeps
 -- b2ksnd_ clips a dead session left in the stack). Failures degrade to
 -- silence, never to errors: the first play that throws trips a
 -- dead-flag and b2kSoundStatus() says why. The mute is a user
@@ -12426,7 +12784,7 @@ command b2kSound pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSound
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSound
    try
       play audioClip tClip
@@ -12441,7 +12799,7 @@ command b2kSoundLoop pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
    if sSndMute is true or sSndDead is true then exit b2kSoundLoop
-   put sSndClip[pName] into tClip
+   put b2kSoundClip(pName) into tClip
    if tClip is empty then exit b2kSoundLoop
    try
       play audioClip tClip looping
@@ -12481,8 +12839,26 @@ command b2kSoundVolume pPct
 end b2kSoundVolume
 
 function b2kSoundIsLoaded pName
-   return (sSndClip[pName] is not empty)
+   return (b2kSoundClip(pName) is not empty)
 end b2kSoundIsLoaded
+
+-- Internal: the audioClip that plays pName, or empty. The registry is a
+-- script local, so it is EMPTY when a saved stack reopens; the clips were
+-- saved WITH the stack under their stable names (b2ksnd_<name>), so a clip
+-- already in the stack is ADOPTED into the registry instead of being made
+-- again. A game's "already built?" guard (b2kSoundIsLoaded) then holds
+-- across a reopen, where it used to re-synthesize every cue on every launch.
+function b2kSoundClip pName
+   local tClip
+   if pName is empty then return empty
+   if sSndClip[pName] is not empty then return sSndClip[pName]
+   put "b2ksnd_" & pName into tClip
+   if there is an audioClip tClip then
+      put tClip into sSndClip[pName]
+      return tClip
+   end if
+   return empty
+end b2kSoundClip
 
 -- Empty = healthy; otherwise the most recent reason audio degraded
 -- (missing file, import failure, play failure). Plays never throw.

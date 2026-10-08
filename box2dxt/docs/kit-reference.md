@@ -14,7 +14,7 @@ stack and `start using` it). It requires the `box2dxt` extension loaded
 > the Kit start-to-finish with runnable examples. This page is the quick-lookup
 > reference.
 
-This page names every one of the Kit's 313 public `b2k...` handlers (completed
+This page names every one of the Kit's 316 public `b2k...` handlers (completed
 2026-09-24; `tools/check-reference-docs.py`, in this member's
 `tools/run-gates.sh`, fails when one is missing). The ones the Kit runs on your
 behalf - the loop, the renderer, the event plumbing - are gathered at the end
@@ -297,13 +297,14 @@ ghost sprites frozen on their last frame).
 | Handler | Purpose |
 |---------|---------|
 | `b2kSheetLoad name, path, fw, fh [,count] [,margin] [,spacing]` → count | Register an image file as a uniform grid of `fw`×`fh` frames, numbered 1..N row-major. `margin` = outer border px, `spacing` = gap between cells (both default 0, edge-to-edge). Frame size **0 = no grid**: name regions yourself with `b2kSheetAddFrame`. |
-| `b2kSheetLoadAtlas name, pngPath [,xmlPath]` → count | Register a packed atlas: PNG + `TextureAtlas` XML naming its regions (the Kenney format - see `Spritesheets/` in this repo). Frames are addressed **by name** (`"coin_gold"`). XML path defaults to the PNG path with `.xml`. |
+| `b2kSheetLoadAtlas name, pngPath [,xmlPath]` → count | Register a packed atlas: PNG + `TextureAtlas` XML naming its regions (the Kenney format - see `Spritesheets/` in this repo). Frames are addressed **by name** (`"coin_gold"`). XML path defaults to the PNG path with `.xml`. With `b2kSheetPersist` on, the first load stamps the parsed regions on the Kit's source image, and a later load (a saved, reopened stack) **adopts that stamp with no file access** - the two paths are then only the cache key and need not exist (`b2kSheetAdoptAtlas`). |
 | `b2kSheetFromImage name, imgRef, fw, fh [,count] [,margin] [,spacing]` → count | Register an image already in the stack (e.g. base64-embedded art) as a grid sheet. Same grid arguments as `b2kSheetLoad`. |
 | `b2kSheetAddFrame sheet, frame, x, y, w, h` | Name one region yourself - the **no-XML path for packed sheets in any layout**: load the source with frame size 0, then add each frame by name (any size/position; redefining re-bakes). Also works on top of a grid or atlas. |
 | `b2kSheetFrames(name)` / `b2kSheetHasFrame(name, frame)` / `b2kSheetFrameNames(name)` | Frame count / existence / every frame key one per line (introspect an atlas you didn't make). |
+| `b2kSheetAtlasRows(name)` → lines | Every frame's region, one `x,y,w,h,name` line each in source pixels and definition order (the name LAST, so a comma inside it survives). Introspection for any sheet; for an atlas it is also the stamp a persisting load leaves for a saved stack to adopt. |
 | `b2kSheetScale name, factor` | Display scale for the sheet's frames (default 1, range 0.05-8) - the engine resamples at slice time, so **any frame size displays at any sprite size**. Set it right after loading, before creating sprites or anims. |
 | `b2kSheetFrameSize(name, frame)` → "w,h" | A frame's display size (region × scale) - lay out tiles and platforms from this instead of hard-coding pixels. |
-| `b2kSheetPersist flag` / `b2kSheetPersists()` | **Opt-in (default off).** When on, loaded sheets are treated as assets that **survive `b2kTeardown`** (like synthesized sounds) - so a multi-LEVEL game loads its atlases **once**, not on every rebuild (re-decoding/re-parsing/re-slicing is the costliest thing the Kit does). An identical reload becomes a no-op, and because the Kit's source/frame images are named deterministically (`b2ksheet_<name>` / `b2kfr_<sheet>_<n>`), a **saved stack** carries the cache: on reopen the load adopts the in-stack images instead of importing from disk. `b2kSheetsWipe` is still the explicit purge (e.g. after the user picks a different asset folder). |
+| `b2kSheetPersist flag` / `b2kSheetPersists()` | **Opt-in (default off).** When on, loaded sheets are treated as assets that **survive `b2kTeardown`** (like synthesized sounds) - so a multi-LEVEL game loads its atlases **once**, not on every rebuild (re-decoding/re-parsing/re-slicing is the costliest thing the Kit does). An identical reload becomes a no-op, and because the Kit's source/frame images are named deterministically (`b2ksheet_<name>` / `b2kfr_<sheet>_<n>`), a **saved stack** carries the cache: on reopen the load adopts the in-stack images instead of importing from disk - an atlas needs neither its PNG nor its XML then (its regions are stamped on the source image), a grid sheet only ever needed the image, and every frame sliced before the save is reused if it was baked from the same art at the same scale. `b2kSheetsWipe` is still the explicit purge (e.g. after the user picks a different asset folder). |
 | `b2kAnimDef sheet, anim, frames, fps [,loop]` | Name an animation: `frames` is a comma list of names and/or indices, numeric ranges (`"1-8"`) expand. `loop` defaults true. |
 | `b2kSpriteNew sheet [,frame, x, y]` → control | Create a sprite showing `frame` (default: the sheet's first), sized to the frame. An ordinary Kit control: give it a body (`b2kAddCapsule ...`) or bind it to one. |
 | `b2kSpriteFromGIF path [,x, y]` → control | An animated-GIF sprite (the engine plays it; play/stop/frame map to `repeatCount`/`currentFrame`). |
@@ -528,8 +529,9 @@ errors - the first play that throws trips a dead-flag.
 | `b2kSoundLoop name` / `b2kSoundStop` | Loop ambience until stopped / stop the current sound. |
 | `b2kSoundMute flag` / `b2kSoundMuted()` | Swallow play calls - a user preference that survives `b2kTeardown`. |
 | `b2kSoundVolume pct` | The engine-**global** `playLoudness` (0-100) - it affects every stack's audio, so expose it, don't hardcode it. |
-| `b2kSoundIsLoaded(name)` / `b2kSoundStatus()` | Loaded check / empty = healthy, else the most recent reason audio degraded. |
+| `b2kSoundIsLoaded(name)` / `b2kSoundStatus()` | Loaded check (true too for a clip a SAVED stack carried in: see `b2kSoundClip`) / empty = healthy, else the most recent reason audio degraded. |
 | `b2kSoundsWipe` | Stop playback and delete every Kit-made audioClip (the `b2ksnd_` prefix, a dead session's included); the dead-flag resets, the mute preference survives. |
+| `b2kSoundClip(name)` → clip | The audioClip that plays `name`, or empty. The registry is a script local, so a reopened stack starts with it empty; a `b2ksnd_<name>` clip already in the stack is adopted into it by name instead of being made again (`b2kSound`, `b2kSoundLoop` and `b2kSoundIsLoaded` all ask here). |
 | `b2kToneBytes(freq, ms, volPct, shape)` → bytes | The synthesizer under `b2kToneMake`: one note as raw 8-bit unsigned mono samples at 22050 Hz with a linear decay. `freq` 0 or below is a rest; `shape` `"sine"`, anything else square. |
 | `b2kWavWrap(bytes)` → WAV | Wrap such samples in a 44-byte RIFF/WAV header. |
 | `b2kLE16(n)` / `b2kLE32(n)` | The little-endian 2- and 4-byte packers that header uses. |
@@ -719,9 +721,10 @@ contract.
 | `b2kSpriteShowFrame spr, frame` | Point a sprite's icon at a frame, honouring its facing; skips the set when it already shows it. |
 | `b2kSpritesTick` | The per-frame sprite service: bound sprites follow their control, playing animations advance on wall-clock time, vanished sprites are forgotten. It walks only the live (bound or playing) sprites. |
 | `b2kSpriteForget spr` / `b2kSpritesClear` | Drop one sprite's registry entries once its control is gone / remove every live sprite (the `b2kClear` and `b2kTeardown` path). |
-| `b2kSpriteSweepOrphans keepAssets` | Delete Kit-named controls a PREVIOUS session left behind (a reopened stack resets script state, not controls): dead viewports and sprite buttons always, the sheet images too unless `keepAssets` is true. |
+| `b2kSpriteSweepOrphans keepAssets` | Delete Kit-named controls a PREVIOUS session left behind (a reopened stack resets script state, not controls): dead viewports and sprite buttons always, the sheet images too unless `keepAssets` is true. Dead viewports dissolve first; everything else goes in one backward pass over the card. |
 | `b2kSheetForget name` | Forget one sheet: its regions, animations, sliced and mirrored frame images, and a source image the Kit loaded itself. |
 | `b2kSheetSourceFromFile(name, path)` → image | Load an image file as CONTENT into a hidden, Kit-owned source image, adopting one already decoded from the same path when sheets persist. Empty on failure. |
+| `b2kSheetAdoptAtlas name, pngPath, xmlPath` → count | Register an atlas from the stamp its first persisting load left on `b2ksheet_<name>` (the `b2kSheetAtlasRows` lines and the XML path), with no file access. Only for the same PNG AND XML path; the key list is rebuilt exactly (a saved slice is found by its key's position), so a malformed stamp adopts nothing. 0 = nothing to adopt; `b2kSheetLoadAtlas` then reads the files. |
 | `b2kSheetGridRegions name, fw, fh, count, margin, spacing` | Register numbered grid regions over the current source image; a frame size below 1 registers none. |
 | `b2kSheetKeyIndex(sheet, frame)` / `b2kSheetSliceSig(sheet)` | A frame's stable 1-based position in its sheet (0 when absent), and the sheet's provenance stamp (source and scale). Together they let a saved stack reuse a slice only when it was baked from the same art at the same scale. |
 | `b2kXmlAttr(line, attr)` | One `attr="value"` out of an XML tag line, empty when absent (the atlas loader's parser). |

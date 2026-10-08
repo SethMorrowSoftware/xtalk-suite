@@ -646,7 +646,9 @@ b2kAnimDef "boss", "wake", "idle,roar", 4, false
 ```
 
 `b2kSheetFrameNames("chars")` lists every frame key of a sheet you didn't
-make - the quickest way to find what an atlas calls things.
+make - the quickest way to find what an atlas calls things, and
+`b2kSheetAtlasRows("chars")` gives each frame's region too, one
+`x,y,w,h,name` line per frame.
 
 **Persisting sheets across rebuilds.** By default a sheet is torn down with
 the world, so a single-shot scene reloads its art each run. A game that
@@ -656,6 +658,23 @@ synthesized sounds) and reuse an identical reload rather than re-slicing it -
 `b2kClear`/`b2kTeardown` then wipe only the sprite *instances*. It's OFF by
 default; `b2kSheetsWipe` forces a clean reload (e.g. after the player picks a
 new asset folder), and `b2kSheetPersists()` reads the flag back.
+
+**Carrying the art in a saved stack.** With persistence on, everything the
+Kit made lives in the stack as hidden images: each sheet's decoded source
+(`b2ksheet_<name>`), and every frame sliced so far (`b2kfr_` and, mirrored,
+`b2kfl_`), each stamped with the art and scale it was baked from. Save the
+stack and a later session needs **no asset files**: an atlas load stamps its
+parsed regions on the source image, so the same `b2kSheetLoadAtlas` call
+re-registers the atlas from that stamp without touching the PNG or the XML
+(the two paths are only the cache key then, so they need not exist on this
+machine), and the frames sliced before the save are reused instead of
+sliced. Sounds are the same: a clip made by `b2kToneMake` or `b2kSoundLoad`
+is saved with the stack and adopted by name when it reopens, so
+`b2kSoundIsLoaded` keeps answering true. To make a stack carry EVERYTHING,
+slice every frame once before saving: `b2kSheetEnsureIcon` (and
+`b2kSheetEnsureFlip` for frames a sprite mirrors) over `b2kSheetFrameNames`.
+The platformer does exactly that on its first run (`pfImportMedia`), then
+offers to save.
 
 ### The player controller (`b2kPlayerMake`)
 
@@ -1257,9 +1276,9 @@ A few things that trip up LiveCode/OpenXTalk users specifically:
 
 ## 23. API index
 
-The `b2k...` handlers a game reaches for, grouped - 252 of the Kit's 313 (measured
-2026-08-26). The rest are the Kit's internal helpers and the player controller's
-own steps; [`kit-reference.md`](kit-reference.md) names all 313 (its gate,
+The `b2k...` handlers a game reaches for, grouped - 253 of the Kit's 316 (measured
+2026-10-08). The rest are the Kit's internal helpers and the player controller's
+own steps; [`kit-reference.md`](kit-reference.md) names all 316 (its gate,
 `tools/check-reference-docs.py`, keeps it that way), and
 `src/box2dxt-kit.livecodescript` is the source of truth. `[f]` marks a **function** (returns a value - call it with `()` /
 `get` / `put`); everything else is a **command** (a statement). Optional
@@ -1339,6 +1358,7 @@ arguments are in `[...]`.
 `b2kSheetFromImage name,img,fw,fh [,n,margin,spacing]` ·
 `b2kSheetAddFrame sheet,frame,x,y,w,h` · `b2kSheetFrames(name)` `[f]` ·
 `b2kSheetHasFrame(name,frame)` `[f]` · `b2kSheetFrameNames(name)` `[f]` ·
+`b2kSheetAtlasRows(name)` `[f]` ·
 `b2kSheetScale name,factor` · `b2kSheetPersist flag` · `b2kSheetPersists()` `[f]` ·
 `b2kSheetsWipe` ·
 `b2kSheetFrameSize(name,frame)` `[f]` · `b2kAnimDef sheet,anim,frames,fps [,loop]` ·

@@ -82,7 +82,7 @@ then [kit-guide.md](docs/kit-guide.md), the longest doc and the one most need.
 | **The Kit** | |
 | [Getting started](docs/getting-started.md) | Zero to a draggable scene, plus troubleshooting. Assumes no physics knowledge. |
 | [Kit guide](docs/kit-guide.md) | The friendly `b2k...` layer taught start to finish: bodies, joints, events, sensors, input, sprites, the player controller, the camera, sound, a whole-game pattern. |
-| [Kit reference](docs/kit-reference.md) | The `b2k...` handlers as quick-lookup tables: all 313, the internal helpers gathered at the end (complete since 2026-09-24; `tools/check-reference-docs.py` holds it). |
+| [Kit reference](docs/kit-reference.md) | The `b2k...` handlers as quick-lookup tables: all 316, the internal helpers gathered at the end (complete since 2026-09-24; `tools/check-reference-docs.py` holds it). |
 | **The raw binding** | |
 | [API reference](docs/api-reference.md) | The low-level `b2...` extension surface: all 376 public handlers, including every per-joint accessor (complete since 2026-09-24; `tools/check-reference-docs.py` holds it). |
 | [Architecture](docs/architecture.md) | The three layers, handles, units, the ABI, and how to extend the binding. |
