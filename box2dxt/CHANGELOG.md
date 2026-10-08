@@ -8,6 +8,16 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **Level 4 no longer freezes the IDE as it builds** (2026-10-08).
+  `pfL4Scene` tiles the ground with `repeat while tX <= 6592` and skipped
+  the lava pit with `if <in the pit> then next repeat`; in a `repeat while`
+  that skips the rest of the body, so the `add 64 to tX` below it never ran
+  once x reached the pit, and the build looped for ever under the cover
+  card whenever the art was loaded (since the first-run import, always).
+  The pit now guards the tile instead (gotcha 32). A scan of every
+  `.livecodescript` in the suite for a `next repeat` in a `repeat while` or
+  `until` loop found no other in box2dxt. Reported on an engine; the fix is
+  verified statically and needs an OXT pass.
 - **The platformer builds each level once, quietly** (2026-10-08). Every
   flag that advanced a level built the next one TWICE: the end of
   `pfStartGame` synced the level picker by setting its `menuHistory`, an

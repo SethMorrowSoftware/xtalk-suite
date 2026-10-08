@@ -212,6 +212,13 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
     throw there would have skipped the park unseen (reordered; harness v9 later
     showed both work). A throw serializes "redundant" calls: put proven
     calls first, give a risky call its own `try`, and log from its `catch`.
+32. **`next repeat` in a `repeat while` or `repeat until` loop skips the rest
+    of the body, the loop's own advance included.** `pfL4Scene` skipped its
+    lava pit with `if <in the pit> then next repeat` above `add 64 to tX`, so
+    x stopped at 2944 and L4's build never ended: the IDE froze under the
+    cover card (reported 2026-10-08, with the art loaded). Guard the work
+    instead (`if <outside the pit> then pfTile ...`), or advance before the
+    `next repeat`.
 
 ## 4. Engine facts from the Phase 0 spike (Win32, 2026-06-10)
 
