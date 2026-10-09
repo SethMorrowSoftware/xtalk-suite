@@ -4,6 +4,7 @@ install-release-binaries.py - land a release-binaries bundle into the tree.
 
 USAGE
     python3 tools/install-release-binaries.py <bundle-dir> [--dry-run]
+    python3 tools/install-release-binaries.py --mac-floor <dylib>...
     python3 tools/install-release-binaries.py --selftest
 
 The bundle is what .github/workflows/release-binaries.yml publishes: one
@@ -35,6 +36,13 @@ the repository half-updated:
     x86_64-linux - and the macOS version of it: a THIN dylib under
     `universal-mac` is REFUSED, because it loads for whoever built it and fails
     only for users on the other architecture.
+  * a universal-mac dylib's MINIMUM macOS, slice by slice: no newer than 10.15
+    for x86_64 and 11.0 for arm64 (MAC_FLOOR, 2026-10-09). The version a build
+    targets decides which system symbols it imports, and dyld refuses a library
+    whose import the running macOS lacks; a build that names no target takes
+    its builder's, and every committed universal-mac dylib said 15.0 when
+    measured. --mac-floor runs the same check on named files, which is how the
+    mac lanes assert it where each dylib is born.
   * for coinxt, the EXPORT SURFACE is exactly the cnx_* entry points. That check
     fails OPEN if it is skipped (a wrong export mechanism yields a WORKING
     library with 77 symbols), so it is asserted here too, not only in CI.
@@ -181,6 +189,131 @@ def fat_archs(path):
         return sorted(archs)
 
 
+# THE macOS FLOOR (2026-10-09). Every Mach-O slice records the macOS it was
+# built for - LC_BUILD_VERSION's `minos`, or LC_VERSION_MIN_MACOSX's `version`
+# from linkers before 10.14. dyld does NOT refuse a slice for naming a newer
+# macOS than the one running: dyld-1378's Loader::tooNewErrorAddendum only adds
+# "built for macOS X which is newer than running OS" to a fatal "Symbol not
+# found". What the version decides is what the build imports: the SDK and
+# libc++ weak-import, or avoid, every symbol newer than the target and import
+# the rest strongly. A clang given no target takes its SDK's, so the macos-15
+# lanes built every slice for 15.0, and torrentxt's and datachannelxt's dylibs
+# import ___cxa_init_primary_exception and exception_ptr's
+# __from_native_exception_pointer (libc++ from macOS 15.0), enetxt's
+# ___darwin_check_fd_set_overflow (macOS 11): those three cannot load on an
+# older Mac (measured 2026-10-09; work plan 1.1 has the table).
+#
+# The version is the gate, not the import list, because the toolchain ships no
+# table of when each symbol entered macOS, while the target is the one input
+# the SDK's availability rules key on. release-binaries.yml now builds every
+# mac lane at MACOSX_DEPLOYMENT_TARGET 10.15 and runs --mac-floor on each
+# dylib where it is born; main() refuses a slice above this table too, because
+# a dylib built by hand on a Mac with no target inherits that Mac's macOS.
+# x86_64 floors at 10.15 because that is as low as the members go: Box2D v3.1
+# calls aligned_alloc on macOS (src/core.c), which libSystem gained in 10.15.
+# arm64 floors at 11.0, the first macOS on Apple Silicon; clang raises an arm64
+# slice to 11.0 by itself when the target is lower.
+MAC_FLOOR = {"x86_64": (10, 15, 0), "arm64": (11, 0, 0)}
+_LC_VERSION_MIN_MACOSX, _LC_BUILD_VERSION = 0x24, 0x32
+
+
+def _macos_version(word):
+    """A Mach-O packed version (xxxx.yy.zz in one 32-bit word) as a tuple."""
+    return (word >> 16, (word >> 8) & 0xFF, word & 0xFF)
+
+
+def _dotted(version):
+    major, minor, patch = version
+    return f"{major}.{minor}" + (f".{patch}" if patch else "")
+
+
+def mac_min_versions(path):
+    """{arch: (major, minor, patch) or None} - the minimum macOS each 64-bit
+    slice of a Mach-O declares, read from its load commands, with None for a
+    slice that declares none. None for a file that is not a Mach-O this can
+    walk. Thin and fat files alike, so a lane can ask before lipo too."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if len(data) < 8:
+        return None
+    slices = []
+    if struct.unpack_from(">I", data, 0)[0] == 0xCAFEBABE:
+        nfat = struct.unpack_from(">I", data, 4)[0]
+        if not 0 < nfat <= 16 or len(data) < 8 + 20 * nfat:
+            return None
+        for i in range(nfat):
+            cputype, _sub, offset, size, _align = struct.unpack_from(
+                ">IIIII", data, 8 + 20 * i)
+            slices.append((cputype, data[offset:offset + size]))
+    else:
+        slices.append((None, data))
+    found = {}
+    for cputype, body in slices:
+        # 64-bit little-endian slices only: the two architectures the floor
+        # names are both that, and anything else is reported unreadable.
+        if len(body) < 32 or struct.unpack_from("<I", body, 0)[0] != 0xFEEDFACF:
+            return None
+        cpu, _sub, _ftype, ncmds, sizeofcmds = struct.unpack_from("<IIIII", body, 4)
+        if cputype is not None and cputype != cpu:
+            return None             # a fat table that disagrees with its slice
+        arch = _MACHO_CPU.get(cpu, f"cputype {cpu:#x}")
+        version, off, end = None, 32, 32 + sizeofcmds
+        for _ in range(ncmds):
+            if off + 8 > min(end, len(body)):
+                return None
+            cmd, cmdsize = struct.unpack_from("<II", body, off)
+            if cmdsize < 8:
+                return None
+            # A build version names its platform: only macOS's (1) counts, so
+            # a slice built for iOS or Mac Catalyst alone declares no macOS.
+            if cmd == _LC_BUILD_VERSION and cmdsize >= 24 and \
+                    struct.unpack_from("<I", body, off + 8)[0] == 1:
+                version = _macos_version(struct.unpack_from("<I", body, off + 12)[0])
+            elif cmd == _LC_VERSION_MIN_MACOSX and cmdsize >= 16:
+                version = _macos_version(struct.unpack_from("<I", body, off + 8)[0])
+            off += cmdsize
+        found[arch] = version
+    return found
+
+
+def mac_floor_problem(path):
+    """None when every slice is built for the floor's macOS or older, else
+    why not."""
+    versions = mac_min_versions(path)
+    if not versions:
+        return ("the load commands are unreadable - refusing a file this tool "
+                "cannot verify")
+    for arch in sorted(versions):
+        version = versions[arch]
+        if arch not in MAC_FLOOR:
+            return f"a {arch} slice, which the macOS floor does not cover"
+        if version is None:
+            return (f"its {arch} slice declares no minimum macOS - refusing a "
+                    f"file this tool cannot verify")
+        if version > MAC_FLOOR[arch]:
+            return (f"its {arch} slice is built for macOS {_dotted(version)}, "
+                    f"above the suite's floor of {_dotted(MAC_FLOOR[arch])}: such "
+                    f"a build may import what an older macOS lacks, and dyld "
+                    f"refuses it there (torrentxt's 15.0 build needs macOS 15). "
+                    f"Build with MACOSX_DEPLOYMENT_TARGET=10.15, as "
+                    f"release-binaries.yml does")
+    return None
+
+
+def mac_floor_cli(paths):
+    """--mac-floor: the check the mac lanes run on each dylib they build."""
+    bad = 0
+    for path in paths:
+        versions = mac_min_versions(path) or {}
+        shown = ", ".join(f"{a} {_dotted(v) if v else 'none'}"
+                          for a, v in sorted(versions.items()))
+        problem = mac_floor_problem(path)
+        print(f"{'FAIL' if problem else 'ok  '}  {path}: minimum macOS "
+              f"{shown or 'unreadable'}" + (f" - {problem}" if problem else ""))
+        bad += bool(problem)
+    return 1 if bad or not paths else 0
+
+
 def coinxt_exports(path):
     """The cnx_-filtered export list of an ELF, or None when unreadable here."""
     try:
@@ -280,6 +413,12 @@ def main(argv):
                         f"{member}/{platform_id}/{want}: a fat Mach-O carrying "
                         f"only {'+'.join(archs)} - universal-mac promises BOTH "
                         f"x86_64 and arm64 slices")
+                    continue
+                # Both slices present is half the promise; loading on the Macs
+                # people have is the other half (MAC_FLOOR above).
+                floor = mac_floor_problem(src)
+                if floor:
+                    problems.append(f"{member}/{platform_id}/{want}: {floor}")
                     continue
 
             if member == "coinxt" and kind == "linux":
@@ -426,6 +565,42 @@ def _bytes_fat_macho(cputypes):
     return bytes(head)
 
 
+def _bytes_fat_macho_slices(slices):
+    """A FAT Mach-O whose slices are real enough to walk: a 64-bit header and
+    one load command each. slices = [(cputype, command, (major, minor, patch))]
+    with command "build" (LC_BUILD_VERSION), "ios" (LC_BUILD_VERSION for
+    platform 2, iOS), "min" (LC_VERSION_MIN_MACOSX) or None (an LC_UUID in its
+    place, so the slice declares no minimum macOS).
+    The sdk word beside each version is the BUILDER's, 15.5, as a macos-15
+    lane writes it at any target: equal to the version it would let a reader
+    that takes the sdk word for the minimum pass every case (a mutant once
+    did)."""
+    sdk = (15 << 16) | (5 << 8)
+    bodies = []
+    for cpu, command, version in slices:
+        packed = 0
+        if version:
+            packed = (version[0] << 16) | (version[1] << 8) | version[2]
+        if command in ("build", "ios"):  # cmd, cmdsize, platform, minos, sdk, ntools
+            lc = struct.pack("<IIIIII", _LC_BUILD_VERSION, 24,
+                             1 if command == "build" else 2, packed, sdk, 0)
+        elif command == "min":     # cmd, cmdsize, version, sdk
+            lc = struct.pack("<IIII", _LC_VERSION_MIN_MACOSX, 16, packed, sdk)
+        else:                      # LC_UUID: a command that names no version
+            lc = struct.pack("<II", 0x1B, 24) + bytes(16)
+        # magic, cputype, cpusubtype, filetype (MH_DYLIB), ncmds, sizeofcmds,
+        # flags, reserved
+        bodies.append(struct.pack("<IIIIIIII", 0xFEEDFACF, cpu, 0, 6, 1,
+                                  len(lc), 0, 0) + lc)
+    head = bytearray(struct.pack(">II", 0xCAFEBABE, len(slices)))
+    offset, tail = 4096, b""
+    for (cpu, _command, _version), body in zip(slices, bodies):
+        head += struct.pack(">IIIII", cpu, 0, offset, len(body), 12)
+        tail += body + bytes(4096 - len(body))
+        offset += 4096
+    return bytes(head) + bytes(4096 - len(head)) + tail
+
+
 def _put(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as fh:
@@ -479,11 +654,21 @@ def selftest():
         code = os.path.join(ROOT, "box2dxt", "src", "code")
         bundle = os.path.join(tmp, "bundle")
         staged = 0
+        # A committed mac dylib built before the macOS floor (2026-10-09) is
+        # held OUT of the accept bundle and must be refused for the floor
+        # instead (part 2's first check): the floor is a refusal, so a file
+        # that misses it cannot be an accept case. A dispatch that rebuilds it
+        # at the floor puts it back in this bundle with no edit here.
+        pre_floor = []
         for platform_id in sorted(os.listdir(code)):
             pdir = os.path.join(code, platform_id)
             if not os.path.isdir(pdir):
                 continue
             for fn in sorted(f for f in os.listdir(pdir) if not f.endswith(".md")):
+                if platform_kind(platform_id) == "mac" and \
+                        mac_floor_problem(os.path.join(pdir, fn)):
+                    pre_floor.append((platform_id, fn))
+                    continue
                 _put(os.path.join(bundle, "box2dxt", platform_id, fn), b"")
                 shutil.copy2(os.path.join(pdir, fn),
                              os.path.join(bundle, "box2dxt", platform_id, fn))
@@ -528,6 +713,77 @@ def selftest():
               fat_archs(dylib) is not None
               and {"x86_64", "arm64"} <= set(fat_archs(dylib)),
               fat_archs(dylib))
+
+        # THE macOS FLOOR (2026-10-09). First on the committed dylib, a real
+        # linker-made file, so the reader is proven on what a lane emits and
+        # not only on the synthetic slices below. Built before the floor, it
+        # must be REFUSED for it; rebuilt at the floor, it is in the accept
+        # bundle above and must read as meeting it.
+        if pre_floor:
+            for platform_id, fn in pre_floor:
+                src = os.path.join(code, platform_id, fn)
+                _put(os.path.join(tmp, "prefloor", "box2dxt", platform_id, fn), b"")
+                shutil.copy2(src, os.path.join(tmp, "prefloor", "box2dxt",
+                                               platform_id, fn))
+                versions = mac_min_versions(src) or {}
+                print(f"  note: the committed box2dxt/{platform_id}/{fn} "
+                      f"is built for macOS "
+                      + ", ".join(f"{_dotted(v) if v else 'none'} ({a})"
+                                  for a, v in sorted(versions.items()))
+                      + " - built before the floor; a release-binaries "
+                        "dispatch rebuilds it at the floor")
+            rc, out = _capture([os.path.join(tmp, "prefloor"), "--dry-run"])
+            check("the committed pre-floor dylib is REFUSED for the macOS floor",
+                  rc == 1 and "is built for macOS" in out
+                  and "above the suite's floor" in out, out)
+        else:
+            check("the committed universal-mac dylib meets the macOS floor",
+                  mac_floor_problem(dylib) is None, mac_min_versions(dylib))
+
+        def floor_case(name, slices):
+            path = os.path.join(tmp, name, "box2dxt", "universal-mac",
+                                "box2dxt.dylib")
+            _put(path, _bytes_fat_macho_slices(slices))
+            return path, _capture([os.path.join(tmp, name), "--dry-run"])
+
+        x64, a64 = 0x01000007, 0x0100000C
+        _p, (rc, out) = floor_case("floor15", [(x64, "build", (15, 0, 0)),
+                                               (a64, "build", (15, 0, 0))])
+        check("a universal dylib built for macOS 15.0 (the committed shape) "
+              "is REFUSED", rc == 1 and "built for macOS 15.0" in out, out)
+        good, (rc, out) = floor_case("floorok", [(x64, "build", (10, 15, 0)),
+                                                 (a64, "build", (11, 0, 0))])
+        check("one at the floor (x86_64 10.15, arm64 11.0) is accepted",
+              rc == 0 and "1 library verified" in out, out)
+        _p, (rc, out) = floor_case("floormin", [(x64, "min", (10, 9, 0)),
+                                                (a64, "build", (11, 0, 0))])
+        check("  ...and an older linker's LC_VERSION_MIN_MACOSX (10.9) is read",
+              rc == 0 and "1 library verified" in out, out)
+        _p, (rc, out) = floor_case("floorarm", [(x64, "build", (10, 15, 0)),
+                                                (a64, "build", (12, 0, 0))])
+        check("the floor is PER SLICE: arm64 at 12.0 is REFUSED beside a "
+              "good x86_64", rc == 1 and "its arm64 slice is built for macOS 12.0"
+              in out, out)
+        _p, (rc, out) = floor_case("floornone", [(x64, "build", (10, 15, 0)),
+                                                 (a64, None, None)])
+        check("a slice that declares no minimum macOS is REFUSED",
+              rc == 1 and "declares no minimum macOS" in out, out)
+        _p, (rc, out) = floor_case("floorios", [(x64, "build", (10, 15, 0)),
+                                                (a64, "ios", (11, 0, 0))])
+        check("  ...and so is one whose only build version is iOS's",
+              rc == 1 and "its arm64 slice declares no minimum macOS" in out, out)
+        # --mac-floor, the lanes' copy of the same check: its exit status is
+        # what fails a lane, so pin both answers and the empty call.
+        for want, paths, label in (
+                (0, [good], "--mac-floor passes a dylib at the floor"),
+                (1, [os.path.join(tmp, "floor15", "box2dxt", "universal-mac",
+                                  "box2dxt.dylib")],
+                 "--mac-floor fails a 15.0 dylib"),
+                (1, [], "--mac-floor fails when given no file")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = mac_floor_cli(paths)
+            check(label, rc == want, buf.getvalue())
 
         _put(os.path.join(tmp, "arch", "box2dxt", "x86-linux", "box2dxt.so"),
              _bytes_elf(2, 0x3E))
@@ -627,4 +883,8 @@ if __name__ == "__main__":
     # no bundle, and main() would otherwise print the docstring and exit.
     if "--selftest" in sys.argv[1:]:
         sys.exit(selftest())
+    # --mac-floor FILE...: the same floor main() enforces, for the mac lanes to
+    # run on each dylib where it is born (release-binaries.yml).
+    if sys.argv[1:2] == ["--mac-floor"]:
+        sys.exit(mac_floor_cli(sys.argv[2:]))
     sys.exit(main(sys.argv))
