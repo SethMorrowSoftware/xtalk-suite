@@ -124,7 +124,12 @@ embedded-Kit drift (`sync-embedded-kit.py --check`), the FFI signature gate
 every public handler named in `docs/`), `package-extension.py --check` (no
 empty platform slot) and the `src/code/MANIFEST.sha256` check. `audit-platformer.py` runs
 beside them but is **advisory** (it prints findings and never exits non-zero).
-Maintainer rules: [CLAUDE.md](CLAUDE.md).
+`check-platformer-levels.py` PLAYS the platformer, headlessly: every level built
+once and played to its flag, with the art, from the saved stack and with no art,
+on a model of the engine over the committed Linux library (after
+`test-platformer-levels.py` has shown it fails on seeded defects); it needs
+`../riptide` and `../nostrxt` beside this checkout (below). A model is not the
+engine: the games still need an OXT pass. Maintainer rules: [CLAUDE.md](CLAUDE.md).
 
 ## License
 
@@ -159,9 +164,22 @@ index. Read them at `https://github.com/SethMorrowSoftware/xtalk-suite/blob/main
 form `../<member>/...` names a sibling member of the suite; each has its
 own repository, listed in `tools/member-registry.py` there.
 
-**Sibling members this member's gates need beside it.** None: `bash
+**Sibling members this member's gates need beside it.** `bash
 tools/run-gates.sh` (this member's own gate list, the one CI runs)
-needs nothing but this checkout and Python 3.
+reaches into these siblings, found as `../<name>` beside this checkout:
+
+- `../riptide` from https://github.com/SethMorrowSoftware/RipTide - `tools/check-demo-boot.py`, the boot runner whose loaded interpreter `tools/check-platformer-levels.py` plays the platformer on.
+- `../nostrxt` from https://github.com/SethMorrowSoftware/NostrXT - what riptide's runner loads at import time.
+
+Clone them beside this checkout under exactly those directory names
+(and keep this checkout named `box2dxt`), or point `XTALK_SIBLINGS` at a
+directory holding them (`XTALK_SIBLING_<NAME>` for one). The generated
+`.github/workflows/gates.yml` takes them from the suite itself, at the
+commit named by this repository's newest `Suite-Commit:` trailer - the
+versions the suite's gates ran with this tree - and sets
+`XTALK_REQUIRE_SIBLINGS=1` so a missing sibling fails the job rather
+than skipping its tier. Nothing the SHIPPED code needs is beside it: a
+demo that uses a sibling's library carries its own copy (below).
 
 **Carried copies inside this member, and where their masters are.**
 Every runnable stack here is one paste-and-run file, so it carries what

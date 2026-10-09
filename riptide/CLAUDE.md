@@ -418,8 +418,11 @@ Code comments cite these numbers; keep them.
     a rewrite. Its 2026-08-29 first-run findings (negative chunk ranges in the interpreter, the
     oracle's `_verify_ed25519` crash on a tampered R, the `rsPersonaAllows` leak) were mostly the
     tool's own: suspect the probe first.
-14. **check-demo-boot.py is also driven by coinxt's, nocloud's and holde-em's gates**: on any path a
-    boot walks, use the compiled-regex helpers `_rxi`/`_rx` (2026-09-11). Model fidelity: `the name`
+14. **check-demo-boot.py is also driven by coinxt's, nocloud's and holde-em's gates** (and by
+    torrentxt's and datachannelxt's vector gates; box2dxt's level gate, 2026-10-08, loads it for
+    its `LCS`, `_rx`/`_rxi` and `_refuse_nonliteral_constants`, so renaming any of those breaks
+    that gate too): on any path a boot walks, use the compiled-regex helpers `_rxi`/`_rx`
+    (2026-09-11). Model fidelity: `the name`
     of a control is type-prefixed (`button "x"`); only `the short name` is bare (2026-08-31).
     `put ... into URL` answers through `the result` (2026-09-24): empty when the write landed, and the
     planted text, with nothing written, for a path in `World.url_write_refuse` (coinxt's save guards
