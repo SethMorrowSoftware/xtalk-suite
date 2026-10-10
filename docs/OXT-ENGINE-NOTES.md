@@ -1036,6 +1036,45 @@ first proof.
 declarations at the TOP of the handler - a nested `local` has broken
 whole-script compilation.
 
+### 4.1 At an extension's handler, "Function: error in function handler" means the extension is not loaded
+The symptom **OBSERVED 2026-10-08** by a forum tester on a Mac (OXT-Beyond,
+the platformer), relayed verbatim on 2026-10-09:
+
+    stack "Untitled 1": execution error at line 7866 (Function error in function handler) near "b2NewWorld", char 8
+
+Line 7866 is, in the platformer as of ce4c4ec (7871 since ac45c83), the Kit's
+`b2kSetup` calling `b2NewWorld`: its first call into box2dxt, since
+`b2kEnsureNativeLib` and `b2kTeardown` before it call none on a fresh stack.
+How a failure there reads is **DOCUMENTED** (engine source, livecode/livecode
+at 4606a10; the IDE at `develop-9.6`, which OXT's IDE descends from). The
+engine APPENDS error lines, so the innermost comes first (`MCError::doadd`,
+`engine/src/mcerror.cpp`). An LCB handler that fails, including one whose
+foreign library will not open (libscript binds a foreign handler at its first
+call and throws "unable to load foreign library",
+`libscript/src/script-instance.cpp`), adds the extension's own lines, EE-0863
+first (domain, then description, file, line and column;
+`MCExtensionCatchError`, `engine/src/exec-extension.cpp`), before the caller
+adds EE-0219, "Function: error in function handler" (`exec-keywords.cpp`). The
+IDE describes an execution error by its FIRST line: the script editor's errors
+pane prints the format above from line 1 alone (`revseerrorspanebehavior`,
+`revseerrortemplatebehavior`), through `revIDELookupError`
+(`revidelibrary.8.livecodescript`), which turns EE-0863 into "LCB Error in
+file <file> at line <n>: <description>". So a library that will not load reads
+"LCB Error ... unable to load foreign library", and EE-0219 first, with the
+handler's name as the hint, means no handler answered (3.4): the extension was
+not loaded. For this report that reading is **INFERRED** (the text, through
+that source): the tester's OXT-Beyond had not loaded `org.openxtalk.box2dxt`,
+even after the tester installed it by hand; why is not yet known, and no
+box2dxt library was reached.
+**Rule:** for EE-0219 at an extension's handler, ask for `put the
+loadedExtensions` and the member's version call (`put b2Version()` answers 4)
+before suspecting its library; for "unable to load foreign library", suspect
+the library (path, architecture, quarantine, the macOS floors in work plan
+1.1). **Gate:** none; this is how to read a report.
+**Does not mean:** a library problem. A loaded extension whose library fails
+shows its own "LCB Error" line first; a COMMAND called with `()` throws EE-0219
+too (3.4).
+
 ## 5. Controls and the UI
 
 ### 5.1 A polygon graphic does not resize by setting its height

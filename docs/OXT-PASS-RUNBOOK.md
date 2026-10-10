@@ -307,6 +307,11 @@ mac builds (row 24). onionxt, nostrxt, riptide and the apps are pure script.
   example `xattr -dr com.apple.quarantine` on the downloaded package). If a Mac
   throws `SodiumXT: ABI mismatch`, the package predates release run 12
   (2026-08-27): repackage from the current `src/code/`, do not debug the member.
+  Record the macOS version: until a dispatch rebuilds the dylibs at the macOS
+  floor (work plan 1.2 #28), torrentxt's and datachannelxt's need macOS 15 and
+  enetxt's 11 (work plan 1.1). "Function: error in function handler" at a
+  member's first call, with the handler's name as the hint, means its extension
+  is not loaded (engine note 4.1): check `the loadedExtensions` first.
 - **Windows.** The DLLs carry different upstream versions from Linux and mac:
   sodiumxt's are MSVC builds with libsodium 1.0.22 (D-08) and torrentxt's carry
   libtorrent 2.1.1 from vcpkg, against the pinned 1.0.20 and 2.0.11 elsewhere.

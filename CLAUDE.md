@@ -327,13 +327,19 @@ worse than no gate, because it answers the question nobody asks twice.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
   requires. It builds all six native members on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a
-  thin Mach-O or a fat one missing a slice refused), refreshes manifests, runs the gates and
-  commits per `commit_mode` (`branch`, `pr`, `none`). The commit stage waits on the WHOLE matrix:
-  one red lane discards every artifact.
+  thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
+  manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
+  stage waits on the WHOLE matrix: one red lane discards every artifact.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
-  (accepted 2026-08-23).
+  (accepted 2026-08-23). **The floor (2026-10-09):** every release mac lane, and the native mac
+  lanes of sodiumxt, enetxt and box2dxt, build with `MACOSX_DEPLOYMENT_TARGET` 10.15 (Box2D needs
+  `aligned_alloc`, new in 10.15; clang raises the arm64 slice to 11.0), and the release lanes
+  assert it with the installer's `--mac-floor`. The target decides what a build imports, and dyld
+  refuses a library only for a missing import, never for its tag: built with no target (so for
+  the runner's 15.0), the committed torrentxt and datachannelxt dylibs need macOS 15 and enetxt's
+  11 until a dispatch rebuilds them (work plan 1.1 has the table).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

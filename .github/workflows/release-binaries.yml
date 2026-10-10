@@ -61,6 +61,11 @@
 # browser-downloaded zip additionally needs its quarantine attribute cleared,
 # which is the recorded cost of shipping without notarization.
 #
+# Since 2026-10-09 every mac lane also builds to a MINIMUM macOS (the env block
+# below says why and which) and asserts it where the dylib is born; until then
+# each one silently built for the runner's own macOS 15, and three of the six
+# could not load on an older Mac.
+#
 # THE LAST TWO MEMBERS RIDE THE TWO-SLICE-LIPO JOB (added later on 2026-08-23;
 # the paragraph here recorded them as staying manual for a few hours).
 # torrentxt statically links libtorrent + Boost + OpenSSL and datachannelxt
@@ -107,6 +112,27 @@ concurrency:
 # purpose is to.
 permissions:
   contents: read
+
+# THE macOS FLOOR (2026-10-09). A clang given no deployment target builds for
+# its SDK's macOS, so every mac lane here built for macOS 15.0 (all six
+# committed dylibs say so, measured 2026-10-09), and the target decides what a
+# build imports: torrentxt's and datachannelxt's dylibs import libc++ symbols
+# that exist only from macOS 15.0 (__cxa_init_primary_exception), and enetxt's
+# one from macOS 11 (__darwin_check_fd_set_overflow). dyld does not refuse a
+# library for its minimum version, only for an import it cannot find, so the
+# first two cannot load before macOS 15, nor enetxt's before 11 (work plan 1.1
+# has the table). Set once here, the target reaches every compiler and linker
+# a mac lane runs, sub-builds included (libsodium's configure, OpenSSL's
+# Configure, Box2D, libtorrent), which a CMake flag would not, and a symbol
+# newer than the target is then weak-imported or not used at all. 10.15
+# because Box2D v3.1 calls aligned_alloc, which macOS gained in 10.15; clang
+# raises an arm64 slice to 11.0, the first macOS on Apple Silicon. Only Apple
+# toolchains read the variable, so the Linux and Windows lanes are untouched.
+# Each mac lane runs `tools/install-release-binaries.py --mac-floor` on the
+# dylib it built, and the commit job's installer refuses a slice above the
+# floor again (its MAC_FLOOR table) before anything lands.
+env:
+  MACOSX_DEPLOYMENT_TARGET: "10.15"
 
 jobs:
   # ---------------------------------------------------------------- CMake five
@@ -623,6 +649,15 @@ jobs:
             *) echo "FAIL: no arm64 slice in $f"; exit 1 ;;
           esac
 
+      # The floor the env block sets, asserted where the dylib is born (the
+      # glibc pattern below), by the same code the commit job's installer runs.
+      - name: Assert the macOS floor (mac lanes)
+        if: startsWith(matrix.os, 'macos')
+        shell: bash
+        run: |
+          python3 "$GITHUB_WORKSPACE/tools/install-release-binaries.py" --mac-floor \
+            "src/code/${{ matrix.platform_id }}/${{ matrix.member }}.dylib"
+
       # The manylinux lane's CONTRACT, asserted where the artifact is born:
       # nothing dynamic beyond glibc and the loader (OpenSSL, libstdc++,
       # libgcc, Boost all static), and a glibc floor no higher than the
@@ -813,6 +848,13 @@ jobs:
           case " $archs " in *" x86_64 "*) : ;; *) echo "FAIL: no x86_64 slice"; exit 1 ;; esac
           case " $archs " in *" arm64 "*)  : ;; *) echo "FAIL: no arm64 slice";  exit 1 ;; esac
 
+      - name: Assert the macOS floor (mac)
+        if: matrix.acquire == 'mac'
+        shell: bash
+        run: |
+          python3 "$GITHUB_WORKSPACE/tools/install-release-binaries.py" --mac-floor \
+            src/code/universal-mac/coinxt.dylib
+
       - uses: actions/upload-artifact@v4
         with:
           name: bundle-coinxt-${{ matrix.platform_id }}
@@ -992,6 +1034,14 @@ jobs:
           echo "slices: $archs"
           case " $archs " in *" x86_64 "*) : ;; *) echo "FAIL: no x86_64 slice"; exit 1 ;; esac
           case " $archs " in *" arm64 "*)  : ;; *) echo "FAIL: no arm64 slice";  exit 1 ;; esac
+
+      # Each thin slice was built under the env block's target, the pinned
+      # OpenSSL included, so the lipo'd dylib must meet the floor too.
+      - name: Assert the macOS floor
+        shell: bash
+        run: |
+          python3 "$GITHUB_WORKSPACE/tools/install-release-binaries.py" --mac-floor \
+            "src/code/universal-mac/${{ matrix.member }}.dylib"
 
       - uses: actions/upload-artifact@v4
         with:

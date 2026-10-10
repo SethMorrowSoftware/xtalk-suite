@@ -39,6 +39,12 @@ concurrency:
 permissions:
   contents: read
 
+# The minimum macOS release-binaries.yml builds every mac lane to (2026-10-09;
+# that file's env block says why): set here too, so this lane's mac artifact
+# matches the release one. Only Apple toolchains read the variable.
+env:
+  MACOSX_DEPLOYMENT_TARGET: "10.15"
+
 defaults:
   run:
     working-directory: enetxt
