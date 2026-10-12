@@ -303,7 +303,52 @@ end cxCompareBytes
 -- malformed input, and it says so rather than skipping the bad character.
 -- ==============================================================================
 
+/**
+Title: CoinXT Script Library
+
+Author: Seth Morrow Software
+
+Description:
+The script half of CoinXT: hex, Base58Check, bech32 and SegWit addresses,
+Bitcoin and Ethereum addresses, WIF keys, RLP, BIP-39 mnemonics, BIP-32 HD
+derivation, the BIP-341 Taproot address path, and Bitcoin and Ethereum
+transaction building. It is pure script over the CoinXT extension, which
+supplies every hash and curve operation (start with <cxCheckABI>); this
+layer only moves bytes and checks checksums.
+
+It is a separate file from the extension, so it must be in the message
+path before its handlers resolve, for example with
+start using stack "coinxt". If the hashes work but every handler here is
+"handler not found", the extension loaded and this script did not.
+
+Every decoder verifies its checksum and throws an error beginning
+"CoinXT:" and naming the handler rather than returning a plausible wrong
+answer. The transaction builders produce the digest; your app signs it
+with cxSign, cxSignRecoverable or cxSchnorrSign after showing the user
+what it means. Handlers that read comma lists save and restore
+the itemDelimiter, so your setting does not affect them.
+
+Tags: Cryptography, Library
+*/
+
 -- Lowercase hex for arbitrary bytes. The inverse of cxHexDecode.
+/**
+Summary: Lowercase hex text for some bytes.
+
+pData: The bytes to encode.
+
+Returns: The hex text, two lowercase characters per byte.
+
+Example:
+put cxHexEncode(cxSha256(textEncode("abc", "utf-8"))) into field "Digest"
+
+Description:
+The inverse of <cxHexDecode>. Empty in gives empty out.
+
+References: cxHexDecode (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 function cxHexEncode pData
    local tOut, tI, tCount, tByte
    put "" into tOut
@@ -318,6 +363,24 @@ end cxHexEncode
 
 -- Bytes from a hex string. Accepts upper, lower or mixed case; rejects an odd
 -- length and any non-hex character rather than silently dropping it.
+/**
+Summary: The bytes a hex string spells.
+
+pHex: The hex text, in upper, lower or mixed case.
+
+Returns: The decoded bytes.
+
+Example:
+put cxHexDecode("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798") into tPubkey
+
+Description:
+Throws on an odd number of characters and on any character that is not
+a hex digit, rather than skipping it.
+
+References: cxHexEncode (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 function cxHexDecode pHex
    local tOut, tI, tCount, tHi, tLo, tText
    put pHex into tText
@@ -391,11 +454,46 @@ end cxHexValue
 -- ==============================================================================
 
 -- HASH160 = RIPEMD-160(SHA-256(x)). What a P2PKH and a P2WPKH address commit to.
+/**
+Summary: RIPEMD-160 of SHA-256 of some bytes (Bitcoin's HASH160).
+
+pData: The bytes to hash, usually a public key.
+
+Returns: The 20-byte digest.
+
+Example:
+put cxHexEncode(cxHash160(tPubkey)) into tKeyHash
+
+Description:
+What P2PKH and P2WPKH addresses commit to. The address builders call it
+for you.
+
+References: cxHash256 (handler), cxBtcAddressP2PKH (handler), cxRipemd160 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHash160 pData
    return cxRipemd160(cxSha256(pData))
 end cxHash160
 
 -- HASH256 = SHA-256(SHA-256(x)). The Base58Check checksum and Bitcoin's txid.
+/**
+Summary: SHA-256 of SHA-256 of some bytes (Bitcoin's HASH256).
+
+pData: The bytes to hash.
+
+Returns: The 32-byte digest.
+
+Example:
+put cxHash256(tRawTx) into tDigest
+
+Description:
+The Base58Check checksum and the Bitcoin txid are built from it.
+
+References: cxHash160 (handler), cxSha256 (handler), cxBtcTxid (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHash256 pData
    return cxSha256(cxSha256(pData))
 end cxHash256
@@ -513,6 +611,25 @@ end cxBase58Decode
 
 -- Base58Check: the payload followed by the first 4 bytes of HASH256(payload).
 -- This is how a mainnet address, a WIF key and an xprv are all framed.
+/**
+Summary: Base58Check text for a payload.
+
+pPayload: The bytes to encode, usually a version byte followed by the data.
+
+Returns: The Base58Check string.
+
+Example:
+put cxBase58CheckEncode(numToByte(0) & cxHash160(tPubkey)) into tAddress
+
+Description:
+Appends the first 4 bytes of <cxHash256> of the payload and encodes the
+whole in Base58. This is how a legacy address, a WIF key and an xprv are
+framed. Leading zero bytes become leading "1" characters, one for one.
+
+References: cxBase58CheckDecode (handler), cxBtcAddressP2PKH (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBase58CheckEncode pPayload
    local tChecksum
    put cxHash256(pPayload) into tChecksum
@@ -523,6 +640,27 @@ end cxBase58CheckEncode
 -- payload it happened to decode. Four bytes of checksum means a corrupted
 -- address gets through with probability 2^-32, and the whole point of the
 -- encoding is that this check is not optional.
+/**
+Summary: The payload of a Base58Check string, with its checksum verified.
+
+pText: The Base58Check string.
+
+Returns: The payload bytes, without the 4 checksum bytes.
+
+Example:
+put cxBase58CheckDecode("1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA") into tPayload
+put byteToNum(byte 1 of tPayload) into tVersion
+
+Description:
+A character outside the Base58 alphabet or a bad checksum throws; it
+never returns the payload it happened to decode. The alphabet is
+case-significant and is compared by byte value, whatever
+the caseSensitive is set to.
+
+References: cxBase58CheckEncode (handler), cxWifDecode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBase58CheckDecode pText
    local tRaw, tBody, tChecksum, tCount
    put cxBase58Decode(pText) into tRaw
@@ -703,6 +841,30 @@ end cxBech32Const
 -- know whether a public handler is safe to call.
 -- ==============================================================================
 
+/**
+Summary: A bech32 or bech32m string from a human-readable part and 5-bit values.
+
+pHrp: The human-readable part, lowercase, 1 to 83 printable characters (for example "bc").
+
+pValues: The data as a comma-separated list of whole numbers from 0 to 31.
+
+pSpec: "bech32" or "bech32m".
+
+Returns: The encoded string, checksum included.
+
+Example:
+put cxBech32EncodeValues("bc", "0,14,20,15,7,13,26", "bech32") into tText
+
+Description:
+The raw bech32 layer below the SegWit addresses; most callers want
+<cxSegwitAddressEncode> or the address builders. An uppercase
+human-readable part is refused (uppercase the finished string instead),
+and so is any value that is not a whole number from 0 to 31.
+
+References: cxBech32DecodeValues (handler), cxSegwitAddressEncode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBech32EncodeValues pHrp, pValues, pSpec
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -817,6 +979,28 @@ end cxBech32EncodeValuesInner
 -- Decode a bech32 or bech32m string. Returns an array with keys "hrp", "spec"
 -- and "values" (the data part as a comma separated list of 5-bit numbers, with
 -- the six checksum characters removed). Throws on anything malformed.
+/**
+Summary: Decode a bech32 or bech32m string into its parts.
+
+pText: The bech32 or bech32m string.
+
+Returns: An array with keys "hrp", "spec" ("bech32" or "bech32m", whichever checksum verified) and "values" (the data as a comma-separated list of 5-bit numbers, without the checksum).
+
+Example:
+put cxBech32DecodeValues(tText) into tParts
+put tParts["spec"] into field "Encoding"
+
+Description:
+Throws on anything malformed: more than 90 characters, mixed case, a
+character outside the charset or printable ASCII, or a checksum that
+matches neither encoding. It reports which encoding verified rather
+than accepting either, which is what lets <cxSegwitAddressDecode> enforce
+the BIP-350 pairing.
+
+References: cxBech32EncodeValues (handler), cxSegwitAddressDecode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBech32DecodeValues pText
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1044,6 +1228,30 @@ end cxConvert5To8
 
 -- Build a SegWit address from a witness version (0..16) and its program bytes.
 -- The encoding follows from the version, which is the BIP-350 rule.
+/**
+Summary: A SegWit address from a witness version and program.
+
+pHrp: The human-readable part: "bc" for mainnet, "tb" for testnet.
+
+pVersion: The witness version, 0 to 16.
+
+pProgram: The witness program bytes, 2 to 40 bytes (exactly 20 or 32 for version 0).
+
+Returns: The address string.
+
+Example:
+put cxSegwitAddressEncode("tb", 0, cxHash160(tPubkey)) into tTestnetAddress
+
+Description:
+The encoding follows from the version, per BIP-350: version 0 uses
+bech32, versions 1 to 16 use bech32m. A version or program length out of
+range throws. For mainnet addresses from a key, the address builders
+such as <cxBtcAddressP2WPKH> are simpler.
+
+References: cxSegwitAddressDecode (handler), cxBtcAddressP2WPKH (handler), cxBech32EncodeValues (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxSegwitAddressEncode pHrp, pVersion, pProgram
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1090,6 +1298,30 @@ end cxSegwitAddressEncodeInner
 -- array with keys "version" and "program". Throws on every invalidity BIP-173
 -- and BIP-350 define, including the one that matters most: a version 0 address
 -- carrying a bech32m checksum, or a version 1+ address carrying a bech32 one.
+/**
+Summary: Decode a SegWit address, checking it is for the network you expect.
+
+pHrp: The expected human-readable part: "bc" for mainnet, "tb" for testnet.
+
+pAddress: The address to decode.
+
+Returns: An array with keys "version" (the witness version) and "program" (the witness program bytes).
+
+Example:
+put cxSegwitAddressDecode("bc", field "PayTo") into tDecoded
+put tDecoded["version"] into tVersion
+
+Description:
+Throws on every invalidity BIP-173 and BIP-350 define: a checksum that
+does not verify, the wrong encoding for the version (version 0 must be
+bech32, 1 and up bech32m), a program outside 2 to 40 bytes (exactly 20 or
+32 for version 0), non-canonical padding, and an address for a different
+network than pHrp.
+
+References: cxSegwitAddressEncode (handler), cxBech32DecodeValues (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxSegwitAddressDecode pHrp, pAddress
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1193,6 +1425,26 @@ private function cxCheckPubkey pPubkey, pName, pCompressedOnly
 end cxCheckPubkey
 
 -- Pay to public key hash: the original "1..." mainnet address.
+/**
+Summary: A legacy mainnet P2PKH address ("1...") for a public key.
+
+pPubkey: A 33-byte compressed or 65-byte uncompressed public key.
+
+Returns: The address string.
+
+Example:
+put cxBtcAddressP2PKH(cxPublicKey(tSeckey, true)) into tAddress
+
+Description:
+The compressed and uncompressed forms of one key give different
+addresses. A key of the wrong length, or with the wrong prefix byte for
+its length, throws rather than producing an address nobody can spend
+from.
+
+References: cxBtcAddressP2WPKH (handler), cxHash160 (handler), cxPublicKey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcAddressP2PKH pPubkey
    get cxCheckPubkey(pPubkey, "cxBtcAddressP2PKH", false)
    return cxBase58CheckEncode(numToByte(kCxVersionP2PKH) & cxHash160(pPubkey))
@@ -1201,6 +1453,25 @@ end cxBtcAddressP2PKH
 -- Pay to witness public key hash: a native SegWit v0 "bc1q..." address. The key
 -- MUST be compressed - an uncompressed key here produces an address whose funds
 -- are unspendable by every modern wallet, so it is refused rather than encoded.
+/**
+Summary: A native SegWit v0 mainnet address ("bc1q...") for a compressed public key.
+
+pPubkey: A 33-byte compressed public key.
+
+Returns: The address string.
+
+Example:
+put cxBtcAddressP2WPKH(cxPublicKey(tSeckey, true)) into tAddress
+
+Description:
+The key must be compressed: a SegWit v0 output built from an
+uncompressed key is unspendable by every modern wallet, so a 65-byte key
+throws instead of being encoded.
+
+References: cxBtcAddressP2PKH (handler), cxSegwitAddressEncode (handler), cxPublicKey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcAddressP2WPKH pPubkey
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1252,6 +1523,28 @@ end cxBtcAddressP2WPKHInner
 -- So: if you hold an internal key, call cxBtcAddressP2TRFromInternal. If you
 -- hold an output key, call this. If you are not sure which you hold, you hold
 -- an internal key.
+/**
+Summary: A Taproot mainnet address ("bc1p...") for an already-tweaked output key.
+
+pOutputKey: The 32-byte x-only Taproot OUTPUT key.
+
+Returns: The address string.
+
+Example:
+put cxTaprootTweak(tInternal, empty) into tTweak
+put cxBtcAddressP2TR(tTweak["outputKey"]) into tAddress
+
+Description:
+This handler encodes the key it is given and does NOT tweak it. Handing
+it a raw internal key (for example from <cxXOnlyPubkey>) produces a
+valid-looking address nobody can spend from. If you hold an internal
+key, call <cxBtcAddressP2TRFromInternal>; if you are not sure which you
+hold, you hold an internal key. A key that is not 32 bytes throws.
+
+References: cxBtcAddressP2TRFromInternal (handler), cxTaprootTweak (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcAddressP2TR pOutputKey
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1318,6 +1611,32 @@ end cxBtcAddressP2TRInner
 -- 33-byte record and contains no `item` expression. cxBtcAddressP2TRFromInternal
 -- below does need one, because the bech32m encoder it calls moves 5-bit groups
 -- as a comma list.
+/**
+Summary: The BIP-341 Taproot output key and parity for an internal key, as an array.
+
+pInternalKey: The 32-byte x-only internal key.
+
+pMerkleRoot: Empty for a key-path-only output, or the 32-byte script-tree root.
+
+Returns: An array with keys "outputKey" (the 32-byte x-only output key, the P2TR witness program) and "parity" (0 for even Y, 1 for odd).
+
+Example:
+put cxTaprootTweak(cxXOnlyPubkey(tSeckey), empty) into tTweak
+put tTweak["parity"] into tParity
+
+Description:
+A named-array form of <cxTaprootTweakPubkey>. A key-path spend and an
+address need only "outputKey"; a script-path spend puts "parity" in its
+control block (<cxTapControlBlock>).
+
+An empty pMerkleRoot is NOT 32 zero bytes: the two give different output
+keys, and the difference is consensus. If you have no script tree, pass
+empty. Any other root length, or a key that is not 32 bytes, throws.
+
+References: cxTaprootTweakPubkey (handler), cxBtcAddressP2TRFromInternal (handler), cxTapControlBlock (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxTaprootTweak pInternalKey, pMerkleRoot
    local tRecord, tResult, tKeyLen, tRootLen
    put the number of bytes of pInternalKey into tKeyLen
@@ -1348,6 +1667,30 @@ end cxTaprootTweak
 -- internal key with no script tree" - and those two readings of the same 32
 -- bytes produce different addresses, one of which is unspendable. A separate
 -- name is the only way to make the caller say which they meant.
+/**
+Summary: A Taproot mainnet address ("bc1p...") from an internal key, tweak included.
+
+pInternalKey: The 32-byte x-only internal key, for example from cxXOnlyPubkey.
+
+pMerkleRoot: Empty for a key-path-only output, or the 32-byte script-tree root.
+
+Returns: The address string.
+
+Example:
+put cxBtcAddressP2TRFromInternal(cxXOnlyPubkey(tSeckey), empty) into tAddress
+
+Description:
+The handler most Taproot callers want: it applies the BIP-341 tweak
+(<cxTaprootTweak>) and encodes the output key. It is a separate handler
+from <cxBtcAddressP2TR> because an absent xTalk parameter cannot be told
+from an empty one, and the two readings of the same 32 bytes give
+different addresses. An empty root is not 32 zero bytes. To spend, sign
+with the key from <cxTaprootTweakSeckey> and the same root.
+
+References: cxBtcAddressP2TR (handler), cxTaprootTweak (handler), cxTaprootTweakSeckey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcAddressP2TRFromInternal pInternalKey, pMerkleRoot
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1378,6 +1721,25 @@ end cxBtcAddressP2TRFromInternalInner
 -- The lowercase Ethereum address for a public key: the last 20 bytes of
 -- Keccak-256 over the 64 bytes of the UNCOMPRESSED key, without its 0x04 prefix.
 -- A compressed key is expanded first, so either form works.
+/**
+Summary: The lowercase Ethereum address ("0x...") for a public key.
+
+pPubkey: A 33-byte compressed or 65-byte uncompressed public key.
+
+Returns: The address as "0x" and 40 lowercase hex characters.
+
+Example:
+put cxEthAddressChecksum(cxEthAddress(cxPublicKey(tSeckey, false))) into tAddress
+
+Description:
+The last 20 bytes of Keccak-256 over the 64 bytes of the uncompressed key
+after its 0x04 prefix. A compressed key is expanded first. For the
+EIP-55 mixed-case form, pass the result to <cxEthAddressChecksum>.
+
+References: cxEthAddressChecksum (handler), cxKeccak256 (handler), cxRecover (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEthAddress pPubkey
    local tKey, tHash, tCount
    put the number of bytes of pPubkey into tCount
@@ -1397,6 +1759,25 @@ end cxEthAddress
 -- upper-cased when the matching nibble of Keccak-256 over the LOWERCASE address
 -- text is 8 or more. Accepts an address with or without the 0x prefix and with
 -- any casing, because its whole job is to compute the correct casing.
+/**
+Summary: The EIP-55 mixed-case (checksummed) form of an Ethereum address.
+
+pAddress: An address of 40 hex characters, with or without "0x", in any casing.
+
+Returns: The address as "0x" and 40 hex characters in EIP-55 casing.
+
+Example:
+put cxEthAddressChecksum("0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed") into tAddress
+
+Description:
+A letter is upper-cased when the matching nibble of Keccak-256 over the
+lowercase address text is 8 or more. Throws if the address is not 40 hex
+characters.
+
+References: cxEthAddressIsChecksummed (handler), cxEthAddress (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEthAddressChecksum pAddress
    local tPlain, tHash, tOut, tI, tCode, tNibble, tHex
    put pAddress into tPlain
@@ -1431,6 +1812,26 @@ end cxEthAddressChecksum
 -- all-uppercase address has NO checksum by definition, so this reports that
 -- rather than calling it valid: silently accepting an unchecked address is how
 -- the checksum stops protecting anyone.
+/**
+Summary: Whether an Ethereum address carries a correct EIP-55 checksum.
+
+pAddress: The address to check, with or without "0x".
+
+Returns: true or false.
+
+Example:
+if not cxEthAddressIsChecksummed(field "PayTo") then answer "Checksum missing or wrong."
+
+Description:
+An all-lowercase or all-uppercase address carries no checksum, so it
+answers false rather than being called valid. A mixed-case address
+answers true only when its casing matches <cxEthAddressChecksum>
+exactly, compared byte for byte.
+
+References: cxEthAddressChecksum (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEthAddressIsChecksummed pAddress
    local tPlain
    put pAddress into tPlain
@@ -1467,6 +1868,26 @@ end cxEthAddressIsChecksummed
 -- ==============================================================================
 
 -- Encode one byte string as an RLP item.
+/**
+Summary: Encode one byte string as an RLP item.
+
+pData: The bytes to encode.
+
+Returns: The RLP encoding.
+
+Example:
+put cxRlpEncodeBytes(tNonce) & cxRlpEncodeBytes(tGasPrice) into tFields
+put cxRlpEncodeList(tFields) into tEncoded
+
+Description:
+A single byte below 0x80 is its own encoding; anything else gets a
+length prefix. Encode each field, concatenate, and wrap the result with
+<cxRlpEncodeList>.
+
+References: cxRlpEncodeList (handler), cxRlpDecode (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxRlpEncodeBytes pData
    local tCount
    put the number of bytes of pData into tCount
@@ -1479,6 +1900,25 @@ end cxRlpEncodeBytes
 
 -- Wrap already-encoded items as an RLP list. Build the payload by concatenating
 -- cxRlpEncodeBytes / cxRlpEncodeList results, then pass it here.
+/**
+Summary: Wrap already-encoded RLP items as an RLP list.
+
+pEncodedItems: The concatenated RLP encodings of the list's elements.
+
+Returns: The RLP encoding of the list.
+
+Example:
+put cxRlpEncodeList(cxRlpEncodeBytes(tA) & cxRlpEncodeBytes(tB)) into tEncoded
+
+Description:
+xTalk has no nested-list literal, so a list is built from pieces: encode
+each element with <cxRlpEncodeBytes> or <cxRlpEncodeList>, concatenate,
+and pass the result here. Empty in gives the empty list.
+
+References: cxRlpEncodeBytes (handler), cxRlpDecode (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxRlpEncodeList pEncodedItems
    return cxRlpLengthPrefix(the number of bytes of pEncodedItems, 192) & pEncodedItems
 end cxRlpEncodeList
@@ -1519,6 +1959,28 @@ end cxUIntToBytes
 -- It rejects the non-canonical forms rather than accepting them, because RLP's
 -- guarantee is that one value has exactly one encoding, and a decoder that
 -- accepts two spellings of the same list breaks every hash computed over it.
+/**
+Summary: Decode one RLP item from the front of some bytes.
+
+pData: The RLP bytes.
+
+Returns: An array with keys "kind" ("bytes" or "list"), "payload" (the item's contents; for a list, the concatenated encodings of its elements) and "rest" (whatever followed the item).
+
+Example:
+put cxRlpDecode(tEncoded) into tItem
+put cxRlpDecode(tItem["payload"]) into tFirst
+
+Description:
+Walk a list by decoding its payload in a loop, reading "rest" each time.
+Empty input and truncated items throw, and so do non-canonical forms (a
+single byte below 0x80 wrapped in a prefix, a leading zero in a long
+length, a long form for a short value), because RLP promises one
+encoding per value.
+
+References: cxRlpEncodeBytes (handler), cxRlpEncodeList (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxRlpDecode pData
    local tResult, tPrefix, tCount, tLength, tLengthLength, tI, tHeader
    put the number of bytes of pData into tCount
@@ -1772,6 +2234,29 @@ end cxWordIndex
 -- no-op, because every word is ASCII. A NON-ASCII PASSPHRASE IS THE CALLER'S
 -- PROBLEM: normalize it to NFKD before calling cxMnemonicToSeed, or the seed
 -- will not match a wallet that did.
+/**
+Summary: A mnemonic's canonical whitespace: trimmed, one space between words.
+
+pText: The mnemonic as typed or pasted.
+
+Returns: The words separated by single spaces, with no leading or trailing whitespace.
+
+Example:
+put cxMnemonicNormalize(field "Backup") into tMnemonic
+
+Description:
+BIP-39 derives the seed from the mnemonic text, so a double space or a
+trailing newline would give a different wallet. <cxMnemonicValidate>,
+<cxMnemonicToEntropy> and <cxMnemonicToSeed> all call it first. Spaces,
+tabs, returns and line feeds count as whitespace.
+
+It does not apply Unicode NFKD. That changes nothing for the English
+wordlist, but a non-ASCII passphrase is yours to normalize.
+
+References: cxMnemonicToSeed (handler), cxMnemonicValidate (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxMnemonicNormalize pText
    local tOut, tI, tCount, tChar, tCode, tPending
    put "" into tOut
@@ -1822,6 +2307,24 @@ end cxSplitWords
 -- reason cxNewSeckey takes bytes rather than making them: a wallet's entire
 -- security is this input, and a library that quietly supplied it would be
 -- asking to be trusted about the one thing nobody should take on faith.
+/**
+Summary: The BIP-39 mnemonic for some entropy.
+
+pEntropy: 16, 20, 24, 28 or 32 random bytes.
+
+Returns: 12, 15, 18, 21 or 24 English words, separated by single spaces.
+
+Example:
+put cxMnemonicFromEntropy(sxRandomBytes(16)) into tMnemonic
+
+Description:
+CoinXT does not generate the entropy; supply it from a source you trust,
+such as SodiumXT's sxRandomBytes. Any other length throws.
+
+References: cxMnemonicToEntropy (handler), cxMnemonicToSeed (handler), cxBip39Wordlist (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxMnemonicFromEntropy pEntropy
    local tLen, tChecksumBits, tTotalBits, tWordCount, tSource, tList
    local tI, tB, tValue, tOut, tBitIndex
@@ -1856,6 +2359,26 @@ end cxMnemonicFromEntropy
 -- that is not in the list, on a word count BIP-39 does not define, and on a
 -- checksum mismatch - which is the whole point of the checksum, so a single
 -- mistyped word is caught here rather than becoming an empty wallet.
+/**
+Summary: The entropy a BIP-39 mnemonic encodes, with its checksum verified.
+
+pMnemonic: The mnemonic words.
+
+Returns: The 16 to 32 bytes of entropy.
+
+Example:
+put cxHexEncode(cxMnemonicToEntropy(tMnemonic)) into tEntropyHex
+
+Description:
+Whitespace is normalized first (<cxMnemonicNormalize>). Throws on a word
+that is not in the English list, a word count BIP-39 does not define,
+and a checksum mismatch, so one mistyped word is caught here. For a
+yes-or-no answer, use <cxMnemonicValidate>.
+
+References: cxMnemonicFromEntropy (handler), cxMnemonicValidate (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxMnemonicToEntropy pMnemonic
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1924,6 +2447,25 @@ end cxMnemonicToEntropyInner
 -- the wrong shape for an answer that is routinely no. The handlers that DO the
 -- work (cxMnemonicToEntropy) still throw, so a caller never acts on a bad
 -- mnemonic by accident.
+/**
+Summary: Whether a mnemonic is well-formed BIP-39 with a correct checksum.
+
+pMnemonic: The mnemonic words.
+
+Returns: true or false.
+
+Example:
+if cxMnemonicValidate(field "Backup") then put cxMnemonicToSeed(field "Backup", "") into tSeed
+
+Description:
+Answers false instead of throwing, for a restore screen that asks on
+every keystroke. Call it on anything a person typed before
+<cxMnemonicToSeed>, which does not check the checksum.
+
+References: cxMnemonicToEntropy (handler), cxMnemonicToSeed (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxMnemonicValidate pMnemonic
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -1966,6 +2508,31 @@ end cxMnemonicValidateInner
 --
 -- The passphrase must be ASCII, or already NFKD-normalized; see
 -- cxMnemonicNormalize.
+/**
+Summary: The 64-byte BIP-39 seed for a mnemonic and passphrase.
+
+pMnemonic: The mnemonic words.
+
+pPassphrase: The optional passphrase; empty for none.
+
+Returns: The 64-byte seed.
+
+Example:
+put cxHdFromSeed(cxMnemonicToSeed(tMnemonic, "")) into tMaster
+
+Description:
+PBKDF2-HMAC-SHA512 over the normalized mnemonic, salted with "mnemonic"
+and the passphrase, 2048 rounds. It does NOT verify the checksum (BIP-39
+defines a seed for any text), so a typo gives a good seed for the wrong
+wallet: call <cxMnemonicValidate> first. Unicode NFKD is not applied, so
+a non-ASCII passphrase must be normalized by you.
+
+The seed is secret; clear your variable when you are done with it.
+
+References: cxMnemonicValidate (handler), cxHdFromSeed (handler), cxPbkdf2HmacSha512 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxMnemonicToSeed pMnemonic, pPassphrase
    return cxPbkdf2HmacSha512(cxMnemonicNormalize(pMnemonic), \
          kCxBip39SaltPrefix & pPassphrase, kCxBip39Rounds, 64)
@@ -2011,6 +2578,28 @@ end cxFingerprint
 
 -- The master node for a seed - normally the 64 bytes cxMnemonicToSeed returned,
 -- though BIP-32 allows 16 to 64.
+/**
+Summary: The BIP-32 master node for a seed.
+
+pSeed: The seed, 16 to 64 bytes; normally the 64 bytes from cxMnemonicToSeed.
+
+Returns: The master node, as an array.
+
+Example:
+put cxHdFromSeed(cxMnemonicToSeed(tMnemonic, "")) into tMaster
+put cxHdDerivePath(tMaster, "m/84'/0'/0'/0/0") into tNode
+
+Description:
+A node is an array with keys "seckey" (32 bytes, or empty for a
+watch-only node), "pubkey" (33 bytes, compressed), "chaincode",
+"depth", "index" and "parentfp" (the parent's 4-byte fingerprint).
+A seed outside 16 to 64 bytes throws, and so does one BIP-32 calls
+invalid (about one in 2^127).
+
+References: cxHdDerivePath (handler), cxMnemonicToSeed (handler), cxXprv (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHdFromSeed pSeed
    local tLen, tI, tNode
    put the number of bytes of pSeed into tLen
@@ -2034,6 +2623,25 @@ end cxHdFromSeed
 -- key. This is the xpub half of a wallet, and everything it can still do
 -- (derive non-hardened children, and therefore receive addresses) is exactly
 -- what makes an xpub both useful and a privacy liability if it leaks.
+/**
+Summary: The watch-only form of an HD node: same public key and chain code, no private key.
+
+pNode: The node, as an array.
+
+Returns: A copy of the node with an empty "seckey".
+
+Example:
+put cxXpub(cxHdNeuter(tAccount)) into tXpub
+
+Description:
+A neutered node still derives non-hardened children, and therefore every
+receive address on that branch: that is what makes an xpub useful, and a
+privacy risk if it leaks. It cannot derive a hardened child.
+
+References: cxXpub (handler), cxHdDeriveChild (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHdNeuter pNode
    local tNode
    put pNode into tNode
@@ -2044,6 +2652,30 @@ end cxHdNeuter
 -- One derivation step. pIndex is the full child number, so a hardened child is
 -- kCxHardenedBase plus its number (cxHdDerivePath does that for you when it
 -- sees a ' marker).
+/**
+Summary: One BIP-32 derivation step from an HD node.
+
+pNode: The parent node, as an array.
+
+pIndex: The full child number, written in digits, from 0 to 4294967295; a hardened child is 2147483648 plus its number.
+
+Returns: The child node, as an array.
+
+Example:
+put cxHdDeriveChild(tAccount, 0) into tChain
+put cxHdDeriveChild(tChain, 5) into tNode
+
+Description:
+A watch-only node derives only non-hardened children; asking it for a
+hardened one throws. The index must be a run of digits, so "1e1", "3.5"
+or an empty index throws rather than deriving a different child. In the
+rare case BIP-32 says to skip an index, this throws rather than silently
+returning another child. Most callers want <cxHdDerivePath>.
+
+References: cxHdDerivePath (handler), cxHdNeuter (handler), cxSeckeyTweakAdd (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHdDeriveChild pNode, pIndex
    local tData, tI, tChild, tHasPrivate, tIndex
    -- the index as DIGITS first (cxCheckedIndex, 2026-09-28): "1e1" was child
@@ -2089,6 +2721,33 @@ end cxHdDeriveChild
 -- BIP-32 paths are routinely written relative to an account node. What IS
 -- checked is that every level is a number in range and that the separators are
 -- what they claim to be.
+/**
+Summary: Walk a BIP-32 path such as "m/44'/0'/0'/0/0" from an HD node.
+
+pNode: The starting node, as an array; usually the master node.
+
+pPath: The path: "m", then levels separated by "/", each a number below 2^31, optionally followed by ', h or H for hardened.
+
+Returns: The derived node, as an array.
+
+Example:
+put cxHdDerivePath(tMaster, "m/44'/0'/0'/0/0") into tNode
+put cxBtcAddressP2PKH(tNode["pubkey"]) into tAddress
+
+Description:
+"m" alone returns the node unchanged. The parse is strict: a level that
+is not plain digits, an empty level or a trailing "/" throws, because
+"m/1e3" quietly becoming 1000 would be a different wallet with no error.
+The leading "m" is not checked against the node being a master node.
+
+Check your integration once: from the test mnemonic "abandon" eleven
+times then "about", m/44'/0'/0'/0/0 must give
+1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA.
+
+References: cxHdDeriveChild (handler), cxHdFromSeed (handler), cxXprv (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxHdDerivePath pNode, pPath
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -2189,6 +2848,25 @@ end cxHdSerialize
 -- The node as an "xprv..." string. Mainnet only for now; a testnet or altcoin
 -- prefix is a different version number and nothing else, but CoinXT does not
 -- ship one it has not pinned to a vector.
+/**
+Summary: An HD node as a mainnet "xprv..." string.
+
+pNode: The node, as an array, with its private key.
+
+Returns: The Base58Check xprv string.
+
+Example:
+put cxXprv(cxHdDerivePath(tMaster, "m/44'/0'/0'")) into tAccountXprv
+
+Description:
+Mainnet only: CoinXT does not ship a version prefix it has not pinned to
+a vector. A node with no private key, or a depth above 255, throws. The
+result is a secret; store it as carefully as the seed.
+
+References: cxXpub (handler), cxHdFromSeed (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxXprv pNode
    if pNode["seckey"] is "" then
       throw "CoinXT: cxXprv: this node has no private key, so it can only be serialized as an xpub."
@@ -2202,6 +2880,24 @@ end cxXprv
 -- The node as an "xpub..." string. Safe to hand out in the sense that it holds
 -- no private key, and unsafe in the sense that it reveals every address the
 -- wallet will ever use on that branch.
+/**
+Summary: An HD node as a mainnet "xpub..." string.
+
+pNode: The node, as an array; private or watch-only.
+
+Returns: The Base58Check xpub string.
+
+Example:
+put cxXpub(cxHdDerivePath(tMaster, "m/44'/0'/0'")) into tAccountXpub
+
+Description:
+An xpub holds no private key, but it reveals every address the wallet
+will use on that branch. Mainnet only. A depth above 255 throws.
+
+References: cxXprv (handler), cxHdNeuter (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxXpub pNode
    if pNode["depth"] > 255 then
       throw "CoinXT: cxXpub: BIP-32 stores the depth in one byte, so it cannot exceed 255."
@@ -2249,6 +2945,30 @@ constant kCxWifVersionTestnet = 239
 -- cxBech32Const rule: a wrong network is a programming error, never a
 -- default); pCompressed must be literally true or false, because it changes
 -- which address the key unlocks and there is no safe side to guess.
+/**
+Summary: A private key as Wallet Import Format (WIF) text.
+
+pSeckeyHex: The private key as 64 hex characters.
+
+pNetwork: "mainnet" or "testnet".
+
+pCompressed: true or false: whether the wallet should use the compressed public key.
+
+Returns: The WIF string (on mainnet it starts with 5, K or L).
+
+Example:
+put cxWifEncode(cxHexEncode(tSeckey), "mainnet", true) into tWif
+
+Description:
+The flag decides which address the key unlocks, so it must be literally
+true or false. Fails closed: a key that is not 64 hex characters, an
+unknown network, another flag value, and a key that is zero or not below
+the group order all throw.
+
+References: cxWifDecode (handler), cxSeckeyIsValid (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxWifEncode pSeckeyHex, pNetwork, pCompressed
    local tKey, tVersion, tPayload, tOut
    -- The argument checks run before the key is decoded, so no throw below
@@ -2299,6 +3019,28 @@ end cxWifEncode
 -- unknown version byte, a trailing byte that is not the 0x01 marker, and an
 -- out-of-range key each throw here. A typo in a pasted key must never decode
 -- to a plausible neighbouring wallet.
+/**
+Summary: Decode a Wallet Import Format (WIF) private key.
+
+pWif: The WIF string.
+
+Returns: An array with keys "seckey" (64 lowercase hex characters), "network" ("mainnet" or "testnet") and "compressed" (true or false).
+
+Example:
+put cxWifDecode(field "ImportKey") into tKey
+put cxPublicKey(cxHexDecode(tKey["seckey"]), tKey["compressed"]) into tPubkey
+
+Description:
+The key comes back as hex text; run <cxHexDecode> on it before signing.
+Keep the "compressed" flag: deriving the other public key form pays a
+different address. Throws on a bad character or checksum, a payload that
+is not 33 or 34 bytes, an unknown version byte, a trailing byte that is
+not the 0x01 marker, and a key out of range.
+
+References: cxWifEncode (handler), cxBase58CheckDecode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxWifDecode pWif
    local tBody, tCount, tVersion, tKey, tResult
    put cxBase58CheckDecode(pWif) into tBody
@@ -2551,6 +3293,25 @@ end cxUIntToBytesLE
 -- is settled by cxCheckedWhole first (digits, at most 2^53; 2026-09-26), so
 -- the magnitude tests below compare an exact integer, never text or a
 -- rounded value: "1e3" was a count of 1000 to them.
+/**
+Summary: Bitcoin CompactSize (varint) encoding of a count.
+
+pN: The count, written in digits, at most 2^53.
+
+Returns: 1, 3, 5 or 9 bytes.
+
+Example:
+put cxVarInt(the number of bytes of tScript) & tScript into tPrefixed
+
+Description:
+The count must be a run of ASCII digits: a minus, an exponent such as
+"1e3", a decimal point or an empty value throws, and so does a count
+above 2^53.
+
+References: cxBtcOutput (handler), cxBtcWitness (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxVarInt pN
    local tN
    put cxCheckedWhole(pN, "9007199254740992", "cxVarInt", "the count") into tN
@@ -2593,6 +3354,24 @@ end cxRlpUintFromHex
 -- what a Bitcoin scriptSig carries. cxSign already enforces low-s, so no
 -- normalization is needed here; this is pure structure. The SIGHASH type byte
 -- is the caller's to append.
+/**
+Summary: A 64-byte compact signature as a DER signature.
+
+pCompactSig: The 64-byte signature (r then s), as cxSign returns it.
+
+Returns: The DER-encoded signature.
+
+Example:
+put cxDerEncode(cxSign(tSeckey, tDigest)) & numToByte(1) into tSigWithType
+
+Description:
+What a Bitcoin scriptSig or witness carries. The SIGHASH type byte is
+yours to append. A signature that is not 64 bytes throws.
+
+References: cxSign (handler), cxBtcWitness (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxDerEncode pCompactSig
    local tR, tS, tBody
    if the number of bytes of pCompactSig is not 64 then
@@ -2621,6 +3400,27 @@ end cxDerInteger
 
 -- A 36-byte outpoint from a display-order (big-endian) txid hex and a vout. The
 -- txid serializes little-endian (byte-reversed), then the 4-byte LE index.
+/**
+Summary: A 36-byte transaction outpoint from a txid and an output index.
+
+pTxidHex: The txid as 64 hex characters, in display order.
+
+pVout: The output index, written in digits.
+
+Returns: 36 bytes: the txid byte-reversed, then the index as 4 little-endian bytes.
+
+Example:
+put cxHexEncode(cxBtcOutpoint(tTxid, 0)) into tOutpoints
+
+Description:
+The builders take outpoints as a comma-separated list of hex, one per
+input, so encode each with <cxHexEncode>. A txid that is not 32 bytes, or
+an index not written in digits or too large for 4 bytes, throws.
+
+References: cxBtcSighashSegwit (handler), cxBtcTxEncode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcOutpoint pTxidHex, pVout
    local tTxid
    put cxHexDecode(pTxidHex) into tTxid
@@ -2642,6 +3442,27 @@ end cxReverseBytes
 
 -- A serialized transaction output: 8-byte LE amount, then the scriptPubKey with
 -- its CompactSize length. pScriptHex is the scriptPubKey as hex.
+/**
+Summary: A serialized Bitcoin transaction output.
+
+pAmountSat: The amount in satoshi, written in digits.
+
+pScriptHex: The output's scriptPubKey as hex.
+
+Returns: The output bytes: the 8-byte little-endian amount, then the script with its CompactSize length.
+
+Example:
+put cxHexEncode(cxBtcOutput(10000, "0014" & tKeyHashHex)) into tOutputs
+
+Description:
+The transaction builders take outputs as a comma-separated list of hex,
+one per output, so encode each with <cxHexEncode>. The amount must be a
+run of digits, at most 2^53.
+
+References: cxBtcTxEncode (handler), cxBtcSighashSegwit (handler), cxVarInt (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcOutput pAmountSat, pScriptHex
    local tScript
    put cxHexDecode(pScriptHex) into tScript
@@ -2654,6 +3475,45 @@ end cxBtcOutput
 -- cxBtcOutput). pScriptCodeHex is the BARE scriptPubKey of the input being
 -- signed (this layer adds its length prefix); every other input's script slot
 -- is empty. Returns a 32-byte digest to hand to cxSign.
+/**
+Summary: The pre-SegWit SIGHASH_ALL digest to sign for one input.
+
+pVersion: The transaction version, in digits.
+
+pOutpoints: A comma list of outpoint hex (from cxBtcOutpoint), one per input.
+
+pSequences: A comma list of sequence numbers, one per input.
+
+pIndex: The 1-based index of the input being signed, in digits.
+
+pScriptCodeHex: The bare scriptPubKey of that input, as hex; the length prefix is added for you.
+
+pOutputs: A comma list of serialized-output hex (from cxBtcOutput).
+
+pLocktime: The transaction locktime, in digits.
+
+pSighashType: Must be 1 (SIGHASH_ALL).
+
+Returns: The 32-byte digest to sign with cxSign.
+
+Example:
+put cxBtcSighashLegacy(2, tOutpoints, "4294967293", 1, tPrevScript, tOutputs, 0, 1) into tDigest
+put cxDerEncode(cxSign(tSeckey, tDigest)) & numToByte(1) into tSig
+
+Description:
+Every other input's script slot is left empty, as the legacy algorithm
+requires. Only SIGHASH_ALL is implemented, so any other type throws
+rather than producing a digest that commits to the wrong data. Lists
+that are not parallel, an index out of range or not in digits, and any
+number not written in digits also throw.
+
+This builds the digest; your app signs it after showing the user what
+the transaction does.
+
+References: cxBtcSighashSegwit (handler), cxBtcTxEncode (handler), cxSign (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcSighashLegacy pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pOutputs, pLocktime, pSighashType
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -2732,6 +3592,48 @@ end cxBtcSighashLegacyInner
 -- adds the length prefix). pOutputs is REQUIRED: hashOutputs is the commitment
 -- that binds the signature to WHERE the coins go, so a preimage without it would
 -- authorize a payment to anywhere (the review caught exactly this).
+/**
+Summary: The BIP-143 (SegWit v0) SIGHASH_ALL digest to sign for one input.
+
+pVersion: The transaction version, in digits.
+
+pOutpoints: A comma list of outpoint hex (from cxBtcOutpoint), one per input.
+
+pSequences: A comma list of sequence numbers, one per input.
+
+pIndex: The 1-based index of the input being signed, in digits.
+
+pScriptCodeHex: The bare scriptCode as hex; for P2WPKH, the P2PKH script 76a914, the key hash, 88ac.
+
+pAmountSat: The amount of the input being spent, in satoshi.
+
+pOutputs: A comma list of serialized-output hex (from cxBtcOutput); required.
+
+pLocktime: The transaction locktime, in digits.
+
+pSighashType: Must be 1 (SIGHASH_ALL).
+
+Returns: The 32-byte digest to sign with cxSign.
+
+Example:
+put "76a914" & cxHexEncode(cxHash160(tPubkey)) & "88ac" into tScriptCode
+put cxBtcSighashSegwit(2, tOutpoints, tSequences, 1, tScriptCode, 50000, tOutputs, 0, 1) into tDigest
+put cxDerEncode(cxSign(tSeckey, tDigest)) & numToByte(1) into tSig
+
+Description:
+BIP-143 commits to the input amount and to the outputs, which binds the
+signature to where the coins go. Only SIGHASH_ALL is implemented; any
+other type throws (Taproot's full type set is in <cxBtcSighashTaproot>).
+Lists that are not parallel, an index out of range or not in digits,
+and any number not written in digits throw.
+
+This builds the digest; your app signs it after showing the user what
+the transaction does.
+
+References: cxBtcSighashLegacy (handler), cxBtcWitness (handler), cxBtcTxEncode (handler), cxSign (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcSighashSegwit pVersion, pOutpoints, pSequences, pIndex, pScriptCodeHex, pAmountSat, pOutputs, pLocktime, pSighashType
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -2832,6 +3734,30 @@ end cxTapTagged
 -- || script. pLeafVersion is the EVEN byte from the control block (0xc0 for
 -- tapscript); scripts here stay under 253 bytes, so a longer one is refused
 -- rather than given a wrong one-byte size prefix.
+/**
+Summary: The BIP-341 TapLeaf hash of a script.
+
+pLeafVersion: The leaf version, an even byte value: 192 (0xc0) for tapscript.
+
+pScriptHex: The script as hex, under 253 bytes.
+
+Returns: The 32-byte leaf hash as 64 hex characters.
+
+Example:
+put cxTapLeafHash(192, tScriptHex) into tLeaf
+
+Description:
+The tagged TapLeaf hash over the version, the size of the script and
+the script itself. An odd or out-of-range version throws, and so does 0x50 (80),
+which BIP-341 reserves. A script of 253 bytes or more throws rather than
+being given a wrong one-byte size prefix. Pass the result to
+<cxTapBranchHash> to build a tree, and to <cxBtcSighashTaproot> to spend
+by this leaf.
+
+References: cxTapBranchHash (handler), cxTapControlBlock (handler), cxBtcSighashTaproot (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxTapLeafHash pLeafVersion, pScriptHex
    local tScript
    if pLeafVersion < 0 or pLeafVersion > 254 or cxIntMod(pLeafVersion, 2) is not 0 then
@@ -2855,6 +3781,29 @@ end cxTapLeafHash
 -- branch is a different root and a different address - and it compares BYTE
 -- VALUES through cxCompareBytes, never `<` (two hex strings that both look
 -- numeric would compare as numbers; discipline 3).
+/**
+Summary: The BIP-341 TapBranch hash of two child hashes.
+
+pAHex: One child hash, as 64 hex characters.
+
+pBHex: The other child hash, as 64 hex characters.
+
+Returns: The 32-byte branch hash as 64 hex characters.
+
+Example:
+put cxTapBranchHash(cxTapLeafHash(192, tScriptA), cxTapLeafHash(192, tScriptB)) into tRoot
+put cxBtcAddressP2TRFromInternal(tInternal, cxHexDecode(tRoot)) into tAddress
+
+Description:
+The children are sorted by byte value inside the handler, as consensus
+requires, so the argument order does not change the result. Building a
+larger tree (choosing its shape, collecting the merkle path) is your loop
+over this handler. A child that is not 32 bytes throws.
+
+References: cxTapLeafHash (handler), cxTapControlBlock (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxTapBranchHash pAHex, pBHex
    local tA, tB
    put cxHexDecode(pAHex) into tA
@@ -2872,6 +3821,34 @@ end cxTapBranchHash
 -- key || the merkle path (the SIBLING hashes from the leaf to the root, in
 -- leaf-to-root order, as a comma list of 64-hex; empty for a single-leaf
 -- tree). pParity is the 0/1 the tweak reported (cxTaprootTweak's "parity").
+/**
+Summary: The control block for a Taproot script-path spend, as hex.
+
+pLeafVersion: The leaf version, an even byte value: 192 (0xc0) for tapscript.
+
+pParity: 0 or 1: the parity cxTaprootTweak reported for the output key.
+
+pInternalKeyHex: The 32-byte x-only internal key, as hex.
+
+pPathHex: The sibling hashes from the leaf up to the root as a comma list of 64-hex; empty for a one-leaf tree.
+
+Returns: The control block as hex: the version and parity byte, the internal key, then the path.
+
+Example:
+put cxTaprootTweak(tInternal, cxHexDecode(tRoot)) into tTweak
+put cxTapControlBlock(192, tTweak["parity"], cxHexEncode(tInternal), tSiblingHex) into tControl
+
+Description:
+The last element of a script-path witness. Leaf version 0x50 (80) is
+refused (a witness element starting with 0x50 is read as the annex), as
+are an odd version, a parity other than 0 or 1, a key that is not 32
+bytes, and a path longer than 128 nodes or with an element that is not
+32 bytes.
+
+References: cxTapLeafHash (handler), cxTapBranchHash (handler), cxTaprootTweak (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxTapControlBlock pLeafVersion, pParity, pInternalKeyHex, pPathHex
    local tError
    local tSavedDelim, tResult, tFailed, tFailure
@@ -2940,6 +3917,50 @@ end cxTapControlBlockInner
 -- ANYONECANPAY forms - each pinned to a published keyPathSpending vector,
 -- which is what the segwit builder's SIGHASH_ALL-only refusal said the
 -- variants would need before they could exist.
+/**
+Summary: The BIP-341 (Taproot) signature hash to sign for one input.
+
+pVersion: The transaction version, in digits.
+
+pOutpoints: A comma list of outpoint hex (from cxBtcOutpoint), one per input.
+
+pSequences: A comma list of sequence numbers, one per input.
+
+pAmountsSat: A comma list of the amounts being spent, in satoshi, one per input.
+
+pScriptPubkeys: A comma list of the scriptPubKeys being spent, as hex, one per input.
+
+pOutputs: A comma list of serialized-output hex (from cxBtcOutput).
+
+pIndex: The 1-based index of the input being signed, in digits.
+
+pLocktime: The transaction locktime, in digits.
+
+pSighashType: 0 (default), 1, 2, 3, 129, 130 or 131 (0x81 to 0x83).
+
+pTapleafHex: Empty for a key-path spend, or the leaf hash from cxTapLeafHash for a script-path spend.
+
+Returns: The 32-byte digest to sign with cxSchnorrSign.
+
+Example:
+put cxBtcSighashTaproot(2, tOutpoints, tSequences, tAmounts, tSpks, tOutputs, 1, 0, 0, empty) into tSighash
+put cxTaprootTweakSeckey(tSeckey, empty) into tSpendKey
+put cxSchnorrSign(tSpendKey, tSighash, empty) into tSignature
+
+Description:
+Unlike BIP-143, it commits to every spent output, so the per-input
+amount and scriptPubKey lists are required and must be parallel to the
+outpoints. 0x80 alone is not a type and throws, as does SIGHASH_SINGLE
+with no matching output. The script path covers the common case only:
+leaf version 0, no OP_CODESEPARATOR, and no annex.
+
+This builds the digest; your app signs it after showing the user what
+the transaction does.
+
+References: cxSchnorrSign (handler), cxTaprootTweakSeckey (handler), cxTapLeafHash (handler), cxBtcTxEncode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcSighashTaproot pVersion, pOutpoints, pSequences, pAmountsSat, pScriptPubkeys, pOutputs, pIndex, pLocktime, pSighashType, pTapleafHex
    local tError
    local tSavedDelim, tResult, tFailed, tFailure
@@ -3062,6 +4083,25 @@ end cxBtcSighashTaprootInner
 -- A serialized SegWit witness stack for one input: the CompactSize item count,
 -- then each item as CompactSize-length + bytes. pItems is a comma list of item
 -- hex (empty string for an input with no witness).
+/**
+Summary: A serialized SegWit witness stack for one input.
+
+pItems: A comma list of the witness items as hex; empty for an input with no witness.
+
+Returns: The witness bytes: the item count, then each item with its CompactSize length.
+
+Example:
+put cxHexEncode(tSig) & "," & cxHexEncode(tPubkey) into tItems
+put cxHexEncode(cxBtcWitness(tItems)) into tWitnessHex
+
+Description:
+Pass one of these per input, hex-encoded and comma-separated, as
+<cxBtcTxEncode>'s witness list.
+
+References: cxBtcTxEncode (handler), cxDerEncode (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcWitness pItems
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -3101,6 +4141,40 @@ end cxBtcWitnessInner
 -- "" for none). pOutputs is a comma list of serialized-output hex. If any
 -- witness is non-empty the BIP-141 marker+flag and witness section are emitted.
 -- Returns the raw transaction as Data.
+/**
+Summary: Serialize a full Bitcoin transaction.
+
+pVersion: The transaction version, in digits.
+
+pOutpoints: A comma list of outpoint hex (from cxBtcOutpoint), one per input.
+
+pScriptSigs: A comma list of scriptSig hex, one per input; an empty item for none.
+
+pSequences: A comma list of sequence numbers, exactly one per input.
+
+pWitnesses: A comma list of witness hex (from cxBtcWitness), one per input; an empty item, or an empty list, for none.
+
+pOutputs: A comma list of serialized-output hex (from cxBtcOutput).
+
+pLocktime: The transaction locktime, in digits.
+
+Returns: The raw transaction bytes.
+
+Example:
+put cxBtcTxEncode(2, tOutpoints, "", tSequences, tWitnessHex, tOutputs, 0) into tRawTx
+put cxHexEncode(tRawTx) into field "Broadcast"
+
+Description:
+When any witness is non-empty, the BIP-141 marker, flag and witness
+section are written. The scriptSig and witness lists are read by index,
+so a short list means trailing empty entries; only a list longer than
+the inputs throws. The sequence list must have exactly one entry per
+input.
+
+References: cxBtcTxid (handler), cxBtcWitness (handler), cxBtcOutput (handler), cxBtcSighashSegwit (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcTxEncode pVersion, pOutpoints, pScriptSigs, pSequences, pWitnesses, pOutputs, pLocktime
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -3212,6 +4286,36 @@ end cxBtcTxBody
 -- The transaction id as display-order (big-endian) hex: hash256 of the
 -- non-witness serialization (BIP-141), byte-reversed for display. Same input
 -- lists as cxBtcTxEncode minus the witnesses.
+/**
+Summary: A Bitcoin transaction's txid, as display-order hex.
+
+pVersion: The transaction version, in digits.
+
+pOutpoints: A comma list of outpoint hex, one per input.
+
+pScriptSigs: A comma list of scriptSig hex, one per input.
+
+pSequences: A comma list of sequence numbers, one per input.
+
+pOutputs: A comma list of serialized-output hex.
+
+pLocktime: The transaction locktime, in digits.
+
+Returns: The txid as 64 hex characters.
+
+Example:
+put cxBtcTxid(2, tOutpoints, "", tSequences, tOutputs, 0) into tTxid
+
+Description:
+HASH256 of the serialization without witnesses (BIP-141), byte-reversed
+for display. It takes the same lists as <cxBtcTxEncode> minus the
+witnesses, so a SegWit transaction's txid does not depend on its
+signatures.
+
+References: cxBtcTxEncode (handler), cxHash256 (handler), cxBtcOutpoint (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 function cxBtcTxid pVersion, pOutpoints, pScriptSigs, pSequences, pOutputs, pLocktime
    local tError -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tSavedDelim, tResult, tFailed, tFailure
@@ -3240,6 +4344,39 @@ end cxBtcTxid
 
 -- The EIP-155 legacy signing digest: keccak(rlp([nonce, gasPrice, gas, to,
 -- value, data, chainId, 0, 0])). Hand the result to cxSignRecoverable.
+/**
+Summary: The EIP-155 signing digest for a legacy Ethereum transaction.
+
+pNonce: The account nonce, in digits.
+
+pGasPriceHex: The gas price in wei, as big-endian hex.
+
+pGas: The gas limit, in digits.
+
+pToHex: The 20-byte recipient as hex; empty for a contract creation.
+
+pValueHex: The value in wei, as big-endian hex.
+
+pDataHex: The call data as hex; empty for none.
+
+pChainId: The chain id, in digits (1 for Ethereum mainnet).
+
+Returns: The 32-byte Keccak-256 digest to sign with cxSignRecoverable.
+
+Example:
+put cxEthLegacySighash(0, "04a817c800", 21000, tToHex, "0de0b6b3a7640000", "", 1) into tDigest
+put cxSignRecoverable(tSeckey, tDigest) into tSig
+
+Description:
+Wei-scale amounts cross as big-endian hex because they exceed exact
+integers; the counters are written in digits, at most 2^53. Pass the signature to <cxEthLegacyEncode> with the same
+fields. This builds the digest; your app signs it after showing the user
+what the transaction does.
+
+References: cxEthLegacyEncode (handler), cxSignRecoverable (handler), cxEth1559Sighash (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEthLegacySighash pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId
    local tBody
    put cxRlpUintFromHex(cxHexOfInt(pNonce)) into tBody
@@ -3258,6 +4395,46 @@ end cxEthLegacySighash
 -- and next 32 as pSHex, or the whole 64 via cxDerEncode's inputs). v is
 -- pRecid + 2*pChainId + 35. Returns an array: ["raw"] the signed tx hex,
 -- ["txhash"] the keccak transaction hash hex.
+/**
+Summary: The signed EIP-155 legacy Ethereum transaction.
+
+pNonce: The account nonce, in digits.
+
+pGasPriceHex: The gas price in wei, as big-endian hex.
+
+pGas: The gas limit, in digits.
+
+pToHex: The 20-byte recipient as hex; empty for a contract creation.
+
+pValueHex: The value in wei, as big-endian hex.
+
+pDataHex: The call data as hex; empty for none.
+
+pChainId: The chain id, in digits, at most 4503599627370478.
+
+pRecid: The recovery id, 0 or 1: byte 65 of the cxSignRecoverable signature.
+
+pRHex: r, the first 32 bytes of the signature, as hex.
+
+pSHex: s, bytes 33 to 64 of the signature, as hex.
+
+Returns: An array with keys "raw" (the signed transaction as hex) and "txhash" (its Keccak-256 hash as hex).
+
+Example:
+put cxEthLegacyEncode(0, "04a817c800", 21000, tToHex, "0de0b6b3a7640000", "", 1, byteToNum(byte 65 of tSig), cxHexEncode(byte 1 to 32 of tSig), cxHexEncode(byte 33 to 64 of tSig)) into tTx
+put tTx["raw"] into field "Broadcast"
+
+Description:
+v is written as the recovery id plus twice the chain id plus 35. Any
+other recovery id would write another chain's v, so it throws, and so
+does a chain id too large for v to stay exact. Wei-scale amounts cross as big-endian hex because they exceed exact
+integers; the counters are written in digits, at most 2^53. The fields
+must match those passed to <cxEthLegacySighash>.
+
+References: cxEthLegacySighash (handler), cxSignRecoverable (handler), cxEth1559Encode (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEthLegacyEncode pNonce, pGasPriceHex, pGas, pToHex, pValueHex, pDataHex, pChainId, pRecid, pRHex, pSHex
    local tBody, tRaw, tResult, tV, tRecid, tChain
    -- v IS COMPUTED, SO ITS INPUTS ARE BOUNDED WHERE THE SUM STILL FITS
@@ -3297,6 +4474,42 @@ end cxEthLegacyEncode
 -- The EIP-1559 (type 0x02) signing digest: keccak(0x02 || rlp([chainId, nonce,
 -- maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList])).
 -- The access list is the empty list in this build.
+/**
+Summary: The signing digest for an EIP-1559 (type 2) Ethereum transaction.
+
+pChainId: The chain id, in digits (1 for Ethereum mainnet).
+
+pNonce: The account nonce, in digits.
+
+pMaxPriorityHex: The max priority fee per gas in wei, as big-endian hex.
+
+pMaxFeeHex: The max fee per gas in wei, as big-endian hex.
+
+pGas: The gas limit, in digits.
+
+pToHex: The 20-byte recipient as hex; empty for a contract creation.
+
+pValueHex: The value in wei, as big-endian hex.
+
+pDataHex: The call data as hex; empty for none.
+
+Returns: The 32-byte Keccak-256 digest to sign with cxSignRecoverable.
+
+Example:
+put cxEth1559Sighash(1, 0, "3b9aca00", "04a817c800", 21000, tToHex, "0de0b6b3a7640000", "") into tDigest
+put cxSignRecoverable(tSeckey, tDigest) into tSig
+
+Description:
+The access list is always empty in this build. Wei-scale amounts cross as big-endian hex because they exceed exact
+integers; the counters are written in digits, at most 2^53. Pass the
+signature to <cxEth1559Encode> with the same fields. This builds the
+digest; your app signs it after showing the user what the transaction
+does.
+
+References: cxEth1559Encode (handler), cxSignRecoverable (handler), cxEthLegacySighash (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEth1559Sighash pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex
    local tBody
    put cxEth1559Body(pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex) into tBody
@@ -3321,6 +4534,46 @@ end cxEth1559Body
 -- Assemble the signed EIP-1559 transaction. pRecid is the y-parity (0 or 1), the
 -- 1559 signature's v; pRHex / pSHex are the compact r and s. Returns an array:
 -- ["raw"] the 0x02-prefixed tx hex, ["txhash"] the keccak transaction hash hex.
+/**
+Summary: The signed EIP-1559 (type 2) Ethereum transaction.
+
+pChainId: The chain id, in digits.
+
+pNonce: The account nonce, in digits.
+
+pMaxPriorityHex: The max priority fee per gas in wei, as big-endian hex.
+
+pMaxFeeHex: The max fee per gas in wei, as big-endian hex.
+
+pGas: The gas limit, in digits.
+
+pToHex: The 20-byte recipient as hex; empty for a contract creation.
+
+pValueHex: The value in wei, as big-endian hex.
+
+pDataHex: The call data as hex; empty for none.
+
+pRecid: The y-parity, 0 or 1: byte 65 of the cxSignRecoverable signature.
+
+pRHex: r, the first 32 bytes of the signature, as hex.
+
+pSHex: s, bytes 33 to 64 of the signature, as hex.
+
+Returns: An array with keys "raw" (the 0x02-prefixed signed transaction as hex) and "txhash" (its Keccak-256 hash as hex).
+
+Example:
+put cxEth1559Encode(1, 0, "3b9aca00", "04a817c800", 21000, tToHex, "0de0b6b3a7640000", "", byteToNum(byte 65 of tSig), cxHexEncode(byte 1 to 32 of tSig), cxHexEncode(byte 33 to 64 of tSig)) into tTx
+put tTx["txhash"] into field "TxHash"
+
+Description:
+The y-parity must be 0 or 1; a 2, or a legacy v such as 27, throws.
+Wei-scale amounts cross as big-endian hex because they exceed exact
+integers; the counters are written in digits, at most 2^53. The fields must match those passed to <cxEth1559Sighash>.
+
+References: cxEth1559Sighash (handler), cxSignRecoverable (handler), cxEthLegacyEncode (handler)
+
+Tags: Cryptography, Ethereum
+*/
 function cxEth1559Encode pChainId, pNonce, pMaxPriorityHex, pMaxFeeHex, pGas, pToHex, pValueHex, pDataHex, pRecid, pRHex, pSHex
    local tBody, tRaw, tResult, tParity
    -- THE Y-PARITY IS 0 OR 1 (2026-09-28; row #10's review, the same rule

@@ -165,6 +165,12 @@ The gates whose reason is not in their name:
   `check-stack-size.py`: every window fits 1200 x 640 (720p); holde-em's controls are held by
   `holde-em/tools/check-table-layout.py`. `check-doc-anchors.py`: a suite-doc citation written
   `path` ("anchor") must resolve to one file containing the anchor verbatim.
+- `check-dictionary-docs.py` (fixture `test-dictionary-docs.py`): the libraries OXT-Beyond ships
+  built in reach its two dictionaries only through `/** */` doc blocks, which Beyond's docs parser
+  hands to the NEXT entry it recognises. Every public handler of its `CORPUS` has its own block
+  (a Summary, its own parameters), no block is orphaned, a script library's first block is its
+  library entry, and every `<link>` resolves; `EXEMPT` names the send targets left out, each
+  with a reason. Comments only: no handler changes for it.
 - `build-preflight.py --check`: `tests/preflight.livecodescript` is GENERATED from the shims' C ABI
   macros, cross-checked against each `.lcb` literal and each guard's throw text (`ABI `); it reads
   the mac ABI from the one `universal-mac` row of `sodiumxt/CLAUDE.md`'s table.

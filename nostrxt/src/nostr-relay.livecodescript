@@ -83,10 +83,65 @@ local sNxrOwner              -- long id the callbacks dispatch to
 -- Wiring.
 -- ==========================================================================
 
+/**
+Title: NostrXT Relay Client
+Author: Seth Morrow Software
+Description:
+The NostrXT Relay Client is a websocket (RFC 6455) client over engine
+sockets that speaks the NIP-01 relay protocol: it sends REQ, CLOSE,
+EVENT and AUTH, and receives EVENT, OK, EOSE, CLOSED, NOTICE and AUTH.
+It composes the NostrXT core library, so load that first; this library
+owns only the sockets, buffers and relay handles.
+
+Each relay is an integer handle from <nxrConnect>. Commands report
+through the result: empty on success, or text starting
+"NostrXT relay:" for a refusal. Everything that happens later arrives through the callback
+handler you register with <nxrSetCallback>, dispatched to the object set
+by <nxrInit>.
+
+Inbound events are verified (id and signature) before delivery unless
+you turn that off with <nxrSetVerify>. Call <nxrShutdown> from
+closeStack: there is no automatic unload.
+
+The library defines the engine's socketError, socketClosed and
+socketTimeout messages and passes on any that are not for its own
+sockets. If your stack script handles those messages too, it must pass
+the ones that are not its own, or another library will hang.
+
+Tags: Networking, Nostr
+*/
+/**
+Summary: Returns the relay client's version.
+
+Returns: The text "NostrXT relay" followed by the core's version string.
+
+Example:
+put nxrVersion() into field "versionField"
+
+Description:
+It calls <nxVersion>, so it also proves the core library is loaded.
+
+References: nxVersion (handler)
+*/
 function nxrVersion
    return "NostrXT relay" && nxVersion()
 end nxrVersion
 
+/**
+Summary: Sets the object whose script receives relay callbacks.
+
+pOwner: The long id of the object, or empty for the topStack.
+
+Example:
+nxrInit the long id of me
+
+Description:
+Call it once at startup, for example in preOpenStack. Until it is set,
+callbacks are dispatched to the topStack, which may not be the stack you
+expect. Calling it again replaces the owner.
+
+References: nxrSetCallback (handler), nxrConnect (handler)
+*/
 command nxrInit pOwner
    -- Set the object whose script receives the callbacks (the demo passes
    -- `the long id of me` in preOpenStack). Idempotent.
@@ -152,6 +207,40 @@ end nxrRandomHex
 -- Connect and the handshake state machine.
 -- ==========================================================================
 
+/**
+Summary: Opens a connection to a Nostr relay.
+
+pUrl: The relay URL, starting wss:// or ws://.
+
+Returns: The integer relay handle, or a "NostrXT relay:" refusal.
+
+Example:
+nxrConnect "wss://relay.example.com"
+put the result into tRelay
+if tRelay is an integer then nxrSetCallback tRelay, "relayEvent"
+
+Description:
+<nxrConnect> returns at once with the handle in the result; test it with
+"is an integer". The connection and the websocket handshake complete
+later, and the callback receives "open" when the relay is usable or
+"error" and "disconnected" when it fails. A handshake that has not
+finished within 20 seconds fails closed. Connecting also sets the
+engine's socketTimeoutInterval to 20 seconds.
+
+The callback handler is called with the relay handle, a kind, and up to
+two arguments. The kinds are "open"; "event" (subscription id, the
+verified event JSON); "invalid" (subscription id, why the event was
+refused); "eose" (subscription id); "ok" (event id, then "true" or
+"false", a tab and the relay's reason); "closed" (subscription id,
+reason); "notice" (the text); "auth" (the NIP-42 challenge); "error"
+(the failure); and "disconnected" (the reason).
+
+A wss:// connection has been made on an engine; whether a bad
+certificate is refused has not been measured. The ws:// path has not
+yet run on an engine.
+
+References: nxrSetCallback (handler), nxrDisconnect (handler), nxrState (handler)
+*/
 command nxrConnect pUrl
    -- Returns an integer relay handle through `the result` immediately; the
    -- handshake completes asynchronously and the callback receives "open" or
@@ -520,6 +609,30 @@ private command nxrSendText pRelay, pText
    return empty
 end nxrSendText
 
+/**
+Summary: Registers the handler that receives a relay's callbacks.
+
+pRelay: The relay handle.
+
+pHandlerName: The name of the handler to dispatch to.
+
+Example:
+nxrConnect "wss://relay.example.com"
+put the result into tRelay
+nxrSetCallback tRelay, "relayEvent"
+
+Description:
+The handler is dispatched to the object set by <nxrInit>, with four
+arguments: the relay handle, the kind, and two kind-specific arguments
+(the kinds are listed under <nxrConnect>). Set it straight after
+connecting, before the "open" callback arrives.
+
+Dispatch is guarded: an error in your handler does not break the
+connection, and a missing handler is ignored. An unknown handle returns
+a refusal in the result.
+
+References: nxrConnect (handler), nxrInit (handler)
+*/
 command nxrSetCallback pRelay, pHandlerName
    if sNxrRelays[pRelay]["socketID"] is empty then
       return "NostrXT relay: unknown relay handle" && pRelay
@@ -528,6 +641,25 @@ command nxrSetCallback pRelay, pHandlerName
    return empty
 end nxrSetCallback
 
+/**
+Summary: Turns event verification on or off for one relay.
+
+pRelay: The relay handle.
+
+pVerify: true to verify inbound events (the default), false to deliver them unverified.
+
+Example:
+nxrSetVerify tRelay, false
+
+Description:
+Verification is on by default and fails closed: an event whose id or
+signature does not check, or any event while CoinXT is missing, arrives
+as "invalid", never as "event". Turning it off is a per-relay decision;
+then verify events yourself with <nxEventVerify>. A value other than
+true or false is refused.
+
+References: nxEventVerify (handler), nxrSetCallback (handler)
+*/
 command nxrSetVerify pRelay, pVerify
    -- Event verification is ON by default and fails closed (no CoinXT means
    -- events arrive as "invalid", never as unverified "event"s). An app that
@@ -542,6 +674,28 @@ command nxrSetVerify pRelay, pVerify
    return empty
 end nxrSetVerify
 
+/**
+Summary: Sends a REQ to open a subscription on a relay.
+
+pRelay: The relay handle.
+
+pSubId: The subscription id, 1 to 64 characters.
+
+pFiltersJson: One filter JSON object per line, as from nxFilterBuild.
+
+Example:
+put tPubkey into tFilter["authors"]
+put "1" into tFilter["kinds"]
+nxrSubscribe tRelay, "my-feed", nxFilterBuild(tFilter)
+if the result is not empty then answer the result
+
+Description:
+The relay must be open. Matching events arrive as "event" callbacks
+with the subscription id, followed by "eose" once the stored events are
+sent. A relay can end the subscription with "closed".
+
+References: nxrUnsubscribe (handler), nxFilterBuild (handler), nxClientReq (handler)
+*/
 command nxrSubscribe pRelay, pSubId, pFiltersJson
    local tWire
    put nxClientReq(pSubId, pFiltersJson) into tWire
@@ -556,6 +710,21 @@ command nxrSubscribe pRelay, pSubId, pFiltersJson
    return empty
 end nxrSubscribe
 
+/**
+Summary: Sends a CLOSE to end a subscription.
+
+pRelay: The relay handle.
+
+pSubId: The subscription id.
+
+Example:
+nxrUnsubscribe tRelay, "my-feed"
+
+Description:
+The relay must be open. Refusals come back in the result.
+
+References: nxrSubscribe (handler), nxClientClose (handler)
+*/
 command nxrUnsubscribe pRelay, pSubId
    local tWire
    put nxClientClose(pSubId) into tWire
@@ -570,6 +739,25 @@ command nxrUnsubscribe pRelay, pSubId
    return empty
 end nxrUnsubscribe
 
+/**
+Summary: Sends a signed event to a relay.
+
+pRelay: The relay handle.
+
+pEvent: The signed event array.
+
+Example:
+put nxEventSign(nxEventBuild(1, "Hello", empty, empty), tSeckey, empty) into tSigned
+nxrPublish tRelay, tSigned
+if the result is not empty then answer the result
+
+Description:
+The relay must be open, and the event must be signed with
+<nxEventSign>. The relay's verdict arrives later as an "ok" callback
+with the event id.
+
+References: nxEventSign (handler), nxClientEvent (handler)
+*/
 command nxrPublish pRelay, pEvent
    -- Send a SIGNED event; the relay's verdict arrives as the "ok" callback
    -- keyed by the event id.
@@ -582,6 +770,24 @@ command nxrPublish pRelay, pEvent
    return the result
 end nxrPublish
 
+/**
+Summary: Answers a relay's NIP-42 authentication challenge.
+
+pRelay: The relay handle.
+
+pSignedEvent: The signed kind 22242 event.
+
+Example:
+put nxAuthBuild(nxrUrl(tRelay), nxrChallenge(tRelay), empty) into tAuth
+nxrAuth tRelay, nxEventSign(tAuth, tSeckey, empty)
+
+Description:
+Use it after an "auth" callback. Build the event with <nxAuthBuild> and
+sign it with <nxEventSign>. The relay must be open; the relay's answer
+arrives as an "ok" callback.
+
+References: nxAuthBuild (handler), nxrChallenge (handler), nxClientAuth (handler)
+*/
 command nxrAuth pRelay, pSignedEvent
    -- Answer a NIP-42 challenge (nxAuthBuild + nxEventSign built it).
    local tWire
@@ -593,6 +799,23 @@ command nxrAuth pRelay, pSignedEvent
    return the result
 end nxrAuth
 
+/**
+Summary: Sends one text message to a relay exactly as given.
+
+pRelay: The relay handle.
+
+pText: The message text, usually a JSON array.
+
+Example:
+nxrSendRaw tRelay, tWire
+
+Description:
+The escape hatch for NIPs this library does not speak yet. The text is
+sent as one websocket text frame; you are responsible for the JSON. The
+relay must be open.
+
+References: nxrPublish (handler), nxrSubscribe (handler)
+*/
 command nxrSendRaw pRelay, pText
    -- The escape hatch for NIPs this layer does not speak yet: one text
    -- frame, verbatim. The caller owns the JSON.
@@ -600,6 +823,19 @@ command nxrSendRaw pRelay, pText
    return the result
 end nxrSendRaw
 
+/**
+Summary: Sends a websocket ping to a relay.
+
+pRelay: The relay handle.
+
+Example:
+nxrPing tRelay
+
+Description:
+A liveness probe. The relay must be open; its pong is consumed silently.
+
+References: nxrState (handler)
+*/
 command nxrPing pRelay
    -- An RFC 6455 ping (liveness probe); a compliant peer answers with a
    -- pong, which this layer ignores on arrival.
@@ -615,6 +851,21 @@ command nxrPing pRelay
    return empty
 end nxrPing
 
+/**
+Summary: Returns the connection state of a relay.
+
+pRelay: The relay handle.
+
+Returns: "connecting", "handshake", "open" or "closing", or "unknown" for a handle that is not live.
+
+Example:
+if nxrState(tRelay) is "open" then nxrPublish tRelay, tSigned
+
+Description:
+Only an "open" relay accepts subscriptions, publishes and other sends.
+
+References: nxrConnect (handler), nxrOpenRelays (handler)
+*/
 function nxrState pRelay
    if sNxrRelays[pRelay]["socketID"] is empty then
       return "unknown"
@@ -622,6 +873,21 @@ function nxrState pRelay
    return sNxrRelays[pRelay]["state"]
 end nxrState
 
+/**
+Summary: Returns the URL a relay was opened with.
+
+pRelay: The relay handle.
+
+Returns: The URL, or empty for a handle that is not live.
+
+Example:
+put nxrUrl(tRelay) into tUrl
+
+Description:
+Useful for <nxAuthBuild>, which needs the relay URL.
+
+References: nxrConnect (handler), nxAuthBuild (handler)
+*/
 function nxrUrl pRelay
    if sNxrRelays[pRelay]["socketID"] is empty then
       return empty
@@ -629,6 +895,22 @@ function nxrUrl pRelay
    return sNxrRelays[pRelay]["url"]
 end nxrUrl
 
+/**
+Summary: Returns the most recent NIP-42 challenge a relay sent.
+
+pRelay: The relay handle.
+
+Returns: The challenge text, or empty.
+
+Example:
+put nxrChallenge(tRelay) into tChallenge
+
+Description:
+The same challenge arrives with the "auth" callback; this keeps it for
+when you answer later.
+
+References: nxrAuth (handler), nxAuthBuild (handler)
+*/
 function nxrChallenge pRelay
    -- The most recent NIP-42 challenge this relay sent, or empty.
    if sNxrRelays[pRelay]["socketID"] is empty then
@@ -637,6 +919,19 @@ function nxrChallenge pRelay
    return sNxrRelays[pRelay]["challenge"]
 end nxrChallenge
 
+/**
+Summary: Lists every live relay handle.
+
+Returns: The handles, one per line, in numeric order.
+
+Example:
+put nxrOpenRelays() into tHandles
+
+Description:
+A handle leaves the list when its connection is torn down.
+
+References: nxrState (handler), nxrShutdown (handler)
+*/
 function nxrOpenRelays
    -- Every live relay handle, one per line (delimiter-guarded read of the
    -- handle table's keys).
@@ -725,6 +1020,21 @@ private command nxrFail pRelay, pReason
    nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
 end nxrFail
 
+/**
+Summary: Closes a relay connection.
+
+pRelay: The relay handle.
+
+Example:
+nxrDisconnect tRelay
+
+Description:
+Sends a websocket close frame when the connection is open, then closes
+the socket and forgets the handle. The callback receives "disconnected".
+A handle that is not live is a no-op, so calling it twice is safe.
+
+References: nxrConnect (handler), nxrShutdown (handler)
+*/
 command nxrDisconnect pRelay
    -- App-initiated close: send a close frame when the link is up, then
    -- tear down. Idempotent; a stale handle is a clean no-op.
@@ -739,6 +1049,18 @@ command nxrDisconnect pRelay
    nxrTeardown pRelay, "disconnected by the app"
 end nxrDisconnect
 
+/**
+Summary: Closes every relay connection.
+
+Example:
+nxrShutdown
+
+Description:
+Call it from closeStack: there is no automatic unload, so the app frees
+what it opens. Safe to call more than once.
+
+References: nxrDisconnect (handler), nxrOpenRelays (handler)
+*/
 command nxrShutdown
    -- Close every relay (closeStack calls this; there is no deterministic
    -- unload hook in OXT, so the app frees what it opens).
@@ -777,6 +1099,28 @@ end nxrShutdown
 -- copied and cannot go stale.
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the error?
+/**
+Summary: Handles a socketError message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketError message.
+
+pError: The error text from the socketError message.
+
+Returns: "true" when the socket was a relay's and the error was handled, "false" otherwise.
+
+Example:
+if nxrSocketError(pSocketID, pError) then exit socketError
+pass socketError
+
+Description:
+For a stack that embeds this library in its own script and so must
+define socketError itself: call it from your handler where you would
+otherwise pass the message on. For a relay socket, the relay fails
+closed ("error" and "disconnected" callbacks). Ordinary apps that use
+the library as a stack never call it.
+
+References: nxrSocketClosed (handler), nxrSocketTimeout (handler)
+*/
 function nxrSocketError pSocketID, pError
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
@@ -795,6 +1139,24 @@ on socketError pSocketID, pError
 end socketError
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the close?
+/**
+Summary: Handles a socketClosed message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketClosed message.
+
+Returns: "true" when the socket was a relay's and the close was handled, "false" otherwise.
+
+Example:
+if nxrSocketClosed(pSocketID) then exit socketClosed
+pass socketClosed
+
+Description:
+For a stack that embeds this library and defines socketClosed itself.
+For a relay socket, the relay is torn down and the callback receives
+"disconnected". Ordinary apps never call it.
+
+References: nxrSocketError (handler), nxrSocketTimeout (handler)
+*/
 function nxrSocketClosed pSocketID
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
@@ -813,6 +1175,26 @@ on socketClosed pSocketID
 end socketClosed
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the timeout?
+/**
+Summary: Handles a socketTimeout message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketTimeout message.
+
+Returns: "true" when the socket was a relay's, "false" otherwise.
+
+Example:
+if nxrSocketTimeout(pSocketID) then exit socketTimeout
+pass socketTimeout
+
+Description:
+For a stack that embeds this library and defines socketTimeout itself.
+The engine repeats socketTimeout while a read waits, so a timeout fails
+the relay only before its handshake completes; on an open relay an idle
+read is normal and the message is simply consumed. Ordinary apps never
+call it.
+
+References: nxrSocketError (handler), nxrSocketClosed (handler)
+*/
 function nxrSocketTimeout pSocketID
    -- socketTimeout REPEATS while a read is pending, so it is fatal only
    -- during the handshake; on an open relay an idle read is normal.

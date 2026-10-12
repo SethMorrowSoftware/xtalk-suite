@@ -208,7 +208,8 @@ observes each repository's live state; this table does not try to.
 These run only in the suite, because their question spans members:
 carried-copy drift (the demo UI kit, the boot self-check block, the harness
 scaffold); embed freshness (`tools/sync-demo-embeds.py --check`); one name, one
-library (`tools/check-cross-library-names.py`); the cross-member handler-call
+library (`tools/check-cross-library-names.py`); the dictionary doc blocks of
+the libraries OXT-Beyond ships (`tools/check-dictionary-docs.py`); the cross-member handler-call
 and typed-boundary gates (`check-handler-calls.py`, `check-lcb-call-types.py`);
 the timer-pin closure; the shim scaffold drift; the binary-freshness walk; the
 suite paste and its coverage ratchet; and `tests/cross-member-test.py`. That is
@@ -227,7 +228,8 @@ Remove the member, in the same change as its directory, from:
   `tools/check-demo-selfcheck-drift.py` (read by `check-demo-control-lists.py`)
   and `tools/check-harness-scaffold-drift.py`;
 - `tools/test-stack-size.py`'s expected dimension count; the
-  `tools/check-cross-library-names.py` corpus;
+  `tools/check-cross-library-names.py` corpus; the `tools/check-dictionary-docs.py`
+  `CORPUS` and `EXEMPT` rows;
 - `start-here.livecodescript`'s launcher rows (`check-launcher-registry.py`);
 - `tools/check-suite-coverage.py`'s row and `REQUIRED_EMBEDS`
   (`tools/check-suite-selftest.py` derives its member tables from the

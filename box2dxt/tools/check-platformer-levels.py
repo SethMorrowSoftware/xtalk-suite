@@ -322,7 +322,12 @@ class _IfNormalizer(object):
 def prepare(text, fail):
     """The shipped text -> the interpreter's input: comments cut, `\\`
     continuations joined, the `if` forms normalised. Nothing else is
-    rewritten: every other spelling is the model's to understand or refuse."""
+    rewritten: every other spelling is the model's to understand or refuse.
+    The Kit's dictionary doc blocks (`/** ... */` opening a line, the suite's
+    tools/check-dictionary-docs.py) are cut first, each kept as its empty
+    lines so line numbers hold; any other block comment is still refused."""
+    text = re.sub(r'^[ \t]*/\*\*(?!/)[\s\S]*?\*/[ \t]*$',
+                  lambda m: "\n" * m.group(0).count("\n"), text, flags=re.M)
     if re.search(r'^\s*(#|//)', text, re.M) or "/*" in re.sub(r'"[^"\n]*"', '', text):
         fail("a `#`, `//` or block comment appeared in the game; prepare() "
              "cuts only `--` comments")

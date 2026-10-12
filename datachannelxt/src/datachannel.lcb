@@ -1,3 +1,28 @@
+/**
+Bindings to libdatachannel: WebRTC data channels for peer-to-peer
+messaging, including with a web browser.
+
+DataChannelXT wraps libdatachannel. A peer is one WebRTC connection; a
+channel is one message stream on a peer. Both are integer handles; 0
+means the call failed (see <dcLastError>), and a handle that has gone
+stale is a harmless no-op. Action handlers return 0 on success or a
+negative error: -1 generic, -2 stale handle, -3 bad argument, -4 message
+too large, -5 the native engine refused, -6 a native exception was
+caught.
+
+Everything is asynchronous and signaling is yours. Creating a channel
+starts a negotiation whose description and candidates arrive as events
+that your code carries to the other peer over any channel you have; the
+other side's come back through <dcSetRemoteDescription> and
+<dcAddRemoteCandidate>. Events are delivered only when <dcPoll> drains
+them, so call it on a timer. The dataChannelHelpers library
+(<dcStartPolling>) does that for you and dispatches each event as a
+message such as dcLocalDescriptionReady, dcChannelOpen and dcMessage.
+
+Call <dcCleanup> once at quit; there is no automatic unload hook.
+
+Tags: Networking, Library
+*/
 library org.openxtalk.library.datachannel
 
 -- datachannel.lcb - the LCB binding for DataChannelXT (library
@@ -491,6 +516,24 @@ end handler
 -- Optional - dcCreatePeer calls it implicitly - but calling it early at
 -- startup moves the one-time certificate cost off the first connection.
 -- Verifies the ABI (throws a clear error on skew). Returns 0 on success.
+/**
+Summary: Initialize the native layer early, before the first connection.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+on openStack
+   dcInit
+end openStack
+
+Description:
+Use <dcInit> at startup to move the one-time DTLS certificate cost off
+your first connection. It is optional: <dcCreatePeer> initializes the
+library itself. It checks that the installed native library matches this
+binding and throws an error if it does not. Calling it again is harmless.
+
+References: dcCleanup (handler), dcCreatePeer (handler)
+*/
 public handler dcInit() returns Integer
    variable tR as Integer
    _checkABI()
@@ -504,6 +547,30 @@ end handler
 -- threads. The app MUST call this before quitting (e.g. on closeStack) -
 -- there is no automatic unload hook, and skipping it leaks native threads.
 -- Idempotent; after it, dcCreatePeer works again. Returns 0 on success.
+/**
+Summary: Tear down every peer connection, every channel and the native threads.
+
+Returns: 0 on success.
+
+Example:
+on closeStack
+   dcStopPolling
+   dcCleanup
+end closeStack
+
+Description:
+Use <dcCleanup> when your app is done with data channels, typically on
+closeStack. It is mandatory before quitting: there is no automatic
+unload hook, and skipping it leaks the native worker threads. It is
+idempotent, and <dcCreatePeer> works again after it.
+
+Write it as a bare command in statement position; dcCleanup() as a
+statement does not compile. Use the parentheses only in an expression,
+such as dcCleanup() is 0. It frees every peer in the process, including
+those another stack created.
+
+References: dcInit (handler), dcFreePeer (handler)
+*/
 public handler dcCleanup() returns Integer
    variable tR as Integer
    unsafe
@@ -513,6 +580,19 @@ public handler dcCleanup() returns Integer
 end handler
 
 -- "libdatachannel <tag>" - which pinned engine this binary was built from.
+/**
+Summary: The version of libdatachannel that DataChannelXT was built with.
+
+Returns: A string such as "libdatachannel v0.24.5".
+
+Example:
+put dcLibraryVersion() into field "Version"
+
+Description:
+Use <dcLibraryVersion> to report which libdatachannel the installed
+native library was built from, for example in an about box or a bug
+report. It is the pinned tag compiled in at build time.
+*/
 public handler dcLibraryVersion() returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -532,6 +612,24 @@ public handler dcLibraryVersion() returns String
 end handler
 
 -- The module-static last-error string ("" when there is no error).
+/**
+Summary: The last error message from the native layer.
+
+Returns: The message, or empty when there is no error.
+
+Example:
+local tPeer
+put dcCreatePeer("") into tPeer
+if tPeer is 0 then answer "Could not create a peer:" && dcLastError()
+
+Description:
+Use <dcLastError> after a call returns 0 or a negative number to find
+out why. The message stays until the next error or <dcClearError>.
+<dcSendText> clears it when it refuses text with an embedded NUL, since
+that refusal never reaches the native layer.
+
+References: dcClearError (handler)
+*/
 public handler dcLastError() returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -550,6 +648,18 @@ public handler dcLastError() returns String
    return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
 end handler
 
+/**
+Summary: Clear the last error message.
+
+Example:
+dcClearError
+
+Description:
+Use <dcClearError> before a call when you want <dcLastError> to report
+only what that call did.
+
+References: dcLastError (handler)
+*/
 public handler dcClearError()
    unsafe
       _dcx_clear_error()
@@ -567,6 +677,32 @@ end handler
 -- Auto-negotiation is on: creating the first channel produces the offer, and
 -- applying a remote offer produces the answer - both arrive as
 -- dcLocalDescriptionReady events for YOUR signaling code to deliver.
+/**
+Summary: Create a WebRTC peer connection.
+
+pIceServers: The ICE servers to use, one URI per line, such as "stun:stun.l.google.com:19302" or "turn:user:pass@host:3478?transport=udp". Empty means none, which works on one machine or a LAN.
+
+Returns: A positive peer handle, or 0 on failure.
+
+Example:
+local tPeer, tChan
+put dcCreatePeer("stun:stun.l.google.com:19302") into tPeer
+put dcCreateChannel(tPeer, "chat") into tChan
+
+Description:
+Use <dcCreatePeer> to start one side of a connection. Negotiation is
+automatic: creating the first channel produces the offer, and applying a
+remote offer with <dcSetRemoteDescription> produces the answer. Both
+arrive as dcLocalDescriptionReady events for your signaling code to
+deliver. A STUN server lets peers behind ordinary home NATs find their
+public address; a TURN server relays traffic for the rest, and its
+credentials live in ordinary memory.
+
+It checks the native library's version and throws an error if it does
+not match. On failure it returns 0; see <dcLastError>.
+
+References: dcCreateChannel (handler), dcSetRemoteDescription (handler), dcFreePeer (handler)
+*/
 public handler dcCreatePeer(in pIceServers as String) returns Integer
    variable tPeer as Integer
    _checkABI()
@@ -578,6 +714,22 @@ end handler
 
 -- Politely close (state events still arrive; the handle stays inspectable
 -- until dcFreePeer). Returns 0 on success.
+/**
+Summary: Politely close a peer connection.
+
+pPeer: The peer handle.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+get dcClosePeer(sPeer)
+
+Description:
+Use <dcClosePeer> to end a connection while still receiving its state
+events. The handle stays inspectable until <dcFreePeer> destroys it.
+
+References: dcFreePeer (handler), dcPeerState (handler)
+*/
 public handler dcClosePeer(in pPeer as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -588,6 +740,23 @@ end handler
 
 -- Close AND destroy the peer, all its channels, and their handles.
 -- Idempotent; a stale handle is a harmless no-op.
+/**
+Summary: Close and destroy a peer connection and all of its channels.
+
+pPeer: The peer handle.
+
+Example:
+dcFreePeer sPeer
+put 0 into sPeer
+
+Description:
+Use <dcFreePeer> when you are done with a connection. It frees the
+peer, every channel on it and their handles. It is idempotent, and a
+stale handle is a harmless no-op. Events for freed handles are dropped,
+so free only when you no longer need to hear from the peer.
+
+References: dcClosePeer (handler), dcCleanup (handler)
+*/
 public handler dcFreePeer(in pPeer as Integer)
    unsafe
       _dcx_peer_free(pPeer)
@@ -596,6 +765,25 @@ end handler
 
 -- Manual renegotiation only (auto-negotiation normally does this for you).
 -- pType is "offer", "answer", or "" (let the engine pick).
+/**
+Summary: Start a manual renegotiation.
+
+pPeer: The peer handle.
+
+pType: "offer", "answer", or empty to let the engine choose.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+get dcSetLocalDescription(sPeer, "offer")
+
+Description:
+Use <dcSetLocalDescription> only for manual renegotiation. Normally you
+never call it: negotiation is automatic, and the description arrives as a
+dcLocalDescriptionReady event.
+
+References: dcLocalDescription (handler), dcSetRemoteDescription (handler)
+*/
 public handler dcSetLocalDescription(in pPeer as Integer, in pType as String) returns Integer
    variable tR as Integer
    unsafe
@@ -607,6 +795,32 @@ end handler
 -- Apply the REMOTE side's description, received over your signaling channel.
 -- pType is "offer" or "answer" (the dcLocalDescriptionReady event on their side
 -- carried it as "sdpType"). Applying an offer auto-emits our answer.
+/**
+Summary: Apply the other peer's description, received over your signaling channel.
+
+pPeer: The peer handle.
+
+pSdp: The remote session description (SDP) text.
+
+pType: "offer" or "answer", as the remote dcLocalDescriptionReady event carried it in its sdpType key.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+on signalArrived pSdpText, pSdpType
+   get dcSetRemoteDescription(sPeer, pSdpText, pSdpType)
+end signalArrived
+
+Description:
+Use <dcSetRemoteDescription> on each side once the other side's
+description arrives. Applying an offer automatically produces this
+side's answer, which arrives as a dcLocalDescriptionReady event to send
+back. With copy/paste signaling, a description taken after gathering
+completes already contains its candidates, so this is the only call
+needed on the far side.
+
+References: dcAddRemoteCandidate (handler), dcLocalDescription (handler), dcCreatePeer (handler)
+*/
 public handler dcSetRemoteDescription(in pPeer as Integer, in pSdp as String, in pType as String) returns Integer
    variable tR as Integer
    unsafe
@@ -617,6 +831,30 @@ end handler
 
 -- Apply one REMOTE ICE candidate from your signaling channel. pMid may be ""
 -- (the engine resolves it).
+/**
+Summary: Apply one ICE candidate from the other peer.
+
+pPeer: The peer handle.
+
+pCandidate: The candidate text, as the remote dcLocalCandidate event carried it.
+
+pMid: The media id that came with the candidate, or empty to let the engine resolve it.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+on candidateArrived pCandText, pMidText
+   get dcAddRemoteCandidate(sPeer, pCandText, pMidText)
+end candidateArrived
+
+Description:
+Use <dcAddRemoteCandidate> for trickle signaling: each side ships every
+dcLocalCandidate event to the other, which applies it here. Trickle
+connects fastest; copy/paste signaling skips candidates entirely and
+ships one complete description instead.
+
+References: dcSetRemoteDescription (handler), dcLocalDescription (handler)
+*/
 public handler dcAddRemoteCandidate(in pPeer as Integer, in pCandidate as String, in pMid as String) returns Integer
    variable tR as Integer
    unsafe
@@ -629,6 +867,33 @@ end handler
 -- gathering state reaches kGatheringComplete this SDP CONTAINS the gathered
 -- candidates - the basis of copy/paste (non-trickle) signaling: ship just
 -- this one blob, skip per-candidate shipping entirely.
+/**
+Summary: The current local session description of a peer.
+
+pPeer: The peer handle.
+
+Returns: The whole SDP text, or empty when there is none yet or the handle is stale.
+
+Example:
+on dcGatheringStateChange pEvent
+   if pEvent["state"] is 2 then
+      put dcLocalDescription(pEvent["peer"]) into field "myBlob"
+   end if
+end dcGatheringStateChange
+
+Description:
+Use <dcLocalDescription> for copy/paste (non-trickle) signaling. Once
+the gathering state reaches complete (2), this description contains all
+the gathered candidates, so you can ship this one text to the other side
+and skip shipping candidates.
+
+The event that announces a new description is named
+dcLocalDescriptionReady, not dcLocalDescription, because an event of
+this handler's name would be delivered to this getter instead of to your
+handler.
+
+References: dcGatheringState (handler), dcLocalDescriptionType (handler), dcSetRemoteDescription (handler)
+*/
 public handler dcLocalDescription(in pPeer as Integer) returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -648,6 +913,23 @@ public handler dcLocalDescription(in pPeer as Integer) returns String
 end handler
 
 -- "offer" / "answer" / "" - the current local description's type.
+/**
+Summary: The type of a peer's current local description.
+
+pPeer: The peer handle.
+
+Returns: "offer", "answer", or empty when there is none or the handle is stale.
+
+Example:
+put dcLocalDescriptionType(sPeer) into tType
+
+Description:
+Use <dcLocalDescriptionType> together with <dcLocalDescription> to send
+the far side both the text and the type that <dcSetRemoteDescription>
+needs.
+
+References: dcLocalDescription (handler)
+*/
 public handler dcLocalDescriptionType(in pPeer as Integer) returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -668,6 +950,24 @@ end handler
 
 -- The connection state (kPeerState*), or -1 for a stale handle. 0 IS a real
 -- state (new), which is why the bad-handle answer is -1, not 0.
+/**
+Summary: The connection state of a peer.
+
+pPeer: The peer handle.
+
+Returns: 0 new, 1 connecting, 2 connected, 3 disconnected, 4 failed, 5 closed, or -1 for a stale handle.
+
+Example:
+if dcPeerState(sPeer) is 2 then put "connected" into field "Status"
+
+Description:
+Use <dcPeerState> to check a connection on demand; the dcStateChange
+event reports each change as it happens. 0 is a real state, which is
+why a stale handle answers -1. The helpers' <dcStateName> turns the
+number into a label.
+
+References: dcStateName (handler), dcGatheringState (handler)
+*/
 public handler dcPeerState(in pPeer as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -677,6 +977,25 @@ public handler dcPeerState(in pPeer as Integer) returns Integer
 end handler
 
 -- The ICE gathering state (kGathering*), or -1 for a stale handle.
+/**
+Summary: The ICE candidate gathering state of a peer.
+
+pPeer: The peer handle.
+
+Returns: 0 new, 1 in progress, 2 complete, or -1 for a stale handle.
+
+Example:
+if dcGatheringState(sPeer) is 2 then
+   put dcLocalDescription(sPeer) into field "myBlob"
+end if
+
+Description:
+Use <dcGatheringState> to know when the local description holds every
+candidate, the moment copy/paste signaling can ship it. The
+dcGatheringStateChange event reports each change as it happens.
+
+References: dcLocalDescription (handler), dcGatheringName (handler)
+*/
 public handler dcGatheringState(in pPeer as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -688,6 +1007,25 @@ end handler
 -- Once connected: the selected ICE pair as an array with "localCandidate"
 -- and "remoteCandidate" keys - shows whether the path is direct (typ host /
 -- srflx) or relayed (typ relay). Empty array until a pair is selected.
+/**
+Summary: The ICE candidate pair a connected peer is using.
+
+pPeer: The peer handle.
+
+Returns: An array with the keys "localCandidate" and "remoteCandidate", or an empty array until a pair is selected.
+
+Example:
+local tPair
+put dcSelectedCandidatePair(sPeer) into tPair
+put tPair["remoteCandidate"] into field "Route"
+
+Description:
+Use <dcSelectedCandidatePair> once connected to see the path the
+connection took. A candidate of type host or srflx means a direct path;
+type relay means traffic goes through a TURN server.
+
+References: dcPeerState (handler)
+*/
 public handler dcSelectedCandidatePair(in pPeer as Integer) returns Array
    variable tCount as Integer
    variable tRec as Array
@@ -716,6 +1054,27 @@ end handler
 -- Create an outgoing channel (reliable + ordered - the default). The FIRST
 -- channel on a fresh peer triggers the offer. NOT usable until its
 -- dcChannelOpen event arrives. Returns a channel handle, or 0 on failure.
+/**
+Summary: Create a reliable, ordered data channel on a peer.
+
+pPeer: The peer handle.
+
+pLabel: A name for the channel; the other side sees it in its dcChannelIncoming event.
+
+Returns: A channel handle, or 0 on failure.
+
+Example:
+put dcCreatePeer("") into sPeer
+put dcCreateChannel(sPeer, "chat") into sChan
+
+Description:
+Use <dcCreateChannel> on the side that starts the connection. The first
+channel on a new peer triggers the offer. The channel is not usable
+until its dcChannelOpen event arrives. The other side does not create
+it: it arrives there as a dcChannelIncoming event carrying its handle.
+
+References: dcCreateChannelEx (handler), dcSendText (handler), dcCloseChannel (handler)
+*/
 public handler dcCreateChannel(in pPeer as Integer, in pLabel as String) returns Integer
    variable tChan as Integer
    unsafe
@@ -734,6 +1093,39 @@ end handler
 --   pNegotiated      true: out-of-band channel - BOTH sides must create it
 --                    with the SAME pStreamId; no in-band open handshake
 --   pStreamId        explicit stream id 0..65534 for negotiated; -1 = auto
+/**
+Summary: Create a data channel with explicit reliability and negotiation options.
+
+pPeer: The peer handle.
+
+pLabel: A name for the channel.
+
+pProtocol: A subprotocol name, or empty for none.
+
+pUnordered: true to allow out-of-order delivery.
+
+pMaxRetransmits: At most this many retransmissions (0 or more), making the channel unreliable; -1 for unset.
+
+pMaxLifetimeMs: Retransmit for at most this many milliseconds (0 or more), making the channel unreliable; -1 for unset.
+
+pNegotiated: true for a channel both sides create out of band with the same stream id, with no in-band open handshake.
+
+pStreamId: The stream id 0 to 65534 for a negotiated channel, or -1 for automatic.
+
+Returns: A channel handle, or 0 on failure.
+
+Example:
+local tChan
+put dcCreateChannelEx(sPeer, "state", "", true, 0, -1, false, -1) into tChan
+
+Description:
+Use <dcCreateChannelEx> for real-time traffic such as game state, where a
+late message is worse than a lost one. Set at most one of the two
+reliability limits. With both at -1 and ordered delivery it behaves like
+<dcCreateChannel>.
+
+References: dcCreateChannel (handler), dcChannelProtocol (handler), dcChannelStreamId (handler)
+*/
 public handler dcCreateChannelEx(in pPeer as Integer, in pLabel as String, in pProtocol as String, in pUnordered as Boolean, in pMaxRetransmits as Integer, in pMaxLifetimeMs as Integer, in pNegotiated as Boolean, in pStreamId as Integer) returns Integer
    variable tChan as Integer
    variable tUnordered as Integer
@@ -756,6 +1148,23 @@ end handler
 
 -- Politely close (both sides see dcChannelClosed; the handle stays
 -- inspectable until dcFreeChannel). Returns 0 on success.
+/**
+Summary: Politely close a data channel.
+
+pChannel: The channel handle.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+get dcCloseChannel(sChan)
+
+Description:
+Use <dcCloseChannel> to end one channel while keeping the peer. Both
+sides receive a dcChannelClosed event. The handle stays inspectable
+until <dcFreeChannel>.
+
+References: dcFreeChannel (handler)
+*/
 public handler dcCloseChannel(in pChannel as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -765,6 +1174,22 @@ public handler dcCloseChannel(in pChannel as Integer) returns Integer
 end handler
 
 -- Close AND destroy the channel, freeing its handle. Idempotent.
+/**
+Summary: Close and destroy a data channel, freeing its handle.
+
+pChannel: The channel handle.
+
+Example:
+dcFreeChannel sChan
+put 0 into sChan
+
+Description:
+Use <dcFreeChannel> when you are done with a channel. It is idempotent,
+and a stale handle is a harmless no-op. <dcFreePeer> frees all of a
+peer's channels at once.
+
+References: dcCloseChannel (handler), dcFreePeer (handler)
+*/
 public handler dcFreeChannel(in pChannel as Integer)
    unsafe
       _dcx_channel_free(pChannel)
@@ -774,6 +1199,29 @@ end handler
 -- Send one BINARY message (a browser peer receives an ArrayBuffer; an OXT
 -- peer a dcMessage event with a "payload" Data). Fails -4 over kMaxMessage.
 -- An empty Data sends an empty message.
+/**
+Summary: Send one binary message on an open channel.
+
+pChannel: The channel handle.
+
+pData: The bytes to send; empty data sends an empty message.
+
+Returns: 0 on success, or a negative error (-4 when the message is over 60000 bytes).
+
+Example:
+on dcChannelOpen pEvent
+   get dcSendData(pEvent["channel"], textEncode("hello", "UTF-8"))
+end dcChannelOpen
+
+Description:
+Use <dcSendData> for binary messages. A browser peer receives an
+ArrayBuffer; an OXT peer receives a dcMessage event with the bytes in its
+payload key. Every message must fit both the 60000-byte budget and the
+channel's negotiated limit (<dcChannelMaxMessage>); nothing is split or
+truncated silently. Chunk larger payloads, or move bulk with TorrentXT.
+
+References: dcSendText (handler), dcChannelMaxMessage (handler), dcBufferedAmount (handler)
+*/
 public handler dcSendData(in pChannel as Integer, in pData as Data) returns Integer
    variable tR as Integer
    variable tPtr as Pointer
@@ -798,6 +1246,31 @@ end handler
 -- Send one TEXT message (a browser peer receives a string; an OXT peer a
 -- dcMessage event with a "text" key). Fails -4 over kMaxMessage, and -3 on a
 -- string carrying an embedded NUL.
+/**
+Summary: Send one text message on an open channel.
+
+pChannel: The channel handle.
+
+pText: The text to send.
+
+Returns: 0 on success, or a negative error (-4 when over 60000 bytes, -3 when the text contains a NUL character).
+
+Example:
+on dcChannelOpen pEvent
+   get dcSendText(pEvent["channel"], "hello!")
+end dcChannelOpen
+
+Description:
+Use <dcSendText> for text messages. A browser peer receives a string; an
+OXT peer receives a dcMessage event with a text key.
+
+Text containing a NUL character is refused with -3 before it reaches the
+native layer, because it would otherwise be cut short at the NUL. That
+refusal leaves <dcLastError> empty. Send such content as bytes with
+<dcSendData>.
+
+References: dcSendData (handler), dcChannelIsOpen (handler)
+*/
 public handler dcSendText(in pChannel as Integer, in pText as String) returns Integer
    variable tR as Integer
    -- REFUSED HERE, because here is the only place it CAN be refused. pText
@@ -833,6 +1306,23 @@ public handler dcSendText(in pChannel as Integer, in pText as String) returns In
 end handler
 
 -- The channel's label ("" for a stale handle).
+/**
+Summary: The label of a data channel.
+
+pChannel: The channel handle.
+
+Returns: The label, or empty for a stale handle.
+
+Example:
+on dcChannelIncoming pEvent
+   put dcChannelLabel(pEvent["channel"]) into field "Channel"
+end dcChannelIncoming
+
+Description:
+Use <dcChannelLabel> to tell several channels on one peer apart.
+
+References: dcCreateChannel (handler)
+*/
 public handler dcChannelLabel(in pChannel as Integer) returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -852,6 +1342,22 @@ public handler dcChannelLabel(in pChannel as Integer) returns String
 end handler
 
 -- The channel's subprotocol ("" when none / stale).
+/**
+Summary: The subprotocol of a data channel.
+
+pChannel: The channel handle.
+
+Returns: The subprotocol, or empty when there is none or the handle is stale.
+
+Example:
+put dcChannelProtocol(sChan) into tProtocol
+
+Description:
+Use <dcChannelProtocol> to read the subprotocol set by
+<dcCreateChannelEx> on either side.
+
+References: dcCreateChannelEx (handler)
+*/
 public handler dcChannelProtocol(in pChannel as Integer) returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -872,6 +1378,22 @@ end handler
 
 -- The channel's SCTP stream id, or -1 (stale / not assigned yet). Stream 0
 -- is valid, hence -1 for "no value".
+/**
+Summary: The SCTP stream id of a data channel.
+
+pChannel: The channel handle.
+
+Returns: The stream id, or -1 when the handle is stale or no id is assigned yet.
+
+Example:
+put dcChannelStreamId(sChan) into tStream
+
+Description:
+Use <dcChannelStreamId> mainly with negotiated channels. Stream 0 is
+valid, which is why "no value" is -1.
+
+References: dcCreateChannelEx (handler)
+*/
 public handler dcChannelStreamId(in pChannel as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -881,6 +1403,23 @@ public handler dcChannelStreamId(in pChannel as Integer) returns Integer
 end handler
 
 -- true while the channel is open and sendable.
+/**
+Summary: Whether a data channel is open and ready to send.
+
+pChannel: The channel handle.
+
+Returns: true while the channel is open, false otherwise.
+
+Example:
+if dcChannelIsOpen(sChan) then get dcSendText(sChan, "ping")
+
+Description:
+Use <dcChannelIsOpen> before sending when you have not tracked the
+dcChannelOpen and dcChannelClosed events yourself. A channel is usable
+only between those two events.
+
+References: dcSendText (handler), dcSendData (handler)
+*/
 public handler dcChannelIsOpen(in pChannel as Integer) returns Boolean
    variable tR as Integer
    unsafe
@@ -891,6 +1430,24 @@ end handler
 
 -- The peer handle this channel belongs to (0 for a stale handle). Handy in
 -- the dcMessage handler when one app drives several connections.
+/**
+Summary: The peer connection a data channel belongs to.
+
+pChannel: The channel handle.
+
+Returns: The peer handle, or 0 for a stale handle.
+
+Example:
+on dcMessage pEvent
+   put dcChannelPeer(pEvent["channel"]) into tPeer
+end dcMessage
+
+Description:
+Use <dcChannelPeer> in an event handler when one app drives several
+connections and needs to know which one a channel is on.
+
+References: dcCreateChannel (handler)
+*/
 public handler dcChannelPeer(in pChannel as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -901,6 +1458,24 @@ end handler
 
 -- The NEGOTIATED per-message limit for this channel (bytes; -1 stale).
 -- Sends must satisfy both this and kMaxMessage.
+/**
+Summary: The negotiated per-message size limit of a data channel.
+
+pChannel: The channel handle.
+
+Returns: The limit in bytes, or -1 for a stale handle.
+
+Example:
+if the number of bytes in tData > dcChannelMaxMessage(sChan) then
+   answer "Too large for this channel."
+end if
+
+Description:
+Use <dcChannelMaxMessage> to size messages. A send must fit both this
+limit and DataChannelXT's own 60000-byte budget.
+
+References: dcSendData (handler), dcSendText (handler)
+*/
 public handler dcChannelMaxMessage(in pChannel as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -911,6 +1486,25 @@ end handler
 
 -- Bytes queued to send but not yet handed to the transport (-1 stale).
 -- Poll it and throttle when it climbs - or use the threshold event below.
+/**
+Summary: The number of bytes queued to send on a channel.
+
+pChannel: The channel handle.
+
+Returns: The queued byte count, or -1 for a stale handle.
+
+Example:
+if dcBufferedAmount(sChan) > 1048576 then
+   put true into sPaused
+end if
+
+Description:
+Use <dcBufferedAmount> for backpressure: send until it passes your
+high-water mark, then stop until the dcBufferedLow event arrives. Do not
+flood a slow channel.
+
+References: dcSetBufferedLowThreshold (handler), dcFormatBytes (handler)
+*/
 public handler dcBufferedAmount(in pChannel as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -922,6 +1516,25 @@ end handler
 -- Arm the dcBufferedLow event: it fires when the send buffer drains back
 -- under pAmount bytes. The backpressure pattern: send until dcBufferedAmount
 -- exceeds a high-water mark, then stop until dcBufferedLow.
+/**
+Summary: Arm the dcBufferedLow event for a channel.
+
+pChannel: The channel handle.
+
+pAmount: The threshold in bytes.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+get dcSetBufferedLowThreshold(sChan, 65536)
+
+Description:
+Use <dcSetBufferedLowThreshold> with <dcBufferedAmount> to pace large
+sends. The dcBufferedLow event fires when the channel's send queue
+drains back under the threshold, the signal to resume sending.
+
+References: dcBufferedAmount (handler)
+*/
 public handler dcSetBufferedLowThreshold(in pChannel as Integer, in pAmount as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -942,6 +1555,33 @@ end handler
 -- "protocol", "payload" (Data), "text", "error", "dropped"). Call it on a
 -- timer (16-33 ms for real-time feel; the interval is a latency knob, never
 -- a correctness knob) - or just use dcStartPolling from the helpers script.
+/**
+Summary: Drain every pending event in one call.
+
+Returns: A list of event arrays, oldest first.
+
+Example:
+local tEvents
+put dcPoll() into tEvents
+repeat for each element tEvent in tEvents
+   put tEvent["name"] & return after field "Log"
+end repeat
+
+Description:
+Use <dcPoll> on a timer: nothing is delivered until it drains the
+native queue. Poll every 16 to 33 milliseconds for a real-time feel, or
+100 or more for chat; the interval changes latency, never correctness.
+Most apps let <dcStartPolling> do this and handle the dispatched
+messages instead.
+
+Each event array has "code" (the event number), "name" (such as
+dcMessage or dcChannelOpen), "peer", "channel", and the event's own keys
+such as "sdp", "candidate", "state", "text" or "payload" (binary data).
+If the app stops polling for a long time, the bounded queue sheds events
+and reports a dcQueueOverflow event with the count.
+
+References: dcStartPolling (handler), dcStopPolling (handler)
+*/
 public handler dcPoll() returns List
    variable tEvents as List
    variable tCount as Integer
