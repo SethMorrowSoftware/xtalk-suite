@@ -39,6 +39,23 @@ WHAT IT CHECKS, per CORPUS file
        line-based tools do not: the interpreter, the suite paste generator
        and check-cross-library-names.py cut only `--` comments, so an
        example `on closeStack` there reads as a second closeStack.
+    7. NO PROSE LINE READS AS AN ELEMENT: the parser starts a new element
+       at ANY line that opens with one word and a colon (its
+       __elementRegex), so a description wrapped to put "automatic:" or
+       "it:" first on a line is cut there. In an entry the cut-off text is
+       glued back without its line break and the space after the colon
+       ("automatic:creating"), or, for a word the parser knows ("it" is a
+       return value), filed under that element; in a library block the
+       parser stops reading the library entry at the first name it does
+       not know (it logs "invalid library-level element") and the rest of
+       the library's description is lost. Found 2026-10-12 by running the
+       real parser over the corpus: nostr-relay's library entry stopped at
+       "Call <nxrShutdown> from", and dcCreateChannel grew a return value
+       named "It". So every such line in a block must name an element the
+       corpus uses (LIBRARY_ELEMENTS, ENTRY_ELEMENTS) or, in an entry, one
+       of the handler's parameters, and no element but Example may appear
+       twice in one block (a second one replaces the first). Rewrap the
+       prose so another word leads the line.
 
     It does not judge the prose; that is review. It mirrors the parser's
     entry rules, so a change to Beyond's revdocsparser can outdate it.
@@ -130,6 +147,17 @@ LINK = re.compile(r"<([A-Za-z_][\w.]*)>")
 COMMENT_LINE = re.compile(r"^\s*(--|#|//)")
 CODE_SHAPE = re.compile(r"^\s*(on|command|function|getProp|setProp|private|end|"
                         r"local|constant|global|script)\b", re.I)
+# Beyond's revdocsparser __elementRegex, verbatim: a line it matches starts a
+# new element named by group 1 (check 7). Spaces only, as there: a leading
+# tab does not match.
+ELEMENT_LINE = re.compile(r"^ *([tT]he [rR]esult|\w+) *(?:\(( *(?:optional |in |out |inout )?<?\w*>?)"
+                          r" *\))? *: *(.*)")
+# The element names the corpus's blocks use (check 7). The parser knows more
+# (Version, Requires, Syntax, Related, ...); add one here when a block needs
+# it, so that a prose line that happens to start with one still fails.
+LIBRARY_ELEMENTS = {"Title", "Author", "Summary", "Description", "Tags"}
+ENTRY_ELEMENTS = {"Summary", "Description", "Returns", "Example", "References", "Tags"}
+REPEATABLE = {"Example"}
 
 
 def lcb_params(text):
@@ -190,7 +218,30 @@ def scan(path, text):
         i += 1
 
 
+def check_elements(path, lineno, body, allowed, params, what, problems):
+    """Check 7: every line the parser reads as an element names one the
+    corpus uses, or a parameter, and none but Example twice."""
+    seen = {}
+    for k, bl in enumerate(body.split("\n")):
+        m = ELEMENT_LINE.match(bl)
+        if not m:
+            continue
+        el = m.group(1)
+        if el in params:
+            continue
+        if el not in allowed:
+            problems.append(f"{path}:{lineno + k}: the docs parser reads this line of {what} as a "
+                            f"new element named {el!r}, which cuts the text above it: "
+                            f"{bl.strip()[:50]} (rewrap so another word leads the line)")
+            continue
+        if el in seen and el not in REPEATABLE:
+            problems.append(f"{path}:{lineno + k}: {what} has a second {el}: line (the first is at "
+                            f"line {seen[el]}); the parser keeps only one")
+        seen.setdefault(el, lineno + k)
+
+
 def check_block(path, lineno, body, name, params, problems):
+    check_elements(path, lineno, body, ENTRY_ELEMENTS, params, f"the block of {name}", problems)
     if not re.search(r"^\s*Summary:\s*\S", body, re.M):
         problems.append(f"{path}:{lineno}: the block of {name} has no Summary: line")
     documented = []
@@ -236,6 +287,8 @@ def check_file(path, text, exempt, problems, documented_names, links):
                 if not is_lcb and blocks_seen == 2 and handlers_seen == 0 and not library_seen:
                     if not re.search(r"^\s*Title:\s*\S", pending[1], re.M):
                         problems.append(f"{path}:{pending[0]}: the library block has no Title: line")
+                    check_elements(path, pending[0], pending[1], LIBRARY_ELEMENTS, [],
+                                   "the library block", problems)
                     library_seen = True
                 else:
                     problems.append(f"{path}:{pending[0]}: orphan doc block (another block follows it)")
@@ -247,6 +300,8 @@ def check_file(path, text, exempt, problems, documented_names, links):
                 if pending is None:
                     problems.append(f"{path}:{lineno}: no doc block above the library line")
                 else:
+                    check_elements(path, pending[0], pending[1], LIBRARY_ELEMENTS, [],
+                                   "the library block", problems)
                     library_seen = True
                 pending = None
                 continue

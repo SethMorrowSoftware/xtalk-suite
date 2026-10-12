@@ -18,6 +18,13 @@ Cases:
   7. a link to a handler nobody documents         -> check 5
   8. a doc block added above an exempt handler    -> stale exemption (4)
   9. `end if` on a line inside a script block      -> check 6
+ 10. a description line led by an unknown word and
+     a colon ("automatic: ...")                      -> check 7
+ 11. one led by a word the parser knows but the
+     corpus does not use ("it: ...", a return value) -> check 7
+ 12. a library block line led by "closeStack:",
+     which ends the parser's library entry           -> check 7
+ 13. a second Description: line in one block         -> check 7
 
 USAGE
     python3 tools/test-dictionary-docs.py
@@ -136,6 +143,25 @@ def main():
         "a code-shaped line inside a script block fails", LCS,
         once(r"^(Summary: .*)$", "\\1\nend if", re.M),
         "a block line reads as code to the line-based tools: end if"))
+
+    # check 7, each found 2026-10-12 by running Beyond's real parser over
+    # the corpus: the prose wrapped so a "word:" led a line
+    results.append(mutate_case(
+        "a description line led by an unknown word and a colon fails", LCB,
+        once(r"^(Description:\n)", "\\1automatic: creating the first channel\n", re.M),
+        "as a new element named 'automatic'"))
+    results.append(mutate_case(
+        "a line led by a parser word the corpus does not use fails", LCB,
+        once(r"^(Description:\n)", "\\1it: it arrives there as an event\n", re.M),
+        "as a new element named 'it'"))
+    results.append(mutate_case(
+        "a library block line led by an unknown word fails", LCS,
+        once(r"^(Author: Seth Morrow Software\n)", "\\1closeStack: there is no automatic unload.\n", re.M),
+        "of the library block as a new element named 'closeStack'"))
+    results.append(mutate_case(
+        "a second Description: line in one block fails", LCB,
+        once(r"^(Description:\n)", "\\1Description:\n", re.M),
+        "has a second Description: line"))
 
     exempt = [(rel, name) for rel, names in sorted(gate.EXEMPT.items()) for name in sorted(names)]
     if not exempt:

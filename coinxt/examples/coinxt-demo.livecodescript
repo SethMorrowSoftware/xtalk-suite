@@ -2523,9 +2523,9 @@ put cxHdFromSeed(cxMnemonicToSeed(tMnemonic, "")) into tMaster
 Description:
 PBKDF2-HMAC-SHA512 over the normalized mnemonic, salted with "mnemonic"
 and the passphrase, 2048 rounds. It does NOT verify the checksum (BIP-39
-defines a seed for any text), so a typo gives a good seed for the wrong
-wallet: call <cxMnemonicValidate> first. Unicode NFKD is not applied, so
-a non-ASCII passphrase must be normalized by you.
+defines a seed for any text), so a typo gives a good seed for the
+wrong wallet: call <cxMnemonicValidate> first. Unicode NFKD is not
+applied, so a non-ASCII passphrase must be normalized by you.
 
 The seed is secret; clear your variable when you are done with it.
 

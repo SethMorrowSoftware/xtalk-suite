@@ -690,12 +690,12 @@ put dcCreatePeer("stun:stun.l.google.com:19302") into tPeer
 put dcCreateChannel(tPeer, "chat") into tChan
 
 Description:
-Use <dcCreatePeer> to start one side of a connection. Negotiation is
-automatic: creating the first channel produces the offer, and applying a
-remote offer with <dcSetRemoteDescription> produces the answer. Both
-arrive as dcLocalDescriptionReady events for your signaling code to
-deliver. A STUN server lets peers behind ordinary home NATs find their
-public address; a TURN server relays traffic for the rest, and its
+Use <dcCreatePeer> to start one side of a connection. Negotiation
+is automatic: creating the first channel produces the offer, and
+applying a remote offer with <dcSetRemoteDescription> produces the
+answer. Both arrive as dcLocalDescriptionReady events for your signaling
+code to deliver. A STUN server lets peers behind ordinary home NATs find
+their public address; a TURN server relays traffic for the rest, and its
 credentials live in ordinary memory.
 
 It checks the native library's version and throws an error if it does
@@ -1070,8 +1070,9 @@ put dcCreateChannel(sPeer, "chat") into sChan
 Description:
 Use <dcCreateChannel> on the side that starts the connection. The first
 channel on a new peer triggers the offer. The channel is not usable
-until its dcChannelOpen event arrives. The other side does not create
-it: it arrives there as a dcChannelIncoming event carrying its handle.
+until its dcChannelOpen event arrives. The other side does not
+create it: it arrives there as a dcChannelIncoming event carrying
+its handle.
 
 References: dcCreateChannelEx (handler), dcSendText (handler), dcCloseChannel (handler)
 */
