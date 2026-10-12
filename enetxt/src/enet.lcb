@@ -1,3 +1,21 @@
+/**
+Bindings to ENet, reliable UDP networking for games and real-time apps.
+
+enetxt wraps ENet 1.3.18. A host is a socket: a server host listens on a
+port, a client host only connects out. A peer is one connection on a host.
+Hosts and peers are integer handles; 0 means the call failed (see
+<enLastError>), and a handle that has gone stale is a harmless no-op.
+
+ENet has no threads of its own. Nothing connects, sends or receives until
+<enPoll> services the host, so call it on a timer for as long as a host
+lives. The enetHelpers library (enStartPolling) does that for you and
+dispatches each event as a message: enetConnect, enetDisconnect,
+enetReceive and enetError.
+
+Call <enInitialize> once at startup and <enDeinitialize> once at quit.
+
+Tags: Networking, Library
+*/
 library org.openxtalk.library.enet
 
 -- enet.lcb - the LCB binding for enetxt (library org.openxtalk.library.enet).
@@ -408,6 +426,23 @@ end handler
 -- Initialise the native layer (refcounted; extra calls are cheap no-ops).
 -- Verifies the ABI first (throws a clear error on skew). Call once at
 -- startup, and pair with enDeinitialize at quit. Returns 0 on success.
+/**
+Summary: Initialize the ENet library before any other call.
+
+Returns: 0 on success, or a negative error.
+
+Example:
+if enInitialize() is not 0 then answer "ENet failed:" && enLastError()
+
+Description:
+Use <enInitialize> once at startup, before creating a host. It checks
+that the installed native library matches this binding and throws an
+error naming both versions if it does not. Calls are counted: each
+<enInitialize> needs one matching <enDeinitialize>, and extra calls are
+cheap.
+
+References: enDeinitialize (handler), enLastError (handler)
+*/
 public handler enInitialize() returns Integer
    variable tR as Integer
    _checkABI()
@@ -421,6 +456,29 @@ end handler
 -- still alive (and retires its peers) so a quitting app cannot leak
 -- sockets. The app MUST call this before quitting (e.g. on closeStack) -
 -- there is no automatic unload hook. Idempotent. Returns 0 on success.
+/**
+Summary: Release the ENet library when your app is done with it.
+
+Returns: 0 on success.
+
+Example:
+on closeStack
+   enDeinitialize
+end closeStack
+
+Description:
+Use <enDeinitialize> once for each <enInitialize> your stack made,
+typically on closeStack. The last one destroys every host still alive and
+retires its peers, so an app cannot leak sockets. There is no automatic
+unload hook: an app that quits without it leaves the sockets to the
+operating system.
+
+Write it as a bare command. The count is shared by the whole process, so
+a stack must give back only the holds it took: an extra call can destroy
+the hosts of another window that uses ENet.
+
+References: enInitialize (handler)
+*/
 public handler enDeinitialize() returns Integer
    variable tR as Integer
    unsafe
@@ -430,6 +488,18 @@ public handler enDeinitialize() returns Integer
 end handler
 
 -- "enet A.B.C" - which pinned library this binary linked.
+/**
+Summary: The version of the ENet library that enetxt was built with.
+
+Returns: A string such as "enet 1.3.18".
+
+Example:
+put enLibraryVersion() into field "Version"
+
+Description:
+Use <enLibraryVersion> to report which ENet the installed native library
+links, for example in an about box or a bug report.
+*/
 public handler enLibraryVersion() returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -449,6 +519,22 @@ public handler enLibraryVersion() returns String
 end handler
 
 -- The module-static last-error string ("" when there is no error).
+/**
+Summary: The last error message from the native layer.
+
+Returns: The message, or empty when there is no error.
+
+Example:
+local tHost
+put enHostCreateServer("", 27000, 32, 2, 0, 0) into tHost
+if tHost is 0 then answer "Could not listen:" && enLastError()
+
+Description:
+Use <enLastError> after a call returns 0 or a negative number to find out
+why. The message stays until the next error or <enClearError>.
+
+References: enClearError (handler)
+*/
 public handler enLastError() returns String
    variable tCount as Integer
    _ensureScratch(kScratchCap)
@@ -467,6 +553,18 @@ public handler enLastError() returns String
    return _decodeText(_bufToData(sScratchPtr, tCount), 1, tCount)
 end handler
 
+/**
+Summary: Clear the last error message.
+
+Example:
+enClearError
+
+Description:
+Use <enClearError> before a call when you want <enLastError> to report
+only that call's failure.
+
+References: enLastError (handler)
+*/
 public handler enClearError()
    unsafe
       _enx_clear_error()
@@ -481,6 +579,38 @@ end handler
 -- or name binds one. pMaxPeers 1..4095; pChannels 1..255 (fixed for the
 -- host's life - choose deliberately); bandwidth 0 = unlimited (bytes/sec).
 -- Returns a positive host handle, or 0 on failure (see enLastError).
+/**
+Summary: Create a host that listens for connections on a port.
+
+pBindHost: The address to listen on: empty or "*" for every interface,
+or one IP address or name.
+
+pPort: The UDP port to listen on, or 0 for any free port.
+
+pMaxPeers: The most peers that may connect at once, 1 to 4095.
+
+pChannels: The number of channels each connection has, 1 to 255. It is
+fixed for the host's life.
+
+pInBW: The incoming bandwidth in bytes per second, or 0 for unlimited.
+
+pOutBW: The outgoing bandwidth in bytes per second, or 0 for unlimited.
+
+Returns: A positive host handle, or 0 on failure (see <enLastError>).
+
+Example:
+local tServer
+put enHostCreateServer("", 27000, 32, 2, 0, 0) into tServer
+
+Description:
+Use <enHostCreateServer> to accept connections from other machines. A
+server host can also connect out with <enConnect>. Peers that connect
+arrive as enetConnect events from <enPoll>. With port 0, <enHostStatus>
+reports the port the system chose.
+
+References: enHostCreateClient (handler), enHostDestroy (handler),
+enPoll (handler)
+*/
 public handler enHostCreateServer(in pBindHost as String, in pPort as Integer, in pMaxPeers as Integer, in pChannels as Integer, in pInBW as Integer, in pOutBW as Integer) returns Integer
    variable tHost as Integer
    _checkABI()
@@ -492,6 +622,32 @@ end handler
 
 -- An unbound host: it can only initiate connections (enConnect). A pure
 -- client wants pMaxPeers 1; a mesh node may want more.
+/**
+Summary: Create a host that only makes outgoing connections.
+
+pMaxPeers: The most connections the host may make at once; a plain
+client wants 1.
+
+pChannels: The number of channels each connection has, 1 to 255.
+
+pInBW: The incoming bandwidth in bytes per second, or 0 for unlimited.
+
+pOutBW: The outgoing bandwidth in bytes per second, or 0 for unlimited.
+
+Returns: A positive host handle, or 0 on failure (see <enLastError>).
+
+Example:
+local tClient, tPeer
+put enHostCreateClient(1, 2, 0, 0) into tClient
+put enConnect(tClient, "192.168.1.10", 27000, 2, 0) into tPeer
+
+Description:
+Use <enHostCreateClient> for the side of a game or chat that joins a
+server. The host is not bound to a known port, so nobody can connect to
+it.
+
+References: enHostCreateServer (handler), enConnect (handler)
+*/
 public handler enHostCreateClient(in pMaxPeers as Integer, in pChannels as Integer, in pInBW as Integer, in pOutBW as Integer) returns Integer
    variable tHost as Integer
    _checkABI()
@@ -503,6 +659,28 @@ end handler
 
 -- Destroy the host, its socket, and every peer handle riding it. Idempotent;
 -- a stale handle is a successful no-op. Returns 0.
+/**
+Summary: Close a host and every connection on it.
+
+pHost: The host handle.
+
+Returns: 0.
+
+Example:
+if sHost is not empty and sHost is not 0 then
+   enHostDestroy sHost
+end if
+put empty into sHost
+
+Description:
+Use <enHostDestroy> when you are finished with a host. Its socket closes
+and every peer handle on it retires. Destroying a host twice is
+harmless, but the handle must be a number: passing empty throws an
+error, so guard any variable that may have been cleared, as the example
+does.
+
+References: enHostCreateServer (handler), enHostCreateClient (handler)
+*/
 public handler enHostDestroy(in pHost as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -522,6 +700,34 @@ end handler
 -- side receives in ITS enetConnect event (a protocol version, a room id...).
 -- NOTE: a hostname here resolves DNS synchronously and can block briefly -
 -- pass an IP when that matters. 0 on failure (see enLastError).
+/**
+Summary: Start connecting a host to a remote host.
+
+pHost: The local host handle.
+
+pRemoteHost: The IP address or name of the remote host.
+
+pPort: The remote port.
+
+pChannels: The number of channels to open, no more than the host has.
+
+pData: A number from 0 to 2147483647 that the remote side receives in
+its enetConnect event, such as a protocol version.
+
+Returns: A peer handle at once, or 0 on failure (see <enLastError>).
+
+Example:
+put enConnect(sClient, "192.168.1.10", 27000, 2, 1) into sPeer
+
+Description:
+Use <enConnect> to open a connection. The handle is returned before the
+connection exists: an enetConnect event from <enPoll> confirms it, and an
+enetDisconnect event reports a failure or time-out. A name is looked up
+before the call returns, which can block briefly; pass an IP address when
+that matters.
+
+References: enDisconnect (handler), enPoll (handler)
+*/
 public handler enConnect(in pHost as Integer, in pRemoteHost as String, in pPort as Integer, in pChannels as Integer, in pData as Integer) returns Integer
    variable tPeer as Integer
    unsafe
@@ -533,6 +739,25 @@ end handler
 -- Polite disconnect: queued outbound traffic drains first, the far side is
 -- told (it sees pData), and YOUR enetDisconnect event arrives via enPoll -
 -- which is when the peer handle retires. Returns 0 or a negative error.
+/**
+Summary: Close a connection politely.
+
+pPeer: The peer handle.
+
+pData: A number the remote side receives in its enetDisconnect event.
+
+Returns: 0, or a negative error.
+
+Example:
+get enDisconnect(sPeer, 0)
+
+Description:
+Use <enDisconnect> to end a connection cleanly. Packets already queued
+are sent first and the remote side is told. Your own enetDisconnect event
+arrives from <enPoll>, and the peer handle retires then.
+
+References: enDisconnectNow (handler), enResetPeer (handler)
+*/
 public handler enDisconnect(in pPeer as Integer, in pData as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -543,6 +768,25 @@ end handler
 
 -- Abrupt disconnect: one last unsequenced notification to the far side, NO
 -- local event - the handle retires immediately.
+/**
+Summary: Close a connection at once.
+
+pPeer: The peer handle.
+
+pData: A number the remote side receives in its enetDisconnect event.
+
+Returns: 0, or a negative error.
+
+Example:
+get enDisconnectNow(sPeer, 0)
+
+Description:
+Use <enDisconnectNow> when you cannot wait for queued packets. One last
+notice goes to the remote side, no local event follows, and the handle
+retires immediately.
+
+References: enDisconnect (handler), enResetPeer (handler)
+*/
 public handler enDisconnectNow(in pPeer as Integer, in pData as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -553,6 +797,23 @@ end handler
 
 -- Silent teardown: no notification either way, no event, immediate retire.
 -- (The far side will time the connection out.)
+/**
+Summary: Drop a connection without telling either side.
+
+pPeer: The peer handle.
+
+Returns: 0, or a negative error.
+
+Example:
+get enResetPeer(sPeer)
+
+Description:
+Use <enResetPeer> to forget a connection silently. No notice is sent and
+no event follows; the handle retires immediately and the remote side
+times the connection out.
+
+References: enDisconnect (handler), enDisconnectNow (handler)
+*/
 public handler enResetPeer(in pPeer as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -568,6 +829,32 @@ end handler
 -- Queue pData (0..60000 bytes) to one peer on pChannel with pFlags (kSend*).
 -- Delivery rides the next pump (enPoll) or an explicit enFlush. Returns 0,
 -- or a negative error (-2 stale, -3 bad channel/flags, -4 over budget).
+/**
+Summary: Queue a packet of binary data to one peer.
+
+pPeer: The peer handle.
+
+pChannel: The channel, from 0 to one less than the channel count.
+
+pData: The bytes to send, 0 to 60000 of them.
+
+pFlags: 0 for reliable delivery, 1 for unreliable (sequenced, may be
+dropped) or 2 for unsequenced (may be dropped or arrive out of order).
+
+Returns: 0, or a negative error: -2 the peer is gone, -3 a bad channel or
+flag, -4 more than 60000 bytes.
+
+Example:
+get enSend(sPeer, 0, textEncode("hello", "UTF-8"), 0)
+
+Description:
+Use <enSend> to send one message. It goes out on the next <enPoll> or
+<enFlush>, and arrives whole, as one enetReceive event, or not at all.
+Use 0 (reliable) unless the data is soon replaced, like a position
+update.
+
+References: enSendText (handler), enBroadcast (handler), enFlush (handler)
+*/
 public handler enSend(in pPeer as Integer, in pChannel as Integer, in pData as Data, in pFlags as Integer) returns Integer
    variable tR as Integer
    variable tPtr as Pointer
@@ -592,12 +879,56 @@ end handler
 -- Text convenience: UTF-8 encode, then the same byte path as enSend. The far
 -- side receives bytes; decode with textDecode(pEvent["payload"], "utf-8") in
 -- LiveCode Script (or treat as bytes).
+/**
+Summary: Queue a packet of text to one peer.
+
+pPeer: The peer handle.
+
+pChannel: The channel, from 0 to one less than the channel count.
+
+pText: The text to send, encoded as UTF-8.
+
+pFlags: 0 reliable, 1 unreliable or 2 unsequenced, as for <enSend>.
+
+Returns: 0, or a negative error, as for <enSend>.
+
+Example:
+get enSendText(sPeer, 0, "hello", 0)
+
+Description:
+Use <enSendText> to send text. It arrives as bytes: decode it with
+textDecode(tEvent["payload"], "UTF-8") on the receiving side.
+
+References: enSend (handler)
+*/
 public handler enSendText(in pPeer as Integer, in pChannel as Integer, in pText as String, in pFlags as Integer) returns Integer
    return enSend(pPeer, pChannel, _encodeText(pText), pFlags)
 end handler
 
 -- Queue one packet to EVERY connected peer of pHost (the server-fanout
 -- primitive - one call, N deliveries). Same budget and flags as enSend.
+/**
+Summary: Queue a packet of binary data to every peer of a host.
+
+pHost: The host handle.
+
+pChannel: The channel.
+
+pData: The bytes to send, 0 to 60000 of them.
+
+pFlags: 0 reliable, 1 unreliable or 2 unsequenced, as for <enSend>.
+
+Returns: 0, or a negative error, as for <enSend>.
+
+Example:
+get enBroadcast(sServer, 1, tStateData, 1)
+
+Description:
+Use <enBroadcast> on a server to send the same message to every
+connected peer in one call.
+
+References: enBroadcastText (handler), enSend (handler)
+*/
 public handler enBroadcast(in pHost as Integer, in pChannel as Integer, in pData as Data, in pFlags as Integer) returns Integer
    variable tR as Integer
    variable tPtr as Pointer
@@ -617,6 +948,28 @@ public handler enBroadcast(in pHost as Integer, in pChannel as Integer, in pData
    return tR
 end handler
 
+/**
+Summary: Queue a packet of text to every peer of a host.
+
+pHost: The host handle.
+
+pChannel: The channel.
+
+pText: The text to send, encoded as UTF-8.
+
+pFlags: 0 reliable, 1 unreliable or 2 unsequenced, as for <enSend>.
+
+Returns: 0, or a negative error, as for <enSend>.
+
+Example:
+get enBroadcastText(sServer, 0, "Game starts in 5 seconds", 0)
+
+Description:
+Use <enBroadcastText> on a server to send the same text to every
+connected peer.
+
+References: enBroadcast (handler), enSendText (handler)
+*/
 public handler enBroadcastText(in pHost as Integer, in pChannel as Integer, in pText as String, in pFlags as Integer) returns Integer
    return enBroadcast(pHost, pChannel, _encodeText(pText), pFlags)
 end handler
@@ -624,6 +977,23 @@ end handler
 -- Push queued packets onto the wire NOW without servicing inbound. Useful
 -- right after a burst of sends when the next enPoll tick is milliseconds
 -- away and latency matters.
+/**
+Summary: Send queued packets now.
+
+pHost: The host handle.
+
+Returns: 0, or a negative error.
+
+Example:
+get enSend(sPeer, 0, tData, 0)
+get enFlush(sHost)
+
+Description:
+Use <enFlush> after a burst of sends when the next <enPoll> is too far
+away. It sends without reading incoming traffic.
+
+References: enPoll (handler), enSend (handler)
+*/
 public handler enFlush(in pHost as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -638,6 +1008,29 @@ end handler
 
 -- Retransmission-timeout scaling: pLimit is a multiplier on the mean RTT
 -- before escalation, bounded by pMinMs/pMaxMs (0 = ENet's default for each).
+/**
+Summary: Set how long a peer may go unanswered before it times out.
+
+pPeer: The peer handle.
+
+pLimit: How many times the average round trip to wait before giving up,
+or 0 for ENet's default.
+
+pMinMs: The shortest time-out in milliseconds, or 0 for ENet's default.
+
+pMaxMs: The longest time-out in milliseconds, or 0 for ENet's default.
+
+Returns: 0, or a negative error.
+
+Example:
+get enSetPeerTimeout(sPeer, 0, 5000, 30000)
+
+Description:
+Use <enSetPeerTimeout> to notice a lost connection sooner, or to be more
+patient on a slow network.
+
+References: enSetPeerPingInterval (handler)
+*/
 public handler enSetPeerTimeout(in pPeer as Integer, in pLimit as Integer, in pMinMs as Integer, in pMaxMs as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -647,6 +1040,24 @@ public handler enSetPeerTimeout(in pPeer as Integer, in pLimit as Integer, in pM
 end handler
 
 -- How often ENet pings an idle peer (keeps RTT fresh and NATs open).
+/**
+Summary: Set how often an idle peer is pinged.
+
+pPeer: The peer handle.
+
+pMs: The interval in milliseconds.
+
+Returns: 0, or a negative error.
+
+Example:
+get enSetPeerPingInterval(sPeer, 500)
+
+Description:
+Use <enSetPeerPingInterval> to keep round-trip times fresh and routers'
+NAT entries open while nothing else is being sent.
+
+References: enSetPeerTimeout (handler), enPeerStatus (handler)
+*/
 public handler enSetPeerPingInterval(in pPeer as Integer, in pMs as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -657,6 +1068,26 @@ end handler
 
 -- Throttle a host (bytes/second; 0 = unlimited) - ENet shapes its sends and
 -- advertises the window to peers.
+/**
+Summary: Change a host's bandwidth limits.
+
+pHost: The host handle.
+
+pInBW: The incoming bandwidth in bytes per second, or 0 for unlimited.
+
+pOutBW: The outgoing bandwidth in bytes per second, or 0 for unlimited.
+
+Returns: 0, or a negative error.
+
+Example:
+get enSetHostBandwidth(sHost, 0, 64000)
+
+Description:
+Use <enSetHostBandwidth> to throttle a live host. ENet paces its own
+sends and tells its peers the limit.
+
+References: enHostCreateServer (handler), enHostCreateClient (handler)
+*/
 public handler enSetHostBandwidth(in pHost as Integer, in pInBW as Integer, in pOutBW as Integer) returns Integer
    variable tR as Integer
    unsafe
@@ -673,6 +1104,28 @@ end handler
 -- rtt (ms), packetLoss (0..1), packetsSent, packetsLost, bytesSent,
 -- bytesReceived. {} for a stale handle (a retired peer is "gone", not an
 -- error). ONE FFI round-trip.
+/**
+Summary: Report the state of one connection.
+
+pPeer: The peer handle.
+
+Returns: An array with the keys "host", "peer", "address", "state",
+"rtt", "packetLoss", "packetsSent", "packetsLost", "bytesSent" and
+"bytesReceived", or an empty array when the peer is gone.
+
+Example:
+local tStatus
+put enPeerStatus(sPeer) into tStatus
+if tStatus["state"] is 5 then put tStatus["rtt"] && "ms" into field "Ping"
+
+Description:
+Use <enPeerStatus> to show a connection's health. "state" is 5 when
+connected (0 disconnected, 1 to 4 connecting, 6 to 8 disconnecting, 9
+zombie), "rtt" is the round trip in milliseconds and "packetLoss" is from
+0 to 1.
+
+References: enHostStatus (handler)
+*/
 public handler enPeerStatus(in pPeer as Integer) returns Array
    variable tCount as Integer
    variable tRec as Array
@@ -696,6 +1149,26 @@ end handler
 -- One live snapshot of a host: keys host, address (the bound socket via
 -- getsockname, so a port-0 server shows its real ephemeral port; an unbound
 -- client host shows "0.0.0.0:0"), peerCount. {} for a stale handle.
+/**
+Summary: Report the state of a host.
+
+pHost: The host handle.
+
+Returns: An array with the keys "host", "address" and "peerCount", or an
+empty array when the host is gone.
+
+Example:
+local tStatus
+put enHostStatus(sServer) into tStatus
+put tStatus["address"] into field "Listening on"
+
+Description:
+Use <enHostStatus> to find the address a host is bound to, including the
+port the system chose for port 0, and how many peers it has. A client
+host shows "0.0.0.0:0".
+
+References: enPeerStatus (handler)
+*/
 public handler enHostStatus(in pHost as Integer) returns Array
    variable tCount as Integer
    variable tRec as Array
@@ -731,6 +1204,36 @@ end handler
 -- PUMP OR NOTHING: call this on a timer even when you expect nothing -
 -- connects, sends, retransmissions, and pings all progress inside it. The
 -- helpers stack (enStartPolling) does it for you.
+/**
+Summary: Service a host and return its pending events.
+
+pHost: The host handle.
+
+Returns: A list of event arrays. Each has "code", "name" (enetConnect,
+enetDisconnect, enetReceive or enetError) and the event's own keys:
+"host", "peer", "address", "data", "channel", "payload" or "error".
+
+Example:
+local tEvents
+put enPoll(sHost) into tEvents
+repeat for each element tEvent in tEvents
+   if tEvent["name"] is "enetReceive" then
+      put textDecode(tEvent["payload"], "UTF-8") & return after field "Chat"
+   end if
+end repeat
+
+Description:
+Use <enPoll> on a timer for as long as a host lives: connecting, sending,
+resending and receiving all happen inside it, and nothing happens without
+it. Its interval sets the latency, 16 to 33 milliseconds for real-time
+play or 100 or more for chat. Every pending event comes back in one call,
+in order.
+
+The enetHelpers library runs this loop for you with enStartPolling and
+sends each event to your stack as a message of the same name.
+
+References: enConnect (handler), enSend (handler), enFlush (handler)
+*/
 public handler enPoll(in pHost as Integer) returns List
    variable tEvents as List
    variable tCount as Integer
