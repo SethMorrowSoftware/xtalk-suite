@@ -1,3 +1,29 @@
+/**
+Bitcoin and Ethereum cryptography for xTalk: hashes, keys and signatures.
+
+CoinXT wraps two audited native libraries, trezor-crypto and upstream
+libsecp256k1, and adds no cryptography of its own. This extension is the
+native half: the digests (Keccak-256, SHA3-256, SHA-256, SHA-512,
+RIPEMD-160), HMAC, PBKDF2, secp256k1 keys, ECDSA signing, verification and
+recovery, ECDH, the two BIP-32 tweak steps, the BIP-39 wordlist, BIP-340
+Schnorr signatures and the BIP-341 Taproot tweak. Encodings, addresses,
+mnemonics, HD derivation and transaction building live in the separate
+CoinXT Script Library (start with <cxHexEncode>), which must be in the
+message path, for example with start using stack "coinxt".
+
+Every handler is synchronous and stateless: Data in, Data out, no handles
+and nothing to close. Hash text through textEncode(tText, "utf-8"). A
+failure throws an error that begins "CoinXT:" and names the handler, and
+every call first checks that the installed native library matches this
+binding (<cxCheckABI>).
+
+CoinXT is a calculator, not a wallet. It never makes key material (supply
+your own random bytes, for example from SodiumXT's sxRandomBytes), and
+storing keys, backing them up and confirming before signing are your
+app's job.
+
+Tags: Cryptography, Library
+*/
 library org.openxtalk.library.coin
 
 -- coinxt.lcb - the LiveCode Builder binding for CoinXT (public cx* surface).
@@ -541,6 +567,28 @@ end handler
 
 -- Call this once at startup (or let any cx* call do it for you) to fail loudly
 -- and legibly on a stale or mismatched native library.
+/**
+Summary: Check that the installed native library matches this binding.
+
+Example:
+cxCheckABI
+
+Description:
+Use <cxCheckABI> at startup to fail loudly on a stale or mismatched
+native library. It is a command that returns nothing: silence is the
+pass, and it throws an error asking you to reinstall CoinXT when the
+library does not report the ABI this binding expects (ABI 7). Call it
+bare, as a command; put cxCheckABI() prints an empty line and proves
+nothing.
+
+Every other handler runs the same check first, so you rarely need it.
+A "handler not found" error means the extension is not installed or did
+not load.
+
+References: cxKeccak256Len (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxCheckABI() returns nothing
    sPrepare()
 end handler
@@ -552,6 +600,27 @@ end handler
 -- Keccak-256, Ethereum's hash (original 0x01 padding). This is what an Ethereum
 -- address, an EIP-55 checksum, an ABI selector and a transaction hash are built
 -- from. It is NOT SHA3-256; do not substitute one for the other.
+/**
+Summary: The Keccak-256 digest of some bytes, the hash Ethereum uses.
+
+pData: The bytes to hash, as Data. It may be empty.
+
+Returns: A 32-byte digest, as Data.
+
+Example:
+put cxKeccak256(textEncode("abc", "utf-8")) into tDigest
+put cxHexEncode(tDigest) into field "Digest"
+
+Description:
+Use <cxKeccak256> for anything Ethereum: addresses, EIP-55 checksums,
+transaction hashes. It is NOT SHA3-256. The two differ by one padding
+byte, and a mix-up does not fail: it returns a well-formed digest that is
+simply wrong. For NIST SHA-3 use <cxSha3_256>.
+
+References: cxSha3_256 (handler), cxEthAddress (handler), cxKeccak256Len (handler)
+
+Tags: Cryptography, Ethereum
+*/
 public handler cxKeccak256(in pData as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -573,6 +642,26 @@ end handler
 
 -- SHA3-256, the NIST FIPS-202 function (0x06 padding). Present so an app that
 -- genuinely wants standard SHA-3 does not reach for cxKeccak256 by mistake.
+/**
+Summary: The SHA3-256 digest of some bytes (NIST FIPS 202).
+
+pData: The bytes to hash, as Data. It may be empty.
+
+Returns: A 32-byte digest, as Data.
+
+Example:
+put cxSha3_256(textEncode("abc", "utf-8")) into tDigest
+put cxHexEncode(tDigest) into field "Digest"
+
+Description:
+Use <cxSha3_256> when a specification cites FIPS 202 or standard SHA-3.
+It is NOT Keccak-256, which is what Ethereum uses; for anything Ethereum
+use <cxKeccak256>.
+
+References: cxKeccak256 (handler), cxSha3_256Len (handler)
+
+Tags: Cryptography
+*/
 public handler cxSha3_256(in pData as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -594,6 +683,26 @@ end handler
 
 -- SHA-256. Bitcoin's workhorse: the Base58Check checksum is the first 4 bytes
 -- of SHA256(SHA256(x)), and hash160 is RIPEMD160(SHA256(pubkey)).
+/**
+Summary: The SHA-256 digest of some bytes.
+
+pData: The bytes to hash, as Data. It may be empty.
+
+Returns: A 32-byte digest, as Data.
+
+Example:
+put cxSha256(textEncode("abc", "utf-8")) into tDigest
+put cxHexEncode(tDigest) into field "Digest"
+
+Description:
+Use <cxSha256> for Bitcoin's workhorse hash (FIPS 180-4). For the
+double hash Bitcoin uses in checksums and txids, call <cxHash256>; for
+RIPEMD-160 of SHA-256, call <cxHash160>.
+
+References: cxHash256 (handler), cxHash160 (handler), cxSha256Len (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSha256(in pData as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -614,6 +723,25 @@ public handler cxSha256(in pData as Data) returns Data
 end handler
 
 -- SHA-512. What BIP-32 and BIP-39 derive with (via HMAC / PBKDF2 below).
+/**
+Summary: The SHA-512 digest of some bytes.
+
+pData: The bytes to hash, as Data. It may be empty.
+
+Returns: A 64-byte digest, as Data.
+
+Example:
+put cxSha512(textEncode("abc", "utf-8")) into tDigest
+put cxHexEncode(tDigest) into field "Digest"
+
+Description:
+Use <cxSha512> for a plain SHA-512 (FIPS 180-4). BIP-32 and BIP-39
+use it through <cxHmacSha512> and <cxPbkdf2HmacSha512>.
+
+References: cxHmacSha512 (handler), cxSha512Len (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSha512(in pData as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -634,6 +762,25 @@ public handler cxSha512(in pData as Data) returns Data
 end handler
 
 -- RIPEMD-160. The second half of Bitcoin's hash160 (P2PKH / P2WPKH addresses).
+/**
+Summary: The RIPEMD-160 digest of some bytes.
+
+pData: The bytes to hash, as Data. It may be empty.
+
+Returns: A 20-byte digest, as Data.
+
+Example:
+put cxRipemd160(textEncode("abc", "utf-8")) into tDigest
+put cxHexEncode(tDigest) into field "Digest"
+
+Description:
+RIPEMD-160 is the second half of Bitcoin's HASH160. To hash a public
+key for an address, call <cxHash160>, which runs SHA-256 first.
+
+References: cxHash160 (handler), cxRipemd160Len (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxRipemd160(in pData as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -659,6 +806,29 @@ end handler
 
 -- HMAC-SHA256 (RFC 2104). Used by the Tor control-port SAFECOOKIE exchange and
 -- as a generic domain-separated MAC.
+/**
+Summary: HMAC-SHA256 of a message under a key (RFC 2104).
+
+pKey: The key, as Data. It may be empty and may be any length.
+
+pMessage: The message, as Data. It may be empty.
+
+Returns: A 32-byte MAC, as Data.
+
+Example:
+put cxHmacSha256(tKey, textEncode("Hi There", "utf-8")) into tMac
+
+Description:
+Use <cxHmacSha256> for a keyed MAC. A long key is hashed and a short one
+padded internally, as RFC 2104 defines.
+
+Do not compare a MAC with is or =: that is a timing leak. CoinXT has no
+constant-time compare; use SodiumXT's sxMemEqual if it is installed.
+
+References: cxHmacSha512 (handler), cxHmacSha256Len (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxHmacSha256(in pKey as Data, in pMessage as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -686,6 +856,31 @@ end handler
 -- (chaincode, data), split 32/32 into the child key tweak and the new chaincode.
 -- The key here can be a chaincode - secret material - so the caller should clear
 -- its own variable as soon as it is done (see the header note on hygiene).
+/**
+Summary: HMAC-SHA512 of a message under a key (RFC 2104).
+
+pKey: The key, as Data. It may be empty and may be any length.
+
+pMessage: The message, as Data. It may be empty.
+
+Returns: A 64-byte MAC, as Data.
+
+Example:
+put cxHmacSha512(tKey, textEncode("Hi There", "utf-8")) into tMac
+
+Description:
+This is the core of BIP-32 derivation, where the key is a chain code and
+the 64-byte result splits into a key tweak and a new chain code. The key
+can be secret material, so clear your own variables when you are done.
+Most callers want <cxHdDeriveChild> instead.
+
+Do not compare a MAC with is or =: that is a timing leak. CoinXT has no
+constant-time compare; use SodiumXT's sxMemEqual if it is installed.
+
+References: cxHmacSha256 (handler), cxHdDeriveChild (handler), cxHmacSha512Len (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxHmacSha512(in pKey as Data, in pMessage as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -725,6 +920,40 @@ end handler
 -- Integer would never reach those checks intact - it becomes a huge positive
 -- value the moment it marshals into an unsigned foreign slot - so its sign has
 -- to be caught here, on the script side, while it still exists.
+/**
+Summary: Derive key bytes from a password with PBKDF2-HMAC-SHA512.
+
+pPassword: The password, as Data.
+
+pSalt: The salt, as Data.
+
+pIterations: The iteration count, from 1 to 2147483647.
+
+pOutLen: How many bytes to return; at least 1.
+
+Returns: Exactly pOutLen bytes, as Data.
+
+Example:
+put cxPbkdf2HmacSha512(textEncode(tMnemonic, "utf-8"), \
+      textEncode("mnemonic" & tPassphrase, "utf-8"), 2048, 64) into tSeed
+
+Description:
+This is the BIP-39 mnemonic-to-seed function: the salt is "mnemonic"
+followed by the passphrase, 2048 iterations, 64 bytes out. For that use,
+call <cxMnemonicToSeed>, which also normalizes the mnemonic's whitespace.
+
+It fails closed: an output length below 1, an iteration count below 1
+(a count of 0 would quietly derive a one-iteration key) or above
+2147483647 throws. The output is prefix-consistent: asking for 20 bytes
+gives the first 20 of the 64-byte answer.
+
+The result is often a seed. Clear your variable as soon as you are done
+with it; script variables are not locked memory.
+
+References: cxMnemonicToSeed (handler), cxHmacSha512 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxPbkdf2HmacSha512(in pPassword as Data, in pSalt as Data, in pIterations as Integer, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tPwPtr as Pointer
@@ -779,6 +1008,31 @@ end handler
 -- The entropy is yours to supply and must be cryptographically random: compose
 -- SodiumXT's sxRandomBytes(32) or the OS. CoinXT deliberately has no key-making
 -- RNG of its own, so nothing here can quietly hand you a weak key.
+/**
+Summary: Check 32 bytes of your own entropy as a secp256k1 private key and return them.
+
+pEntropy: 32 cryptographically random bytes, as Data.
+
+Returns: The same 32 bytes, unchanged, as Data.
+
+Example:
+put cxNewSeckey(sxRandomBytes(32)) into tSeckey
+put cxPublicKey(tSeckey, true) into tPubkey
+
+Description:
+A secp256k1 private key is a 32-byte number from 1 to n-1, so there is
+nothing to transform: <cxNewSeckey> checks the bytes and hands them back,
+and throws if they are not a valid key (about one draw in 2^128 fails).
+
+The entropy must be cryptographically random. CoinXT has no key-making
+random source of its own; use SodiumXT's sxRandomBytes or the operating
+system. For an imported key, where "not valid" is an ordinary answer,
+use <cxSeckeyIsValid>.
+
+References: cxSeckeyIsValid (handler), cxPublicKey (handler), cxSeckeyLen (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxNewSeckey(in pEntropy as Data) returns Data
    variable tPtr as Pointer
    variable tLen as Integer
@@ -800,6 +1054,27 @@ end handler
 -- way of failing to be a key - empty, wrong length, zero, >= the group order -
 -- answers false; anything else still throws, because it would mean the loaded
 -- library is not the one this binding was built against.
+/**
+Summary: Whether some bytes are a valid secp256k1 private key.
+
+pSeckey: The candidate key, as Data.
+
+Returns: true or false.
+
+Example:
+if not cxSeckeyIsValid(cxHexDecode(field "Key")) then
+   answer "That is not a usable private key."
+end if
+
+Description:
+Use <cxSeckeyIsValid> for an imported key (a pasted hex string, a decoded
+WIF), where "no" is an ordinary answer. Empty, the wrong length, zero and
+values at or above the group order all answer false instead of throwing.
+
+References: cxNewSeckey (handler), cxWifDecode (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxSeckeyIsValid(in pSeckey as Data) returns Boolean
    variable tPtr as Pointer
    variable tLen as Integer
@@ -823,6 +1098,28 @@ end handler
 -- what modern Bitcoin uses everywhere; uncompressed (65 bytes, 0x04 || X || Y)
 -- is what an Ethereum address is built from (Keccak-256 of the 64 bytes AFTER
 -- the 0x04, last 20 bytes). Both sizes come from the shim, never from here.
+/**
+Summary: The public key for a secp256k1 private key.
+
+pSeckey: The 32-byte private key, as Data.
+
+pCompressed: true for the 33-byte compressed form, false for the 65-byte uncompressed form.
+
+Returns: The public key, as Data: 33 bytes (0x02 or 0x03, then X) or 65 bytes (0x04, then X and Y).
+
+Example:
+put cxPublicKey(tSeckey, true) into tPubkey
+put cxBtcAddressP2WPKH(tPubkey) into tAddress
+
+Description:
+Modern Bitcoin uses the compressed form. An Ethereum address is built
+from the uncompressed form, but <cxEthAddress> accepts either. Throws if
+pSeckey is not a valid private key.
+
+References: cxPubkeyDecompress (handler), cxXOnlyPubkey (handler), cxEthAddress (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxPublicKey(in pSeckey as Data, in pCompressed as Boolean) returns Data
    variable tLen as Integer
    variable tLenCompressed as Integer
@@ -859,6 +1156,24 @@ end handler
 -- Expand a compressed public key to its 65-byte form (solving the curve
 -- equation for Y). Feeding it an already-uncompressed key is legal and returns
 -- it unchanged, so a caller normalising mixed input does not have to branch.
+/**
+Summary: Expand a compressed public key to its 65-byte uncompressed form.
+
+pPubkey: A 33-byte compressed or 65-byte uncompressed public key, as Data.
+
+Returns: The 65-byte uncompressed key (0x04, then X and Y), as Data.
+
+Example:
+put cxPubkeyDecompress(tPubkey) into tFullKey
+
+Description:
+An uncompressed key is returned unchanged, so code that normalizes mixed
+input does not need to branch. A malformed or off-curve key throws.
+
+References: cxPublicKey (handler), cxPubkeyLenUncompressed (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxPubkeyDecompress(in pPubkey as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -886,6 +1201,34 @@ end handler
 -- s is always the LOW of the two equivalent values, which Bitcoin requires for
 -- relay (BIP-62) and Ethereum requires for consensus. That is upstream's doing,
 -- not a normalisation added here.
+/**
+Summary: Sign a 32-byte digest with ECDSA over secp256k1.
+
+pSeckey: The 32-byte private key, as Data.
+
+pDigest: The 32-byte digest to sign, as Data.
+
+Returns: A 64-byte signature (r then s), as Data.
+
+Example:
+put cxBtcSighashSegwit(2, tOutpoints, tSequences, 1, tScriptCode, tAmount, tOutputs, 0, 1) into tDigest
+put cxDerEncode(cxSign(tSeckey, tDigest)) & numToByte(1) into tSig
+
+Description:
+Signing is deterministic (RFC 6979): the same key and digest always give
+the same bytes, and s is always the low value Bitcoin and Ethereum both
+require.
+
+Sign only what you built. <cxSign> signs any 32 bytes it is handed;
+building the right digest (the transaction builders do that) and showing
+the user what it means is your app's job. A digest of the wrong length,
+or one that is all zero bytes (forgeable), throws. For Ethereum use
+<cxSignRecoverable>.
+
+References: cxVerify (handler), cxSignRecoverable (handler), cxDerEncode (handler), cxBtcSighashSegwit (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSign(in pSeckey as Data, in pDigest as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -915,6 +1258,31 @@ end handler
 -- or a 63-byte signature is a BUG in the calling code. A verify that threw on an
 -- invalid signature would be unusable; one that answered false to a malformed
 -- key would hide the bug behind a security-shaped result.
+/**
+Summary: Check an ECDSA signature over a 32-byte digest.
+
+pPubkey: The signer's public key (33 or 65 bytes), as Data.
+
+pDigest: The 32-byte digest that was signed, as Data.
+
+pSignature: The 64-byte signature (r then s), as Data.
+
+Returns: true if the signature verifies, false if it does not.
+
+Example:
+if cxVerify(tPubkey, tDigest, tSignature) then
+   put "Signature is good" into field "Status"
+end if
+
+Description:
+A signature that does not verify is an ordinary answer: false. A
+malformed public key or a signature of the wrong length throws instead,
+because that is a bug in the calling code.
+
+References: cxSign (handler), cxSignatureLen (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxVerify(in pPubkey as Data, in pDigest as Data, in pSignature as Data) returns Boolean
    variable tPubPtr as Pointer
    variable tPubLen as Integer
@@ -946,6 +1314,31 @@ end handler
 -- (65 total). Ethereum's `v` is built from that id, and it is what lets a
 -- verifier recover the signer's key from the signature alone instead of being
 -- told which key to check. The id is 0..3.
+/**
+Summary: Sign a 32-byte digest with recoverable ECDSA, as Ethereum does.
+
+pSeckey: The 32-byte private key, as Data.
+
+pDigest: The 32-byte digest to sign, as Data.
+
+Returns: 65 bytes, as Data: the 64-byte signature (r then s) followed by a one-byte recovery id.
+
+Example:
+put cxEth1559Sighash(1, 0, "3b9aca00", "04a817c800", 21000, tTo, "0de0b6b3a7640000", "") into tDigest
+put cxSignRecoverable(tSeckey, tDigest) into tSig
+put byteToNum(byte 65 of tSig) into tRecid
+
+Description:
+Deterministic (RFC 6979), with low s, like <cxSign>. Ethereum's v is
+built from the recovery id; <cxEthLegacyEncode> and <cxEth1559Encode>
+take it with r (bytes 1 to 32) and s (bytes 33 to 64) as hex. The same
+rule as <cxSign> applies: sign only a digest you built and showed the
+user.
+
+References: cxRecover (handler), cxEthLegacyEncode (handler), cxEth1559Encode (handler)
+
+Tags: Cryptography, Ethereum
+*/
 public handler cxSignRecoverable(in pSeckey as Data, in pDigest as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -975,6 +1368,31 @@ end handler
 -- own; it is meaningful only when the recovered key is then compared against
 -- the key you expected. That comparison is the caller's, and skipping it is the
 -- classic ecrecover mistake.
+/**
+Summary: The public key that produced a recoverable signature.
+
+pSignature: The 65-byte recoverable signature from cxSignRecoverable, as Data.
+
+pDigest: The 32-byte digest that was signed, as Data.
+
+Returns: The 65-byte uncompressed public key, as Data.
+
+Example:
+put cxRecover(tSig, tDigest) into tKey
+put cxEthAddress(tKey) into tSigner
+
+Description:
+A successful recovery proves nothing on its own: a well-formed signature
+recovers some key. Compare the recovered key (or its address) against the
+one you expected, byte for byte; skipping that comparison is the classic
+ecrecover mistake. Do not compare hex text with a bare is, which can read
+two hex strings as numbers. An unusable signature or a recovery id above
+3 throws.
+
+References: cxSignRecoverable (handler), cxEthAddress (handler)
+
+Tags: Cryptography, Ethereum
+*/
 public handler cxRecover(in pSignature as Data, in pDigest as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1007,6 +1425,30 @@ end handler
 -- convention and calling it interoperability, so the point is returned as
 -- computed and the KDF is yours (cxSha256 of the 32 X bytes is a common one;
 -- match whatever the protocol on the other end specifies).
+/**
+Summary: The raw ECDH shared point between your private key and their public key.
+
+pSeckey: Your 32-byte private key, as Data.
+
+pPubkey: Their public key (33 or 65 bytes), as Data.
+
+Returns: The 65-byte shared point (0x04, then X and Y), as Data.
+
+Example:
+put cxEcdh(tMySeckey, tTheirPubkey) into tPoint
+put cxSha256(byte 2 to 33 of tPoint) into tSharedKey
+
+Description:
+This is a point, not a shared key. Protocols disagree about which key
+derivation to run over it and whether it covers X alone, so CoinXT
+returns the point and you apply the derivation your protocol specifies.
+SHA-256 of the 32 X bytes is a common one; match the other end rather
+than guessing.
+
+References: cxEcdhLen (handler), cxSha256 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxEcdh(in pSeckey as Data, in pPubkey as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1050,6 +1492,28 @@ end handler
 -- not "give up". A zero tweak throws for the same reason cxPubkeyTweakAdd
 -- rejects one: see the note in native/coinxt.c. The probability of ever
 -- meeting either is about 2^-128; handle it, do not design around it.
+/**
+Summary: Add a 32-byte tweak to a private key modulo the group order (one BIP-32 step).
+
+pSeckey: The 32-byte private key, as Data.
+
+pTweak: The 32-byte tweak, as Data.
+
+Returns: The 32-byte tweaked private key, as Data.
+
+Example:
+put cxSeckeyTweakAdd(tParentKey, byte 1 to 32 of tI) into tChildKey
+
+Description:
+A low-level primitive; most callers want <cxHdDeriveChild> or
+<cxHdDerivePath>. It throws when the result is not a usable key (a tweak
+at or above the group order, or a zero result), which BIP-32 answers by
+moving to the next child index. A zero tweak throws too.
+
+References: cxPubkeyTweakAdd (handler), cxHdDeriveChild (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSeckeyTweakAdd(in pSeckey as Data, in pTweak as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1083,6 +1547,28 @@ end handler
 -- the spec and needs to know it. Hardened children have no public derivation
 -- at all (they hash the private key), which is a property of BIP-32, not a
 -- limitation here - cxHdDerivePath in the script layer says so by name.
+/**
+Summary: Add the point of a 32-byte tweak to a compressed public key (one BIP-32 step).
+
+pPubkey: The 33-byte compressed public key, as Data.
+
+pTweak: The 32-byte tweak, as Data.
+
+Returns: The 33-byte compressed tweaked public key, as Data.
+
+Example:
+put cxPubkeyTweakAdd(tParentPub, byte 1 to 32 of tI) into tChildPub
+
+Description:
+The public half of BIP-32 derivation, which lets a watch-only wallet
+derive receive addresses with no private key. An uncompressed key throws
+rather than being compressed for you, and so does a zero tweak or an
+unusable result. Most callers want <cxHdDeriveChild>.
+
+References: cxSeckeyTweakAdd (handler), cxHdDeriveChild (handler), cxHdNeuter (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxPubkeyTweakAdd(in pPubkey as Data, in pTweak as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1118,6 +1604,30 @@ end handler
 -- sum at infinity throws (it has no x coordinate; a receiver skips such a
 -- transaction), as does a key that does not parse, a length that is not a
 -- multiple of 33, and an empty set.
+/**
+Summary: The sum of one or more compressed public keys.
+
+pKeys: The 33-byte compressed keys concatenated, as Data (33 times the number of keys).
+
+Returns: The 33-byte compressed sum, as Data.
+
+Example:
+put cxPubkeyCombine(tKeyA & tKeyB & tKeyC) into tSum
+
+Description:
+Point addition, for BIP-352 silent-payment receiving, where a receiver
+sums the input public keys of each transaction it scans. The whole set
+is summed at once, so an intermediate sum at infinity is fine as long as
+the final one is not.
+
+It throws on a final sum at infinity (a receiver skips such a
+transaction), a key that does not parse, a length that is not a multiple
+of 33, and an empty set.
+
+References: cxPublicKey (handler), cxEcdh (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxPubkeyCombine(in pKeys as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1144,6 +1654,25 @@ end handler
 -- list is sorted, so word -> index is a binary search. The script layer fetches
 -- this ONCE and caches it; there is no reason for an app to call it directly
 -- unless it is building its own mnemonic UI (an autocomplete, say).
+/**
+Summary: The BIP-39 English wordlist as 2048 fixed-width 8-byte slots.
+
+Returns: 16384 bytes, as Data: each word left-aligned and space padded, in list order.
+
+Example:
+put cxBip39Wordlist() into tList
+put word 1 of (byte 1 to 8 of tList) into tFirstWord
+
+Description:
+Word i, counting from 0, is bytes i*8+1 to i*8+8; trim the trailing
+spaces. The list is sorted, so a word's index can be found by binary
+search. The mnemonic handlers already use it; call it yourself only when
+you build your own mnemonic UI, such as an autocomplete.
+
+References: cxBip39WordlistLen (handler), cxMnemonicFromEntropy (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxBip39Wordlist() returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1191,6 +1720,34 @@ end handler
 -- all of them verify). Pass 32 bytes and the signature is a pure function of
 -- (key, message, aux), which is what the published test vectors pin and what
 -- you want if you are reproducing one. Empty NEVER means an all-zero aux.
+/**
+Summary: Sign a 32-byte message with a BIP-340 Schnorr signature.
+
+pSeckey: The 32-byte private key, as Data. For a Taproot key-path spend, the key from cxTaprootTweakSeckey.
+
+pMessage: The 32-byte message, as Data. For Taproot, the BIP-341 sighash.
+
+pAuxRand: Empty, or 32 bytes of auxiliary randomness, as Data.
+
+Returns: A 64-byte BIP-340 signature, as Data.
+
+Example:
+put cxTaprootTweakSeckey(tSeckey, empty) into tSpendKey
+put cxSchnorrSign(tSpendKey, tSighash, empty) into tSignature
+
+Description:
+The message must be exactly 32 bytes: CoinXT signs only a digest you
+built and can explain, the same rule as <cxSign>.
+
+An empty pAuxRand draws 32 fresh bytes from the operating system, BIP-340's
+recommended default, so each signature differs (all of them verify). It
+never means an all-zero aux. Pass 32 bytes when you need a reproducible
+signature, as the published test vectors do. Any other length throws.
+
+References: cxSchnorrVerify (handler), cxTaprootTweakSeckey (handler), cxBtcSighashTaproot (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSchnorrSign(in pSeckey as Data, in pMessage as Data, in pAuxRand as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1231,6 +1788,30 @@ end handler
 -- size") both list their expected verification result as FALSE. Only a
 -- wrong-LENGTH key or signature throws, because that is a caller bug rather
 -- than a verdict about somebody's signature.
+/**
+Summary: Check a BIP-340 Schnorr signature against an x-only public key.
+
+pXOnlyPubkey: The 32-byte x-only public key, as Data.
+
+pMessage: The signed message, as Data, of any length.
+
+pSignature: The 64-byte signature, as Data.
+
+Returns: true if the signature verifies, false if it does not.
+
+Example:
+put cxSchnorrVerify(cxXOnlyPubkey(tSeckey), tMessage, tSignature) into tGood
+
+Description:
+Unlike <cxSchnorrSign>, any message length is accepted, as BIP-340
+allows. A public key that is not a point on the curve answers false, as
+BIP-340's own vectors require. Only a key or signature of the wrong
+length throws, because that is a bug in the calling code.
+
+References: cxSchnorrSign (handler), cxXOnlyPubkey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSchnorrVerify(in pXOnlyPubkey as Data, in pMessage as Data, in pSignature as Data) returns Boolean
    variable tKeyPtr as Pointer
    variable tKeyLen as Integer
@@ -1262,6 +1843,27 @@ end handler
 -- coordinate of the point whose Y is even. This is what a BIP-340 verifier
 -- needs, and it is the INTERNAL key a Taproot output is built from - it is
 -- NOT a Taproot output key until it has been through cxTaprootTweakPubkey.
+/**
+Summary: The 32-byte x-only public key for a private key (BIP-340).
+
+pSeckey: The 32-byte private key, as Data.
+
+Returns: The 32-byte x-only public key, as Data.
+
+Example:
+put cxXOnlyPubkey(tSeckey) into tInternal
+put cxBtcAddressP2TRFromInternal(tInternal, empty) into tAddress
+
+Description:
+This is the X coordinate of the point whose Y is even: what a BIP-340
+verifier needs, and the internal key a Taproot output is built from. It
+is not a Taproot output key until it has been tweaked; pay to it through
+<cxBtcAddressP2TRFromInternal>, not <cxBtcAddressP2TR>.
+
+References: cxTaprootTweakPubkey (handler), cxBtcAddressP2TRFromInternal (handler), cxSchnorrVerify (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxXOnlyPubkey(in pSeckey as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1291,6 +1893,34 @@ end handler
 -- splits this into a named array if you would rather read it that way.
 --
 -- pMerkleRoot: EMPTY for key-path-only, or a 32-byte script-tree root.
+/**
+Summary: The BIP-341 Taproot output key for an internal x-only key, with its parity.
+
+pInternalKey: The 32-byte x-only internal key, as Data.
+
+pMerkleRoot: Empty for a key-path-only output, or the 32-byte script-tree root, as Data.
+
+Returns: 33 bytes, as Data: the 32-byte x-only output key followed by one parity byte (0 for even Y, 1 for odd).
+
+Example:
+put cxTaprootTweakPubkey(tInternal, empty) into tRecord
+put byte 1 to 32 of tRecord into tOutputKey
+
+Description:
+Computes BIP-341's Q = P + int(hash_TapTweak(bytes(P) || merkle_root))G.
+The 32-byte key is the witness program of the P2TR output; the parity
+byte goes in a script-path spend's control block. <cxTaprootTweak>
+returns the same thing as a named array.
+
+An empty pMerkleRoot is NOT 32 zero bytes, and the difference is
+consensus: the two give different output keys and addresses. If you
+have no script tree, pass empty. Pass the same root to
+<cxTaprootTweakSeckey>.
+
+References: cxTaprootTweak (handler), cxTaprootTweakSeckey (handler), cxTaprootOutputLen (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxTaprootTweakPubkey(in pInternalKey as Data, in pMerkleRoot as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1326,6 +1956,30 @@ end handler
 --
 -- pMerkleRoot must be the SAME value passed to cxTaprootTweakPubkey. EMPTY for
 -- key-path-only; it is the specification's empty byte string, not 32 zeros.
+/**
+Summary: The private key that spends a BIP-341 Taproot output.
+
+pSeckey: The 32-byte internal private key, as Data.
+
+pMerkleRoot: Empty for a key-path-only output, or the 32-byte script-tree root, as Data.
+
+Returns: The 32-byte tweaked private key, as Data.
+
+Example:
+put cxTaprootTweakSeckey(tSeckey, empty) into tSpendKey
+put cxSchnorrSign(tSpendKey, tSighash, empty) into tSignature
+
+Description:
+It takes the internal private key and derives the internal public key
+itself, so a mismatched pair can never produce a key for coins it cannot
+spend. Pass the same pMerkleRoot you used for the address (empty for
+key-path-only, which is not 32 zero bytes), then sign the BIP-341 sighash
+with <cxSchnorrSign>.
+
+References: cxTaprootTweakPubkey (handler), cxSchnorrSign (handler), cxBtcSighashTaproot (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxTaprootTweakSeckey(in pSeckey as Data, in pMerkleRoot as Data) returns Data
    variable tLen as Integer
    variable tOut as Pointer
@@ -1360,6 +2014,23 @@ end handler
 -- accessor and which does not.
 -- ==========================================================================
 
+/**
+Summary: The size in bytes of a Keccak-256 digest.
+
+Returns: 32.
+
+Example:
+put cxKeccak256Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code. It is also a handy load probe: unlike
+<cxCheckABI>, it returns a value you can print.
+
+References: cxKeccak256 (handler)
+
+Tags: Cryptography, Ethereum
+*/
 public handler cxKeccak256Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1369,6 +2040,22 @@ public handler cxKeccak256Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a SHA3-256 digest.
+
+Returns: 32.
+
+Example:
+put cxSha3_256Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSha3_256 (handler)
+
+Tags: Cryptography
+*/
 public handler cxSha3_256Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1378,6 +2065,22 @@ public handler cxSha3_256Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a SHA-256 digest.
+
+Returns: 32.
+
+Example:
+put cxSha256Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSha256 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSha256Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1387,6 +2090,22 @@ public handler cxSha256Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a SHA-512 digest.
+
+Returns: 64.
+
+Example:
+put cxSha512Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSha512 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSha512Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1396,6 +2115,22 @@ public handler cxSha512Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a RIPEMD-160 digest.
+
+Returns: 20.
+
+Example:
+put cxRipemd160Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxRipemd160 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxRipemd160Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1405,6 +2140,22 @@ public handler cxRipemd160Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of an HMAC-SHA256 result.
+
+Returns: 32.
+
+Example:
+put cxHmacSha256Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxHmacSha256 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxHmacSha256Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1414,6 +2165,22 @@ public handler cxHmacSha256Len() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of an HMAC-SHA512 result.
+
+Returns: 64.
+
+Example:
+put cxHmacSha512Len() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxHmacSha512 (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxHmacSha512Len() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1427,6 +2194,22 @@ end handler
 -- cxNewSeckey; the two pubkey lengths tell an encoder which form it holds
 -- without inspecting the prefix byte; cxSignatureLen and
 -- cxRecoverableSignatureLen differ by exactly the one recovery byte.
+/**
+Summary: The size in bytes of a secp256k1 private key.
+
+Returns: 32.
+
+Example:
+put cxSeckeyLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxNewSeckey (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxSeckeyLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1436,6 +2219,22 @@ public handler cxSeckeyLen() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a compressed public key.
+
+Returns: 33.
+
+Example:
+put cxPubkeyLenCompressed() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxPublicKey (handler), cxPubkeyLenUncompressed (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxPubkeyLenCompressed() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1445,6 +2244,22 @@ public handler cxPubkeyLenCompressed() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of an uncompressed public key.
+
+Returns: 65.
+
+Example:
+put cxPubkeyLenUncompressed() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxPublicKey (handler), cxPubkeyLenCompressed (handler)
+
+Tags: Cryptography, Bitcoin, Ethereum
+*/
 public handler cxPubkeyLenUncompressed() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1454,6 +2269,22 @@ public handler cxPubkeyLenUncompressed() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of an ECDSA signature from cxSign.
+
+Returns: 64.
+
+Example:
+put cxSignatureLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSign (handler), cxRecoverableSignatureLen (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSignatureLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1463,6 +2294,22 @@ public handler cxSignatureLen() returns Integer
    return tLen
 end handler
 
+/**
+Summary: The size in bytes of a recoverable signature from cxSignRecoverable.
+
+Returns: 65.
+
+Example:
+put cxRecoverableSignatureLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSignRecoverable (handler), cxSignatureLen (handler)
+
+Tags: Cryptography, Ethereum
+*/
 public handler cxRecoverableSignatureLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1473,6 +2320,22 @@ public handler cxRecoverableSignatureLen() returns Integer
 end handler
 
 -- The RAW ECDH point, not a key (see cxEcdh).
+/**
+Summary: The size in bytes of the raw ECDH point from cxEcdh.
+
+Returns: 65.
+
+Example:
+put cxEcdhLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxEcdh (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxEcdhLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1485,6 +2348,22 @@ end handler
 -- The size of the whole wordlist blob, 2048 * 8. Exposed for the same reason
 -- as every other accessor here: the script layer derives the slot width from
 -- this divided by 2048 rather than writing 8 down a second time.
+/**
+Summary: The size in bytes of the BIP-39 wordlist from cxBip39Wordlist.
+
+Returns: 16384 (2048 words of 8 bytes).
+
+Example:
+put cxBip39WordlistLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxBip39Wordlist (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxBip39WordlistLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1497,6 +2376,22 @@ end handler
 -- 64: a BIP-340 signature (r || s, both 32 bytes). Same size as an ECDSA
 -- signature in this library's raw form, and deliberately a separate accessor:
 -- they are different objects and a future library could size them apart.
+/**
+Summary: The size in bytes of a BIP-340 Schnorr signature.
+
+Returns: 64.
+
+Example:
+put cxSchnorrSignatureLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxSchnorrSign (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxSchnorrSignatureLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1508,6 +2403,22 @@ end handler
 
 -- 32: an x-only public key, and therefore also a Taproot output key and the
 -- witness program of a P2TR address.
+/**
+Summary: The size in bytes of an x-only public key, which is also a Taproot output key.
+
+Returns: 32.
+
+Example:
+put cxXOnlyPubkeyLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxXOnlyPubkey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxXOnlyPubkeyLen() returns Integer
    variable tLen as Integer
    sPrepare()
@@ -1520,6 +2431,22 @@ end handler
 -- 33: the record cxTaprootTweakPubkey returns, which is the 32-byte output key
 -- plus one parity byte. Exposed so the script layer can slice it without
 -- writing 32 or 33 down a second time.
+/**
+Summary: The size in bytes of the record cxTaprootTweakPubkey returns.
+
+Returns: 33 (a 32-byte output key and one parity byte).
+
+Example:
+put cxTaprootOutputLen() into tLen
+
+Description:
+The size comes from the native library. Ask for it rather than writing the
+number into your own code.
+
+References: cxTaprootTweakPubkey (handler)
+
+Tags: Cryptography, Bitcoin
+*/
 public handler cxTaprootOutputLen() returns Integer
    variable tLen as Integer
    sPrepare()

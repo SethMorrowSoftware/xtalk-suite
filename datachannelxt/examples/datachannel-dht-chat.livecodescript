@@ -133,12 +133,56 @@ local sDcPollNote         -- the FIRST poll fault since the last clear - a bad
                         -- resolving; "" while healthy
 local sPollDrains       -- drains attempted, so a failure can name which
 
+/**
+Title: dataChannelXT Helpers
+Author: Seth Morrow Software
+Description:
+The poll dispatcher and small helpers for DataChannelXT. Put the
+dataChannelHelpers stack in use (start using stack "dataChannelHelpers")
+and call <dcStartPolling>: a timer drains the native event queue with
+<dcPoll> and sends one message per event to your card or object, so an
+app handles plain messages instead of running its own poll loop.
+
+The messages are dcLocalDescriptionReady, dcLocalCandidate,
+dcStateChange, dcGatheringStateChange, dcChannelIncoming, dcChannelOpen,
+dcChannelClosed, dcMessage, dcChannelError, dcBufferedLow and
+dcQueueOverflow, each with the event array as its parameter, plus a
+catch-all dataChannelEvent for every event.
+
+Tags: Networking, Library
+*/
 -- dcStartPolling TARGET, INTERVALMS
 -- Begin draining events and dispatching them to TARGET. If TARGET is empty,
 -- events go to the current card. INTERVALMS defaults to 33 (about 30 Hz -
 -- real-time feel without measurable CPU cost). Calling it again while polling
 -- re-points the target and the interval (last caller wins); it does NOT arm a
 -- second chain.
+/**
+Summary: Start draining DataChannelXT events and dispatching them as messages.
+
+pTarget: The object that receives the event messages; empty means the current card.
+
+pIntervalMs: Milliseconds between drains; empty or less than 1 means 33.
+
+Example:
+start using stack "dataChannelHelpers"
+dcStartPolling the long id of this card, 33
+
+Description:
+Use <dcStartPolling> once at startup. Every interval it calls <dcPoll>
+and dispatches each event to the target by its name, such as dcMessage
+or dcChannelOpen, followed by a catch-all dataChannelEvent message, each
+with the event array as its parameter.
+
+The interval is the latency knob: 16 to 33 milliseconds feels real-time,
+100 or more is fine for chat. Calling it again while polling changes the
+target and the interval without starting a second timer. A failed drain
+or a failed dispatch does not stop the timer; it is recorded for
+<dcPollLastError>. If the target no longer exists, events go to the
+current card instead.
+
+References: dcStopPolling (handler), dcPoll (handler), dcPollLastError (handler)
+*/
 command dcStartPolling pTarget, pIntervalMs
    if pTarget is empty then
       put the long id of this card into sDcPollTarget
@@ -171,6 +215,22 @@ end dcStartPolling
 -- Stop the timer loop. Safe to call when not polling. (This stops DELIVERY
 -- only - the native queue keeps buffering, bounded, until you poll again or
 -- call dcCleanup.)
+/**
+Summary: Stop the poll timer.
+
+Example:
+dcStopPolling
+dcCleanup
+
+Description:
+Use <dcStopPolling> before <dcCleanup> at quit, or whenever the app
+should stop receiving event messages. It is safe to call when not
+polling. It stops delivery only: the native queue keeps buffering,
+bounded, until you poll again or clean up. It may be called from inside
+an event handler the timer dispatched.
+
+References: dcStartPolling (handler), dcCleanup (handler)
+*/
 command dcStopPolling
    put "false" into sDcPolling
 end dcStopPolling
@@ -333,17 +393,64 @@ end dcChannelPollOnce
 -- resolving (saying it fell back to this card).
 -- An app that shows this in its own log turns "the demo went quiet" into a
 -- line a maintainer can act on.
+/**
+Summary: The first fault the poll timer recorded since the last clear.
+
+Returns: Empty while the dispatcher is healthy; otherwise a one-line description of the first fault.
+
+Example:
+put dcPollLastError() into tNote
+if tNote is not empty then put tNote & return after field "Log"
+dcPollClearError
+
+Description:
+Use <dcPollLastError> to find out why events stopped arriving. The poll
+timer never stops on a fault; it records the first one instead: a
+failed drain (with the drain number), a failed dispatch (naming the
+event), or a target that no longer exists (it then falls back to the
+current card). The helpers never print it; your app decides where it
+goes. It survives a stop and restart; only <dcPollClearError> clears it.
+
+References: dcPollClearError (handler), dcStartPolling (handler)
+*/
 function dcPollLastError
    return sDcPollNote
 end dcPollLastError
 
 -- Clear it, so an app can report each distinct failure once rather than
 -- repeating one line forever.
+/**
+Summary: Clear the poll timer's recorded fault.
+
+Example:
+dcPollClearError
+
+Description:
+Use <dcPollClearError> after reading <dcPollLastError>, so each distinct
+failure is reported once.
+
+References: dcPollLastError (handler)
+*/
 command dcPollClearError
    put empty into sDcPollNote
 end dcPollClearError
 
 -- dcStateName N -- map a kPeerState* int to a label for status displays.
+/**
+Summary: A label for a peer connection state number.
+
+pState: A state number from <dcPeerState> or a dcStateChange event.
+
+Returns: "new", "connecting", "connected", "disconnected", "failed", "closed", or "unknown".
+
+Example:
+put dcStateName(dcPeerState(sPeer)) into field "Status"
+
+Description:
+Use <dcStateName> for status displays.
+
+References: dcPeerState (handler), dcGatheringName (handler)
+*/
 function dcStateName pState
    switch pState
       case 0
@@ -364,6 +471,21 @@ function dcStateName pState
 end dcStateName
 
 -- dcGatheringName N -- map a kGathering* int to a label.
+/**
+Summary: A label for an ICE gathering state number.
+
+pState: A state number from <dcGatheringState> or a dcGatheringStateChange event.
+
+Returns: "new", "gathering", "complete", or "unknown".
+
+Example:
+put dcGatheringName(dcGatheringState(sPeer)) into field "Gathering"
+
+Description:
+Use <dcGatheringName> for status displays.
+
+References: dcGatheringState (handler), dcStateName (handler)
+*/
 function dcGatheringName pState
    switch pState
       case 0
@@ -378,6 +500,22 @@ function dcGatheringName pState
 end dcGatheringName
 
 -- dcFormatBytes N -- a small humaniser for buffered-amount displays.
+/**
+Summary: Format a byte count for display.
+
+pBytes: A number of bytes.
+
+Returns: A short string such as "512 B", "1.5 KiB" or "3.2 MiB"; "0 B" when the value is empty or not a number.
+
+Example:
+put dcFormatBytes(dcBufferedAmount(sChan)) into field "Queued"
+
+Description:
+Use <dcFormatBytes> to show sizes such as a channel's buffered amount.
+It rounds to one decimal place and uses B, KiB, MiB and GiB.
+
+References: dcBufferedAmount (handler)
+*/
 function dcFormatBytes pBytes
    local tUnits, tVal, tI, tSavedDelim, tOut
    if pBytes is empty or pBytes is not a number then

@@ -82,10 +82,55 @@ local sEnPollInterval     -- milliseconds between drains (the latency knob)
 local sEnPollNote         -- most recent pump failure, empty while healthy
 local sEnPolling          -- "true" while the timer loop is armed
 
+/**
+Title: enetxt Helpers
+Author: Seth Morrow Software
+Description:
+The poll pump and small helpers for enetxt. Put the enetHelpers stack in
+use (start using stack "enetHelpers") and register each host with
+<enStartPolling>: a timer services every registered host with <enPoll>
+and sends one message per event to your card or object, so an app
+handles plain messages instead of running its own pump.
+
+ENet makes no progress unless it is pumped, so this timer is the
+transport's heartbeat. The messages are enetConnect, enetDisconnect,
+enetReceive and enetError, each with the event array as its parameter,
+plus a catch-all enetEvent for every event.
+
+Tags: Networking, Library
+*/
 -- enStartPolling HOST, TARGET, INTERVALMS
 -- Add HOST to the pump set and (first call) arm the loop. TARGET empty means
 -- the current card; INTERVALMS defaults to 33 (about 30 Hz). One target and
 -- one interval serve every registered host (last caller wins).
+/**
+Summary: Add a host to the pump and dispatch its events as messages.
+
+pHost: The host handle to service; empty or 0 is ignored.
+
+pTarget: The object that receives the event messages; empty means the current card.
+
+pIntervalMs: Milliseconds between pump passes; empty or less than 1 means 33.
+
+Example:
+put enHostCreateServer("", 27000, 32, 2, 0, 0) into sHost
+if sHost is not 0 then enStartPolling sHost, the long id of this card, 33
+
+Description:
+Use <enStartPolling> once for each host you create, server or client.
+Every interval the timer calls <enPoll> on each registered host and
+dispatches each event to the target by its name (enetConnect,
+enetDisconnect, enetReceive or enetError), followed by a catch-all
+enetEvent message, each with the event array as its parameter.
+
+The interval is the latency floor: 16 to 33 milliseconds feels
+real-time, 100 or more is fine for chat. One target and one interval
+serve every host; the last call sets them. Registering a host twice has
+no effect, and only one timer ever runs. A failed poll or dispatch does
+not stop the timer; it is recorded for <enPollLastError>.
+
+References: enStopPolling (handler), enPoll (handler), enPollLastError (handler)
+*/
 command enStartPolling pHost, pTarget, pIntervalMs
    local tSavedDelim
    if pHost is empty or pHost is 0 then
@@ -131,6 +176,26 @@ end enStartPolling
 -- Remove one host from the pump set, or stop everything when HOST is empty.
 -- Stopping the pump FREEZES the transport for the remaining app lifetime
 -- (nothing progresses unpumped) - stop only what you are done with.
+/**
+Summary: Remove a host from the pump, or stop the pump entirely.
+
+pHost: The host handle to remove; empty stops pumping every host.
+
+Example:
+enStopPolling sHost
+get enHostDestroy(sHost)
+
+Description:
+Use <enStopPolling> with a host when you are done with that host. A
+host that is not pumped makes no progress at all: nothing connects,
+sends or receives. The timer stops when the last host is removed.
+
+The pump is shared by every stack that uses the helpers, so an empty
+host stops other stacks' hosts too; remove your own hosts one by one.
+It may be called from inside an event handler the timer dispatched.
+
+References: enStartPolling (handler), enHostDestroy (handler)
+*/
 command enStopPolling pHost
    local tI, tNew, tSavedDelim
    if pHost is empty then
@@ -230,16 +295,64 @@ end enetPollOnce
 -- failure since the last enPollClearError, naming what threw. An app that
 -- shows this in its own log turns "the demo went quiet" into a line a
 -- maintainer can act on.
+/**
+Summary: The first failure the pump recorded since the last clear.
+
+Returns: Empty while the pump is healthy; otherwise a one-line description of the first failure.
+
+Example:
+put enPollLastError() into tNote
+if tNote is not empty then put tNote & return after field "Log"
+enPollClearError
+
+Description:
+Use <enPollLastError> to find out why events stopped arriving. The pump
+never stops on a failure; it records the first one instead, naming the
+host for a failed poll or the event for a failed dispatch. It survives
+a stop and restart; only <enPollClearError> clears it.
+
+References: enPollClearError (handler), enStartPolling (handler)
+*/
 function enPollLastError
    return sEnPollNote
 end enPollLastError
 
 -- Clear it, so an app can report each distinct failure once.
+/**
+Summary: Clear the pump's recorded failure.
+
+Example:
+enPollClearError
+
+Description:
+Use <enPollClearError> after reading <enPollLastError>, so each
+distinct failure is reported once.
+
+References: enPollLastError (handler)
+*/
 command enPollClearError
    put empty into sEnPollNote
 end enPollClearError
 
 -- enStateName N -- map a kPeerState* value (enPeerStatus "state") to a label.
+/**
+Summary: A label for an ENet peer state number.
+
+pState: The "state" value from <enPeerStatus>.
+
+Returns: "disconnected", "connecting", "connected", "disconnecting", "zombie", or "unknown".
+
+Example:
+put enPeerStatus(sPeer) into tStatus
+put enStateName(tStatus["state"]) into field "Status"
+
+Description:
+Use <enStateName> for status displays. It folds ENet's ten states into
+five labels: 1 to 4 are connecting, 5 is connected, and 6 to 8 are
+disconnecting.
+
+References: enPeerStatus (handler)
+*/
 function enStateName pState
    switch pState
       case 0
@@ -263,6 +376,23 @@ function enStateName pState
 end enStateName
 
 -- enFormatBytes N -- a small humaniser for dashboards (KiB/MiB/GiB).
+/**
+Summary: Format a byte count for display.
+
+pBytes: A number of bytes.
+
+Returns: A short string such as "512 B", "1.5 KiB" or "3.2 MiB"; "0 B" when the value is empty or not a number.
+
+Example:
+put enPeerStatus(sPeer) into tStatus
+put enFormatBytes(tStatus["bytesSent"]) into field "Sent"
+
+Description:
+Use <enFormatBytes> for dashboards. It rounds to one decimal place and
+uses B, KiB, MiB, GiB and TiB.
+
+References: enPeerStatus (handler), enHostStatus (handler)
+*/
 function enFormatBytes pBytes
    local tUnits, tVal, tI, tSavedDelim, tOut
    if pBytes is empty or pBytes is not a number then
@@ -327,11 +457,63 @@ local sPollTarget       -- object that receives the semantic event messages
 local sPollInterval     -- milliseconds between drains (the latency/CPU knob)
 local sPolling          -- "true" while the timer loop is armed
 
+/**
+Title: TorrentXT Helpers
+
+Author: Seth Morrow Software
+
+Description:
+The script-side poll loop and formatting helpers for TorrentXT. Put this
+stack in the message path with start using stack "torrentHelpers" (or use
+its script as a behavior), then call btStartPolling once the session is
+running.
+
+libtorrent never calls back into script. The helper drains the session's
+events on a timer with btPoll and btRp1Poll and dispatches each one to
+your target as a message named after the event, such as metadataReceived,
+torrentFinished or rp1Message, with the event array as its one parameter.
+Every event is also sent as torrentEvent, a catch-all. When a drain
+reports that events were lost because a queue filled, the target also gets
+a torrentPollWarning message.
+
+btFormatBytes and btStateName turn raw numbers into labels for a
+dashboard.
+*/
+
 -- btStartPolling SESSION, TARGET, INTERVALMS
 -- Begin draining SESSION's events and dispatching them to TARGET. If TARGET is
 -- empty, events go to the current card. INTERVALMS defaults to 250. Calling it
 -- again while polling re-points the session, target and interval (last caller
 -- wins); it does NOT arm a second chain.
+/**
+Summary: Start draining a session's events on a timer and dispatching them as messages.
+
+pSession: The session handle from btStartSession.
+
+pTarget: The object that receives the event messages; empty for the current card.
+
+pIntervalMs: Milliseconds between drains; empty for 250.
+
+Example:
+btStartSession
+put the result into sSession
+btStartPolling sSession, the long id of this card, 250
+
+Description:
+Use <btStartPolling> once the session is running. Each pass runs
+<btTorrentPollOnce>: it drains <btPoll> and then <btRp1Poll> and
+dispatches each event to the target as a message named after the event,
+with the event array as its one parameter, and also as torrentEvent.
+
+Handle the events you need with handlers such as on torrentFinished
+pEvent, and read the keys of pEvent.
+
+Calling it again while polling changes the session, target and interval;
+it does not start a second timer. The interval trades latency for CPU, but
+both event queues are limited, so a very slow interval can lose events.
+
+References: btStopPolling (handler), btTorrentPollOnce (handler), btPoll (handler)
+*/
 command btStartPolling pSession, pTarget, pIntervalMs
    put pSession into sPollSession
    if pTarget is empty then
@@ -358,6 +540,20 @@ command btStartPolling pSession, pTarget, pIntervalMs
 end btStartPolling
 
 -- Stop the timer loop. Safe to call when not polling.
+/**
+Summary: Stop the event polling timer.
+
+Example:
+btStopPolling
+btStopSession sSession
+
+Description:
+Use <btStopPolling> before <btStopSession>; call both from closeStack. The
+pass already scheduled sees the flag and does nothing. It is safe to call
+when polling is not running.
+
+References: btStartPolling (handler), btStopSession (handler)
+*/
 command btStopPolling
    put "false" into sPolling
 end btStopPolling
@@ -385,6 +581,29 @@ end btStopPolling
 -- timer message never runs between an app's bt* call and its own
 -- btLastError() read unless that handler yields (`wait ... with messages`).
 -- Verified statically; needs an OXT pass (no harness drives this helper yet).
+/**
+Summary: Run one drain pass of the polling loop.
+
+Example:
+btStartPolling sSession, the long id of this card, 250
+
+Description:
+<btTorrentPollOnce> is the timer message <btStartPolling> schedules; you
+normally do not call it yourself. It does nothing unless polling is on and
+a session is set.
+
+Each pass clears the last error, drains <btPoll>, and dispatches every
+event by its name and as torrentEvent. It then does the same with
+<btRp1Poll>, which returns nothing when rp1 is not enabled. Finally it
+schedules the next pass.
+
+If <btLastError> is not empty right after a drain, the queue overflowed.
+The pass then dispatches a torrentPollWarning event (and torrentEvent)
+whose array has the keys name, torrent (0), source (btPoll or btRp1Poll)
+and message (the text from btLastError).
+
+References: btStartPolling (handler), btStopPolling (handler), btPoll (handler), btRp1Poll (handler)
+*/
 command btTorrentPollOnce
    local tEvents, tEvent, tName, tLoss
    if sPolling is not "true" then
@@ -444,6 +663,23 @@ private command btPollDispatchLoss pSource, pMessage
 end btPollDispatchLoss
 
 -- btFormatBytes N -- a small humaniser for dashboards (KiB/MiB/GiB).
+/**
+Summary: Format a byte count as text such as 1.5 MiB.
+
+pBytes: A number of bytes.
+
+Returns: The size with one decimal place and a unit: B, KiB, MiB, GiB or TiB.
+
+Example:
+put btTorrentStatus(tH) into tStatus
+put btFormatBytes(tStatus["totalDone"]) into field "done"
+
+Description:
+Use <btFormatBytes> for dashboard labels. It divides by 1024 per unit.
+Empty or non-numeric input returns 0 B.
+
+References: btStateName (handler), btTorrentStatus (handler)
+*/
 function btFormatBytes pBytes
    local tUnits, tVal, tI, tSavedDelim, tOut
    if pBytes is empty or pBytes is not a number then
@@ -479,6 +715,24 @@ function btFormatBytes pBytes
 end btFormatBytes
 
 -- btStateName N -- map a libtorrent torrent_status::state_t int to a label.
+/**
+Summary: Turn a torrent state number into a label.
+
+pState: The state value from the state key of btTorrentStatus.
+
+Returns: checking, fetching metadata, downloading, finished, seeding, checking resume or queued.
+
+Example:
+put btTorrentStatus(tH) into tStatus
+put btStateName(tStatus["state"]) into field "state"
+
+Description:
+Use <btStateName> to show libtorrent's torrent state. 1 is checking, 2
+fetching metadata, 3 downloading, 4 finished, 5 seeding and 7 checking
+resume; any other value, 0 and 6 included, gives queued.
+
+References: btTorrentStatus (handler), btFormatBytes (handler)
+*/
 function btStateName pState
    switch pState
       case 1

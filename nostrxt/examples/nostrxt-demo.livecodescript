@@ -188,10 +188,71 @@ local sNxJsonDepth
 -- Version, errors, capabilities.
 -- ==========================================================================
 
+/**
+Title: NostrXT
+Author: Seth Morrow Software
+Description:
+NostrXT is the client side of the Nostr protocol for OpenXTalk, written in
+pure script: NIP-01 events (build, canonical serialization, id, BIP-340 sign
+and verify), NIP-19 bech32 entities and NIP-21 nostr: URIs, NIP-44 v2
+encrypted payloads, NIP-01 filters and relay messages, NIP-13 proof of
+work, NIP-05 and NIP-11 parsing, and the pure-compute half of an RFC 6455
+websocket client.
+
+This core library does no I/O and holds no connection state. The relay
+client (the NostrXT Relay Client library, nxr handlers) owns the sockets
+and composes it, so load this library first.
+
+It adds no cryptography of its own. SHA-256, Schnorr signatures, x-only
+keys, ECDH and HMAC come from CoinXT; randomness, constant-time compare
+and the NIP-44 cipher come from SodiumXT. A missing extension disables
+exactly the features that need it (see <nxProbeCapabilities>).
+
+No handler here ever throws. A function that fails returns empty (or
+false for a predicate) and records the reason, which <nxLastError>
+returns. Ids, pubkeys, secret keys and signatures cross this API as
+lowercase hex strings.
+
+Tags: Networking, Nostr
+*/
+/**
+Summary: Returns the NostrXT name and version.
+
+Returns: The text "NostrXT" followed by a space and the version number.
+
+Example:
+put nxVersion() into field "versionField"
+
+Description:
+Use <nxVersion> to confirm the core library is loaded and to show which
+version an app is running.
+
+References: nxrVersion (handler), nxProbeCapabilities (handler)
+*/
 function nxVersion
    return "NostrXT" && kNxVersion
 end nxVersion
 
+/**
+Summary: Returns the reason the most recent failing nx call recorded.
+
+Returns: The reason text, or empty when nothing has failed yet.
+
+Example:
+put nxNpubDecode(field "npubField") into tPubkey
+if tPubkey is empty then answer "Not an npub:" && nxLastError()
+
+Description:
+Core handlers never throw. A function that fails returns empty (or false
+for a predicate) and records why. Check the return first, then read
+<nxLastError> straight away: any later failing call overwrites the
+reason, and a successful call does not clear it.
+
+A missing extension gives a reason that names the handler it needs, for
+example "nxEventId needs CoinXT cxSha256".
+
+References: nxProbeCapabilities (handler)
+*/
 function nxLastError
    return sNxLastError
 end nxLastError
@@ -200,6 +261,28 @@ private command nxSetError pMessage
    put pMessage into sNxLastError
 end nxSetError
 
+/**
+Summary: Reports which extensions NostrXT can use, as a cached array.
+
+Returns: An array with keys "hasCoin", "hasSodium", "canSign",
+"canNip44Cipher" (each true or false) and "version".
+
+Example:
+put nxProbeCapabilities() into tCaps
+if tCaps["canSign"] is not true then answer "CoinXT is not installed: signing is unavailable"
+
+Description:
+Each extension is probed with a real round trip (a known hash, a real
+random byte), not a version check. "hasCoin" and "canSign" need CoinXT;
+"hasSodium" needs SodiumXT; "canNip44Cipher" is false when the installed
+SodiumXT is older than ABI 10, which added the NIP-44 cipher.
+
+The answer is cached for the session after the first call. To notice a
+SodiumXT upgraded while the app runs, use <nxNip44HasCipher>, which
+probes the cipher live.
+
+References: nxNip44HasCipher (handler), nxLastError (handler)
+*/
 function nxProbeCapabilities
    -- Probe ONCE into a cached array, each extension in its own try, each
    -- probe a REAL round-trip rather than a version sniff (the riptide
@@ -354,6 +437,23 @@ private function nxSeqToLines pArray
    return tOut
 end nxSeqToLines
 
+/**
+Summary: Encodes binary data as standard base64 on one line.
+
+pData: The bytes to encode.
+
+Returns: The base64 text, with no line breaks.
+
+Example:
+put nxB64Encode(textEncode("hello", "UTF-8")) into tText
+
+Description:
+The engine's base64Encode can wrap its output across lines. Every wire
+format NostrXT uses (NIP-44 payloads, the websocket key) is single-line,
+so <nxB64Encode> removes both line-break characters.
+
+References: nxB64Decode (handler)
+*/
 function nxB64Encode pData
    -- The engine's base64Encode wraps its output with line breaks; the wire
    -- formats here (NIP-44 payloads, Sec-WebSocket-Key) are single-line, so
@@ -365,6 +465,25 @@ function nxB64Encode pData
    return tOut
 end nxB64Encode
 
+/**
+Summary: Decodes strict standard base64 back to binary data.
+
+pText: The base64 text, with padding.
+
+Returns: The decoded bytes, or empty when the text is malformed.
+
+Example:
+put nxB64Decode("aGVsbG8=") into tData
+if tData is empty then answer "not valid base64"
+
+Description:
+<nxB64Decode> refuses characters outside the base64 alphabet, data after
+the padding, misplaced or extra padding, and a length that is not a
+multiple of 4. A malformed payload is an error, never a partial decode.
+Empty input returns empty.
+
+References: nxB64Encode (handler)
+*/
 function nxB64Decode pText
    -- Standard base64 with padding. The engine's decoder tolerates whitespace;
    -- refuse characters outside the alphabet FIRST so a malformed payload is
@@ -411,6 +530,20 @@ function nxB64Decode pText
    return base64Decode(pText)
 end nxB64Decode
 
+/**
+Summary: Returns the current unix time in seconds.
+
+Returns: The number of seconds since the unix epoch.
+
+Example:
+put nxUnixNow() into tNow
+
+Description:
+This is the timestamp the event builders use for "created_at" when you
+pass an empty created-at argument.
+
+References: nxEventBuild (handler)
+*/
 function nxUnixNow
    -- The unix timestamp (seconds) events stamp created_at with.
    return the seconds
@@ -420,6 +553,22 @@ end nxUnixNow
 -- Hex. Lowercase out; mixed case in (0-9 a-f A-F); anything else refuses.
 -- ==========================================================================
 
+/**
+Summary: Converts binary data to lowercase hex.
+
+pData: The bytes to convert.
+
+Returns: Two lowercase hex characters per byte.
+
+Example:
+put nxHexEncode(textEncode("abc", "UTF-8")) into tHex
+
+Description:
+Hex is the currency of the NostrXT API: ids, keys and signatures cross
+it as lowercase hex strings, and binary stays inside the library.
+
+References: nxHexDecode (handler), nxIsHex (handler)
+*/
 function nxHexEncode pData
    local tOut, tI, tN, tByte
    put empty into tOut
@@ -432,6 +581,23 @@ function nxHexEncode pData
    return tOut
 end nxHexEncode
 
+/**
+Summary: Converts hex text (either case) to binary data.
+
+pHex: The hex text.
+
+Returns: The bytes, or empty when the text is not valid hex.
+
+Example:
+put nxHexDecode("616263") into tData
+
+Description:
+<nxHexDecode> accepts upper and lower case digits. Text of odd length or
+with a character that is not a hex digit returns empty and records the
+reason for <nxLastError>.
+
+References: nxHexEncode (handler), nxIsHex (handler)
+*/
 function nxHexDecode pHex
    -- Bytes for a hex string, or empty (with the reason recorded) on odd
    -- length or a non-hex character. Walks with `repeat while` + `add 2`: the
@@ -473,6 +639,24 @@ private function nxHexNibble pChar
    return -1
 end nxHexNibble
 
+/**
+Summary: Tells whether text is all hex digits, optionally of an exact length.
+
+pText: The text to test.
+
+pLen: The required number of characters, or empty for any length.
+
+Returns: true or false.
+
+Example:
+if not nxIsHex(tPubkey, 64) then answer "a pubkey is 64 hex characters"
+
+Description:
+Use <nxIsHex> to validate an id or pubkey (64 characters) or a signature
+(128 characters). Either case is accepted. Empty text is never hex.
+
+References: nxHexDecode (handler), nxCtEqualHex (handler)
+*/
 function nxIsHex pText, pLen
    -- True when pText is entirely hex digits, and (when pLen is not empty) is
    -- exactly pLen characters. The id/pubkey/sig validation everything uses.
@@ -492,6 +676,30 @@ function nxIsHex pText, pLen
    return true
 end nxIsHex
 
+/**
+Summary: Compares two hex strings without exiting early on the first difference.
+
+pAHex: The first hex string.
+
+pBHex: The second hex string.
+
+Returns: true when both strings hold the same hex value, false otherwise.
+
+Example:
+if nxCtEqualHex(tExpectedId, tEvent["id"]) then put "match" into tVerdict
+
+Description:
+Use <nxCtEqualHex> to compare MACs and ids, rather than a bare is, which
+can compare number-like text as numbers. Case is ignored. With SodiumXT
+the decoded bytes are compared by sxMemEqual; without it, a loop over
+every character that never exits early stands in.
+
+This guards against the gross early-exit timing leak, not a lab-grade
+side channel: script timing is noisy either way. Strings of different
+lengths return false at once.
+
+References: nxIsHex (handler)
+*/
 function nxCtEqualHex pAHex, pBHex
    -- Constant-time-ish equality for hex strings (MACs, ids). Prefers
    -- SodiumXT's sxMemEqual (real constant-time compare over the decoded
@@ -545,6 +753,27 @@ end nxCtEqualHex
 -- positions in the input.
 -- ==========================================================================
 
+/**
+Summary: Escapes text for a JSON string the way NIP-01 requires.
+
+pText: The text to escape.
+
+Returns: The escaped text, without surrounding quotes.
+
+Example:
+put quote & nxJsonEscape(tContent) & quote into tJsonString
+
+Description:
+NIP-01 uses exactly seven escapes: quote, backslash, line feed, carriage
+return, tab, backspace and form feed. Every other byte, other control
+bytes included, passes through unchanged. A general JSON encoder escapes
+more than that, which is why it produces wrong event ids.
+
+The text is handled as UTF-8, so multi-byte characters pass through
+untouched.
+
+References: nxEventSerialize (handler), nxJsonGet (handler)
+*/
 function nxJsonEscape pText
    -- The NIP-01 escape set, exactly: \" \\ \n \r \t \b \f, everything else
    -- verbatim (including control bytes outside the seven - that is the rule
@@ -1072,6 +1301,31 @@ private function nxJsonPathNode pJson, pPath
    return tNode
 end nxJsonPathNode
 
+/**
+Summary: Returns the value at a path in a JSON document.
+
+pJson: The JSON text.
+
+pPath: A path of object keys and 1-based array indexes separated by /, or empty for the root.
+
+Returns: The value, or empty when the path does not resolve.
+
+Example:
+put nxJsonGet(tJson, "tags/1/2") into tValue
+put nxJsonGet(tInfoJson, "name") into tName
+
+Description:
+Strings come back decoded, numbers as their source text, booleans as
+"true" or "false", and null as empty. An object or array at the path
+comes back as its exact source text, so you can pass a sub-document on.
+
+Because empty can mean null, an empty string or a miss, use <nxJsonType>
+when the difference matters. The parser is strict (exact bare words, no
+trailing bytes, a nesting limit, duplicate keys refused). A key that
+contains / cannot be reached through a path.
+
+References: nxJsonType (handler), nxJsonCount (handler)
+*/
 function nxJsonGet pJson, pPath
    -- The scalar value at pPath: strings decoded, numbers as text, booleans
    -- "true"/"false", null empty. An object or array at the path returns its
@@ -1087,6 +1341,24 @@ function nxJsonGet pJson, pPath
    return tNode["v"]
 end nxJsonGet
 
+/**
+Summary: Counts the elements of a JSON array or the members of a JSON object.
+
+pJson: The JSON text.
+
+pPath: The path to the array or object, or empty for the root.
+
+Returns: The count, or empty when the path does not resolve or names a scalar.
+
+Example:
+put nxJsonCount(tInfoJson, "supported_nips") into tCount
+
+Description:
+An empty container returns 0. A scalar at the path returns empty and
+records the reason for <nxLastError>.
+
+References: nxJsonGet (handler), nxJsonType (handler)
+*/
 function nxJsonCount pJson, pPath
    -- Element count of the array (or member count of the object) at pPath;
    -- empty on error, 0 for an empty container, and empty (with the reason)
@@ -1106,6 +1378,24 @@ function nxJsonCount pJson, pPath
    return empty
 end nxJsonCount
 
+/**
+Summary: Returns the JSON type of the value at a path.
+
+pJson: The JSON text.
+
+pPath: The path to test, or empty for the root.
+
+Returns: "object", "array", "string", "number", "boolean", "null", or "missing".
+
+Example:
+if nxJsonType(tJson, "names/alice") is "string" then put nxJsonGet(tJson, "names/alice") into tPubkey
+
+Description:
+"missing" means the path does not resolve, which includes JSON that does
+not parse; the parse error is recorded for <nxLastError>.
+
+References: nxJsonGet (handler), nxJsonCount (handler)
+*/
 function nxJsonType pJson, pPath
    -- "object" / "array" / "string" / "number" / "boolean" / "null", or
    -- "missing" when the path does not resolve (parse errors record why).
@@ -1226,6 +1516,26 @@ end nxStrEqExact
 -- file mints no randomness and validates no scalar itself (rule 1).
 -- ==========================================================================
 
+/**
+Summary: Generates a new Nostr secret key.
+
+Returns: The secret key as 64 lowercase hex characters, or empty.
+
+Example:
+put nxKeyGenerate() into tSeckey
+if tSeckey is empty then answer "no key:" && nxLastError()
+
+Description:
+<nxKeyGenerate> draws 32 random bytes from SodiumXT and checks with
+CoinXT that they form a valid secp256k1 secret key. It needs both
+extensions and refuses without them: it never falls back to weaker
+randomness.
+
+The key is a plain script value. OXT variables are not locked memory, so
+how and where to store a key is the app's decision.
+
+References: nxKeyPublic (handler), nxKeyIsValid (handler), nxNsecEncode (handler)
+*/
 function nxKeyGenerate
    -- A fresh secret key as 64 lowercase hex, or empty (reason recorded).
    -- Rejection-samples: an out-of-range 32-byte draw is astronomically rare
@@ -1253,6 +1563,23 @@ function nxKeyGenerate
    return empty
 end nxKeyGenerate
 
+/**
+Summary: Derives the Nostr public key for a secret key.
+
+pSeckeyHex: The secret key as 64 hex characters.
+
+Returns: The 64-hex x-only public key, or empty.
+
+Example:
+put nxKeyPublic(tSeckey) into tPubkey
+put nxNpubEncode(tPubkey) into field "npubField"
+
+Description:
+Needs CoinXT (cxXOnlyPubkey). Returns empty, with the reason recorded,
+when the secret key is not 64 hex characters or CoinXT refuses it.
+
+References: nxKeyGenerate (handler), nxNpubEncode (handler)
+*/
 function nxKeyPublic pSeckeyHex
    -- The 64-hex x-only public key (the Nostr pubkey) for a secret key.
    local tError, tPub
@@ -1269,6 +1596,22 @@ function nxKeyPublic pSeckeyHex
    return nxHexEncode(tPub)
 end nxKeyPublic
 
+/**
+Summary: Tells whether hex text is a valid secp256k1 secret key.
+
+pSeckeyHex: The secret key as 64 hex characters.
+
+Returns: true or false.
+
+Example:
+if not nxKeyIsValid(tSeckey) then answer "that is not a usable secret key"
+
+Description:
+Needs CoinXT (cxSeckeyIsValid). Text that is not 64 hex characters
+returns false. Without CoinXT it returns false and records why.
+
+References: nxKeyGenerate (handler), nxKeyPublic (handler)
+*/
 function nxKeyIsValid pSeckeyHex
    local tError, tOk
    if not nxIsHex(pSeckeyHex, 64) then
@@ -1289,6 +1632,37 @@ end nxKeyIsValid
 -- here without re-running tools/nostr-kat.py and the member harness.
 -- ==========================================================================
 
+/**
+Summary: Builds an unsigned Nostr event.
+
+pKind: The event kind, an integer from 0 to 65535.
+
+pContent: The event content text.
+
+pTags: A nested tag array, or empty for no tags.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put "t" into tTags[1][1]
+put "openxtalk" into tTags[1][2]
+put nxEventBuild(1, "Hello, Nostr", tTags, empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+The event array has keys "kind", "created_at", "content", "tags", and
+"id", "pubkey" and "sig", which stay empty until <nxEventSign> fills
+them. Tags are 1-based both ways: tTags[1][1] is the first tag's name and
+tTags[1][2] its value. <nxTagsFromText> builds the array from text.
+
+The kind and created-at must be plain digit runs (no leading zero, no
+exponent); the shape is checked by <nxEventHasValidShape>, and a refusal
+returns empty with the reason recorded.
+
+References: nxEventSign (handler), nxTagsFromText (handler), nxEventHasValidShape (handler)
+*/
 function nxEventBuild pKind, pContent, pTags, pCreatedAt
    -- An unsigned event array. pTags is a nested tag array (nxTagsFromText
    -- converts text) or empty; pCreatedAt empty means now.
@@ -1347,6 +1721,27 @@ private function nxTagsSerialize pTags
    return tOut
 end nxTagsSerialize
 
+/**
+Summary: Returns the canonical NIP-01 serialization of an event.
+
+pEvent: The event array, with its pubkey filled in.
+
+Returns: The canonical JSON array text, or empty.
+
+Example:
+put nxEventSerialize(tSigned) into tPreimage
+
+Description:
+This is the exact text NIP-01 hashes to make the event id:
+[0,pubkey,created_at,kind,tags,content], with no whitespace and the
+NIP-01 escapes. It refuses an event whose pubkey is not 64 lowercase hex
+characters, because a half-built event would serialize to a well-formed
+but wrong preimage.
+
+Most apps never call this directly: <nxEventId> and <nxEventSign> use it.
+
+References: nxEventId (handler), nxEventToJson (handler)
+*/
 function nxEventSerialize pEvent
    -- The canonical [0,pubkey,created_at,kind,tags,content] string NIP-01
    -- hashes. Refuses an event whose pubkey is not yet filled in: serializing
@@ -1366,6 +1761,23 @@ function nxEventSerialize pEvent
    return tOut
 end nxEventSerialize
 
+/**
+Summary: Computes the NIP-01 id of an event.
+
+pEvent: The event array, with its pubkey filled in.
+
+Returns: The 64-hex SHA-256 of the canonical serialization, or empty.
+
+Example:
+put nxEventId(tEvent) into tId
+
+Description:
+Needs CoinXT (cxSha256). The id is the hash of the UTF-8 bytes of
+<nxEventSerialize>, so it never depends on the wire form <nxEventToJson>
+emits.
+
+References: nxEventSerialize (handler), nxEventSign (handler)
+*/
 function nxEventId pEvent
    -- 64-hex sha256 of the canonical serialization's UTF-8 bytes.
    local tError, tSerialized, tHash
@@ -1382,6 +1794,29 @@ function nxEventId pEvent
    return nxHexEncode(tHash)
 end nxEventId
 
+/**
+Summary: Signs an event, filling in its pubkey, id and signature.
+
+pEvent: The unsigned event array.
+
+pSeckeyHex: The secret key as 64 hex characters.
+
+pAuxHex: Empty for fresh signing randomness, or 64 hex characters for a deterministic signature.
+
+Returns: The completed event array, or empty.
+
+Example:
+put nxEventBuild(1, "Hello", empty, empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+if tSigned is empty then answer "signing failed:" && nxLastError()
+
+Description:
+Needs CoinXT. <nxEventSign> derives the pubkey, computes the id and makes
+a BIP-340 Schnorr signature over it. Pass empty for pAuxHex in an app; a
+fixed value makes the signature repeatable, which is for test vectors.
+
+References: nxEventBuild (handler), nxEventVerify (handler), nxrPublish (handler)
+*/
 function nxEventSign pEvent, pSeckeyHex, pAuxHex
    -- Fill pubkey, id and sig; returns the completed event array or empty.
    -- pAuxHex empty draws fresh BIP-340 auxiliary randomness inside CoinXT's
@@ -1420,6 +1855,27 @@ function nxEventSign pEvent, pSeckeyHex, pAuxHex
    return tEvent
 end nxEventSign
 
+/**
+Summary: Checks an event's id and signature.
+
+pEvent: The event array.
+
+Returns: true only when the id and the signature both check out.
+
+Example:
+put nxEventFromJson(tJson) into tEvent
+if tEvent is not empty then put nxEventVerify(tEvent) into tTrusted
+
+Description:
+Needs CoinXT. <nxEventVerify> recomputes the id from the event's fields,
+compares it with the id the event carries, and verifies the BIP-340
+signature over it. Anything else returns false with the reason recorded,
+including a missing CoinXT.
+
+An event from anywhere is untrusted text until this returns true.
+
+References: nxEventFromJson (handler), nxEventSign (handler), nxEventId (handler)
+*/
 function nxEventVerify pEvent
    -- True only when the id recomputes from the fields AND the signature
    -- verifies over it. Everything else is false with the reason recorded -
@@ -1451,6 +1907,27 @@ function nxEventVerify pEvent
    return true
 end nxEventVerify
 
+/**
+Summary: Checks that an event array has the structure NIP-01 requires.
+
+pEvent: The event array.
+
+Returns: true or false.
+
+Example:
+if not nxEventHasValidShape(tEvent) then answer nxLastError()
+
+Description:
+Checks that the kind is a plain integer from 0 to 65535 and created_at a
+plain non-negative integer, that id, pubkey and sig (when present) are
+hex of the right length, that content is a string, and that tags is an
+array of 1-based, gap-free arrays of strings, each with a name.
+
+It checks structure only, not the id or signature: that is
+<nxEventVerify>. A failure records the specific reason.
+
+References: nxEventBuild (handler), nxEventVerify (handler)
+*/
 function nxEventHasValidShape pEvent
    -- Structural validation, with the reason recorded: integers in range,
    -- hex fields (when present) the right length, tags an array of arrays of
@@ -1518,6 +1995,24 @@ function nxEventHasValidShape pEvent
    return true
 end nxEventHasValidShape
 
+/**
+Summary: Converts an event array to its wire-format JSON object.
+
+pEvent: The event array.
+
+Returns: The JSON object text, or empty.
+
+Example:
+put nxEventToJson(tSigned) into field "wireField"
+
+Description:
+Use it for storage or a transport of your own; <nxrPublish> and
+<nxClientEvent> call it for you. The id never depends on this form,
+only on <nxEventSerialize>. Refuses an event that fails
+<nxEventHasValidShape>.
+
+References: nxEventFromJson (handler), nxClientEvent (handler)
+*/
 function nxEventToJson pEvent
    -- The full wire-format event object (for ["EVENT", ...] and storage).
    -- Field order is fixed for readability; the wire does not care, and the
@@ -1536,6 +2031,27 @@ function nxEventToJson pEvent
    return tOut
 end nxEventToJson
 
+/**
+Summary: Parses a wire-format event object into an event array.
+
+pJson: The event JSON object text.
+
+Returns: The event array, or empty.
+
+Example:
+put nxEventFromJson(tJson) into tEvent
+if tEvent is empty then answer "unparseable:" && nxLastError()
+
+Description:
+<nxEventFromJson> checks structure only. Call <nxEventVerify> before
+trusting the result.
+
+It is strict: hex fields must be lowercase and the right length,
+created_at and kind must be plain digit runs, every tag must be a
+non-empty array of strings, and duplicate keys are refused.
+
+References: nxEventVerify (handler), nxEventToJson (handler), nxRelayParse (handler)
+*/
 function nxEventFromJson pJson
    -- Parse a wire-format event object into the event array shape. Verifies
    -- STRUCTURE only; call nxEventVerify before trusting the result (rule 2).
@@ -1636,6 +2152,24 @@ end nxEventFromJson
 -- Tags: text form (one tag per line, items tab-separated), lookups.
 -- ==========================================================================
 
+/**
+Summary: Builds a nested tag array from text, one tag per line.
+
+pText: One tag per line, items separated by tabs.
+
+Returns: The nested tag array, or empty.
+
+Example:
+put "t" & tab & "openxtalk" & return & "p" & tab & tPubkey into tText
+put nxTagsFromText(tText) into tTags
+put nxEventBuild(1, "Hello", tTags, empty) into tEvent
+
+Description:
+Empty lines are skipped. A line whose first item is empty refuses,
+because a tag must have a name.
+
+References: nxTagsToText (handler), nxEventBuild (handler)
+*/
 function nxTagsFromText pText
    -- One tag per line, items tab-separated. Empty lines skip; a line with an
    -- empty first item refuses (a tag must have a name).
@@ -1668,6 +2202,24 @@ function nxTagsFromText pText
    return tOut
 end nxTagsFromText
 
+/**
+Summary: Converts a nested tag array to text, one tag per line.
+
+pTags: The nested tag array.
+
+Returns: One tag per line, items separated by tabs, or empty.
+
+Example:
+put nxTagsToText(tEvent["tags"]) into field "tagsField"
+
+Description:
+The inverse of <nxTagsFromText>. A tag item that contains a tab or a line
+break, or a tag that ends with an empty item, cannot survive the text
+form, so it refuses rather than corrupt the tag. Use the array form for
+such tags.
+
+References: nxTagsFromText (handler), nxTagItem (handler)
+*/
 function nxTagsToText pTags
    -- Inverse of nxTagsFromText. A tag item containing a tab or a line break
    -- cannot round-trip through the text form, so it refuses rather than
@@ -1702,10 +2254,43 @@ function nxTagsToText pTags
    return tOut
 end nxTagsToText
 
+/**
+Summary: Returns how many tags an event carries.
+
+pEvent: The event array.
+
+Returns: The number of tags.
+
+Example:
+put nxTagCount(tEvent) into tCount
+put nxTagItem(tEvent, tCount) into tLastTag
+
+Description:
+Counts the 1-based tags of the event's "tags" array.
+
+References: nxTagItem (handler), nxTagValues (handler)
+*/
 function nxTagCount pEvent
    return nxSeqCount(pEvent["tags"])
 end nxTagCount
 
+/**
+Summary: Returns one tag of an event as tab-separated text.
+
+pEvent: The event array.
+
+pIndex: The 1-based tag number.
+
+Returns: The tag's items joined by tabs, or empty when there is no such tag.
+
+Example:
+put nxTagItem(tEvent, 1) into tFirstTag
+
+Description:
+An index out of range returns empty and records the reason.
+
+References: nxTagCount (handler), nxTagFirst (handler)
+*/
 function nxTagItem pEvent, pIndex
    -- Tag number pIndex (1-based) as tab-joined text, or empty.
    local tOut, tJ, tItemCount
@@ -1724,6 +2309,24 @@ function nxTagItem pEvent, pIndex
    return tOut
 end nxTagItem
 
+/**
+Summary: Returns the value of the first tag with a given name.
+
+pEvent: The event array.
+
+pTagName: The tag name, for example "e" or "p".
+
+Returns: The tag's second item, or empty.
+
+Example:
+put nxTagFirst(tEvent, "d") into tIdentifier
+
+Description:
+Tag names compare byte for byte: "p" and "P" are different tags. Returns
+empty when no tag has the name or the first one has no value.
+
+References: nxTagValues (handler), nxTagItem (handler)
+*/
 function nxTagFirst pEvent, pTagName
    -- The VALUE (second item) of the first tag named pTagName, or empty.
    -- Byte-exact name compare: "p" and "P" are different tags.
@@ -1740,6 +2343,24 @@ function nxTagFirst pEvent, pTagName
    return empty
 end nxTagFirst
 
+/**
+Summary: Returns the values of every tag with a given name.
+
+pEvent: The event array.
+
+pTagName: The tag name, for example "e" or "p".
+
+Returns: The values, one per line.
+
+Example:
+put nxTagValues(tEvent, "p") into field "mentionsField"
+
+Description:
+Each matching tag contributes its second item. Names compare byte for
+byte, so "p" and "P" are different tags.
+
+References: nxTagFirst (handler), nxContactsParse (handler)
+*/
 function nxTagValues pEvent, pTagName
    -- Every value of every tag named pTagName, one per line.
    local tOut, tI, tTagCount
@@ -1762,6 +2383,29 @@ end nxTagValues
 -- through builders that do not need it.
 -- ==========================================================================
 
+/**
+Summary: Builds an unsigned kind 0 user metadata event.
+
+pName: The display name.
+
+pAbout: The profile description.
+
+pPicture: The picture URL.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxMetadataBuild("alice", "I write xTalk", "https://example.com/a.png", empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+The content is a JSON object with the "name", "about" and "picture"
+fields. Sign the result with <nxEventSign>.
+
+References: nxMetadataParse (handler), nxEventSign (handler)
+*/
 function nxMetadataBuild pName, pAbout, pPicture, pCreatedAt
    -- kind 0 user metadata; the content is the stringified JSON object.
    local tContent
@@ -1771,6 +2415,24 @@ function nxMetadataBuild pName, pAbout, pPicture, pCreatedAt
    return nxEventBuild(0, tContent, empty, pCreatedAt)
 end nxMetadataBuild
 
+/**
+Summary: Reads the common profile fields from a kind 0 event.
+
+pEvent: A kind 0 event array.
+
+Returns: An array of the profile fields, or empty for another kind.
+
+Example:
+put nxMetadataParse(tEvent) into tProfile
+put tProfile["name"] into field "nameField"
+
+Description:
+The keys are "name", "about", "picture", "display_name", "nip05",
+"website", "banner" and "lud16". A field that is absent, or is not a
+string, is empty.
+
+References: nxMetadataBuild (handler)
+*/
 function nxMetadataParse pEvent
    -- The common kind-0 content fields as an array; absent fields are empty.
    local tContent, tOut, tField, tSavedItemDelim
@@ -1793,6 +2455,30 @@ function nxMetadataParse pEvent
    return tOut
 end nxMetadataParse
 
+/**
+Summary: Builds an unsigned kind 1 reply with NIP-10 marked tags.
+
+pParentEvent: The event being replied to, with its id and pubkey.
+
+pContent: The reply text.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxReplyBuild(tParent, "Agreed!", empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+The reply carries an "e" tag marked "root" for the thread root (the
+parent's own root tag, or the parent itself when it has none), an "e"
+tag marked "reply" for the parent when it is not the root, and "p" tags
+for the parent's author and the people the parent tagged, without
+duplicates.
+
+References: nxReactionBuild (handler), nxEventSign (handler)
+*/
 function nxReplyBuild pParentEvent, pContent, pCreatedAt
    -- A kind-1 reply with NIP-10 marked tags: the thread root (the parent's
    -- own "root" e tag, or the parent itself when it has none), a "reply"
@@ -1852,6 +2538,27 @@ function nxReplyBuild pParentEvent, pContent, pCreatedAt
    return nxEventBuild(1, pContent, tTags, pCreatedAt)
 end nxReplyBuild
 
+/**
+Summary: Builds an unsigned kind 7 reaction (NIP-25).
+
+pTargetEvent: The event being reacted to, with its id and pubkey.
+
+pContent: The reaction, or empty for "+".
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxReactionBuild(tTarget, empty, empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+The reaction carries "e" and "p" tags for the target and its author, and
+a "k" tag with the target's kind.
+
+References: nxReplyBuild (handler), nxEventSign (handler)
+*/
 function nxReactionBuild pTargetEvent, pContent, pCreatedAt
    -- kind 7 reaction (NIP-25); empty content means the conventional "+".
    local tTags, tContent
@@ -1873,6 +2580,28 @@ function nxReactionBuild pTargetEvent, pContent, pCreatedAt
    return nxEventBuild(7, tContent, tTags, pCreatedAt)
 end nxReactionBuild
 
+/**
+Summary: Builds an unsigned kind 5 deletion request (NIP-09).
+
+pIdLines: The ids of the events to delete, one 64-hex id per line.
+
+pReason: The reason, or empty.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxDeleteBuild(tOldEvent["id"], "posted by mistake", empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+Each id becomes an "e" tag and the reason becomes the content. At least
+one id is required, and a line that is not a 64-hex id refuses. Relays
+may honour a deletion request; they are not obliged to.
+
+References: nxEventSign (handler), nxrPublish (handler)
+*/
 function nxDeleteBuild pIdLines, pReason, pCreatedAt
    -- kind 5 deletion request (NIP-09): one e tag per event id line.
    local tTags, tIdSeq, tI, tCount
@@ -1893,6 +2622,26 @@ function nxDeleteBuild pIdLines, pReason, pCreatedAt
    return nxEventBuild(5, pReason, tTags, pCreatedAt)
 end nxDeleteBuild
 
+/**
+Summary: Builds an unsigned kind 3 contact list.
+
+pPubkeyLines: The followed public keys, one 64-hex pubkey per line.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxContactsBuild(tFollowList, empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+
+Description:
+Each pubkey becomes a "p" tag. A line that is not a 64-hex pubkey
+refuses. A kind 3 list replaces the previous one, so publish the whole
+list every time.
+
+References: nxContactsParse (handler), nxEventSign (handler)
+*/
 function nxContactsBuild pPubkeyLines, pCreatedAt
    -- kind 3 contact list: one p tag per followed pubkey line.
    local tTags, tSeq, tI, tCount
@@ -1909,6 +2658,22 @@ function nxContactsBuild pPubkeyLines, pCreatedAt
    return nxEventBuild(3, empty, tTags, pCreatedAt)
 end nxContactsBuild
 
+/**
+Summary: Returns the followed public keys of a kind 3 contact list.
+
+pEvent: A kind 3 event array.
+
+Returns: The pubkeys, one per line, or empty for another kind.
+
+Example:
+put nxContactsParse(tEvent) into tFollowList
+
+Description:
+Reads the value of every "p" tag. Any other kind returns empty and
+records the reason.
+
+References: nxContactsBuild (handler), nxTagValues (handler)
+*/
 function nxContactsParse pEvent
    -- The followed pubkeys of a kind 3 event, one per line.
    if pEvent["kind"] is not 3 then
@@ -1918,6 +2683,26 @@ function nxContactsParse pEvent
    return nxTagValues(pEvent, "p")
 end nxContactsParse
 
+/**
+Summary: Builds an unsigned kind 10002 relay list (NIP-65).
+
+pRelayLines: One relay per line: a URL, or a URL, a tab and "read" or "write".
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put "wss://relay.example.com" & return & "wss://inbox.example.com" & tab & "read" into tLines
+put nxRelayListBuild(tLines, empty) into tEvent
+
+Description:
+Each line becomes an "r" tag. A URL with no marker means read and write.
+At least one relay is required, and any marker other than "read" or
+"write" refuses.
+
+References: nxRelayListParse (handler), nxEventSign (handler)
+*/
 function nxRelayListBuild pRelayLines, pCreatedAt
    -- kind 10002 relay list (NIP-65): each line "url" (read and write) or
    -- "url<tab>read" / "url<tab>write".
@@ -1953,6 +2738,22 @@ function nxRelayListBuild pRelayLines, pCreatedAt
    return nxEventBuild(10002, empty, tTags, pCreatedAt)
 end nxRelayListBuild
 
+/**
+Summary: Returns the relays of a kind 10002 relay list.
+
+pEvent: A kind 10002 event array.
+
+Returns: One relay per line, with a tab and its marker when it has one.
+
+Example:
+put nxRelayListParse(tEvent) into tRelayLines
+
+Description:
+Reads every "r" tag. Any other kind returns empty and records the
+reason.
+
+References: nxRelayListBuild (handler)
+*/
 function nxRelayListParse pEvent
    -- The r tags of a kind 10002 event, one relay per line: "url" or
    -- "url<tab>marker".
@@ -1977,6 +2778,29 @@ function nxRelayListParse pEvent
    return tOut
 end nxRelayListParse
 
+/**
+Summary: Builds an unsigned kind 22242 NIP-42 authentication event.
+
+pRelayUrl: The URL of the relay that sent the challenge.
+
+pChallenge: The challenge text the relay sent.
+
+pCreatedAt: The unix time in seconds, or empty for now.
+
+Returns: The unsigned event array, or empty.
+
+Example:
+put nxAuthBuild(nxrUrl(tRelay), nxrChallenge(tRelay), empty) into tEvent
+put nxEventSign(tEvent, tSeckey, empty) into tSigned
+nxrAuth tRelay, tSigned
+
+Description:
+The event carries "relay" and "challenge" tags. Both arguments are
+required. Sign it with <nxEventSign>, then send it with <nxrAuth> or
+wrap it yourself with <nxClientAuth>.
+
+References: nxrAuth (handler), nxClientAuth (handler), nxrChallenge (handler)
+*/
 function nxAuthBuild pRelayUrl, pChallenge, pCreatedAt
    -- kind 22242 NIP-42 authentication event (sign it, then nxClientAuth).
    local tTags
@@ -2151,6 +2975,28 @@ private function nxToLowerAscii pText
    return tOut
 end nxToLowerAscii
 
+/**
+Summary: Encodes hex data as a bech32 or bech32m string.
+
+pHrp: The human-readable prefix, in lowercase.
+
+pHex: The data bytes as hex.
+
+pSpec: "bech32" (or empty) or "bech32m".
+
+Returns: The encoded string in lowercase, or empty.
+
+Example:
+put nxBech32Encode("npub", tPubkey, "bech32") into tNpub
+
+Description:
+The generic encoder behind the NIP-19 handlers, which use bech32. An
+uppercase prefix refuses: uppercase the finished string instead. Results
+longer than the NIP-19 cap of 5000 characters refuse; the 90-character
+limit of BIP-173 does not apply.
+
+References: nxBech32Decode (handler), nxNpubEncode (handler)
+*/
 function nxBech32Encode pHrp, pHex, pSpec
    -- Encode bytes (as hex) under pHrp; pSpec "bech32" (default, NIP-19) or
    -- "bech32m". Lowercase out; an uppercase HRP refuses (uppercase the
@@ -2210,6 +3056,25 @@ function nxBech32Encode pHrp, pHex, pSpec
    return tOut
 end nxBech32Encode
 
+/**
+Summary: Decodes a bech32 or bech32m string.
+
+pText: The encoded string.
+
+Returns: An array with keys "hrp", "spec" and "hex", or empty.
+
+Example:
+put nxBech32Decode(tText) into tDecoded
+put tDecoded["hrp"] into tPrefix
+
+Description:
+Accepts either spec and reports which in "spec". "hex" holds the data
+bytes, without the checksum, as lowercase hex. Mixed case, a bad
+checksum, a character outside the charset, bad padding bits and strings
+over 5000 characters all refuse.
+
+References: nxBech32Encode (handler), nxEntityDecode (handler)
+*/
 function nxBech32Decode pText
    -- Decode either spec. Returns an array with keys "hrp", "spec" and "hex"
    -- (the data bytes, checksum stripped, as lowercase hex), or empty with
@@ -2323,26 +3188,122 @@ private function nxBareDecode pText, pHrp
    return tDecoded["hex"]
 end nxBareDecode
 
+/**
+Summary: Encodes a public key as an npub.
+
+pPubkeyHex: The public key as 64 hex characters.
+
+Returns: The npub1 string, or empty.
+
+Example:
+put nxNpubEncode(nxKeyPublic(tSeckey)) into field "npubField"
+
+Description:
+The form to show users and share. The key must be 64 hex characters.
+
+References: nxNpubDecode (handler), nxKeyPublic (handler)
+*/
 function nxNpubEncode pPubkeyHex
    return nxBareEncode("npub", pPubkeyHex)
 end nxNpubEncode
 
+/**
+Summary: Decodes an npub to a hex public key.
+
+pText: The npub1 string.
+
+Returns: The public key as 64 hex characters, or empty.
+
+Example:
+put nxNpubDecode(field "npubField") into tPubkey
+
+Description:
+A string with another prefix, the bech32m spec or a payload that is not
+32 bytes refuses. Use <nxEntityDecode> when the input could be any
+entity.
+
+References: nxNpubEncode (handler), nxEntityDecode (handler)
+*/
 function nxNpubDecode pText
    return nxBareDecode(pText, "npub")
 end nxNpubDecode
 
+/**
+Summary: Encodes a secret key as an nsec.
+
+pSeckeyHex: The secret key as 64 hex characters.
+
+Returns: The nsec1 string, or empty.
+
+Example:
+put nxNsecEncode(tSeckey) into tBackupText
+
+Description:
+For explicit backup flows only. Never show or log an nsec casually, and
+note that <nxUriEncode> refuses to wrap one.
+
+References: nxNsecDecode (handler), nxKeyGenerate (handler)
+*/
 function nxNsecEncode pSeckeyHex
    return nxBareEncode("nsec", pSeckeyHex)
 end nxNsecEncode
 
+/**
+Summary: Decodes an nsec to a hex secret key.
+
+pText: The nsec1 string.
+
+Returns: The secret key as 64 hex characters, or empty.
+
+Example:
+put nxNsecDecode(tBackupText) into tSeckey
+
+Description:
+A string with another prefix, the bech32m spec or a payload that is not
+32 bytes refuses.
+
+References: nxNsecEncode (handler), nxKeyIsValid (handler)
+*/
 function nxNsecDecode pText
    return nxBareDecode(pText, "nsec")
 end nxNsecDecode
 
+/**
+Summary: Encodes an event id as a note.
+
+pIdHex: The event id as 64 hex characters.
+
+Returns: The note1 string, or empty.
+
+Example:
+put nxNoteEncode(tSigned["id"]) into tNote
+
+Description:
+A bare pointer to an event. To add relay hints, the author or the kind,
+use <nxNeventEncode>.
+
+References: nxNoteDecode (handler), nxNeventEncode (handler)
+*/
 function nxNoteEncode pIdHex
    return nxBareEncode("note", pIdHex)
 end nxNoteEncode
 
+/**
+Summary: Decodes a note to a hex event id.
+
+pText: The note1 string.
+
+Returns: The event id as 64 hex characters, or empty.
+
+Example:
+put nxNoteDecode(tNote) into tId
+
+Description:
+A string with another prefix, the bech32m spec or a payload that is not
+32 bytes refuses.
+
+References: nxNoteEncode (handler), nxEntityDecode (handler)
+*/
 function nxNoteDecode pText
    return nxBareDecode(pText, "note")
 end nxNoteDecode
@@ -2386,6 +3347,24 @@ private function nxKindToU32 pKind
    return tOut
 end nxKindToU32
 
+/**
+Summary: Encodes a public key and relay hints as an nprofile.
+
+pPubkeyHex: The public key as 64 hex characters.
+
+pRelayLines: Relay URLs that may know the profile, one per line, or empty.
+
+Returns: The nprofile1 string, or empty.
+
+Example:
+put nxNprofileEncode(tPubkey, "wss://relay.example.com") into tProfile
+
+Description:
+A NIP-19 TLV entity. The pubkey is required; the relay hints are
+optional.
+
+References: nxNprofileDecode (handler), nxNpubEncode (handler)
+*/
 function nxNprofileEncode pPubkeyHex, pRelayLines
    local tPayload
    if not nxIsHex(pPubkeyHex, 64) then
@@ -2400,6 +3379,24 @@ function nxNprofileEncode pPubkeyHex, pRelayLines
    return nxBech32Encode("nprofile", nxHexEncode(tPayload), "bech32")
 end nxNprofileEncode
 
+/**
+Summary: Decodes an nprofile.
+
+pText: The nprofile1 string.
+
+Returns: An array with keys "type", "pubkey" and "relays", or empty.
+
+Example:
+put nxNprofileDecode(tText) into tFields
+put tFields["pubkey"] into tPubkey
+
+Description:
+"relays" holds the relay hints, one per line. Another entity type
+refuses. Unknown TLV entries are ignored, as NIP-19 requires; a
+truncated one refuses.
+
+References: nxNprofileEncode (handler), nxEntityDecode (handler)
+*/
 function nxNprofileDecode pText
    -- Returns an array with keys "pubkey" and "relays" (one per line).
    local tFields
@@ -2414,6 +3411,29 @@ function nxNprofileDecode pText
    return tFields
 end nxNprofileDecode
 
+/**
+Summary: Encodes an event pointer as an nevent.
+
+pIdHex: The event id as 64 hex characters.
+
+pRelayLines: Relay URLs that may have the event, one per line, or empty.
+
+pAuthorHex: The author's public key as 64 hex characters, or empty.
+
+pKind: The event kind, or empty.
+
+Returns: The nevent1 string, or empty.
+
+Example:
+put nxNeventEncode(tSigned["id"], "wss://relay.example.com", tSigned["pubkey"], 1) into tPointer
+put nxUriEncode(tPointer) into tUri
+
+Description:
+A NIP-19 TLV entity. The id is required; relays, author and kind are
+optional hints.
+
+References: nxNeventDecode (handler), nxNoteEncode (handler), nxUriEncode (handler)
+*/
 function nxNeventEncode pIdHex, pRelayLines, pAuthorHex, pKind
    local tPayload
    if not nxIsHex(pIdHex, 64) then
@@ -2442,6 +3462,23 @@ function nxNeventEncode pIdHex, pRelayLines, pAuthorHex, pKind
    return nxBech32Encode("nevent", nxHexEncode(tPayload), "bech32")
 end nxNeventEncode
 
+/**
+Summary: Decodes an nevent.
+
+pText: The nevent1 string.
+
+Returns: An array with keys "type", "id", "relays", "pubkey" and "kind", or empty.
+
+Example:
+put nxNeventDecode(tText) into tFields
+put tFields["id"] into tId
+
+Description:
+Optional fields that the entity does not carry are empty. Another
+entity type refuses.
+
+References: nxNeventEncode (handler), nxEntityDecode (handler)
+*/
 function nxNeventDecode pText
    local tFields
    put nxEntityDecode(pText) into tFields
@@ -2455,6 +3492,28 @@ function nxNeventDecode pText
    return tFields
 end nxNeventDecode
 
+/**
+Summary: Encodes the coordinate of an addressable event as an naddr.
+
+pIdentifier: The event's "d" tag value, which may be empty.
+
+pPubkeyHex: The author's public key as 64 hex characters.
+
+pKind: The event kind, an integer from 0 to 65535.
+
+pRelayLines: Relay URLs that may have the event, one per line, or empty.
+
+Returns: The naddr1 string, or empty.
+
+Example:
+put nxNaddrEncode("my-article", tPubkey, 30023, empty) into tAddr
+
+Description:
+The author and the kind are required. An identifier longer than 255
+bytes refuses rather than being dropped.
+
+References: nxNaddrDecode (handler), nxEntityDecode (handler)
+*/
 function nxNaddrEncode pIdentifier, pPubkeyHex, pKind, pRelayLines
    -- The addressable-event coordinate: identifier (the d tag; may be empty
    -- for normal replaceable events), author pubkey and kind are REQUIRED.
@@ -2485,6 +3544,23 @@ function nxNaddrEncode pIdentifier, pPubkeyHex, pKind, pRelayLines
    return nxBech32Encode("naddr", nxHexEncode(tPayload), "bech32")
 end nxNaddrEncode
 
+/**
+Summary: Decodes an naddr.
+
+pText: The naddr1 string.
+
+Returns: An array with keys "type", "identifier", "pubkey", "kind" and "relays", or empty.
+
+Example:
+put nxNaddrDecode(tText) into tFields
+put tFields["kind"] && tFields["identifier"] into field "coordField"
+
+Description:
+An naddr without an author or a kind refuses, as does another entity
+type.
+
+References: nxNaddrEncode (handler), nxEntityDecode (handler)
+*/
 function nxNaddrDecode pText
    local tFields
    put nxEntityDecode(pText) into tFields
@@ -2498,6 +3574,29 @@ function nxNaddrDecode pText
    return tFields
 end nxNaddrDecode
 
+/**
+Summary: Decodes any NIP-19 entity, with or without a nostr: prefix.
+
+pText: The entity, such as an npub, note, nprofile, nevent, naddr or nsec, optionally starting with nostr:.
+
+Returns: An array keyed by "type" plus that entity's fields, or empty.
+
+Example:
+put nxEntityDecode(field "pasteField") into tFields
+if tFields["type"] is "npub" then put tFields["pubkey"] into tPubkey
+
+Description:
+Use it for a paste box that accepts anything. The fields by type: npub
+gives "pubkey", nsec "seckey", note "id"; nprofile gives "pubkey" and
+"relays"; nevent "id", "relays", "pubkey" and "kind"; naddr
+"identifier", "pubkey", "kind" and "relays".
+
+Unknown TLV entries are ignored, as NIP-19 requires. A bech32m string, a
+truncated TLV or a missing required field refuses. An nsec decodes here,
+so handle a pasted secret key deliberately.
+
+References: nxUriDecode (handler), nxBech32Decode (handler)
+*/
 function nxEntityDecode pText
    -- The generic decoder every entity handler shares: accepts any NIP-19
    -- entity (a nostr: URI prefix is stripped first) and returns an array
@@ -2618,6 +3717,23 @@ function nxEntityDecode pText
    return tFields
 end nxEntityDecode
 
+/**
+Summary: Builds a NIP-21 nostr: URI for a shareable entity.
+
+pEntity: An npub, note, nprofile, nevent or naddr string.
+
+Returns: The URI, or empty.
+
+Example:
+put nxUriEncode(nxNpubEncode(tPubkey)) into tUri
+
+Description:
+The entity is decoded first, so an invalid one refuses. An nsec always
+refuses: a secret key in a URI ends up in somebody's chat log. An input
+that already starts with nostr: comes back unchanged.
+
+References: nxUriDecode (handler), nxEntityDecode (handler)
+*/
 function nxUriEncode pEntity
    -- A NIP-21 nostr: URI for a shareable entity (never nsec, by refusal:
    -- putting a secret key in a URI is how secret keys end up in chat logs).
@@ -2638,6 +3754,22 @@ function nxUriEncode pEntity
    return "nostr:" & pEntity
 end nxUriEncode
 
+/**
+Summary: Decodes a NIP-21 nostr: URI.
+
+pUri: The URI, starting with nostr:.
+
+Returns: The entity fields, as from nxEntityDecode, or empty.
+
+Example:
+put nxUriDecode("nostr:" & tNpub) into tFields
+
+Description:
+Text without the nostr: prefix refuses, and so does a URI carrying an
+nsec.
+
+References: nxUriEncode (handler), nxEntityDecode (handler)
+*/
 function nxUriDecode pUri
    -- The entity fields of a nostr: URI (nxEntityDecode already accepts the
    -- prefix; this spelling exists so intent reads at the call site).
@@ -2683,6 +3815,26 @@ end nxUriDecode
 -- has run nowhere.
 -- ==========================================================================
 
+/**
+Summary: Derives the NIP-44 v2 conversation key between two keys.
+
+pSeckeyHex: Your secret key as 64 hex characters.
+
+pPubkeyHex: The other party's public key as 64 hex characters.
+
+Returns: The conversation key as 64 hex characters, or empty.
+
+Example:
+put nxNip44ConversationKey(tSeckey, tTheirPubkey) into tConvKey
+
+Description:
+Needs CoinXT (cxEcdh and cxHmacSha256). The key is HKDF-extract with the
+salt "nip44-v2" over the shared ECDH x coordinate, and it is the same
+from both sides. <nxNip44Encrypt> and <nxNip44Decrypt> derive it
+themselves; call this to inspect or cache it.
+
+References: nxNip44MessageKeys (handler), nxNip44Encrypt (handler)
+*/
 function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
    -- HKDF-extract(salt "nip44-v2", ECDH shared x) as 64 hex. The peer's
    -- x-only key lifts even-y: prefix byte 0x02 onto it for cxEcdh, which
@@ -2714,6 +3866,26 @@ function nxNip44ConversationKey pSeckeyHex, pPubkeyHex
    return nxHexEncode(tConv)
 end nxNip44ConversationKey
 
+/**
+Summary: Derives the NIP-44 v2 per-message keys from a conversation key and nonce.
+
+pConvKeyHex: The conversation key as 64 hex characters.
+
+pNonceHex: The message nonce as 64 hex characters.
+
+Returns: An array with keys "chachaKey", "chachaNonce" and "hmacKey" (hex), or empty.
+
+Example:
+put nxNip44MessageKeys(tConvKey, tNonceHex) into tKeys
+put tKeys["hmacKey"] into tMacKey
+
+Description:
+Needs CoinXT (cxHmacSha256). HKDF-expand to 76 bytes, split into a
+32-byte ChaCha20 key, a 12-byte ChaCha20 nonce and a 32-byte HMAC key.
+Exposed for test vectors and for building your own NIP-44 tooling.
+
+References: nxNip44ConversationKey (handler), nxNip44Encrypt (handler)
+*/
 function nxNip44MessageKeys pConvKeyHex, pNonceHex
    -- HKDF-expand(PRK conversation key, info nonce, L 76) sliced into the
    -- three message keys; returned as an array with keys "chachaKey" (32B),
@@ -2740,6 +3912,23 @@ function nxNip44MessageKeys pConvKeyHex, pNonceHex
    return tOut
 end nxNip44MessageKeys
 
+/**
+Summary: Returns the NIP-44 v2 padded length for a plaintext length.
+
+pLen: The plaintext length in bytes, a positive integer.
+
+Returns: The padded length in bytes, or empty.
+
+Example:
+put nxNip44PaddedLen(100) into tPadded
+
+Description:
+Lengths up to 32 pad to 32; longer ones round up in chunks that grow
+with the length, as NIP-44 defines. This is arithmetic only: the 1 to
+65535 byte limit is enforced when <nxNip44Encrypt> pads.
+
+References: nxNip44Encrypt (handler)
+*/
 function nxNip44PaddedLen pLen
    -- The padded length of a pLen-byte plaintext (the vectors' 24 pairs pin
    -- this). Pure arithmetic; the 1..65535 REFUSAL lives in the pad step.
@@ -2840,6 +4029,21 @@ private function nxChaCha20 pKeyData, pNonceData, pData
    return tOut
 end nxChaCha20
 
+/**
+Summary: Tells whether the NIP-44 cipher is available right now.
+
+Returns: true or false.
+
+Example:
+if not nxNip44HasCipher() then answer "Encrypted messages need SodiumXT ABI 10 or later"
+
+Description:
+A live probe of SodiumXT's sxChaCha20IetfXor, which shipped in SodiumXT
+ABI 10. Unlike the cached "canNip44Cipher" of <nxProbeCapabilities>, it
+notices an upgrade without a restart.
+
+References: nxProbeCapabilities (handler), nxNip44Encrypt (handler)
+*/
 function nxNip44HasCipher
    -- A live probe of the cipher seam, so an upgraded SodiumXT is noticed
    -- without restarting (unlike the cached nxProbeCapabilities row).
@@ -2852,6 +4056,33 @@ function nxNip44HasCipher
    return the number of bytes of tOut is 1
 end nxNip44HasCipher
 
+/**
+Summary: Encrypts a message for another Nostr key with NIP-44 v2.
+
+pSeckeyHex: Your secret key as 64 hex characters.
+
+pPubkeyHex: The recipient's public key as 64 hex characters.
+
+pPlaintext: The message, 1 to 65535 bytes.
+
+pNonceHex: Empty for a fresh random nonce, or 64 hex characters for test vectors only.
+
+Returns: The versioned payload in standard base64, or empty.
+
+Example:
+put nxNip44Encrypt(tSeckey, tTheirPubkey, "meet at noon", empty) into tPayload
+if tPayload is empty then answer "could not encrypt:" && nxLastError()
+
+Description:
+Needs CoinXT, and SodiumXT ABI 10 or later for the cipher and the nonce.
+With an older SodiumXT it fails closed with a reason naming
+sxChaCha20IetfXor. Plaintext longer than 65535 bytes refuses.
+
+Always pass empty for pNonceHex in an app: reusing a nonce breaks the
+encryption. A fixed nonce exists only to reproduce published vectors.
+
+References: nxNip44Decrypt (handler), nxNip44HasCipher (handler)
+*/
 function nxNip44Encrypt pSeckeyHex, pPubkeyHex, pPlaintext, pNonceHex
    -- The full NIP-44 v2 payload (standard base64), or empty with the reason.
    -- pNonceHex empty draws 32 fresh SodiumXT bytes; a 64-hex nonce makes the
@@ -2896,6 +4127,30 @@ function nxNip44Encrypt pSeckeyHex, pPubkeyHex, pPlaintext, pNonceHex
    return nxB64Encode(numToByte(2) & tNonce & tCipher & tMac)
 end nxNip44Encrypt
 
+/**
+Summary: Decrypts a NIP-44 v2 payload.
+
+pSeckeyHex: Your secret key as 64 hex characters.
+
+pPubkeyHex: The sender's public key as 64 hex characters.
+
+pPayload: The base64 payload.
+
+Returns: The plaintext, or empty.
+
+Example:
+put nxNip44Decrypt(tSeckey, tSenderPubkey, tPayload) into tMessage
+if tMessage is empty then answer "could not decrypt:" && nxLastError()
+
+Description:
+Needs CoinXT, and SodiumXT ABI 10 or later. The MAC is checked first,
+over the nonce and ciphertext, with a constant-time compare, and the
+cipher runs only if it matches. Every step is strict: an unknown version,
+a short payload, bad base64, a wrong key or tampering, or padding that
+does not agree all refuse with the reason recorded.
+
+References: nxNip44Encrypt (handler), nxNip44ConversationKey (handler)
+*/
 function nxNip44Decrypt pSeckeyHex, pPubkeyHex, pPayload
    -- Decrypt and unpad, or empty with the reason. The MAC verifies BEFORE
    -- the cipher runs, over nonce||ciphertext, compared constant-time.
@@ -2979,6 +4234,31 @@ private function nxHexListToJson pLines, pLabel
    return tOut
 end nxHexListToJson
 
+/**
+Summary: Builds a NIP-01 filter object from an array.
+
+pFilter: An array of filter fields (see the description).
+
+Returns: The filter as one line of JSON, or empty.
+
+Example:
+put tAuthorPubkey into tFilter["authors"]
+put "1,7" into tFilter["kinds"]
+put 50 into tFilter["limit"]
+put nxFilterBuild(tFilter) into tFilterJson
+nxrSubscribe tRelay, "my-feed", tFilterJson
+
+Description:
+Keys: "ids" and "authors" (64-hex values, one per line), "kinds" (a
+comma list of kind numbers), "since", "until" and "limit" (non-negative
+integers), "search" (text), and any single-letter tag filter keyed "#e",
+"#p" and so on (values one per line). Absent or empty keys are left out.
+
+Fields come out in a fixed order, so the same array always gives the
+same text. An invalid value refuses with the reason recorded.
+
+References: nxClientReq (handler), nxrSubscribe (handler), nxFilterMatches (handler)
+*/
 function nxFilterBuild pFilter
    -- A NIP-01 filter object from an array: keys "ids" / "authors" (lines of
    -- 64-hex), "kinds" (comma list of integers), "since" / "until" / "limit"
@@ -3108,6 +4388,26 @@ function nxFilterBuild pFilter
    return tOut
 end nxFilterBuild
 
+/**
+Summary: Tells whether an event matches a NIP-01 filter.
+
+pFilterJson: The filter JSON object.
+
+pEvent: The event array.
+
+Returns: true or false.
+
+Example:
+if nxFilterMatches(tFilterJson, tEvent) then put tEvent["content"] & return after field "feedField"
+
+Description:
+Every condition in the filter must hold. List conditions (ids, authors,
+kinds, tag filters) need one exact match; since and until are inclusive.
+Anything doubtful, including a filter that is not a JSON object or an
+event with a bad shape, returns false.
+
+References: nxFilterBuild (handler)
+*/
 function nxFilterMatches pFilterJson, pEvent
    -- Client-side NIP-01 matching: every present condition must hold (AND);
    -- list conditions need one exact member match. False on any doubt.
@@ -3214,6 +4514,24 @@ function nxFilterMatches pFilterJson, pEvent
    return true
 end nxFilterMatches
 
+/**
+Summary: Builds a NIP-01 REQ message.
+
+pSubId: The subscription id, 1 to 64 characters.
+
+pFiltersJson: One filter JSON object per line; at least one.
+
+Returns: The REQ message text, or empty.
+
+Example:
+put nxClientReq("my-feed", nxFilterBuild(tFilter)) into tWire
+
+Description:
+<nxrSubscribe> builds and sends the same message itself; use this for a
+transport of your own. Each line must be a JSON object.
+
+References: nxFilterBuild (handler), nxClientClose (handler), nxrSubscribe (handler)
+*/
 function nxClientReq pSubId, pFiltersJson
    -- ["REQ", subid, filter, ...]: pFiltersJson is one filter object per
    -- line (nxFilterBuild emits single-line objects). At least one filter.
@@ -3240,6 +4558,21 @@ function nxClientReq pSubId, pFiltersJson
    return tOut
 end nxClientReq
 
+/**
+Summary: Builds a NIP-01 CLOSE message.
+
+pSubId: The subscription id, 1 to 64 characters.
+
+Returns: The CLOSE message text, or empty.
+
+Example:
+put nxClientClose("my-feed") into tWire
+
+Description:
+<nxrUnsubscribe> builds and sends the same message itself.
+
+References: nxClientReq (handler), nxrUnsubscribe (handler)
+*/
 function nxClientClose pSubId
    if pSubId is empty or the number of chars of pSubId > kNxSubIdMax then
       nxSetError "nxClientClose: the subscription id must be 1 to" && kNxSubIdMax && "characters"
@@ -3248,6 +4581,23 @@ function nxClientClose pSubId
    return "[" & quote & "CLOSE" & quote & "," & quote & nxJsonEscape(pSubId) & quote & "]"
 end nxClientClose
 
+/**
+Summary: Builds a NIP-01 EVENT message for a signed event.
+
+pEvent: The signed event array.
+
+Returns: The EVENT message text, or empty.
+
+Example:
+put nxClientEvent(tSigned) into tWire
+
+Description:
+Refuses an event without an id and signature: sign it with
+<nxEventSign> first. <nxrPublish> builds and sends the same message
+itself.
+
+References: nxEventSign (handler), nxrPublish (handler)
+*/
 function nxClientEvent pEvent
    -- ["EVENT", {...}]: the event must be COMPLETE (id and sig filled in).
    local tJson
@@ -3262,6 +4612,23 @@ function nxClientEvent pEvent
    return "[" & quote & "EVENT" & quote & "," & tJson & "]"
 end nxClientEvent
 
+/**
+Summary: Builds a NIP-42 AUTH message for a signed authentication event.
+
+pEvent: The signed kind 22242 event array.
+
+Returns: The AUTH message text, or empty.
+
+Example:
+put nxClientAuth(tSignedAuth) into tWire
+
+Description:
+Refuses anything but a signed kind 22242 event, as built by
+<nxAuthBuild> and signed by <nxEventSign>. <nxrAuth> builds and sends
+the same message itself.
+
+References: nxAuthBuild (handler), nxrAuth (handler)
+*/
 function nxClientAuth pEvent
    -- ["AUTH", {...}]: a SIGNED kind-22242 event (nxAuthBuild + nxEventSign).
    local tJson
@@ -3280,6 +4647,29 @@ function nxClientAuth pEvent
    return "[" & quote & "AUTH" & quote & "," & tJson & "]"
 end nxClientAuth
 
+/**
+Summary: Parses one relay-to-client message.
+
+pWire: The message text, a JSON array.
+
+Returns: An array keyed by "type" plus that message's fields, or empty.
+
+Example:
+put nxRelayParse(tWire) into tMsg
+if tMsg["type"] is "EVENT" then put nxEventFromJson(tMsg["eventJson"]) into tEvent
+
+Description:
+Types and fields: EVENT ("subId", "eventJson", the event object's exact
+text), OK ("eventId", "accepted", "reason"), EOSE ("subId"), CLOSED
+("subId", "reason"), NOTICE ("notice") and AUTH ("challenge"). Any other
+type gives "unknown" with the text in "raw".
+
+Message types compare byte for byte, so "event" is not "EVENT". An
+EVENT is not verified here: parse it with <nxEventFromJson> and check it
+with <nxEventVerify>.
+
+References: nxEventFromJson (handler), nxEventVerify (handler)
+*/
 function nxRelayParse pWire
    -- One relay-to-client message -> an array keyed by "type" plus fields:
    --   "EVENT"  subId, eventJson (the VERBATIM object slice - parse it with
@@ -3388,6 +4778,24 @@ end nxRelayParse
 -- src/nostr-relay.livecodescript and composes these.
 -- ==========================================================================
 
+/**
+Summary: Splits a ws:// or wss:// URL into its parts.
+
+pUrl: The websocket URL.
+
+Returns: An array with keys "scheme", "secure", "host", "port" and "path", or empty.
+
+Example:
+put nxWsUrlParse("wss://relay.example.com/") into tParts
+put tParts["host"] into tHost
+
+Description:
+A missing port defaults to 80 for ws and 443 for wss, and a missing path
+to /. Whitespace, another scheme, a missing host, a port outside 1 to
+65535 and IPv6 bracket addresses refuse.
+
+References: nxWsHandshakeRequest (handler), nxrConnect (handler)
+*/
 function nxWsUrlParse pUrl
    -- ws:// or wss:// -> an array with keys "scheme", "secure", "host",
    -- "port", "path". IPv6 bracket literals refuse (documented limit); a
@@ -3467,6 +4875,32 @@ function nxWsUrlParse pUrl
    return tOut
 end nxWsUrlParse
 
+/**
+Summary: Builds the HTTP upgrade request that opens a websocket.
+
+pHost: The host name.
+
+pPort: The port number.
+
+pPath: The request path, such as /.
+
+pKeyB64: The Sec-WebSocket-Key, base64.
+
+pSecure: true for wss, false for ws.
+
+Returns: The request text with CRLF line endings, or empty.
+
+Example:
+put nxWsHandshakeRequest("relay.example.com", 443, "/", tKeyB64, true) into tRequest
+
+Description:
+The Host header leaves out the port only when it is the default for the
+scheme (80 for ws, 443 for wss), which is why the secure flag is an
+argument. Host, path and key are required. Only needed for a transport
+of your own; the relay client calls it for you.
+
+References: nxWsAcceptFor (handler), nxWsUrlParse (handler)
+*/
 function nxWsHandshakeRequest pHost, pPort, pPath, pKeyB64, pSecure
    -- The client upgrade request, CRLF line endings, blank line terminated.
    -- The Host header omits the port only at the SCHEME'S default (80 for
@@ -3498,6 +4932,23 @@ function nxWsHandshakeRequest pHost, pPort, pPath, pKeyB64, pSecure
    return tOut
 end nxWsHandshakeRequest
 
+/**
+Summary: Returns the Sec-WebSocket-Accept value a server must answer with.
+
+pKeyB64: The Sec-WebSocket-Key the client sent, base64.
+
+Returns: The expected accept value, base64.
+
+Example:
+put nxWsAcceptFor(tKeyB64) into tExpected
+
+Description:
+Base64 of SHA-1 over the key followed by the RFC 6455 GUID, using the
+engine's own sha1Digest. Compare the server's answer with it byte for
+byte.
+
+References: nxWsHandshakeRequest (handler)
+*/
 function nxWsAcceptFor pKeyB64
    -- The Sec-WebSocket-Accept a compliant server must answer with:
    -- base64(SHA-1(key || GUID)). sha1Digest is the engine's own digest
@@ -3533,6 +4984,28 @@ private function nxWsMask pPayload, pMaskData
    return tOut
 end nxWsMask
 
+/**
+Summary: Builds one masked client websocket frame.
+
+pOpcode: The frame opcode, 0 to 15 (1 for text, 8 close, 9 ping, 10 pong).
+
+pPayload: The payload bytes.
+
+pMaskHex: The 4-byte mask as 8 hex characters.
+
+Returns: The frame bytes, or empty.
+
+Example:
+put nxWsFrameEncode(1, textEncode(tText, "UTF-8"), "1a2b3c4d") into tFrame
+
+Description:
+FIN is set, the payload is masked as RFC 6455 requires of a client, and
+nothing is fragmented. A control frame (opcode 8 and up) carries at most
+125 bytes, and any payload is capped at 8 MB. Draw a fresh random mask
+for every frame; a fixed mask is for test vectors.
+
+References: nxWsFrameDecode (handler)
+*/
 function nxWsFrameEncode pOpcode, pPayload, pMaskHex
    -- A single client frame: FIN set, MASKED (RFC 6455 requires a client to
    -- mask every frame), no fragmentation. pMaskHex is exactly 8 hex chars
@@ -3576,6 +5049,29 @@ function nxWsFrameEncode pOpcode, pPayload, pMaskHex
    return tOut
 end nxWsFrameEncode
 
+/**
+Summary: Parses one websocket frame at the start of a buffer.
+
+pBuffer: The received bytes.
+
+Returns: An array describing the frame (see the description).
+
+Example:
+put nxWsFrameDecode(tBuffer) into tFrame
+if tFrame["complete"] is true then put byte (tFrame["consumed"] + 1) to -1 of tBuffer into tBuffer
+
+Description:
+When "complete" is false, read more: "needMore" says how many bytes are
+missing, or 0 when not yet known. When it is true, "fin", "opcode",
+"masked", "payload" (unmasked) and "consumed" (the bytes to drop from
+the buffer) are set.
+
+A non-empty "error" means the stream cannot recover (reserved bits, a
+length over the 8 MB cap, an oversized or fragmented control frame):
+close the connection.
+
+References: nxWsFrameEncode (handler)
+*/
 function nxWsFrameDecode pBuffer
    -- Parse ONE frame at the head of pBuffer. Returns an array:
    --   "complete" true/false; when false, "needMore" says how many bytes
@@ -3669,6 +5165,21 @@ end nxWsFrameDecode
 -- NIP-13 proof of work, NIP-05 identifiers, NIP-11 relay information.
 -- ==========================================================================
 
+/**
+Summary: Returns the NIP-13 proof-of-work difficulty of an event id.
+
+pIdHex: The event id as 64 hex characters.
+
+Returns: The number of leading zero bits, or empty.
+
+Example:
+put nxPowDifficulty(tEvent["id"]) into tBits
+
+Description:
+NIP-13 measures work as the leading zero bits of the id.
+
+References: nxPowCheck (handler)
+*/
 function nxPowDifficulty pIdHex
    -- Leading zero BITS of an event id (NIP-13's definition). Counts by hex
    -- digit; remember digits 1..7 still contribute leading zero bits.
@@ -3696,6 +5207,26 @@ function nxPowDifficulty pIdHex
    return tBits
 end nxPowDifficulty
 
+/**
+Summary: Tells whether an event meets a NIP-13 proof-of-work target.
+
+pEvent: The event array.
+
+pMinBits: The minimum number of leading zero bits, 0 to 256.
+
+Returns: true or false.
+
+Example:
+if not nxPowCheck(tEvent, 20) then put "not enough work" into tVerdict
+
+Description:
+The id must have at least pMinBits leading zero bits, and a target the
+event committed to in its "nonce" tag must itself be at least pMinBits,
+so a low-target miner that got lucky is refused, as NIP-13 asks. A
+committed target that is not a number refuses.
+
+References: nxPowDifficulty (handler)
+*/
 function nxPowCheck pEvent, pMinBits
    -- True when the event's id meets pMinBits AND any committed target (the
    -- third entry of its nonce tag) is itself at least pMinBits - NIP-13
@@ -3733,6 +5264,25 @@ function nxPowCheck pEvent, pMinBits
    return true
 end nxPowCheck
 
+/**
+Summary: Returns the URL to fetch to check a NIP-05 identifier.
+
+pIdentifier: The identifier, name@domain, or a bare domain.
+
+Returns: The https URL of the domain's nostr.json, or empty.
+
+Example:
+put nxNip05Url("alice@example.com") into tUrl
+put URL tUrl into tBody
+put nxNip05Verify(tBody, "alice", tPubkey) into tVerified
+
+Description:
+A bare domain means the name "_". This library does no I/O, so the
+fetch is yours. A malformed identifier, or a domain containing /, ?, #
+or @, refuses.
+
+References: nxNip05Verify (handler)
+*/
 function nxNip05Url pIdentifier
    -- The .well-known url for a NIP-05 identifier ("name@domain", or a bare
    -- domain meaning "_@domain"). The FETCH is the app's (libURL or a proxy
@@ -3768,6 +5318,26 @@ function nxNip05Url pIdentifier
    return "https://" & tDomain & "/.well-known/nostr.json?name=" & tLocalPart
 end nxNip05Url
 
+/**
+Summary: Tells whether a fetched nostr.json maps a name to a public key.
+
+pJsonBody: The nostr.json document the app fetched.
+
+pUserName: The name part of the identifier.
+
+pPubkeyHex: The expected public key as 64 hex characters.
+
+Returns: true or false.
+
+Example:
+put nxNip05Verify(tBody, "alice", tPubkey) into tVerified
+
+Description:
+The hex comparison ignores case. A name containing / cannot be looked up
+and refuses, as does a pubkey that is not 64 hex characters.
+
+References: nxNip05Url (handler)
+*/
 function nxNip05Verify pJsonBody, pUserName, pPubkeyHex
    -- True when the fetched nostr.json maps pUserName to pPubkeyHex. A name
    -- containing "/" cannot be addressed through the path walk (documented
@@ -3789,6 +5359,25 @@ function nxNip05Verify pJsonBody, pUserName, pPubkeyHex
    return nxStrEqExact(nxToLowerAscii(tFound), nxToLowerAscii(pPubkeyHex))
 end nxNip05Verify
 
+/**
+Summary: Reads the common NIP-11 relay information fields.
+
+pJsonBody: The relay information document the app fetched.
+
+Returns: An array of the fields, or empty.
+
+Example:
+put nxRelayInfoParse(tBody) into tInfo
+put tInfo["name"] && tInfo["supportedNips"] into field "relayField"
+
+Description:
+The keys are "name", "description", "pubkey", "contact", "software",
+"version" and "supportedNips", a comma list. An absent field is empty. A
+body that is not a JSON object refuses. The fetch is yours: this
+library does no I/O.
+
+References: nxJsonGet (handler)
+*/
 function nxRelayInfoParse pJsonBody
    -- The common NIP-11 relay-information fields as an array; absent fields
    -- are empty; "supportedNips" is a comma list.
@@ -3905,10 +5494,65 @@ local sNxrOwner              -- long id the callbacks dispatch to
 -- Wiring.
 -- ==========================================================================
 
+/**
+Title: NostrXT Relay Client
+Author: Seth Morrow Software
+Description:
+The NostrXT Relay Client is a websocket (RFC 6455) client over engine
+sockets that speaks the NIP-01 relay protocol: it sends REQ, CLOSE,
+EVENT and AUTH, and receives EVENT, OK, EOSE, CLOSED, NOTICE and AUTH.
+It composes the NostrXT core library, so load that first; this library
+owns only the sockets, buffers and relay handles.
+
+Each relay is an integer handle from <nxrConnect>. Commands report
+through the result: empty on success, or text starting
+"NostrXT relay:" for a refusal. Everything that happens later arrives through the callback
+handler you register with <nxrSetCallback>, dispatched to the object set
+by <nxrInit>.
+
+Inbound events are verified (id and signature) before delivery unless
+you turn that off with <nxrSetVerify>. Call <nxrShutdown> from
+closeStack: there is no automatic unload.
+
+The library defines the engine's socketError, socketClosed and
+socketTimeout messages and passes on any that are not for its own
+sockets. If your stack script handles those messages too, it must pass
+the ones that are not its own, or another library will hang.
+
+Tags: Networking, Nostr
+*/
+/**
+Summary: Returns the relay client's version.
+
+Returns: The text "NostrXT relay" followed by the core's version string.
+
+Example:
+put nxrVersion() into field "versionField"
+
+Description:
+It calls <nxVersion>, so it also proves the core library is loaded.
+
+References: nxVersion (handler)
+*/
 function nxrVersion
    return "NostrXT relay" && nxVersion()
 end nxrVersion
 
+/**
+Summary: Sets the object whose script receives relay callbacks.
+
+pOwner: The long id of the object, or empty for the topStack.
+
+Example:
+nxrInit the long id of me
+
+Description:
+Call it once at startup, for example in preOpenStack. Until it is set,
+callbacks are dispatched to the topStack, which may not be the stack you
+expect. Calling it again replaces the owner.
+
+References: nxrSetCallback (handler), nxrConnect (handler)
+*/
 command nxrInit pOwner
    -- Set the object whose script receives the callbacks (the demo passes
    -- `the long id of me` in preOpenStack). Idempotent.
@@ -3974,6 +5618,40 @@ end nxrRandomHex
 -- Connect and the handshake state machine.
 -- ==========================================================================
 
+/**
+Summary: Opens a connection to a Nostr relay.
+
+pUrl: The relay URL, starting wss:// or ws://.
+
+Returns: The integer relay handle, or a "NostrXT relay:" refusal.
+
+Example:
+nxrConnect "wss://relay.example.com"
+put the result into tRelay
+if tRelay is an integer then nxrSetCallback tRelay, "relayEvent"
+
+Description:
+<nxrConnect> returns at once with the handle in the result; test it with
+"is an integer". The connection and the websocket handshake complete
+later, and the callback receives "open" when the relay is usable or
+"error" and "disconnected" when it fails. A handshake that has not
+finished within 20 seconds fails closed. Connecting also sets the
+engine's socketTimeoutInterval to 20 seconds.
+
+The callback handler is called with the relay handle, a kind, and up to
+two arguments. The kinds are "open"; "event" (subscription id, the
+verified event JSON); "invalid" (subscription id, why the event was
+refused); "eose" (subscription id); "ok" (event id, then "true" or
+"false", a tab and the relay's reason); "closed" (subscription id,
+reason); "notice" (the text); "auth" (the NIP-42 challenge); "error"
+(the failure); and "disconnected" (the reason).
+
+A wss:// connection has been made on an engine; whether a bad
+certificate is refused has not been measured. The ws:// path has not
+yet run on an engine.
+
+References: nxrSetCallback (handler), nxrDisconnect (handler), nxrState (handler)
+*/
 command nxrConnect pUrl
    -- Returns an integer relay handle through `the result` immediately; the
    -- handshake completes asynchronously and the callback receives "open" or
@@ -4342,6 +6020,30 @@ private command nxrSendText pRelay, pText
    return empty
 end nxrSendText
 
+/**
+Summary: Registers the handler that receives a relay's callbacks.
+
+pRelay: The relay handle.
+
+pHandlerName: The name of the handler to dispatch to.
+
+Example:
+nxrConnect "wss://relay.example.com"
+put the result into tRelay
+nxrSetCallback tRelay, "relayEvent"
+
+Description:
+The handler is dispatched to the object set by <nxrInit>, with four
+arguments: the relay handle, the kind, and two kind-specific arguments
+(the kinds are listed under <nxrConnect>). Set it straight after
+connecting, before the "open" callback arrives.
+
+Dispatch is guarded: an error in your handler does not break the
+connection, and a missing handler is ignored. An unknown handle returns
+a refusal in the result.
+
+References: nxrConnect (handler), nxrInit (handler)
+*/
 command nxrSetCallback pRelay, pHandlerName
    if sNxrRelays[pRelay]["socketID"] is empty then
       return "NostrXT relay: unknown relay handle" && pRelay
@@ -4350,6 +6052,25 @@ command nxrSetCallback pRelay, pHandlerName
    return empty
 end nxrSetCallback
 
+/**
+Summary: Turns event verification on or off for one relay.
+
+pRelay: The relay handle.
+
+pVerify: true to verify inbound events (the default), false to deliver them unverified.
+
+Example:
+nxrSetVerify tRelay, false
+
+Description:
+Verification is on by default and fails closed: an event whose id or
+signature does not check, or any event while CoinXT is missing, arrives
+as "invalid", never as "event". Turning it off is a per-relay decision;
+then verify events yourself with <nxEventVerify>. A value other than
+true or false is refused.
+
+References: nxEventVerify (handler), nxrSetCallback (handler)
+*/
 command nxrSetVerify pRelay, pVerify
    -- Event verification is ON by default and fails closed (no CoinXT means
    -- events arrive as "invalid", never as unverified "event"s). An app that
@@ -4364,6 +6085,28 @@ command nxrSetVerify pRelay, pVerify
    return empty
 end nxrSetVerify
 
+/**
+Summary: Sends a REQ to open a subscription on a relay.
+
+pRelay: The relay handle.
+
+pSubId: The subscription id, 1 to 64 characters.
+
+pFiltersJson: One filter JSON object per line, as from nxFilterBuild.
+
+Example:
+put tPubkey into tFilter["authors"]
+put "1" into tFilter["kinds"]
+nxrSubscribe tRelay, "my-feed", nxFilterBuild(tFilter)
+if the result is not empty then answer the result
+
+Description:
+The relay must be open. Matching events arrive as "event" callbacks
+with the subscription id, followed by "eose" once the stored events are
+sent. A relay can end the subscription with "closed".
+
+References: nxrUnsubscribe (handler), nxFilterBuild (handler), nxClientReq (handler)
+*/
 command nxrSubscribe pRelay, pSubId, pFiltersJson
    local tWire
    put nxClientReq(pSubId, pFiltersJson) into tWire
@@ -4378,6 +6121,21 @@ command nxrSubscribe pRelay, pSubId, pFiltersJson
    return empty
 end nxrSubscribe
 
+/**
+Summary: Sends a CLOSE to end a subscription.
+
+pRelay: The relay handle.
+
+pSubId: The subscription id.
+
+Example:
+nxrUnsubscribe tRelay, "my-feed"
+
+Description:
+The relay must be open. Refusals come back in the result.
+
+References: nxrSubscribe (handler), nxClientClose (handler)
+*/
 command nxrUnsubscribe pRelay, pSubId
    local tWire
    put nxClientClose(pSubId) into tWire
@@ -4392,6 +6150,25 @@ command nxrUnsubscribe pRelay, pSubId
    return empty
 end nxrUnsubscribe
 
+/**
+Summary: Sends a signed event to a relay.
+
+pRelay: The relay handle.
+
+pEvent: The signed event array.
+
+Example:
+put nxEventSign(nxEventBuild(1, "Hello", empty, empty), tSeckey, empty) into tSigned
+nxrPublish tRelay, tSigned
+if the result is not empty then answer the result
+
+Description:
+The relay must be open, and the event must be signed with
+<nxEventSign>. The relay's verdict arrives later as an "ok" callback
+with the event id.
+
+References: nxEventSign (handler), nxClientEvent (handler)
+*/
 command nxrPublish pRelay, pEvent
    -- Send a SIGNED event; the relay's verdict arrives as the "ok" callback
    -- keyed by the event id.
@@ -4404,6 +6181,24 @@ command nxrPublish pRelay, pEvent
    return the result
 end nxrPublish
 
+/**
+Summary: Answers a relay's NIP-42 authentication challenge.
+
+pRelay: The relay handle.
+
+pSignedEvent: The signed kind 22242 event.
+
+Example:
+put nxAuthBuild(nxrUrl(tRelay), nxrChallenge(tRelay), empty) into tAuth
+nxrAuth tRelay, nxEventSign(tAuth, tSeckey, empty)
+
+Description:
+Use it after an "auth" callback. Build the event with <nxAuthBuild> and
+sign it with <nxEventSign>. The relay must be open; the relay's answer
+arrives as an "ok" callback.
+
+References: nxAuthBuild (handler), nxrChallenge (handler), nxClientAuth (handler)
+*/
 command nxrAuth pRelay, pSignedEvent
    -- Answer a NIP-42 challenge (nxAuthBuild + nxEventSign built it).
    local tWire
@@ -4415,6 +6210,23 @@ command nxrAuth pRelay, pSignedEvent
    return the result
 end nxrAuth
 
+/**
+Summary: Sends one text message to a relay exactly as given.
+
+pRelay: The relay handle.
+
+pText: The message text, usually a JSON array.
+
+Example:
+nxrSendRaw tRelay, tWire
+
+Description:
+The escape hatch for NIPs this library does not speak yet. The text is
+sent as one websocket text frame; you are responsible for the JSON. The
+relay must be open.
+
+References: nxrPublish (handler), nxrSubscribe (handler)
+*/
 command nxrSendRaw pRelay, pText
    -- The escape hatch for NIPs this layer does not speak yet: one text
    -- frame, verbatim. The caller owns the JSON.
@@ -4422,6 +6234,19 @@ command nxrSendRaw pRelay, pText
    return the result
 end nxrSendRaw
 
+/**
+Summary: Sends a websocket ping to a relay.
+
+pRelay: The relay handle.
+
+Example:
+nxrPing tRelay
+
+Description:
+A liveness probe. The relay must be open; its pong is consumed silently.
+
+References: nxrState (handler)
+*/
 command nxrPing pRelay
    -- An RFC 6455 ping (liveness probe); a compliant peer answers with a
    -- pong, which this layer ignores on arrival.
@@ -4437,6 +6262,21 @@ command nxrPing pRelay
    return empty
 end nxrPing
 
+/**
+Summary: Returns the connection state of a relay.
+
+pRelay: The relay handle.
+
+Returns: "connecting", "handshake", "open" or "closing", or "unknown" for a handle that is not live.
+
+Example:
+if nxrState(tRelay) is "open" then nxrPublish tRelay, tSigned
+
+Description:
+Only an "open" relay accepts subscriptions, publishes and other sends.
+
+References: nxrConnect (handler), nxrOpenRelays (handler)
+*/
 function nxrState pRelay
    if sNxrRelays[pRelay]["socketID"] is empty then
       return "unknown"
@@ -4444,6 +6284,21 @@ function nxrState pRelay
    return sNxrRelays[pRelay]["state"]
 end nxrState
 
+/**
+Summary: Returns the URL a relay was opened with.
+
+pRelay: The relay handle.
+
+Returns: The URL, or empty for a handle that is not live.
+
+Example:
+put nxrUrl(tRelay) into tUrl
+
+Description:
+Useful for <nxAuthBuild>, which needs the relay URL.
+
+References: nxrConnect (handler), nxAuthBuild (handler)
+*/
 function nxrUrl pRelay
    if sNxrRelays[pRelay]["socketID"] is empty then
       return empty
@@ -4451,6 +6306,22 @@ function nxrUrl pRelay
    return sNxrRelays[pRelay]["url"]
 end nxrUrl
 
+/**
+Summary: Returns the most recent NIP-42 challenge a relay sent.
+
+pRelay: The relay handle.
+
+Returns: The challenge text, or empty.
+
+Example:
+put nxrChallenge(tRelay) into tChallenge
+
+Description:
+The same challenge arrives with the "auth" callback; this keeps it for
+when you answer later.
+
+References: nxrAuth (handler), nxAuthBuild (handler)
+*/
 function nxrChallenge pRelay
    -- The most recent NIP-42 challenge this relay sent, or empty.
    if sNxrRelays[pRelay]["socketID"] is empty then
@@ -4459,6 +6330,19 @@ function nxrChallenge pRelay
    return sNxrRelays[pRelay]["challenge"]
 end nxrChallenge
 
+/**
+Summary: Lists every live relay handle.
+
+Returns: The handles, one per line, in numeric order.
+
+Example:
+put nxrOpenRelays() into tHandles
+
+Description:
+A handle leaves the list when its connection is torn down.
+
+References: nxrState (handler), nxrShutdown (handler)
+*/
 function nxrOpenRelays
    -- Every live relay handle, one per line (delimiter-guarded read of the
    -- handle table's keys).
@@ -4547,6 +6431,21 @@ private command nxrFail pRelay, pReason
    nxrDispatchTo tCallback, pRelay, "disconnected", pReason, empty
 end nxrFail
 
+/**
+Summary: Closes a relay connection.
+
+pRelay: The relay handle.
+
+Example:
+nxrDisconnect tRelay
+
+Description:
+Sends a websocket close frame when the connection is open, then closes
+the socket and forgets the handle. The callback receives "disconnected".
+A handle that is not live is a no-op, so calling it twice is safe.
+
+References: nxrConnect (handler), nxrShutdown (handler)
+*/
 command nxrDisconnect pRelay
    -- App-initiated close: send a close frame when the link is up, then
    -- tear down. Idempotent; a stale handle is a clean no-op.
@@ -4561,6 +6460,18 @@ command nxrDisconnect pRelay
    nxrTeardown pRelay, "disconnected by the app"
 end nxrDisconnect
 
+/**
+Summary: Closes every relay connection.
+
+Example:
+nxrShutdown
+
+Description:
+Call it from closeStack: there is no automatic unload, so the app frees
+what it opens. Safe to call more than once.
+
+References: nxrDisconnect (handler), nxrOpenRelays (handler)
+*/
 command nxrShutdown
    -- Close every relay (closeStack calls this; there is no deterministic
    -- unload hook in OXT, so the app frees what it opens).
@@ -4599,6 +6510,28 @@ end nxrShutdown
 -- copied and cannot go stale.
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the error?
+/**
+Summary: Handles a socketError message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketError message.
+
+pError: The error text from the socketError message.
+
+Returns: "true" when the socket was a relay's and the error was handled, "false" otherwise.
+
+Example:
+if nxrSocketError(pSocketID, pError) then exit socketError
+pass socketError
+
+Description:
+For a stack that embeds this library in its own script and so must
+define socketError itself: call it from your handler where you would
+otherwise pass the message on. For a relay socket, the relay fails
+closed ("error" and "disconnected" callbacks). Ordinary apps that use
+the library as a stack never call it.
+
+References: nxrSocketClosed (handler), nxrSocketTimeout (handler)
+*/
 function nxrSocketError pSocketID, pError
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
@@ -4617,6 +6550,24 @@ on socketError pSocketID, pError
 end socketError
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the close?
+/**
+Summary: Handles a socketClosed message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketClosed message.
+
+Returns: "true" when the socket was a relay's and the close was handled, "false" otherwise.
+
+Example:
+if nxrSocketClosed(pSocketID) then exit socketClosed
+pass socketClosed
+
+Description:
+For a stack that embeds this library and defines socketClosed itself.
+For a relay socket, the relay is torn down and the callback receives
+"disconnected". Ordinary apps never call it.
+
+References: nxrSocketError (handler), nxrSocketTimeout (handler)
+*/
 function nxrSocketClosed pSocketID
    local tHandle
    put sNxrSockToRelay[pSocketID] into tHandle
@@ -4635,6 +6586,26 @@ on socketClosed pSocketID
 end socketClosed
 
 -- Was pSocketID one of OUR relay sockets, and did we handle the timeout?
+/**
+Summary: Handles a socketTimeout message if it belongs to one of this library's relays.
+
+pSocketID: The socket id from the socketTimeout message.
+
+Returns: "true" when the socket was a relay's, "false" otherwise.
+
+Example:
+if nxrSocketTimeout(pSocketID) then exit socketTimeout
+pass socketTimeout
+
+Description:
+For a stack that embeds this library and defines socketTimeout itself.
+The engine repeats socketTimeout while a read waits, so a timeout fails
+the relay only before its handshake completes; on an open relay an idle
+read is normal and the message is simply consumed. Ordinary apps never
+call it.
+
+References: nxrSocketError (handler), nxrSocketClosed (handler)
+*/
 function nxrSocketTimeout pSocketID
    -- socketTimeout REPEATS while a read is pending, so it is fatal only
    -- during the handshake; on an open relay an idle read is normal.

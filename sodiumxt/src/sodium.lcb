@@ -70,6 +70,25 @@
 -- the current C ABI is SXT_ABI_VERSION 10 (kSXTABIVersion below must match).
 -- ==========================================================================
 
+/**
+Modern, authenticated cryptography for xTalk, built on libsodium.
+
+SodiumXT covers secure randomness, BLAKE2b hashing, hex and base64
+encoding, constant-time comparison, Argon2id password hashing, key
+derivation, secret-key and AEAD encryption, streaming and whole-file
+encryption, X25519 public-key boxes, ed25519 signatures, key exchange,
+padding, HMAC-SHA256, SHA3-256 and the ristretto255 group.
+
+Bytes cross as Data and text as String: pass text through
+textEncode(theText, "utf-8") and decode recovered plaintext with
+textDecode. Hex, base64 and password hash strings come back as Data
+holding ASCII bytes. Failures throw an error that starts with the
+handler name, so wrap calls that can fail in try ... catch. The one-shot
+encryption calls draw and prepend a random nonce for you. Compare secrets
+with <sxMemEqual>, never with is.
+
+Tags: Cryptography, Library
+*/
 library org.openxtalk.library.sodium
 
 use com.livecode.foreign
@@ -383,10 +402,42 @@ end handler
 -- Util / init.
 -- ==========================================================================
 
+/**
+Summary: Check the native library and initialize libsodium now.
+
+Example:
+try
+   sxInit
+catch tError
+   answer "SodiumXT could not start:" && tError
+end try
+
+Description:
+Optional. Every SodiumXT handler checks the native library version and
+initializes libsodium on first use, so you only call <sxInit> to fail
+fast at startup. It throws when the installed native library does not
+match this extension or libsodium fails to initialize.
+
+References: sxVersion (handler), sxLastError (handler)
+*/
 public handler sxInit() returns nothing
    sPrepare()
 end handler
 
+/**
+Summary: Return the SodiumXT and libsodium version text.
+
+Returns: A string such as "SodiumXT 0.1.0 (libsodium 1.0.20)".
+
+Example:
+put sxVersion() into field "version"
+
+Description:
+Use <sxVersion> to show or log which build is loaded. It throws if the
+native library does not match this extension.
+
+References: sxInit (handler)
+*/
 public handler sxVersion() returns String
    variable tPv as Pointer
    variable tSv as Pointer
@@ -408,12 +459,48 @@ public handler sxVersion() returns String
    return "SodiumXT" && tProductVer && "(libsodium" && tSodiumVer & ")"
 end handler
 
+/**
+Summary: Return the last native error message.
+
+Returns: The last error message from the native layer on this thread, or
+empty when there is none.
+
+Example:
+try
+   put sxSecretBoxOpen(tBox, tKey) into tPlain
+catch tError
+   put sxLastError() into tDetail
+end try
+
+Description:
+The message thrown by a failing handler already includes this text, so
+<sxLastError> is mainly for logging. It never throws.
+
+References: sxInit (handler)
+*/
 public handler sxLastError() returns String
    return sLastError()
 end handler
 
 -- Cryptographically secure random bytes (the ONLY sanctioned source of salts,
 -- nonces, and keys; never use the engine random() for anything unguessable).
+/**
+Summary: Return cryptographically secure random bytes.
+
+pCount: The number of bytes to return (zero or more).
+
+Returns: pCount random bytes as Data.
+
+Example:
+put sxRandomBytes(32) into tKey
+
+Description:
+<sxRandomBytes> is the source to use for keys, salts and nonces. Never
+use the engine random() function for anything that must be unguessable.
+A negative count throws.
+
+References: sxRandomUniform (handler), sxPwSaltBytes (handler)
+*/
 public handler sxRandomBytes(in pCount as Integer) returns Data
    variable tOut as Pointer
    variable tWritten as Integer
@@ -433,6 +520,25 @@ end handler
 -- ==========================================================================
 
 -- BLAKE2b digest (default 32 bytes). Unkeyed.
+/**
+Summary: Return the BLAKE2b digest of some bytes.
+
+pData: The bytes to hash.
+
+pOutLen: The digest length in bytes, 16 to 64 (32 is typical).
+
+Returns: The digest as pOutLen bytes of Data.
+
+Example:
+put sxBin2Hex(sxHash(textEncode("hello", "utf-8"), 32)) into tHex
+
+Description:
+An unkeyed BLAKE2b hash. A digest length outside 16 to 64 throws. For a
+file use <sxHashFile>; for data that arrives in pieces use <sxHashInit>.
+Compare digests with <sxMemEqual>.
+
+References: sxHashKeyed (handler), sxHashFile (handler), sxHashInit (handler)
+*/
 public handler sxHash(in pData as Data, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -449,6 +555,28 @@ public handler sxHash(in pData as Data, in pOutLen as Integer) returns Data
 end handler
 
 -- Keyed BLAKE2b (a MAC / domain-separated hash).
+/**
+Summary: Return a keyed BLAKE2b digest (a MAC).
+
+pData: The bytes to hash.
+
+pKey: The key, as Data (16 to 64 bytes; 32 is typical).
+
+pOutLen: The digest length in bytes, 16 to 64.
+
+Returns: The keyed digest as pOutLen bytes of Data.
+
+Example:
+put sxRandomBytes(32) into tKey
+put sxHashKeyed(tMessage, tKey, 32) into tMac
+
+Description:
+Use a keyed hash as a message authentication code or a domain-separated
+hash. Check a received MAC with <sxMemEqual>, never with is. A key or
+digest length out of range throws.
+
+References: sxHash (handler), sxHmacSha256 (handler), sxMemEqual (handler)
+*/
 public handler sxHashKeyed(in pData as Data, in pKey as Data, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -471,6 +599,22 @@ end handler
 -- Hex-encode bytes. Returns the ASCII hex as Data (it reads as text in script;
 -- textDecode it in livecodescript if you need a String). textEncode/textDecode
 -- are not available to an LCB module, so this layer stays in Data.
+/**
+Summary: Encode bytes as lowercase hex.
+
+pData: The bytes to encode.
+
+Returns: The hex text as Data (ASCII bytes).
+
+Example:
+put textDecode(sxBin2Hex(tDigest), "ascii") into field "digest"
+
+Description:
+The result is Data; use textDecode(theHex, "ascii") when you need a
+String. <sxHex2Bin> reverses it.
+
+References: sxHex2Bin (handler), sxBin2Base64 (handler)
+*/
 public handler sxBin2Hex(in pData as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -487,6 +631,21 @@ public handler sxBin2Hex(in pData as Data) returns Data
 end handler
 
 -- Decode hex (the ASCII hex bytes, as Data) back to bytes.
+/**
+Summary: Decode hex text back to bytes.
+
+pHex: The hex text, as Data (for example textEncode(theHex, "ascii")).
+
+Returns: The decoded bytes as Data.
+
+Example:
+put sxHex2Bin(textEncode(field "key", "ascii")) into tKey
+
+Description:
+The reverse of <sxBin2Hex>. Malformed hex throws.
+
+References: sxBin2Hex (handler), sxBase642Bin (handler)
+*/
 public handler sxHex2Bin(in pHex as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -504,6 +663,23 @@ end handler
 
 -- base64, URL-safe with no padding (the friendly default for share codes).
 -- Returns the ASCII base64 as Data (textDecode in script for a String).
+/**
+Summary: Encode bytes as URL-safe base64 without padding.
+
+pData: The bytes to encode.
+
+Returns: The base64 text as Data (ASCII bytes).
+
+Example:
+put textDecode(sxBin2Base64(tSalt & tBox), "ascii") into tShareCode
+
+Description:
+Uses the URL-safe alphabet (- and _) with no = padding, which suits
+share codes and file names. This is not the encoding the engine's
+base64Encode produces; decode it with <sxBase642Bin>.
+
+References: sxBase642Bin (handler), sxBin2Hex (handler)
+*/
 public handler sxBin2Base64(in pData as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -524,6 +700,22 @@ public handler sxBin2Base64(in pData as Data) returns Data
 end handler
 
 -- Decode base64 (the ASCII base64 bytes, as Data) back to bytes.
+/**
+Summary: Decode URL-safe, unpadded base64 back to bytes.
+
+pB64: The base64 text, as Data (for example textEncode(theText, "ascii")).
+
+Returns: The decoded bytes as Data.
+
+Example:
+put sxBase642Bin(textEncode(field "code", "ascii")) into tRaw
+
+Description:
+The reverse of <sxBin2Base64>. It expects the URL-safe alphabet without
+padding; malformed input throws.
+
+References: sxBin2Base64 (handler), sxHex2Bin (handler)
+*/
 public handler sxBase642Bin(in pB64 as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -553,6 +745,28 @@ end handler
 
 -- Constant-time equality. The ONLY sanctioned way to compare a MAC, tag, hash,
 -- or any secret; never use `is` / `=` on secret bytes (a timing leak).
+/**
+Summary: Compare two byte strings in constant time.
+
+pA: The first bytes.
+
+pB: The second bytes.
+
+Returns: true when both hold the same bytes, otherwise false.
+
+Example:
+if not sxMemEqual(tExpectedMac, tReceivedMac) then
+   throw "message was altered"
+end if
+
+Description:
+Use <sxMemEqual> for every comparison of a MAC, tag, hash, key or other
+secret. Comparing secrets with is or = can leak timing information.
+Inputs of different lengths return false (the length is not treated as
+secret). Two empty inputs are equal. It never throws on content.
+
+References: sxHashKeyed (handler), sxHmacSha256 (handler)
+*/
 public handler sxMemEqual(in pA as Data, in pB as Data) returns Boolean
    variable tAPtr as Pointer
    variable tBPtr as Pointer
@@ -579,6 +793,20 @@ end handler
 -- rule is that every length constant comes from the shim, because libsodium is
 -- allowed to change one across versions and a hardcoded length is a buffer
 -- overflow waiting to happen.
+/**
+Summary: Return the salt length Argon2id expects.
+
+Returns: The salt length in bytes, as read from libsodium.
+
+Example:
+put sxRandomBytes(sxPwSaltBytes()) into tSalt
+
+Description:
+Size the salt for <sxPwHash> with this value rather than a hardcoded
+number.
+
+References: sxPwHash (handler), sxRandomBytes (handler)
+*/
 public handler sxPwSaltBytes() returns Integer
    variable tN as Integer
    unsafe
@@ -590,6 +818,21 @@ end handler
 -- Memlimit presets, returned as decimal Strings ready to pass to sxPwHash /
 -- sxPwHashStr. The opslimit preset is a tiny decimal you pass as a String
 -- literal: "2" (interactive), "3" (moderate), "4" (sensitive).
+/**
+Summary: Return the interactive Argon2id memory limit.
+
+Returns: The memory limit as a decimal string.
+
+Example:
+put sxPwHash(tPass, tSalt, 32, "2", sxPwMemInteractive()) into tKey
+
+Description:
+The fastest preset, for interactive logins. Pair it with the ops limit
+"2". Store the limits you used beside the data so you can re-derive the
+key and raise the cost later.
+
+References: sxPwMemModerate (handler), sxPwMemSensitive (handler), sxPwHash (handler)
+*/
 public handler sxPwMemInteractive() returns String
    variable tPtr as Pointer
    variable tWritten as Integer
@@ -601,6 +844,19 @@ public handler sxPwMemInteractive() returns String
    return sFinishString("sxPwMemInteractive", tPtr, tWritten)
 end handler
 
+/**
+Summary: Return the moderate Argon2id memory limit.
+
+Returns: The memory limit as a decimal string.
+
+Example:
+put sxPwHash(tPass, tSalt, 32, "3", sxPwMemModerate()) into tKey
+
+Description:
+A middle preset. Pair it with the ops limit "3".
+
+References: sxPwMemInteractive (handler), sxPwMemSensitive (handler), sxPwHash (handler)
+*/
 public handler sxPwMemModerate() returns String
    variable tPtr as Pointer
    variable tWritten as Integer
@@ -612,6 +868,21 @@ public handler sxPwMemModerate() returns String
    return sFinishString("sxPwMemModerate", tPtr, tWritten)
 end handler
 
+/**
+Summary: Return the sensitive Argon2id memory limit.
+
+Returns: The memory limit as a decimal string.
+
+Example:
+put sxPwHash(tPass, tSalt, 32, "4", sxPwMemSensitive()) into tKey
+
+Description:
+The slowest preset, for high-value secrets. Pair it with the ops limit
+"4". It needs a large amount of memory; a derivation that cannot get it
+throws.
+
+References: sxPwMemInteractive (handler), sxPwMemModerate (handler), sxPwHash (handler)
+*/
 public handler sxPwMemSensitive() returns String
    variable tPtr as Pointer
    variable tWritten as Integer
@@ -631,6 +902,35 @@ end handler
 -- passphrase is a Data: pass textEncode(thePassword, "utf-8") in your script so
 -- the same passphrase derives the same key on every machine. opslimit/memlimit
 -- are decimal Strings (e.g. "3" and sxPwMemModerate()).
+/**
+Summary: Derive a key from a passphrase with Argon2id.
+
+pPassphrase: The passphrase as Data (textEncode it as UTF-8).
+
+pSalt: A random salt of sxPwSaltBytes() bytes.
+
+pKeyLen: The length of the key to derive, in bytes (32 for the encryption calls).
+
+pOpsLimit: The ops limit as a decimal string: "2", "3" or "4".
+
+pMemLimit: The memory limit as a decimal string, from a preset handler.
+
+Returns: The derived key as pKeyLen bytes of Data.
+
+Example:
+put sxRandomBytes(sxPwSaltBytes()) into tSalt
+put sxPwHash(textEncode(tPass, "utf-8"), tSalt, 32, "2", sxPwMemInteractive()) into tKey
+put sxSecretBox(textEncode(tText, "utf-8"), tKey) into tBox
+
+Description:
+The same passphrase, salt and limits always give the same key. The salt
+is not secret: store it, and the limits you used, beside the ciphertext.
+A wrong salt length or a key length out of range throws, as does a
+derivation that runs out of memory. To store a login password, use
+<sxPwHashStr> instead.
+
+References: sxPwSaltBytes (handler), sxPwMemInteractive (handler), sxPwHashStr (handler), sxSecretBox (handler)
+*/
 public handler sxPwHash(in pPassphrase as Data, in pSalt as Data, in pKeyLen as Integer, in pOpsLimit as String, in pMemLimit as String) returns Data
    variable tOut as Pointer
    variable tPassPtr as Pointer
@@ -654,6 +954,27 @@ end handler
 -- string for storage (it packs the salt and the ops/mem). Returns the ASCII
 -- hash string as Data; store it, and pass it back to sxPwHashStrVerify as a
 -- String (textDecode the stored Data in livecodescript).
+/**
+Summary: Hash a password into a self-describing string for storage.
+
+pPassphrase: The password as Data (textEncode it as UTF-8).
+
+pOpsLimit: The ops limit as a decimal string: "2", "3" or "4".
+
+pMemLimit: The memory limit as a decimal string, from a preset handler.
+
+Returns: The hash string as Data (ASCII bytes).
+
+Example:
+put textDecode(sxPwHashStr(textEncode(tPassword, "utf-8"), "2", sxPwMemInteractive()), "ascii") into tStored
+
+Description:
+The string packs a fresh random salt and the cost settings, so it is all
+you need to store. Check a login with <sxPwHashStrVerify>. Never store a
+password or a plain hash.
+
+References: sxPwHashStrVerify (handler), sxPwHash (handler)
+*/
 public handler sxPwHashStr(in pPassphrase as Data, in pOpsLimit as String, in pMemLimit as String) returns Data
    variable tOut as Pointer
    variable tPassPtr as Pointer
@@ -675,6 +996,26 @@ end handler
 
 -- Verify a passphrase (Data; textEncode it) against a stored sxPwHashStr string
 -- (pass the stored hash as a String) in constant time.
+/**
+Summary: Check a password against a stored hash string.
+
+pHash: The stored hash from sxPwHashStr, as a String.
+
+pPassphrase: The candidate password as Data (textEncode it as UTF-8).
+
+Returns: true when the password matches, otherwise false.
+
+Example:
+if sxPwHashStrVerify(tStored, textEncode(field "password", "utf-8")) then
+   answer "Welcome back."
+end if
+
+Description:
+The check runs in constant time. Pass the stored hash as a String
+(textDecode the Data <sxPwHashStr> returned).
+
+References: sxPwHashStr (handler)
+*/
 public handler sxPwHashStrVerify(in pHash as String, in pPassphrase as Data) returns Boolean
    variable tPassPtr as Pointer
    variable tPassLen as Integer
@@ -690,6 +1031,30 @@ end handler
 
 -- Derive subkey pSubkeyId (a non-negative integer as a String) from a master
 -- key, namespaced by an 8-byte context.
+/**
+Summary: Derive a numbered subkey from a master key.
+
+pMasterKey: The 32-byte master key.
+
+pSubkeyId: The subkey number, as a decimal string ("0", "1", ...).
+
+pContext: An 8-byte context label, as Data (for example textEncode("MyApp-v1", "ascii")).
+
+pSubkeyLen: The subkey length in bytes, 16 to 64.
+
+Returns: The subkey as pSubkeyLen bytes of Data.
+
+Example:
+put sxKdfDerive(tMaster, "1", textEncode("MyApp-v1", "ascii"), 32) into tFileKey
+
+Description:
+One master key can yield many independent keys: each subkey number and
+context gives a different key, and none reveals the master. The context
+must be exactly 8 bytes. A wrong master key or context length, a subkey
+length out of range, or a subkey id that is not a decimal number throws.
+
+References: sxRandomBytes (handler), sxBoxKeypairFromSeed (handler)
+*/
 public handler sxKdfDerive(in pMasterKey as Data, in pSubkeyId as String, in pContext as Data, in pSubkeyLen as Integer) returns Data
    variable tOut as Pointer
    variable tMasterPtr as Pointer
@@ -716,6 +1081,26 @@ end handler
 -- secretbox: the shim generates and prepends a random nonce; output is
 -- nonce || mac || ciphertext (libsodium's combined mode puts the MAC first).
 -- Open returns an error on a wrong key or tampering.
+/**
+Summary: Encrypt and authenticate a message with a secret key.
+
+pMessage: The bytes to encrypt.
+
+pKey: The 32-byte secret key.
+
+Returns: The sealed box as Data: the random nonce, the MAC and the ciphertext.
+
+Example:
+put sxRandomBytes(32) into tKey
+put sxSecretBox(textEncode("meet at noon", "utf-8"), tKey) into tBox
+
+Description:
+Uses XSalsa20-Poly1305. A random nonce is generated and prepended for
+you, so the result is all you need to store or send. A key that is not
+32 bytes throws. Open the box with <sxSecretBoxOpen>.
+
+References: sxSecretBoxOpen (handler), sxAeadEncrypt (handler), sxPwHash (handler)
+*/
 public handler sxSecretBox(in pMessage as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -735,6 +1120,28 @@ public handler sxSecretBox(in pMessage as Data, in pKey as Data) returns Data
    return sFinish("sxSecretBox", tOut, tWritten)
 end handler
 
+/**
+Summary: Decrypt and verify a box made by sxSecretBox.
+
+pBox: The sealed box.
+
+pKey: The 32-byte secret key it was sealed with.
+
+Returns: The original message as Data.
+
+Example:
+try
+   put textDecode(sxSecretBoxOpen(tBox, tKey), "utf-8") into tText
+catch tError
+   answer "Wrong key or damaged data."
+end try
+
+Description:
+Throws on a wrong key, any tampering or a box that is too short. It
+never returns garbage.
+
+References: sxSecretBox (handler)
+*/
 public handler sxSecretBoxOpen(in pBox as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tBoxPtr as Pointer
@@ -755,6 +1162,29 @@ public handler sxSecretBoxOpen(in pBox as Data, in pKey as Data) returns Data
 end handler
 
 -- AEAD: like secretbox but binds associated data (pAd) to the ciphertext.
+/**
+Summary: Encrypt a message and authenticate extra data with it.
+
+pMessage: The bytes to encrypt.
+
+pAd: Associated data to authenticate but not encrypt, such as a header (may be empty).
+
+pKey: The 32-byte secret key.
+
+Returns: The sealed box as Data, with the random nonce prepended.
+
+Example:
+put textEncode("msg-id:42", "utf-8") into tHeader
+put sxAeadEncrypt(tBody, tHeader, tKey) into tBox
+
+Description:
+Like <sxSecretBox>, but the associated data is bound to the ciphertext:
+decrypting with different associated data fails. Uses
+XChaCha20-Poly1305 IETF. The associated data is not stored in the box;
+send it alongside. A key that is not 32 bytes throws.
+
+References: sxAeadDecrypt (handler), sxSecretBox (handler)
+*/
 public handler sxAeadEncrypt(in pMessage as Data, in pAd as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -778,6 +1208,26 @@ public handler sxAeadEncrypt(in pMessage as Data, in pAd as Data, in pKey as Dat
    return sFinish("sxAeadEncrypt", tOut, tWritten)
 end handler
 
+/**
+Summary: Decrypt and verify a box made by sxAeadEncrypt.
+
+pBox: The sealed box.
+
+pAd: The same associated data that was given when sealing.
+
+pKey: The 32-byte secret key.
+
+Returns: The original message as Data.
+
+Example:
+put sxAeadDecrypt(tBox, tHeader, tKey) into tBody
+
+Description:
+Throws when the key is wrong, the box was altered or the associated data
+does not match what was sealed.
+
+References: sxAeadEncrypt (handler)
+*/
 public handler sxAeadDecrypt(in pBox as Data, in pAd as Data, in pKey as Data) returns Data
    variable tOut as Pointer
    variable tBoxPtr as Pointer
@@ -807,6 +1257,29 @@ end handler
 
 -- Open an encrypt stream: returns the handle and writes the header into rHeader.
 -- The app must free the handle with sxFreeStream (no deterministic unload hook).
+/**
+Summary: Open a stream for encrypting data in chunks.
+
+pKey: The 32-byte secret key.
+
+rHeader: A variable that receives the stream header; store or send it before the chunks.
+
+Returns: A stream handle for sxSecretStreamPush.
+
+Example:
+put sxSecretStreamInitPush(tKey, tHeader) into tStream
+put sxSecretStreamPush(tStream, tChunk1, empty, false) into tOut1
+put sxSecretStreamPush(tStream, tChunk2, empty, true) into tOut2
+sxFreeStream tStream
+
+Description:
+Use the secretstream calls for data too large to hold twice in memory or
+that arrives over time. The receiver needs the header to open the stream
+with <sxSecretStreamInitPull>. Free the handle with <sxFreeStream> when
+you are done. A wrong key length throws.
+
+References: sxSecretStreamPush (handler), sxSecretStreamInitPull (handler), sxFreeStream (handler)
+*/
 public handler sxSecretStreamInitPush(in pKey as Data, out rHeader as Data) returns Integer
    variable tHdr as Pointer
    variable tHdrLen as Integer
@@ -834,6 +1307,30 @@ end handler
 
 -- Encrypt one chunk; pass true for pFinal on the LAST chunk (the FINAL tag is
 -- what makes a truncated stream detectable on pull).
+/**
+Summary: Encrypt one chunk of a stream.
+
+pHandle: The handle from sxSecretStreamInitPush.
+
+pChunk: The bytes of this chunk.
+
+pAd: Associated data to authenticate with this chunk (may be empty).
+
+pFinal: true for the last chunk of the stream, otherwise false.
+
+Returns: The encrypted chunk as Data.
+
+Example:
+put sxSecretStreamPush(tStream, tLastChunk, empty, true) into tOut
+
+Description:
+Mark the last chunk final: the final tag is what lets the receiver
+detect a truncated stream. Keep chunk boundaries, since each encrypted
+chunk is decrypted on its own by <sxSecretStreamPull>. A bad or freed
+handle throws.
+
+References: sxSecretStreamInitPush (handler), sxSecretStreamPull (handler)
+*/
 public handler sxSecretStreamPush(in pHandle as Integer, in pChunk as Data, in pAd as Data, in pFinal as Boolean) returns Data
    variable tOut as Pointer
    variable tChunkPtr as Pointer
@@ -861,6 +1358,24 @@ public handler sxSecretStreamPush(in pHandle as Integer, in pChunk as Data, in p
    return sFinish("sxSecretStreamPush", tOut, tWritten)
 end handler
 
+/**
+Summary: Open a stream for decrypting chunks.
+
+pKey: The 32-byte secret key.
+
+pHeader: The header the sender got from sxSecretStreamInitPush.
+
+Returns: A stream handle for sxSecretStreamPull.
+
+Example:
+put sxSecretStreamInitPull(tKey, tHeader) into tStream
+
+Description:
+Throws on a wrong key length or a malformed header. Free the handle with
+<sxFreeStream> when you are done.
+
+References: sxSecretStreamPull (handler), sxFreeStream (handler)
+*/
 public handler sxSecretStreamInitPull(in pKey as Data, in pHeader as Data) returns Integer
    variable tHdrPtr as Pointer
    variable tHdrLen as Integer
@@ -883,6 +1398,30 @@ end handler
 
 -- Decrypt one chunk; rTag receives the chunk's tag (compare against the value
 -- from a final chunk to know the stream ended cleanly).
+/**
+Summary: Decrypt and verify one chunk of a stream.
+
+pHandle: The handle from sxSecretStreamInitPull.
+
+pCipherChunk: One encrypted chunk, as produced by sxSecretStreamPush.
+
+pAd: The associated data given when this chunk was pushed (may be empty).
+
+rTag: A variable that receives the chunk's tag.
+
+Returns: The decrypted chunk as Data.
+
+Example:
+put sxSecretStreamPull(tStream, tCipherChunk, empty, tTag) into tPlain
+if sxIsFinalTag(tTag) then sxFreeStream tStream
+
+Description:
+Pull the chunks in the order they were pushed. Throws on a wrong key, a
+tampered or reordered chunk, or a bad handle. If the data ends before a
+chunk whose tag passes <sxIsFinalTag>, the stream was truncated.
+
+References: sxIsFinalTag (handler), sxSecretStreamInitPull (handler), sxFreeStream (handler)
+*/
 public handler sxSecretStreamPull(in pHandle as Integer, in pCipherChunk as Data, in pAd as Data, out rTag as Integer) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -912,6 +1451,21 @@ public handler sxSecretStreamPull(in pHandle as Integer, in pCipherChunk as Data
    return tResult
 end handler
 
+/**
+Summary: Tell whether a stream tag marks the final chunk.
+
+pTag: The tag filled in by sxSecretStreamPull.
+
+Returns: true for the final tag, otherwise false.
+
+Example:
+if sxIsFinalTag(tTag) then put true into tStreamDone
+
+Description:
+A stream that ends without a final tag was cut short.
+
+References: sxSecretStreamPull (handler)
+*/
 public handler sxIsFinalTag(in pTag as Integer) returns Boolean
    variable tFinal as Integer
    sPrepare()
@@ -924,6 +1478,21 @@ end handler
 -- Force a rekey of an open stream for forward secrecy within a long session.
 -- BOTH the push and the pull side must call this at the same point in the stream
 -- (a one-sided rekey desyncs and the next chunk fails to open).
+/**
+Summary: Rekey an open stream for forward secrecy.
+
+pHandle: An open push or pull stream handle.
+
+Example:
+sxSecretStreamRekey tStream
+
+Description:
+Both the sending and the receiving side must call <sxSecretStreamRekey>
+at the same point in the stream; a one-sided rekey makes the next chunk
+fail to open. A bad handle throws.
+
+References: sxSecretStreamPush (handler), sxSecretStreamPull (handler)
+*/
 public handler sxSecretStreamRekey(in pHandle as Integer) returns nothing
    variable tRc as Integer
    sPrepare()
@@ -935,6 +1504,20 @@ public handler sxSecretStreamRekey(in pHandle as Integer) returns nothing
    end if
 end handler
 
+/**
+Summary: Release a stream handle.
+
+pHandle: A handle from sxSecretStreamInitPush or sxSecretStreamInitPull.
+
+Example:
+sxFreeStream tStream
+
+Description:
+Call it once you are done with a stream; nothing frees handles for you.
+Freeing a handle twice is harmless.
+
+References: sxSecretStreamInitPush (handler), sxSecretStreamInitPull (handler)
+*/
 public handler sxFreeStream(in pHandle as Integer) returns nothing
    unsafe
       _sxt_free_stream(pHandle)
@@ -944,6 +1527,27 @@ end handler
 -- Encrypt/decrypt a file entirely C-side (the bytes never enter a Data, so a
 -- multi-gigabyte file streams without blowing up memory). Throws on error;
 -- decrypt also throws on a wrong key or a truncated/corrupt input.
+/**
+Summary: Encrypt a whole file to another file.
+
+pSrcPath: The path of the file to encrypt.
+
+pDstPath: The path to write the encrypted file to.
+
+pKey: The 32-byte secret key.
+
+Example:
+put sxRandomBytes(32) into tKey
+sxEncryptFile "/path/to/big.mov", "/path/to/big.mov.enc", tKey
+
+Description:
+The file is streamed in chunks inside the native library, so its bytes
+never load into a variable and any size works. The output is
+authenticated; decrypt it with <sxDecryptFile>. Throws on a wrong key
+length or a read or write error.
+
+References: sxDecryptFile (handler), sxHashFile (handler)
+*/
 public handler sxEncryptFile(in pSrcPath as String, in pDstPath as String, in pKey as Data) returns nothing
    variable tKeyPtr as Pointer
    variable tKeyLen as Integer
@@ -959,6 +1563,28 @@ public handler sxEncryptFile(in pSrcPath as String, in pDstPath as String, in pK
    end if
 end handler
 
+/**
+Summary: Decrypt a file made by sxEncryptFile.
+
+pSrcPath: The path of the encrypted file.
+
+pDstPath: The path to write the decrypted file to.
+
+pKey: The 32-byte secret key it was encrypted with.
+
+Example:
+try
+   sxDecryptFile "/path/to/big.mov.enc", "/path/to/restored.mov", tKey
+catch tError
+   answer "Could not decrypt:" && tError
+end try
+
+Description:
+Throws on a wrong key, a tampered, corrupt or truncated input, or a read
+or write error.
+
+References: sxEncryptFile (handler)
+*/
 public handler sxDecryptFile(in pSrcPath as String, in pDstPath as String, in pKey as Data) returns nothing
    variable tKeyPtr as Pointer
    variable tKeyLen as Integer
@@ -978,6 +1604,22 @@ end handler
 -- Public-key boxes (X25519) + signatures (ed25519).
 -- ==========================================================================
 
+/**
+Summary: Generate a random X25519 keypair for public-key boxes.
+
+rPublicKey: A variable that receives the public key.
+
+rSecretKey: A variable that receives the secret key.
+
+Example:
+sxBoxKeypair tPublic, tSecret
+
+Description:
+Share the public key; keep the secret key private. Use the pair with
+<sxBox>, <sxBoxOpen> and the sealed-box calls.
+
+References: sxBoxKeypairFromSeed (handler), sxBox (handler), sxSeal (handler)
+*/
 public handler sxBoxKeypair(out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1009,6 +1651,26 @@ end handler
 -- the same keypair, so a single master seed (e.g. a KDF subkey) can derive an
 -- encryption identity that is reconstructible from one backup. The seed length
 -- must be sxt_box_seedbytes (32); a wrong length throws.
+/**
+Summary: Derive an X25519 keypair from a 32-byte seed.
+
+pSeed: The 32-byte seed.
+
+rPublicKey: A variable that receives the public key.
+
+rSecretKey: A variable that receives the secret key.
+
+Example:
+put sxKdfDerive(tMaster, "2", textEncode("MyApp-v1", "ascii"), 32) into tSeed
+sxBoxKeypairFromSeed tSeed, tPublic, tSecret
+
+Description:
+The same seed always gives the same keypair, so one backed-up master
+seed can rebuild an encryption identity. A seed that is not 32 bytes
+throws.
+
+References: sxBoxKeypair (handler), sxKdfDerive (handler)
+*/
 public handler sxBoxKeypairFromSeed(in pSeed as Data, out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1040,6 +1702,27 @@ public handler sxBoxKeypairFromSeed(in pSeed as Data, out rPublicKey as Data, ou
    sFree(tSk)
 end handler
 
+/**
+Summary: Encrypt a message from one keypair holder to another.
+
+pMessage: The bytes to encrypt.
+
+pRecipientPk: The recipient's public key.
+
+pSenderSk: The sender's secret key.
+
+Returns: The box as Data, with a random nonce prepended.
+
+Example:
+put sxBox(textEncode("hi", "utf-8"), tTheirPublic, tMySecret) into tBox
+
+Description:
+The recipient opens it with <sxBoxOpen> and the sender's public key,
+which also proves who sent it. To send without a sender identity, use
+<sxSeal>. A wrong key length throws.
+
+References: sxBoxOpen (handler), sxBoxKeypair (handler), sxSeal (handler)
+*/
 public handler sxBox(in pMessage as Data, in pRecipientPk as Data, in pSenderSk as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -1063,6 +1746,25 @@ public handler sxBox(in pMessage as Data, in pRecipientPk as Data, in pSenderSk 
    return sFinish("sxBox", tOut, tWritten)
 end handler
 
+/**
+Summary: Decrypt and verify a box made by sxBox.
+
+pBox: The box.
+
+pSenderPk: The sender's public key.
+
+pRecipientSk: The recipient's secret key.
+
+Returns: The original message as Data.
+
+Example:
+put textDecode(sxBoxOpen(tBox, tTheirPublic, tMySecret), "utf-8") into tText
+
+Description:
+Throws on a wrong key or any tampering.
+
+References: sxBox (handler)
+*/
 public handler sxBoxOpen(in pBox as Data, in pSenderPk as Data, in pRecipientSk as Data) returns Data
    variable tOut as Pointer
    variable tBoxPtr as Pointer
@@ -1087,6 +1789,24 @@ public handler sxBoxOpen(in pBox as Data, in pSenderPk as Data, in pRecipientSk 
 end handler
 
 -- Anonymous-sender sealed box: encrypt with only the recipient's public key.
+/**
+Summary: Encrypt a message anonymously to a public key.
+
+pMessage: The bytes to encrypt.
+
+pRecipientPk: The recipient's public key.
+
+Returns: The sealed box as Data.
+
+Example:
+put sxSeal(textEncode("tip", "utf-8"), tTheirPublic) into tSealed
+
+Description:
+The sender needs only the recipient's public key and is not identified;
+the recipient opens it with <sxSealOpen>. A wrong key length throws.
+
+References: sxSealOpen (handler), sxBox (handler)
+*/
 public handler sxSeal(in pMessage as Data, in pRecipientPk as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -1106,6 +1826,26 @@ public handler sxSeal(in pMessage as Data, in pRecipientPk as Data) returns Data
    return sFinish("sxSeal", tOut, tWritten)
 end handler
 
+/**
+Summary: Open a sealed box made by sxSeal.
+
+pSealed: The sealed box.
+
+pRecipientPk: The recipient's public key.
+
+pRecipientSk: The recipient's secret key.
+
+Returns: The original message as Data.
+
+Example:
+put sxSealOpen(tSealed, tMyPublic, tMySecret) into tPlain
+
+Description:
+Needs the recipient's full keypair. Throws on a wrong key, a box that is
+too short or any tampering.
+
+References: sxSeal (handler), sxBoxKeypair (handler)
+*/
 public handler sxSealOpen(in pSealed as Data, in pRecipientPk as Data, in pRecipientSk as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -1129,6 +1869,22 @@ public handler sxSealOpen(in pSealed as Data, in pRecipientPk as Data, in pRecip
    return sFinish("sxSealOpen", tOut, tWritten)
 end handler
 
+/**
+Summary: Generate a random ed25519 signing keypair.
+
+rPublicKey: A variable that receives the 32-byte public key.
+
+rSecretKey: A variable that receives the 64-byte secret key.
+
+Example:
+sxSignKeypair tPublic, tSecret
+put sxSignDetached(tMessage, tSecret) into tSig
+
+Description:
+Sign with the secret key; anyone with the public key can verify.
+
+References: sxSignKeypairFromSeed (handler), sxSignDetached (handler), sxSign (handler)
+*/
 public handler sxSignKeypair(out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1157,6 +1913,25 @@ public handler sxSignKeypair(out rPublicKey as Data, out rSecretKey as Data) ret
 end handler
 
 -- Deterministic ed25519 keypair from a seed (the BEP44-compatible primitive).
+/**
+Summary: Derive an ed25519 signing keypair from a 32-byte seed.
+
+pSeed: The 32-byte seed.
+
+rPublicKey: A variable that receives the 32-byte public key.
+
+rSecretKey: A variable that receives the 64-byte secret key (seed followed by public key).
+
+Example:
+sxSignKeypairFromSeed tSeed, tPublic, tSecret
+
+Description:
+The same seed always gives the same keypair (BEP44-compatible), so a
+signing identity can be rebuilt from one backed-up seed. A wrong seed
+length throws.
+
+References: sxSignKeypair (handler), sxSignSeedToExpandedKey (handler)
+*/
 public handler sxSignKeypairFromSeed(in pSeed as Data, out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1188,6 +1963,24 @@ public handler sxSignKeypairFromSeed(in pSeed as Data, out rPublicKey as Data, o
    sFree(tSk)
 end handler
 
+/**
+Summary: Sign a message and return the signature alone.
+
+pMessage: The bytes to sign.
+
+pSecretKey: The 64-byte ed25519 secret key.
+
+Returns: The 64-byte signature as Data.
+
+Example:
+put sxSignDetached(tMessage, tSecret) into tSig
+
+Description:
+Send the signature alongside the message; check it with
+<sxSignVerifyDetached>. A wrong key length throws.
+
+References: sxSignVerifyDetached (handler), sxSign (handler), sxSignKeypair (handler)
+*/
 public handler sxSignDetached(in pMessage as Data, in pSecretKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -1211,6 +2004,28 @@ public handler sxSignDetached(in pMessage as Data, in pSecretKey as Data) return
    return sFinish("sxSignDetached", tOut, tWritten)
 end handler
 
+/**
+Summary: Check a detached ed25519 signature.
+
+pSig: The signature.
+
+pMessage: The message that was signed.
+
+pPublicKey: The signer's public key.
+
+Returns: true when the signature is valid, otherwise false.
+
+Example:
+if not sxSignVerifyDetached(tSig, tMessage, tPublic) then
+   answer "Signature does not match."
+end if
+
+Description:
+A bad signature, or input of the wrong length, gives false; it does not
+throw.
+
+References: sxSignDetached (handler)
+*/
 public handler sxSignVerifyDetached(in pSig as Data, in pMessage as Data, in pPublicKey as Data) returns Boolean
    variable tSigPtr as Pointer
    variable tSigLen as Integer
@@ -1232,6 +2047,24 @@ public handler sxSignVerifyDetached(in pSig as Data, in pMessage as Data, in pPu
    return tR is 1
 end handler
 
+/**
+Summary: Sign a message and return signature and message together.
+
+pMessage: The bytes to sign.
+
+pSecretKey: The 64-byte ed25519 secret key.
+
+Returns: The signed message as Data: the signature followed by the message.
+
+Example:
+put sxSign(tMessage, tSecret) into tSigned
+
+Description:
+The attached form. <sxSignOpen> verifies it and returns the message. A
+wrong key length throws.
+
+References: sxSignOpen (handler), sxSignDetached (handler)
+*/
 public handler sxSign(in pMessage as Data, in pSecretKey as Data) returns Data
    variable tOut as Pointer
    variable tMsgPtr as Pointer
@@ -1251,6 +2084,28 @@ public handler sxSign(in pMessage as Data, in pSecretKey as Data) returns Data
    return sFinish("sxSign", tOut, tWritten)
 end handler
 
+/**
+Summary: Verify a signed message and return the message.
+
+pSignedMessage: The signed message from sxSign.
+
+pPublicKey: The signer's public key.
+
+Returns: The original message as Data.
+
+Example:
+try
+   put sxSignOpen(tSigned, tPublic) into tMessage
+catch tError
+   answer "Bad signature."
+end try
+
+Description:
+Throws when the signature does not verify, the input is too short or the
+public key has the wrong length.
+
+References: sxSign (handler)
+*/
 public handler sxSignOpen(in pSignedMessage as Data, in pPublicKey as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -1274,6 +2129,22 @@ end handler
 -- Key exchange (kx) + padding.
 -- ==========================================================================
 
+/**
+Summary: Generate a random key-exchange keypair.
+
+rPublicKey: A variable that receives the public key.
+
+rSecretKey: A variable that receives the secret key.
+
+Example:
+sxKeyExchangeKeypair tPublic, tSecret
+
+Description:
+Each side makes a keypair and shares its public key, then calls
+<sxKeyExchangeClient> or <sxKeyExchangeServer> to derive session keys.
+
+References: sxKeyExchangeClient (handler), sxKeyExchangeServer (handler), sxKeyExchangeKeypairFromSeed (handler)
+*/
 public handler sxKeyExchangeKeypair(out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1304,6 +2175,24 @@ end handler
 -- Deterministic kx keypair from a 32-byte seed (the companion to
 -- sxBoxKeypairFromSeed), so a master seed can also derive a key-exchange
 -- identity. The seed length must be sxt_kx_seedbytes (32); a wrong length throws.
+/**
+Summary: Derive a key-exchange keypair from a 32-byte seed.
+
+pSeed: The 32-byte seed.
+
+rPublicKey: A variable that receives the public key.
+
+rSecretKey: A variable that receives the secret key.
+
+Example:
+sxKeyExchangeKeypairFromSeed tSeed, tPublic, tSecret
+
+Description:
+The same seed always gives the same keypair. A seed that is not 32 bytes
+throws.
+
+References: sxKeyExchangeKeypair (handler), sxBoxKeypairFromSeed (handler)
+*/
 public handler sxKeyExchangeKeypairFromSeed(in pSeed as Data, out rPublicKey as Data, out rSecretKey as Data) returns nothing
    variable tPk as Pointer
    variable tSk as Pointer
@@ -1336,6 +2225,30 @@ public handler sxKeyExchangeKeypairFromSeed(in pSeed as Data, out rPublicKey as 
 end handler
 
 -- The client derives its receive (rRx) and transmit (rTx) session keys.
+/**
+Summary: Derive the client's session keys.
+
+pClientPk: The client's public key.
+
+pClientSk: The client's secret key.
+
+pServerPk: The server's public key.
+
+rRx: A variable that receives the key for data the client receives.
+
+rTx: A variable that receives the key for data the client sends.
+
+Example:
+sxKeyExchangeClient tMyPublic, tMySecret, tServerPublic, tRx, tTx
+put sxSecretBox(tMessage, tTx) into tOut
+
+Description:
+Both sides derive the same pair: the client's receive key equals the
+server's send key and the other way round. Throws on a wrong key length
+or when the server's public key is rejected.
+
+References: sxKeyExchangeServer (handler), sxKeyExchangeKeypair (handler)
+*/
 public handler sxKeyExchangeClient(in pClientPk as Data, in pClientSk as Data, in pServerPk as Data, out rRx as Data, out rTx as Data) returns nothing
    variable tRx as Pointer
    variable tTx as Pointer
@@ -1373,6 +2286,30 @@ public handler sxKeyExchangeClient(in pClientPk as Data, in pClientSk as Data, i
    sFree(tTx)
 end handler
 
+/**
+Summary: Derive the server's session keys.
+
+pServerPk: The server's public key.
+
+pServerSk: The server's secret key.
+
+pClientPk: The client's public key.
+
+rRx: A variable that receives the key for data the server receives.
+
+rTx: A variable that receives the key for data the server sends.
+
+Example:
+sxKeyExchangeServer tMyPublic, tMySecret, tClientPublic, tRx, tTx
+put sxSecretBoxOpen(tIn, tRx) into tMessage
+
+Description:
+The server's receive key equals the client's send key and the other way
+round. Throws on a wrong key length or when the client's public key is
+rejected.
+
+References: sxKeyExchangeClient (handler), sxKeyExchangeKeypair (handler)
+*/
 public handler sxKeyExchangeServer(in pServerPk as Data, in pServerSk as Data, in pClientPk as Data, out rRx as Data, out rTx as Data) returns nothing
    variable tRx as Pointer
    variable tTx as Pointer
@@ -1412,6 +2349,25 @@ end handler
 
 -- Pad pData up to a multiple of pBlockSize (hides the exact message length
 -- before encryption); sxUnpad recovers the original bytes.
+/**
+Summary: Pad bytes up to a multiple of a block size.
+
+pData: The bytes to pad.
+
+pBlockSize: The block size in bytes (1 or more).
+
+Returns: The padded bytes as Data.
+
+Example:
+put sxSecretBox(sxPad(tMessage, 64), tKey) into tBox
+
+Description:
+Adds 1 to pBlockSize bytes so the length becomes a multiple of the block
+size. Pad before encrypting to hide a message's exact length. A block
+size below 1 throws. <sxUnpad> removes the padding.
+
+References: sxUnpad (handler)
+*/
 public handler sxPad(in pData as Data, in pBlockSize as Integer) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -1429,6 +2385,23 @@ public handler sxPad(in pData as Data, in pBlockSize as Integer) returns Data
    return sFinish("sxPad", tOut, tWritten)
 end handler
 
+/**
+Summary: Remove padding added by sxPad.
+
+pData: The padded bytes.
+
+pBlockSize: The same block size given to sxPad.
+
+Returns: The original bytes as Data.
+
+Example:
+put sxUnpad(sxSecretBoxOpen(tBox, tKey), 64) into tMessage
+
+Description:
+Throws on malformed padding or a bad block size.
+
+References: sxPad (handler)
+*/
 public handler sxUnpad(in pData as Data, in pBlockSize as Integer) returns Data
    variable tInPtr as Pointer
    variable tInLen as Integer
@@ -1452,6 +2425,22 @@ end handler
 
 -- Unbiased random integer in [0, pUpperBound) from the CSPRNG (no modulo skew;
 -- never use the engine random() for anything unguessable).
+/**
+Summary: Return an unbiased random integer below an upper bound.
+
+pUpperBound: The exclusive upper bound (1 or more).
+
+Returns: A random integer from 0 to pUpperBound - 1.
+
+Example:
+put sxRandomUniform(6) + 1 into tDie
+
+Description:
+Draws from the secure random generator without modulo bias. An upper
+bound below 1 throws.
+
+References: sxRandomBytes (handler)
+*/
 public handler sxRandomUniform(in pUpperBound as Integer) returns Integer
    variable tR as Integer
    sPrepare()
@@ -1470,6 +2459,25 @@ end handler
 -- BLAKE2b of a whole file, read chunk-by-chunk C-side (the bytes never enter a
 -- Data, so a multi-gigabyte file hashes without blowing up memory; the hashing
 -- complement to sxEncryptFile). pOutLen is the digest length (32 is typical).
+/**
+Summary: Return the BLAKE2b digest of a whole file.
+
+pPath: The file path.
+
+pOutLen: The digest length in bytes, 16 to 64 (32 is typical).
+
+Returns: The digest as pOutLen bytes of Data.
+
+Example:
+put sxBin2Hex(sxHashFile("/path/to/big.iso", 32)) into tChecksum
+
+Description:
+The file is read in chunks inside the native library, so its bytes never
+load into a variable and any size works. The digest equals <sxHash> of
+the same bytes. A read error or a digest length out of range throws.
+
+References: sxHashFileKeyed (handler), sxHash (handler), sxEncryptFile (handler)
+*/
 public handler sxHashFile(in pPath as String, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tWritten as Integer
@@ -1482,6 +2490,26 @@ public handler sxHashFile(in pPath as String, in pOutLen as Integer) returns Dat
 end handler
 
 -- Keyed file hash (a file MAC / domain-separated checksum).
+/**
+Summary: Return a keyed BLAKE2b digest of a whole file.
+
+pPath: The file path.
+
+pKey: The key, as Data (16 to 64 bytes).
+
+pOutLen: The digest length in bytes, 16 to 64.
+
+Returns: The keyed digest as pOutLen bytes of Data.
+
+Example:
+put sxHashFileKeyed("/path/to/report.pdf", tKey, 32) into tMac
+
+Description:
+A file MAC or domain-separated checksum, streamed like <sxHashFile>.
+Compare results with <sxMemEqual>.
+
+References: sxHashFile (handler), sxHashKeyed (handler)
+*/
 public handler sxHashFileKeyed(in pPath as String, in pKey as Data, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tKeyPtr as Pointer
@@ -1501,6 +2529,26 @@ end handler
 -- sxHashInit (returns a handle), feed chunks with sxHashUpdate, then sxHashFinal
 -- (which writes the digest AND releases the handle). Pass the SAME pOutLen to
 -- final as to init. If you abandon a state without finalizing, call sxFreeHash.
+/**
+Summary: Start a BLAKE2b hash of data that arrives in pieces.
+
+pOutLen: The digest length in bytes, 16 to 64.
+
+Returns: A hash handle for sxHashUpdate and sxHashFinal.
+
+Example:
+put sxHashInit(32) into tHash
+sxHashUpdate tHash, textEncode("part one ", "utf-8")
+sxHashUpdate tHash, textEncode("part two", "utf-8")
+put sxHashFinal(tHash, 32) into tDigest
+
+Description:
+The result equals <sxHash> of all the pieces joined. Pass the same
+digest length to <sxHashFinal>. <sxHashFinal> releases the handle; call
+<sxFreeHash> only to abandon a hash you will not finish.
+
+References: sxHashUpdate (handler), sxHashFinal (handler), sxHashInitKeyed (handler), sxFreeHash (handler)
+*/
 public handler sxHashInit(in pOutLen as Integer) returns Integer
    variable tHandle as Integer
    sPrepare()
@@ -1513,6 +2561,24 @@ public handler sxHashInit(in pOutLen as Integer) returns Integer
    return tHandle
 end handler
 
+/**
+Summary: Start a keyed BLAKE2b hash of data that arrives in pieces.
+
+pKey: The key, as Data (16 to 64 bytes).
+
+pOutLen: The digest length in bytes, 16 to 64.
+
+Returns: A hash handle for sxHashUpdate and sxHashFinal.
+
+Example:
+put sxHashInitKeyed(tKey, 32) into tHash
+
+Description:
+The keyed form of <sxHashInit>; the result equals <sxHashKeyed> of all
+the pieces joined.
+
+References: sxHashInit (handler), sxHashUpdate (handler), sxHashFinal (handler)
+*/
 public handler sxHashInitKeyed(in pKey as Data, in pOutLen as Integer) returns Integer
    variable tKeyPtr as Pointer
    variable tKeyLen as Integer
@@ -1529,6 +2595,21 @@ public handler sxHashInitKeyed(in pKey as Data, in pOutLen as Integer) returns I
    return tHandle
 end handler
 
+/**
+Summary: Add bytes to a multipart hash.
+
+pHandle: The handle from sxHashInit or sxHashInitKeyed.
+
+pData: The next bytes.
+
+Example:
+sxHashUpdate tHash, tChunk
+
+Description:
+A bad or finished handle throws.
+
+References: sxHashInit (handler), sxHashFinal (handler)
+*/
 public handler sxHashUpdate(in pHandle as Integer, in pData as Data) returns nothing
    variable tInPtr as Pointer
    variable tInLen as Integer
@@ -1544,6 +2625,24 @@ public handler sxHashUpdate(in pHandle as Integer, in pData as Data) returns not
    end if
 end handler
 
+/**
+Summary: Finish a multipart hash and return the digest.
+
+pHandle: The handle from sxHashInit or sxHashInitKeyed.
+
+pOutLen: The same digest length given when the hash was started.
+
+Returns: The digest as Data.
+
+Example:
+put sxHashFinal(tHash, 32) into tDigest
+
+Description:
+Releases the handle, so it cannot be used again. A bad or already
+finished handle throws.
+
+References: sxHashInit (handler), sxHashUpdate (handler), sxFreeHash (handler)
+*/
 public handler sxHashFinal(in pHandle as Integer, in pOutLen as Integer) returns Data
    variable tOut as Pointer
    variable tWritten as Integer
@@ -1557,6 +2656,20 @@ end handler
 
 -- Free a hash state opened with sxHashInit that you will not finalize
 -- (idempotent; sxHashFinal already frees on success).
+/**
+Summary: Abandon a multipart hash without finishing it.
+
+pHandle: The handle from sxHashInit or sxHashInitKeyed.
+
+Example:
+sxFreeHash tHash
+
+Description:
+Only needed for a hash you will not pass to <sxHashFinal>, which already
+releases the handle. Freeing twice is harmless.
+
+References: sxHashInit (handler), sxHashFinal (handler)
+*/
 public handler sxFreeHash(in pHandle as Integer) returns nothing
    unsafe
       _sxt_hash_free(pHandle)
@@ -1572,6 +2685,24 @@ end handler
 -- master seed fixes a reproducible .onion address. This is NOT the libsodium
 -- secret key (seed || public key) returned by sxSignKeypairFromSeed; it is the
 -- separate expanded representation. Adds no new crypto (SHA-512 plus the clamp).
+/**
+Summary: Return the 64-byte expanded ed25519 secret key for a seed.
+
+pSeed: The 32-byte ed25519 seed.
+
+Returns: The expanded secret key as 64 bytes of Data.
+
+Example:
+put sxSignSeedToExpandedKey(tSeed) into tExpanded
+
+Description:
+The expanded key is SHA-512 of the seed, clamped: the form a Tor v3
+onion service takes, so one seed can fix a reproducible .onion address.
+It is not the secret key <sxSignKeypairFromSeed> returns (seed followed
+by public key). A wrong seed length throws.
+
+References: sxSignKeypairFromSeed (handler), sxSha3_256 (handler)
+*/
 public handler sxSignSeedToExpandedKey(in pSeed as Data) returns Data
    variable tOut as Pointer
    variable tSeedPtr as Pointer
@@ -1595,6 +2726,27 @@ end handler
 -- the key is not fixed at 32 bytes). The standard keyed MAC used by, for example,
 -- the Tor control-port SAFECOOKIE challenge-response. Compare a resulting MAC
 -- with sxMemEqual (constant time), never with `is`.
+/**
+Summary: Return the HMAC-SHA256 of a message.
+
+pKey: The key, of any length.
+
+pMessage: The bytes to authenticate.
+
+Returns: The 32-byte MAC as Data.
+
+Example:
+put sxHmacSha256(tKey, tMessage) into tMac
+if sxMemEqual(tMac, tReceivedMac) then put true into tAuthentic
+
+Description:
+The standard keyed MAC, for protocols that name HMAC-SHA256 (such as
+Tor's control-port SAFECOOKIE handshake). Compare MACs with
+<sxMemEqual>, never with is. For a MAC of your own design,
+<sxHashKeyed> also works.
+
+References: sxMemEqual (handler), sxHashKeyed (handler)
+*/
 public handler sxHmacSha256(in pKey as Data, in pMessage as Data) returns Data
    variable tOut as Pointer
    variable tKeyPtr as Pointer
@@ -1626,6 +2778,23 @@ end handler
 -- closed). This is SHA3-256 with FIPS 0x06 padding, NOT Ethereum's Keccak-256:
 -- the sibling coinxt exports both and documents the footgun; anything citing
 -- FIPS 202 or "SHA-3" means this one. Empty input is legal.
+/**
+Summary: Return the SHA3-256 digest of some bytes.
+
+pData: The bytes to hash (may be empty).
+
+Returns: The 32-byte digest as Data.
+
+Example:
+put sxBin2Hex(sxSha3_256(textEncode("abc", "utf-8"))) into tHex
+
+Description:
+SHA3-256 as defined by NIST FIPS 202. It is not Ethereum's Keccak-256,
+which pads differently and gives a different result. It exists so a Tor
+v3 .onion address can be computed offline from an ed25519 public key.
+
+References: sxHash (handler), sxSignSeedToExpandedKey (handler)
+*/
 public handler sxSha3_256(in pData as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -1663,6 +2832,22 @@ end handler
 -- SOME valid point (the two-Elligator map), so the only failures are length
 -- failures. The deal derives its 52 card base points this way from
 -- domain-separated labels: sxRistrettoFromHash(sxHash(tLabel, 64)).
+/**
+Summary: Map a 64-byte hash to a ristretto255 group point.
+
+pHash: Exactly 64 bytes, usually sxHash(theLabel, 64).
+
+Returns: The 32-byte point encoding as Data.
+
+Example:
+put sxRistrettoFromHash(sxHash(textEncode("card-1", "utf-8"), 64)) into tPoint
+
+Description:
+Every 64-byte input maps to a valid point, so only a wrong length
+throws. Use domain-separated labels to make independent points.
+
+References: sxRistrettoScalarMultPoint (handler), sxRistrettoPointValid (handler), sxHash (handler)
+*/
 public handler sxRistrettoFromHash(in pHash as Data) returns Data
    variable tOut as Pointer
    variable tInPtr as Pointer
@@ -1687,6 +2872,26 @@ end handler
 -- reports both as one failure, and a deal protocol treats either as a
 -- void/cheating condition anyway - so the caller's try/catch IS the
 -- detection path, per the family's H4 discipline.
+/**
+Summary: Multiply a ristretto255 point by a scalar.
+
+pScalar: The 32-byte scalar.
+
+pPoint: The 32-byte point encoding.
+
+Returns: The 32-byte result point as Data.
+
+Example:
+put sxRistrettoScalarRandom() into tMask
+put sxRistrettoScalarMultPoint(tMask, tPoint) into tMasked
+
+Description:
+Throws when the point is not a valid encoding or when the result would
+be the identity (a zero scalar); libsodium reports both as one failure.
+Treat the throw as the detection of a bad input.
+
+References: sxRistrettoScalarMultBase (handler), sxRistrettoScalarMultBatch (handler), sxRistrettoScalarInvert (handler)
+*/
 public handler sxRistrettoScalarMultPoint(in pScalar as Data, in pPoint as Data) returns Data
    variable tOut as Pointer
    variable tNPtr as Pointer
@@ -1712,6 +2917,20 @@ end handler
 
 -- A uniformly random non-zero scalar mod the group order L - the per-hand
 -- masking scalar. Uses libsodium's CSPRNG (never the engine random()).
+/**
+Summary: Return a random non-zero ristretto255 scalar.
+
+Returns: A 32-byte scalar as Data.
+
+Example:
+put sxRistrettoScalarRandom() into tMask
+
+Description:
+Uniformly random below the group order, from the secure random
+generator.
+
+References: sxRistrettoScalarInvert (handler), sxRistrettoScalarMultPoint (handler)
+*/
 public handler sxRistrettoScalarRandom() returns Data
    variable tOut as Pointer
    variable tBytes as Integer
@@ -1729,6 +2948,23 @@ end handler
 
 -- pScalar^-1 mod L, the unmask scalar: sxRistrettoScalarMultPoint with the
 -- inverse undoes the mask. Throws on a zero scalar (no inverse exists).
+/**
+Summary: Return the inverse of a ristretto255 scalar.
+
+pScalar: The 32-byte scalar to invert.
+
+Returns: The 32-byte inverse as Data.
+
+Example:
+put sxRistrettoScalarInvert(tMask) into tUnmask
+put sxRistrettoScalarMultPoint(tUnmask, tMasked) into tPoint
+
+Description:
+Multiplying a point by the scalar and then by its inverse gives the
+original point. A zero scalar has no inverse and throws.
+
+References: sxRistrettoScalarRandom (handler), sxRistrettoScalarMultPoint (handler)
+*/
 public handler sxRistrettoScalarInvert(in pScalar as Data) returns Data
    variable tOut as Pointer
    variable tSPtr as Pointer
@@ -1753,6 +2989,22 @@ end handler
 -- validity check that throws on the malformed input it exists to detect
 -- would be useless to the deal's verify-then-parse discipline). Only the
 -- init/ABI failures still throw, via sPrepare.
+/**
+Summary: Tell whether bytes are a valid ristretto255 point.
+
+pPoint: The bytes to check.
+
+Returns: true for a canonical 32-byte point encoding, otherwise false.
+
+Example:
+if not sxRistrettoPointValid(tPoint) then throw "bad point from peer"
+
+Description:
+A predicate: malformed or wrong-length input returns false instead of
+throwing, so you can check untrusted input before using it.
+
+References: sxRistrettoFromHash (handler), sxRistrettoAdd (handler)
+*/
 public handler sxRistrettoPointValid(in pPoint as Data) returns Boolean
    variable tPPtr as Pointer
    variable tPLen as Integer
@@ -1781,6 +3033,24 @@ end handler
 -- ristretto255 encoding (libsodium validates both). The identity is a legal
 -- operand and a legal result here (P - P encodes as 32 zero bytes): unlike
 -- sxRistrettoScalarMultPoint, add/sub have no identity failure mode.
+/**
+Summary: Add two ristretto255 points.
+
+pP: The first 32-byte point.
+
+pQ: The second 32-byte point.
+
+Returns: The 32-byte sum as Data.
+
+Example:
+put sxRistrettoAdd(tP, tQ) into tSum
+
+Description:
+Throws when either input is not a valid point. The identity point is a
+legal input and result here.
+
+References: sxRistrettoSub (handler), sxRistrettoScalarMultBase (handler)
+*/
 public handler sxRistrettoAdd(in pP as Data, in pQ as Data) returns Data
    variable tOut as Pointer
    variable tPPtr as Pointer
@@ -1806,6 +3076,24 @@ end handler
 
 -- r = pP - pQ in the group; the verifier-side recombination of a DLEQ check
 -- moves terms with exactly this. Same failure semantics as sxRistrettoAdd.
+/**
+Summary: Subtract one ristretto255 point from another.
+
+pP: The point to subtract from.
+
+pQ: The point to subtract.
+
+Returns: The 32-byte difference as Data.
+
+Example:
+put sxRistrettoSub(tP, tQ) into tDiff
+
+Description:
+Same failure rules as <sxRistrettoAdd>: an invalid input point throws,
+and subtracting a point from itself gives the identity (32 zero bytes).
+
+References: sxRistrettoAdd (handler)
+*/
 public handler sxRistrettoSub(in pP as Data, in pQ as Data) returns Data
    variable tOut as Pointer
    variable tPPtr as Pointer
@@ -1832,6 +3120,22 @@ end handler
 -- q = pScalar * B (the RFC 9496 generator): a DLEQ commitment is w*B, and a
 -- verifier recomputes z*B. Throws on a zero scalar (the identity result),
 -- the same merged failure sxRistrettoScalarMultPoint reports.
+/**
+Summary: Multiply the ristretto255 base point by a scalar.
+
+pScalar: The 32-byte scalar.
+
+Returns: The 32-byte result point as Data.
+
+Example:
+put sxRistrettoScalarMultBase(tSecretScalar) into tPublicPoint
+
+Description:
+Uses the standard generator of RFC 9496, as proofs such as Chaum-Pedersen
+DLEQ need. A zero scalar throws, as in <sxRistrettoScalarMultPoint>.
+
+References: sxRistrettoScalarMultPoint (handler), sxRistrettoAdd (handler)
+*/
 public handler sxRistrettoScalarMultBase(in pScalar as Data) returns Data
    variable tOut as Pointer
    variable tNPtr as Pointer
@@ -1860,6 +3164,26 @@ end handler
 -- step anyway, so a partial result would only invite using half a masked
 -- deck. The out buffer is sized from the input length (count * 32), not a
 -- length constant: the one call whose output size the caller chooses.
+/**
+Summary: Multiply many ristretto255 points by one scalar in one call.
+
+pScalar: The 32-byte scalar.
+
+pPoints: One or more 32-byte point encodings joined together.
+
+Returns: The results joined in the same order, as Data of the same length.
+
+Example:
+put sxRistrettoScalarMultBatch(tMask, tDeckPoints) into tMaskedDeck
+put byte 1 to 32 of tMaskedDeck into tFirst
+
+Description:
+All or nothing: one invalid point, or an identity result from a zero
+scalar, throws for the whole call, and the message gives the 1-based
+index of the failing point. Empty input throws.
+
+References: sxRistrettoScalarMultPoint (handler)
+*/
 public handler sxRistrettoScalarMultBatch(in pScalar as Data, in pPoints as Data) returns Data
    variable tOut as Pointer
    variable tNPtr as Pointer
@@ -1888,6 +3212,24 @@ end handler
 -- is handled deterministically); the output is always the canonical reduced
 -- encoding. Cannot fail on content - zero is a legal operand and a legal
 -- result - so only a wrong length throws.
+/**
+Summary: Add two ristretto255 scalars modulo the group order.
+
+pX: The first 32-byte scalar.
+
+pY: The second 32-byte scalar.
+
+Returns: The 32-byte reduced sum as Data.
+
+Example:
+put sxRistrettoScalarAdd(tW, sxRistrettoScalarMul(tC, tK)) into tZ
+
+Description:
+Each input is read as a little-endian number and the result is fully
+reduced. Zero is allowed, so only a wrong length throws.
+
+References: sxRistrettoScalarMul (handler)
+*/
 public handler sxRistrettoScalarAdd(in pX as Data, in pY as Data) returns Data
    variable tOut as Pointer
    variable tXPtr as Pointer
@@ -1913,6 +3255,24 @@ end handler
 
 -- z = pX * pY mod L (the c*k term of the response). Same reduce semantics
 -- and failure surface as sxRistrettoScalarAdd.
+/**
+Summary: Multiply two ristretto255 scalars modulo the group order.
+
+pX: The first 32-byte scalar.
+
+pY: The second 32-byte scalar.
+
+Returns: The 32-byte reduced product as Data.
+
+Example:
+put sxRistrettoScalarMul(tC, tK) into tCK
+
+Description:
+Same reduction rules and failures as <sxRistrettoScalarAdd>: only a
+wrong length throws.
+
+References: sxRistrettoScalarAdd (handler), sxRistrettoScalarInvert (handler)
+*/
 public handler sxRistrettoScalarMul(in pX as Data, in pY as Data) returns Data
    variable tOut as Pointer
    variable tXPtr as Pointer
@@ -1959,6 +3319,31 @@ end handler
 -- (the same call encrypts and decrypts). The shim refuses a key or nonce of
 -- any other length; an empty pData returns empty. UNAUTHENTICATED by design:
 -- the caller's construction must MAC the result (see the banner above).
+/**
+Summary: XOR bytes with the raw ChaCha20 keystream (no authentication).
+
+pKey: The 32-byte key.
+
+pNonce: The 12-byte nonce.
+
+pData: The bytes to encrypt or decrypt (may be empty).
+
+Returns: Data of the same length as pData.
+
+Example:
+put sxChaCha20IetfXor(tKey, tNonce, tPlain) into tCipher
+put sxChaCha20IetfXor(tKey, tNonce, tCipher) into tPlainAgain
+
+Description:
+A building block for published constructions such as NIP-44, not a way
+to encrypt your own data: the output is NOT authenticated, and reusing
+a nonce with a key breaks it. To encrypt, use <sxSecretBox> or
+<sxAeadEncrypt>. Uses RFC 8439 with the block counter starting at 0. The
+same call encrypts and decrypts. A key or nonce of any other length
+throws.
+
+References: sxSecretBox (handler), sxAeadEncrypt (handler), sxHmacSha256 (handler)
+*/
 public handler sxChaCha20IetfXor(in pKey as Data, in pNonce as Data, in pData as Data) returns Data
    variable tOut as Pointer
    variable tKeyPtr as Pointer

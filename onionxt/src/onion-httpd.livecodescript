@@ -37,11 +37,64 @@ local sOxhOwner       -- object whose script holds the route handlers
 -- Public API
 -- ==========================================================================
 
+/**
+Title: OnionXT HTTP Server
+
+Author: Seth Morrow Software
+
+Description:
+A small HTTP/1.1 server for Tor onion services, built entirely on OnionXT's
+accept loop, so it runs wherever OnionXT runs and needs no other HTTP
+library. Load OnionXT too, connect and authenticate its control port, then
+call <oxhServe> to publish an onion that answers HTTP.
+
+Requests go to a registered route (<oxhRoute>) first, then to static files
+under a folder (<oxhSetRoot> or <oxhServeFiles>), and otherwise get a 404.
+Each connection serves one request and is closed after the response
+(Connection: close). OnionXT has already refused non-loopback peers before
+a request reaches this module.
+
+Tags: Networking, Tor
+*/
+/**
+Summary: Name the object whose script holds your HTTP route handlers.
+
+pOwner: the long id of the object that holds the route handlers.
+
+Example:
+oxhInit the long id of me
+
+Description:
+Route handlers are sent with dispatch to this object. If you never set it
+they go to the topStack.
+
+References: oxhRoute (handler), oxhServe (handler)
+*/
 command oxhInit pOwner
    -- Remember where the app's route handlers live (default: the topStack).
    put pOwner into sOxhOwner
 end oxhInit
 
+/**
+Summary: Publish an onion service that answers HTTP.
+
+pVirtualPort: the port visitors connect to on the .onion address, usually 80.
+
+pLocalPort: the loopback port OnionXT listens on.
+
+Example:
+oxhServe 80, 8090
+put the result into tService
+
+Description:
+Needs an authenticated OnionXT control connection. It points OnionXT's peer
+callback at this module, replacing any peer callback you set, then calls
+<oxCreateService>. The result is the service handle, or the error
+<oxCreateService> reported; the address arrives through OnionXT's status
+callback and <oxServiceAddress>.
+
+References: oxhStop (handler), oxhRoute (handler), oxhSetRoot (handler), oxCreateService (handler)
+*/
 command oxhServe pVirtualPort, pLocalPort
    -- Publish an onion and serve HTTP on it via OnionXT's accept loop (OnionXT owns
    -- the socket and rejects non-loopback peers - the proven path). Point OnionXT's
@@ -52,6 +105,21 @@ command oxhServe pVirtualPort, pLocalPort
    return the result
 end oxhServe
 
+/**
+Summary: Serve static files from a folder, without directory listings.
+
+pFolder: the folder to serve; empty turns static serving off.
+
+Example:
+oxhSetRoot specialFolderPath("documents") & "/site"
+
+Description:
+A GET request maps its path onto pFolder, and "/" maps to index.html. A
+folder with no index.html is a 404. Paths containing ".." are refused with
+a 403. Registered routes are checked first.
+
+References: oxhServeFiles (handler), oxhRoute (handler)
+*/
 command oxhSetRoot pFolder
    -- Static-site mode: serve files from pFolder ("/" maps to /index.html); a folder
    -- with no index.html is a 404 (no directory listing - the safe default for a
@@ -60,6 +128,21 @@ command oxhSetRoot pFolder
    put false into sOxhAutoIndex
 end oxhSetRoot
 
+/**
+Summary: Share a folder, with generated directory listings.
+
+pFolder: the folder to share; empty turns static serving off.
+
+Example:
+oxhServeFiles specialFolderPath("documents") & "/shared"
+
+Description:
+Like <oxhSetRoot>, but a folder without its own index.html gets a page
+listing its files and subfolders with links, so visitors can browse and
+download.
+
+References: oxhSetRoot (handler), oxhUnroute (handler)
+*/
 command oxhServeFiles pFolder
    -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
    -- directory-listing page (names and download links; no sizes, because
@@ -70,12 +153,50 @@ command oxhServeFiles pFolder
    put true into sOxhAutoIndex
 end oxhServeFiles
 
+/**
+Summary: Register a handler for one HTTP method and exact path.
+
+pMethod: the HTTP method, such as GET or POST (case does not matter).
+
+pPath: the exact request path, such as /hello, without the query string.
+
+pHandler: the name of a command in the route owner's script.
+
+Example:
+oxhRoute "GET", "/hello", "myHello"
+
+Description:
+The handler is called with two parameters: the stream handle and an array
+describing the request. The array holds the request headers under
+lowercase names, plus "__method", "__path", "__query", "__resource" and
+"__body" (the raw body bytes, limited to Content-Length). Answer with
+<oxhReply>. Registering the same method and path again replaces the
+handler.
+
+References: oxhReply (handler), oxhUnroute (handler), oxhInit (handler)
+*/
 command oxhRoute pMethod, pPath, pHandler
    -- Register a dynamic route (exact path match in v1). pHandler is a command in
    -- the owner's script, called as: pHandler pStream, pRequest.
    put pHandler into sOxhRoutes[toUpper(pMethod) & space & pPath]
 end oxhRoute
 
+/**
+Summary: Remove a route registered with oxhRoute.
+
+pMethod: the HTTP method of the route.
+
+pPath: the exact path of the route.
+
+Example:
+oxhUnroute "GET", "/"
+
+Description:
+Removing a route that is not registered is a no-op. Once removed, that path
+falls through to static files, if any, or a 404.
+
+References: oxhRoute (handler)
+*/
 command oxhUnroute pMethod, pPath
    -- Remove a route registered with oxhRoute. Lets an app switch what a path serves
    -- at runtime (e.g. drop the "/" route so a shared folder's listing shows there
@@ -83,11 +204,46 @@ command oxhUnroute pMethod, pPath
    delete variable sOxhRoutes[toUpper(pMethod) & space & pPath]
 end oxhUnroute
 
+/**
+Summary: Stop serving one onion.
+
+pService: the service handle that oxhServe reported.
+
+Example:
+oxhStop tService
+
+Description:
+Calls <oxRemoveService>: the service is unpublished and its listener
+closed. Routes and the file root stay registered.
+
+References: oxhServe (handler), oxRemoveService (handler)
+*/
 command oxhStop pService
    -- Tear down one served onion (DEL_ONION + stop OnionXT's listener).
    oxRemoveService pService
 end oxhStop
 
+/**
+Summary: Send a text response from a route handler.
+
+pStream: the stream handle the route handler received.
+
+pCode: the HTTP status code, such as 200 or 404.
+
+pBodyText: the response body as text; it is sent UTF-8 encoded.
+
+pHeaders: extra header lines such as "Content-Type: text/html", or empty.
+
+Example:
+oxhReply pStream, 200, "hello", "Content-Type: text/plain"
+
+Description:
+Content-Length and Connection: close are set for you, and any copies of
+them in the headers you pass are dropped. The connection closes shortly
+after the response is written, so answer each request once.
+
+References: oxhRoute (handler)
+*/
 command oxhReply pStream, pCode, pBodyText, pHeaders
    -- Send a text response (HTML, JSON, plain) from a route handler. pBodyText is
    -- TEXT; it is UTF-8 encoded and its exact byte length becomes Content-Length.

@@ -244,6 +244,19 @@ if [ -f tools/check-cross-library-names.py ]; then
   echo "== suite: tools/check-cross-library-names.py =="
   python3 tools/check-cross-library-names.py
 fi
+# The libraries OXT-Beyond ships built in reach its two dictionaries only
+# through their /** */ doc blocks, and Beyond's docs parser hands a misplaced
+# block to whatever public handler comes next, silently. This holds every
+# shipped library documented, block for block, with no orphan, a Summary and
+# the handler's own parameters; the fixture mutates real corpus files.
+if [ -f tools/test-dictionary-docs.py ]; then
+  echo "== suite: tools/test-dictionary-docs.py =="
+  python3 tools/test-dictionary-docs.py
+fi
+if [ -f tools/check-dictionary-docs.py ]; then
+  echo "== suite: tools/check-dictionary-docs.py =="
+  python3 tools/check-dictionary-docs.py
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal

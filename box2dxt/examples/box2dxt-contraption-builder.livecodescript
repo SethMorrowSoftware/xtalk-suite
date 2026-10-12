@@ -326,9 +326,55 @@ local sSndNote       -- empty = healthy; else why audio is degraded
 
 constant kPI = 3.14159265358979
 
+/**
+Title: Box2Dxt Kit
+Author: Box2Dxt contributors
+Description:
+A pure-script game toolkit over the box2dxt extension (Box2D v3.1 physics).
+You work in screen pixels, screen coordinates (y down) and degrees; the Kit
+converts to Box2D's metres, radians and y-up, runs a fixed-step frame loop,
+and moves your controls to follow their bodies.
+
+Start with <b2kQuickStart> (or <b2kSetup> and <b2kStart>), give controls
+bodies with <b2kAddBox> or create them with <b2kSpawnBox>, and set a
+<b2kFrameTarget> for per-frame logic and a <b2kContactTarget> for collision
+messages. Commands report through the result, so read it on the next line.
+Besides physics it has keyboard input, sprite sheets and animation, a
+platformer player controller, a scrolling camera and synthesized sound.
+
+It needs the box2dxt extension loaded: b2kVersion() should return 4.
+
+Tags: Physics, Games
+*/
+
 -- =====================================================================
 -- World / lifecycle
 -- =====================================================================
+/**
+Summary: Create the physics world and reset the Kit to a clean state.
+
+pGravityX: Horizontal gravity in Box2D units (metres per second squared, y up). Empty means 0.
+
+pGravityY: Vertical gravity in Box2D units, y up, so a negative value pulls down. Empty means -10.
+
+Example:
+b2kSetup
+b2kAddStatic the long id of graphic "Floor"
+b2kAddBox the long id of graphic "Crate"
+b2kStart
+
+Description:
+Use <b2kSetup> to start a world without starting the loop. It first
+tears down any previous world (<b2kTeardown>), then sets the scale to 40
+pixels per metre, the origin to the card's bottom centre (40 px up from the
+bottom edge) and 4 solver sub-steps.
+
+The gravity values go to Box2D unchanged, in metres per second squared with
+y pointing up. It also maps a native library saved beside the stack
+(<b2kEnsureNativeLib>).
+
+References: b2kQuickStart (handler), b2kStart (handler), b2kTeardown (handler)
+*/
 command b2kSetup pGravityX, pGravityY
    b2kEnsureNativeLib
    b2kTeardown
@@ -363,6 +409,25 @@ end b2kSetup
 -- engine's own search untouched (so the historical "beside the engine" path on
 -- Win/macOS still works). Raw b2* callers that do not use the Kit can set the
 -- same mapping themselves before their first b2 call.
+/**
+Summary: Point the engine at a box2dxt library saved beside the stack.
+
+Example:
+b2kEnsureNativeLib
+put b2kVersion() into tABI
+
+Description:
+When a file named box2dxt.dll, box2dxt.dylib or box2dxt.so (by
+platform) sits in the folder of the saved stack, <b2kEnsureNativeLib> sets the
+revLibraryMapping for "box2dxt" to it, so the extension's foreign handlers
+resolve with no install. Otherwise it leaves the engine's own search alone.
+An unsaved stack is a quiet no-op.
+
+<b2kSetup> calls it for you. Scripts that use the raw b2 layer without the
+Kit can call it before their first b2 call.
+
+References: b2kSetup (handler), b2kVersion (handler)
+*/
 command b2kEnsureNativeLib
    local tStackFile, tDir, tName, tPath, tOldDelim
    put the effective filename of this stack into tStackFile
@@ -388,6 +453,20 @@ command b2kEnsureNativeLib
    end if
 end b2kEnsureNativeLib
 
+/**
+Summary: Empty the Kit's control and body tables.
+
+Example:
+b2kResetTables
+
+Description:
+Internal: <b2kSetup> and <b2kTeardown> call it. It forgets every
+control-to-body pairing, shape, render kind and camera membership, but it
+destroys no body and deletes no control, so calling it on a live world leaves
+bodies the Kit no longer tracks.
+
+References: b2kSetup (handler), b2kTeardown (handler)
+*/
 command b2kResetTables
    put empty into sBody
    put empty into sCtrl
@@ -405,6 +484,23 @@ command b2kResetTables
    put empty into sOneWayBody
 end b2kResetTables
 
+/**
+Summary: Stop the loop and destroy the world and all Kit state.
+
+Example:
+b2kTeardown
+
+Description:
+Use <b2kTeardown> when a scene is finished. It stops the loop,
+destroys the Box2D world, forgets the player controller (tuning included),
+removes sprites, dissolves the camera viewport and empties the Kit's tables.
+
+Sheets are wiped too unless <b2kSheetPersist> is on, in which case only the
+sprite instances go and the sheet cache survives. Sounds always survive; use
+<b2kSoundsWipe> to remove them.
+
+References: b2kSetup (handler), b2kClear (handler), b2kStop (handler)
+*/
 command b2kTeardown
    put false into sRunning
    put the milliseconds & random(9999) into sGen
@@ -433,12 +529,44 @@ command b2kTeardown
 end b2kTeardown
 
 -- One-liner: world with gravity, walls around the card, loop running.
+/**
+Summary: Make a world with gravity, walls around the card, and start the loop.
+
+pGravityY: Vertical gravity in Box2D units, y up (negative pulls down). Empty means -10.
+
+Example:
+b2kQuickStart
+b2kSpawnBall 200, 80, 50
+put the result into tBall
+
+Description:
+The one-call start: <b2kSetup> with no horizontal gravity,
+<b2kAddWalls> around the card edges, then <b2kStart>.
+
+References: b2kSetup (handler), b2kAddWalls (handler), b2kStart (handler)
+*/
 command b2kQuickStart pGravityY
    b2kSetup 0, pGravityY
    b2kAddWalls
    b2kStart
 end b2kQuickStart
 
+/**
+Summary: Start the simulation loop.
+
+Example:
+b2kSetup
+b2kAddWalls
+b2kStart
+
+Description:
+Use <b2kStart> to begin stepping the world at a fixed 1/60 s step,
+syncing controls and delivering events once per frame. If no world exists yet
+it calls <b2kSetup> first. Starting again replaces any running loop rather
+than adding a second one.
+
+References: b2kStop (handler), b2kPause (handler), b2kStepOnce (handler)
+*/
 command b2kStart
    if sWorld is empty then b2kSetup
    put true into sRunning
@@ -449,25 +577,84 @@ command b2kStart
    send ("b2kStep " & sGen) to me in 16 milliseconds
 end b2kStart
 
+/**
+Summary: Stop the simulation loop.
+
+Example:
+b2kStop
+
+Description:
+The world and its bodies stay; nothing steps until <b2kStart>.
+Use <b2kTeardown> to destroy the world as well.
+
+References: b2kStart (handler), b2kPause (handler), b2kTeardown (handler)
+*/
 command b2kStop
    put false into sRunning
    put the milliseconds & random(9999) into sGen
 end b2kStop
 
+/**
+Summary: Freeze stepping without stopping the loop.
+
+Example:
+b2kPause
+
+Description:
+While paused, the loop keeps running but no physics step, sync or
+frame message happens. <b2kStepOnce> still advances one step.
+
+References: b2kResume (handler), b2kStepOnce (handler), b2kIsRunning (handler)
+*/
 command b2kPause
    put true into sPaused
 end b2kPause
 
+/**
+Summary: Resume stepping after a pause.
+
+Example:
+b2kResume
+
+Description:
+The elapsed-time clock restarts from now, so the pause is not
+replayed as one long catch-up step.
+
+References: b2kPause (handler)
+*/
 command b2kResume
    put false into sPaused
    put the milliseconds into sLast
 end b2kResume
 
+/**
+Summary: Report whether the loop is running and not paused.
+
+Returns: true while the loop is stepping; false when stopped or paused.
+
+Example:
+if b2kIsRunning() then b2kPause
+
+References: b2kStart (handler), b2kPause (handler)
+*/
 function b2kIsRunning
    return (sRunning is true) and (sPaused is not true)
 end b2kIsRunning
 
 -- Static, invisible walls along the four card edges.
+/**
+Summary: Add static, invisible walls along the four card edges.
+
+Example:
+b2kSetup
+b2kAddWalls
+
+Description:
+The walls are untracked world bodies, so <b2kClear> leaves them in
+place. They are placed for the current scale and origin, so set those first.
+
+References: b2kWall (handler), b2kAddGround (handler), b2kQuickStart (handler)
+*/
 command b2kAddWalls
    local tL, tR, tT, tB
    put b2kToWorldX(0) into tL
@@ -480,6 +667,27 @@ command b2kAddWalls
    b2kEdge tR, tB, tR, tT
 end b2kAddWalls
 
+/**
+Summary: Add a static segment between two points given in world metres.
+
+pWx1: X of the first point, in metres.
+
+pWy1: Y of the first point, in metres (y up).
+
+pWx2: X of the second point, in metres.
+
+pWy2: Y of the second point, in metres (y up).
+
+Example:
+b2kEdge b2kToWorldX(0), b2kToWorldY(400), b2kToWorldX(300), b2kToWorldY(400)
+
+Description:
+Internal: <b2kWall> and <b2kAddWalls> build their segments with it.
+With no world it is a quiet no-op. Most scripts want <b2kWall>, which takes
+screen pixels.
+
+References: b2kWall (handler)
+*/
 command b2kEdge pWx1, pWy1, pWx2, pWy2
    local tBody
    if sWorld is empty then exit b2kEdge   -- no world yet: a wall is a quiet no-op
@@ -488,6 +696,20 @@ command b2kEdge pWx1, pWy1, pWx2, pWy2
 end b2kEdge
 
 -- A wide invisible ground line at screen height pScreenY (default: near bottom).
+/**
+Summary: Add a wide, invisible static floor across the card.
+
+pScreenY: The floor's screen y in pixels. Empty means 40 px above the card's bottom edge.
+
+Example:
+b2kAddGround 420
+
+Description:
+The floor is a long static segment (1000 m wide), not tracked as a
+body, so <b2kClear> keeps it. With no world it does nothing.
+
+References: b2kAddWalls (handler), b2kWall (handler)
+*/
 command b2kAddGround pScreenY
    local tBody, tWy
    if sWorld is empty then exit b2kAddGround
@@ -508,10 +730,52 @@ end b2kAddGround
 -- frame target so the game can clean up companions (bound sprites, table
 -- slots) -- do not delete the control inside that handler; the Kit is
 -- mid-removal (Kit-spawned controls are deleted for you).
+/**
+Summary: Remove moving Kit bodies whose centre falls below a screen line.
+
+pScreenY: The screen y in pixels below which moving bodies are removed. Empty turns the kill floor off.
+
+Example:
+b2kKillFloor 900
+
+Description:
+Crates pushed into pits and enemies knocked off a level are removed
+instead of falling forever. The player controller's body is exempt; your game
+owns its respawn.
+
+Before each removal the Kit sends the message b2kFell, with the control as
+its parameter, to the frame target (<b2kFrameTarget>). Use it to clean up
+companions such as bound sprites, but do not delete the control in
+that handler, because the Kit is removing it.
+
+References: b2kFrameTarget (handler), b2kRemove (handler)
+*/
 command b2kKillFloor pScreenY
    put pScreenY into sKillY
 end b2kKillFloor
 
+/**
+Summary: Add an invisible static segment between two screen points.
+
+pX1: Screen x of the first point, in pixels.
+
+pY1: Screen y of the first point, in pixels.
+
+pX2: Screen x of the second point, in pixels.
+
+pY2: Screen y of the second point, in pixels.
+
+Example:
+b2kWall 100, 400, 300, 340
+
+Description:
+Use <b2kWall> for custom walls, ramps and ledges. The segment is
+two-sided: bodies collide from either side. It is invisible, so draw a
+graphic to match, and it is not tracked as a body, so <b2kClear> leaves it.
+For one-sided surfaces use <b2kChain>.
+
+References: b2kChain (handler), b2kAddWalls (handler), b2kEdge (handler)
+*/
 command b2kWall pX1, pY1, pX2, pY2
    b2kEdge b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)
 end b2kWall
@@ -519,6 +783,24 @@ end b2kWall
 -- Remove every dynamic body (b2kRemove deletes kit-spawned controls; attached
 -- controls are just detached). Sprites are Kit-created controls, so they go
 -- too; loaded sheets stay (they are assets, not world state).
+/**
+Summary: Remove every moving body and every sprite, keeping the world.
+
+Example:
+b2kClear
+b2kSpawnBox 200, 80, 60, 40
+put the result into tBox
+
+Description:
+Use <b2kClear> to reset a scene without rebuilding the world. Every
+non-static Kit body is removed with <b2kRemove> (controls the Kit spawned are
+deleted, attached controls are only detached), sprites are removed, and the
+player controller's state and ladder and water zones are dropped. Player
+tuning, input bindings, loaded sheets, sounds, static bodies, walls and chains
+stay.
+
+References: b2kRemove (handler), b2kTeardown (handler)
+*/
 command b2kClear
    local tRef, tList, d
    b2kSpritesClear
@@ -535,12 +817,45 @@ end b2kClear
 -- =====================================================================
 -- Configuration
 -- =====================================================================
+/**
+Summary: Return a value when it is a number, else a default.
+
+pValue: The value to test.
+
+pDefault: What to return when the value is empty or not a number.
+
+Returns: The value, or the default.
+
+Example:
+put b2kNumberOr(field "Speed", 200) into tSpeed
+
+Description:
+A small helper the Kit uses to make optional arguments safe.
+
+References: b2kClamp (handler)
+*/
 function b2kNumberOr pValue, pDefault
    if pValue is empty then return pDefault
    if pValue is not a number then return pDefault
    return pValue
 end b2kNumberOr
 
+/**
+Summary: Clamp a value into a range.
+
+pValue: The value to clamp. Empty or not a number counts as the low bound.
+
+pLo: The lower bound.
+
+pHi: The upper bound.
+
+Returns: The value limited to the range from the low to the high bound.
+
+Example:
+put b2kClamp(tVolume, 0, 100) into tVolume
+
+References: b2kNumberOr (handler)
+*/
 function b2kClamp pValue, pLo, pHi
    local tValue
    put b2kNumberOr(pValue, pLo) into tValue
@@ -549,51 +864,202 @@ function b2kClamp pValue, pLo, pHi
    return tValue
 end b2kClamp
 
+/**
+Summary: Set how many screen pixels make one Box2D metre.
+
+pPixelsPerMetre: Pixels per metre, clamped to 1-10000. The default after setup is 40.
+
+Example:
+b2kSetup
+b2kSetScale 50
+
+Description:
+Set the scale right after <b2kSetup>, before adding bodies: bodies
+already in the world keep the size they were built with. Moving objects
+behave best at roughly 0.1 to 10 metres, so 4 to 400 px at the default scale.
+
+References: b2kSetOrigin (handler), b2kToWorldX (handler), b2kToScreenX (handler)
+*/
 command b2kSetScale pPixelsPerMetre
    put b2kClamp(pPixelsPerMetre, 1, 10000) into sScale
 end b2kSetScale
 
+/**
+Summary: Set the screen point that maps to the world origin.
+
+pScreenX: Screen x in pixels. Empty or not a number keeps the current value.
+
+pScreenY: Screen y in pixels. Empty or not a number keeps the current value.
+
+Example:
+b2kSetOrigin 0, 0
+
+Description:
+<b2kSetup> puts the origin at the card's bottom centre. Change it
+before adding bodies, because conversions made earlier are not redone.
+
+References: b2kSetScale (handler), b2kToWorldX (handler)
+*/
 command b2kSetOrigin pScreenX, pScreenY
    put b2kNumberOr(pScreenX, sOriginX) into sOriginX
    put b2kNumberOr(pScreenY, sOriginY) into sOriginY
 end b2kSetOrigin
 
+/**
+Summary: Change the world's gravity.
+
+pGx: Horizontal gravity in Box2D units (metres per second squared). Not a number means 0.
+
+pGy: Vertical gravity in Box2D units, y up, so negative pulls down. Not a number means -10.
+
+Example:
+b2kSetGravity 0, -20
+
+Description:
+The values go to Box2D unchanged, in metres per second squared with
+y pointing up, the same convention as <b2kSetup>. With no world it does
+nothing.
+
+References: b2kSetup (handler), b2kSetGravityScale (handler)
+*/
 command b2kSetGravity pGx, pGy
    put b2kNumberOr(pGx, 0) into pGx
    put b2kNumberOr(pGy, -10) into pGy
    if sWorld is not empty then b2SetGravity sWorld, pGx, pGy
 end b2kSetGravity
 
+/**
+Summary: Set the solver sub-steps per physics step.
+
+pN: Sub-steps per step, rounded and clamped to 1-64. The default is 4.
+
+Example:
+b2kSetSubsteps 8
+
+Description:
+More sub-steps make stacks and joints stiffer and cost more CPU.
+*/
 command b2kSetSubsteps pN
    put round(b2kClamp(pN, 1, 64)) into sSub
 end b2kSetSubsteps
 
 -- World toggles: island sleeping (saves CPU) and continuous collision (CCD,
 -- stops fast bodies tunnelling through thin walls).
+/**
+Summary: Turn island sleeping on or off for the whole world.
+
+pFlag: true to let resting bodies sleep, false to keep them all awake.
+
+Example:
+b2kEnableSleeping false
+
+Description:
+Sleeping saves CPU when bodies rest, and it is on by default. Use
+<b2kSetSleepEnabled> to change it for one body.
+
+References: b2kSetSleepEnabled (handler), b2kSleep (handler)
+*/
 command b2kEnableSleeping pFlag
    if sWorld is not empty then b2EnableSleeping sWorld, (pFlag is true)
 end b2kEnableSleeping
 
+/**
+Summary: Turn continuous collision (CCD) on or off for the world.
+
+pFlag: true to stop fast bodies tunnelling through static walls, false to turn it off.
+
+Example:
+b2kEnableContinuous true
+
+Description:
+Use <b2kSetBullet> for continuous collision between moving bodies.
+
+References: b2kSetBullet (handler)
+*/
 command b2kEnableContinuous pFlag
    if sWorld is not empty then b2EnableContinuous sWorld, (pFlag is true)
 end b2kEnableContinuous
 
+/**
+Summary: Set the object that receives contact and sensor messages.
+
+pObject: A reference to the object, such as the long id of the card. Empty turns the messages off.
+
+Example:
+b2kContactTarget the long id of me
+
+Description:
+After each frame the Kit sends this object b2kContact and
+b2kEndContact (two controls that began or stopped touching), and
+b2kSensorEnter and b2kSensorExit (a sensor control and a visitor control).
+A control parameter is empty for a wall, the ground or any body the Kit does
+not track. Without a target no message is sent; the polling functions such
+as <b2kContactCount> work either way.
+
+References: b2kFrameTarget (handler), b2kContactCount (handler), b2kAddSensor (handler)
+*/
 command b2kContactTarget pObject
    put pObject into sContactObj
 end b2kContactTarget
 
 -- Object that receives an `on b2kFrame` message once per simulated frame (after
 -- bodies are synced). Use it for per-frame logic: motors, custom drawing, input.
+/**
+Summary: Set the object that receives a b2kFrame message every frame.
+
+pObject: A reference to the object, such as the long id of the card. Empty turns the message off.
+
+Example:
+b2kFrameTarget the long id of me
+
+Description:
+The Kit sends b2kFrame once per simulated frame, after bodies,
+input, the player, sprites and the camera have updated. Put per-frame game
+logic there. The same object receives b2kFell (<b2kKillFloor>) and sprite
+finish messages (<b2kSpriteOnFinish>).
+
+An error inside b2kFrame is caught silently so the screen never stays
+locked; the rest of that frame's work is skipped.
+
+References: b2kContactTarget (handler), b2kFrameMS (handler), b2kKillFloor (handler)
+*/
 command b2kFrameTarget pObject
    put pObject into sFrameObj
 end b2kFrameTarget
 
+/**
+Summary: The raw Box2D world handle.
+
+Returns: The world handle, or empty before setup.
+
+Example:
+put b2kWorld() into tWorld
+
+Description:
+Use it to mix Kit code with calls to the raw b2 layer.
+
+References: b2kBodyOf (handler)
+*/
 function b2kWorld
    return sWorld
 end b2kWorld
 
 -- Sanity check from kit-only code: returns the native shim's ABI version (4),
 -- i.e. that the box2dxt extension and its native library are loaded and in sync.
+/**
+Summary: The native library's ABI version.
+
+Returns: The ABI version number of the loaded box2dxt library (4 for this Kit).
+
+Example:
+if b2kVersion() is not 4 then answer "box2dxt is missing or out of date"
+
+Description:
+A load and in-sync check from Kit-only code. It calls the extension,
+so it throws if the box2dxt extension is not loaded.
+
+References: b2kEnsureNativeLib (handler)
+*/
 function b2kVersion
    return b2Version()
 end b2kVersion
@@ -601,19 +1067,67 @@ end b2kVersion
 -- =====================================================================
 -- Coordinate conversion (sim Y up; screen Y down)
 -- =====================================================================
+/**
+Summary: Convert a world x in metres to a screen x in pixels.
+
+pWx: The world x, in metres.
+
+Returns: The screen x, in pixels.
+
+Example:
+put b2kToScreenX(2.5) into tX
+
+References: b2kToScreenY (handler), b2kToWorldX (handler)
+*/
 function b2kToScreenX pWx
    return sOriginX + pWx * sScale
 end b2kToScreenX
 
+/**
+Summary: Convert a world y in metres (y up) to a screen y in pixels (y down).
+
+pWy: The world y, in metres.
+
+Returns: The screen y, in pixels.
+
+Example:
+put b2kToScreenY(0) into tGroundY
+
+References: b2kToScreenX (handler), b2kToWorldY (handler)
+*/
 function b2kToScreenY pWy
    return sOriginY - pWy * sScale
 end b2kToScreenY
 
+/**
+Summary: Convert a screen x in pixels to a world x in metres.
+
+pSx: The screen x, in pixels.
+
+Returns: The world x in metres, or 0 before <b2kSetup>.
+
+Example:
+put b2kToWorldX(the mouseH) into tWx
+
+References: b2kToWorldY (handler), b2kToScreenX (handler)
+*/
 function b2kToWorldX pSx
    if sScale is empty or sScale = 0 then return 0   -- before b2kSetup: stay safe
    return (pSx - sOriginX) / sScale
 end b2kToWorldX
 
+/**
+Summary: Convert a screen y in pixels (y down) to a world y in metres (y up).
+
+pSy: The screen y, in pixels.
+
+Returns: The world y in metres, or 0 before <b2kSetup>.
+
+Example:
+put b2kToWorldY(the mouseV) into tWy
+
+References: b2kToWorldX (handler), b2kToScreenY (handler)
+*/
 function b2kToWorldY pSy
    if sScale is empty or sScale = 0 then return 0
    return (sOriginY - pSy) / sScale
@@ -622,6 +1136,30 @@ end b2kToWorldY
 -- =====================================================================
 -- Attaching existing controls (pDynamic defaults to true)
 -- =====================================================================
+/**
+Summary: Give a control a box-shaped body matching its rect.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDynamic: true (the default) for a dynamic body, false for a static one.
+
+Returns: The body handle through the result, or 0 when there is no world or the control has no size.
+
+Example:
+b2kAddBox the long id of graphic "Crate"
+put the result into tBody
+
+Description:
+A graphic becomes a polygon outline that rotates with its body; a
+dynamic image rotates through its angle; other controls (buttons, fields)
+follow position only and have their rotation locked so the simulation matches
+the upright drawing. The control is drawn at once, even with the loop
+stopped.
+
+The shape starts with density 1, friction 0.4 and bounce 0.2.
+
+References: b2kAddBall (handler), b2kAddStatic (handler), b2kSpawnBox (handler), b2kRemove (handler)
+*/
 command b2kAddBox pControl, pDynamic
    local tRef, tType, tFixed, tBody, tHw, tHh, tWx, tWy, tGraphic, tImage
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -664,6 +1202,25 @@ command b2kAddBox pControl, pDynamic
    return tBody
 end b2kAddBox
 
+/**
+Summary: Give a control a circular body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDynamic: true (the default) for a dynamic body, false for a static one.
+
+Returns: The body handle through the result, or 0 when there is no world or the control has no width.
+
+Example:
+b2kAddBall the long id of graphic "Ball"
+
+Description:
+The radius is half the control's width. A graphic is redrawn as a
+circle, an image rotates through its angle, and other controls follow
+position. The shape starts with density 1, friction 0.4 and bounce 0.4.
+
+References: b2kAddBox (handler), b2kSpawnBall (handler)
+*/
 command b2kAddBall pControl, pDynamic
    local tRef, tType, tBody, tRad, tWx, tWy
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -691,6 +1248,27 @@ end b2kAddBall
 -- Capsule ("pill"): the long side of the control's rect is the capsule axis,
 -- the short side its diameter. Graphics render as a rounded outline (and rotate);
 -- images rotate via `the angle`; other controls follow position upright.
+/**
+Summary: Give a control a capsule (pill) body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDynamic: true (the default) for a dynamic body, false for a static one.
+
+Returns: The body handle through the result, or 0 when there is no world or the control has no size.
+
+Example:
+b2kAddCapsule the long id of graphic "Hero"
+b2kSetFixedRotation the long id of graphic "Hero", true
+
+Description:
+The longer side of the control's rect is the capsule's axis and the
+shorter side its diameter. A dynamic graphic is redrawn as a rounded outline
+that rotates; a dynamic image rotates through its angle; other controls follow
+position upright.
+
+References: b2kAddBox (handler), b2kSpawnCapsule (handler), b2kReshape (handler)
+*/
 command b2kAddCapsule pControl, pDynamic
    local tRef, tType, tFixed, tBody, tWx, tWy, tWm, tHm, tR, tL, tHoriz, tGraphic, tImage
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -740,6 +1318,24 @@ command b2kAddCapsule pControl, pDynamic
 end b2kAddCapsule
 
 -- Build a body from a polygon graphic's own points (<= 8 vertices, convex).
+/**
+Summary: Give a polygon graphic a body built from its own points.
+
+pControl: The polygon graphic, by reference. Its points must form a convex outline.
+
+pDynamic: true (the default) for a dynamic body, false for a static one.
+
+Returns: The body handle through the result, or 0 when there is no world or fewer than 3 points.
+
+Example:
+b2kAddPolygon the long id of graphic "Wedge"
+
+Description:
+Only the first 8 points are used, relative to the control's centre.
+The graphic is redrawn from those points as the body moves and rotates.
+
+References: b2kAddBox (handler), b2kReshape (handler)
+*/
 command b2kAddPolygon pControl, pDynamic
    local tRef, tType, tBody, tCx, tCy, tWx, tWy, tPoints, p, tLocal, lx, ly, tCount
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -778,10 +1374,42 @@ command b2kAddPolygon pControl, pDynamic
    return tBody
 end b2kAddPolygon
 
+/**
+Summary: Give a control an immovable box body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kAddStatic the long id of graphic "Floor"
+
+Description:
+The same as <b2kAddBox> with pDynamic false.
+
+References: b2kAddBox (handler), b2kSetStatic (handler)
+*/
 command b2kAddStatic pControl
    b2kAddBox pControl, false
 end b2kAddStatic
 
+/**
+Summary: Record a control and body pair in the Kit's tables.
+
+pRef: The control's long id.
+
+pBody: The raw body handle.
+
+pIsStatic: true when the body never moves, so the sync skips it.
+
+Example:
+b2kRegister the long id of graphic "Rock", tBody, true
+
+Description:
+Internal: the attach handlers call it. Registering a body you made
+with the raw b2 layer lets Kit getters and events find its control, but the
+Kit does not draw it until a render kind is set by an attach handler.
+
+References: b2kAddBox (handler), b2kBodyOf (handler)
+*/
 command b2kRegister pRef, pBody, pIsStatic
    put pBody into sBody[pRef]
    put pRef into sCtrl[pBody]
@@ -791,6 +1419,32 @@ end b2kRegister
 -- =====================================================================
 -- Spawning new controls (create + attach in one call). Returns control ref.
 -- =====================================================================
+/**
+Summary: Create a filled rectangle graphic with a dynamic box body.
+
+pScreenX: Centre x in pixels. Not a number means the world origin's x.
+
+pScreenY: Centre y in pixels. Not a number means the world origin's y.
+
+pW: Width in pixels. Empty means 40.
+
+pH: Height in pixels. Empty means the width.
+
+pColor: Optional fill colour, such as "orange" or "255,128,0". An unknown name is ignored.
+
+Returns: The new control's long id through the result, or empty when there is no world.
+
+Example:
+b2kSpawnBox 260, 80, 60, 40, "orange"
+put the result into tBox
+
+Description:
+The Kit owns the control: <b2kRemove> and <b2kClear> delete it.
+While the camera is on it is created inside the viewport. Read the result on
+the very next line, because the next command replaces it.
+
+References: b2kSpawnBall (handler), b2kSpawnCapsule (handler), b2kAddBox (handler), b2kRemove (handler)
+*/
 command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    local tName, tRef
    if sWorld is empty then return empty   -- spawn needs a world (b2kSetup first)
@@ -827,6 +1481,28 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    return tRef
 end b2kSpawnBox
 
+/**
+Summary: Create a filled circle graphic with a dynamic ball body.
+
+pScreenX: Centre x in pixels. Not a number means the world origin's x.
+
+pScreenY: Centre y in pixels. Not a number means the world origin's y.
+
+pDiameter: Diameter in pixels. Empty means 40.
+
+pColor: Optional fill colour. An unknown name is ignored.
+
+Returns: The new control's long id through the result, or empty when there is no world.
+
+Example:
+b2kSpawnBall 200, 80, 50, "red"
+put the result into tBall
+
+Description:
+The Kit owns the control: <b2kRemove> and <b2kClear> delete it.
+
+References: b2kSpawnBox (handler), b2kAddBall (handler)
+*/
 command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    local tName, tRef
    if sWorld is empty then return empty
@@ -863,6 +1539,31 @@ end b2kSpawnBall
 
 -- Create a pill-shaped graphic and attach a capsule body. pLength is along the
 -- pill's long axis, pThickness across it; horizontal if pLength >= pThickness.
+/**
+Summary: Create a pill-shaped graphic with a dynamic capsule body.
+
+pScreenX: Centre x in pixels. Not a number means the world origin's x.
+
+pScreenY: Centre y in pixels. Not a number means the world origin's y.
+
+pLength: Length along the pill's axis in pixels. Empty means 80.
+
+pThickness: Thickness across the pill in pixels. Empty means 40.
+
+pColor: Optional fill colour. An unknown name is ignored.
+
+Returns: The new control's long id through the result, or empty when there is no world.
+
+Example:
+b2kSpawnCapsule 200, 100, 64, 30, "gold"
+put the result into tHero
+
+Description:
+The pill is horizontal when the length is at least the thickness,
+vertical otherwise. The Kit owns the control.
+
+References: b2kSpawnBox (handler), b2kAddCapsule (handler)
+*/
 command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    local tName, tRef
    if sWorld is empty then return empty
@@ -907,6 +1608,21 @@ end b2kSpawnCapsule
 -- =====================================================================
 -- Materials & body properties
 -- =====================================================================
+/**
+Summary: Set how bouncy a control's shape is (restitution).
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pRestitution: 0 for no bounce up to 1 for a full bounce; clamped to 0-2.
+
+Example:
+b2kSetBounce tBall, 0.8
+
+Description:
+A control with no Kit shape is ignored.
+
+References: b2kSetFriction (handler), b2kSetDensity (handler), b2kSetRestitutionThreshold (handler)
+*/
 command b2kSetBounce pControl, pRestitution
    local s
    put sShapeH[the long id of pControl] into s
@@ -914,6 +1630,21 @@ command b2kSetBounce pControl, pRestitution
    if s is not empty then b2SetShapeRestitution s, pRestitution
 end b2kSetBounce
 
+/**
+Summary: Set a control's shape friction.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFriction: Friction, usually 0 (ice) to 1 (rubber); clamped to 0-10.
+
+Example:
+b2kSetFriction tCrate, 0.1
+
+Description:
+A control with no Kit shape is ignored.
+
+References: b2kSetBounce (handler), b2kSetDensity (handler)
+*/
 command b2kSetFriction pControl, pFriction
    local s
    put sShapeH[the long id of pControl] into s
@@ -921,6 +1652,21 @@ command b2kSetFriction pControl, pFriction
    if s is not empty then b2SetShapeFriction s, pFriction
 end b2kSetFriction
 
+/**
+Summary: Set a control's shape density, which sets its mass.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDensity: Density in kilograms per square metre; clamped to 0-10000. The default is 1.
+
+Example:
+b2kSetDensity tCrate, 5
+
+Description:
+A control with no Kit shape is ignored.
+
+References: b2kMass (handler), b2kSetBounce (handler)
+*/
 command b2kSetDensity pControl, pDensity
    local s
    put sShapeH[the long id of pControl] into s
@@ -940,6 +1686,34 @@ end b2kSetDensity
 -- bookkeeping insisting it was short), and the drawer's re-point pads the
 -- rect by the pen margin, so re-reading the rect compounds +2 per rebuild
 -- (50 -> 52 -> 54 across one duck/stand pair, the engine's own numbers).
+/**
+Summary: Rebuild a body's collision shape from the control's current size.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pShape: "box" (the default), "ball", "capsule" or "poly".
+
+pW: Optional width in pixels to use instead of the control's width (box, ball and capsule).
+
+pH: Optional height in pixels to use instead of the control's height (box and capsule).
+
+Example:
+set the width of tPlank to 200
+b2kReshape tPlank, "box"
+b2kSetFriction tPlank, 0.6
+
+Description:
+The new shape goes on the same body, so joints stay valid, and the
+control is redrawn at once. The new shape has the default material and
+collision filter, so re-apply bounce, friction, density and layers after it.
+A sensor stays a sensor. If the new size is zero, or a poly outline has
+fewer than 3 points, the old shape is kept.
+
+Pass pW and pH for a polygon graphic: the engine will not resize one by
+setting its height.
+
+References: b2kAddBox (handler), b2kSetSensor (handler), b2kSetCategory (handler)
+*/
 command b2kReshape pControl, pShape, pW, pH
    local tRef, tBody, tOld, tHw, tHh, tWm, tHm, tR, tL, tHoriz, tCx, tCy, p, lx, ly, tCount, tNewVerts
    local tWx, tWy, tWa
@@ -1060,6 +1834,21 @@ end b2kReshape
 -- Every body-targeting wrapper resolves the control's body first and quietly
 -- no-ops when there is none (unregistered, removed, or pre-setup): the kit's
 -- contract is that a missing body is never a script error.
+/**
+Summary: Turn continuous collision on or off for one fast body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFlag: true to treat the body as a bullet, false for normal stepping.
+
+Example:
+b2kSetBullet tShot, true
+
+Description:
+A bullet does not tunnel through other moving bodies. A control with no Kit body is ignored.
+
+References: b2kIsBullet (handler), b2kEnableContinuous (handler)
+*/
 command b2kSetBullet pControl, pFlag
    local b
    put sBody[the long id of pControl] into b
@@ -1067,6 +1856,21 @@ command b2kSetBullet pControl, pFlag
    b2SetBullet b, (pFlag is true)
 end b2kSetBullet
 
+/**
+Summary: Stop or allow a body's rotation.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFlag: true to stop the body rotating, false to let it rotate.
+
+Example:
+b2kSetFixedRotation tHero, true
+
+Description:
+Characters usually want fixed rotation. A control with no Kit body is ignored.
+
+References: b2kSpin (handler), b2kAngle (handler)
+*/
 command b2kSetFixedRotation pControl, pFlag
    local b
    put sBody[the long id of pControl] into b
@@ -1074,6 +1878,21 @@ command b2kSetFixedRotation pControl, pFlag
    b2SetFixedRotation b, (pFlag is true)
 end b2kSetFixedRotation
 
+/**
+Summary: Set a per-body gravity multiplier.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pScale: 1 is normal gravity, 0 none, a negative value floats the body up.
+
+Example:
+b2kSetGravityScale tBalloon, -0.4
+
+Description:
+A control with no Kit body is ignored.
+
+References: b2kGravityScale (handler), b2kSetGravity (handler)
+*/
 command b2kSetGravityScale pControl, pScale
    local b
    put sBody[the long id of pControl] into b
@@ -1081,6 +1900,23 @@ command b2kSetGravityScale pControl, pScale
    b2SetGravityScale b, pScale
 end b2kSetGravityScale
 
+/**
+Summary: Set a body's linear and angular damping (drag).
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pLinear: Linear damping, 0 for none. Empty leaves it unchanged.
+
+pAngular: Angular damping, 0 for none. Empty leaves it unchanged.
+
+Example:
+b2kSetDamping tFeather, 2, 1
+
+Description:
+A control with no Kit body is ignored.
+
+References: b2kDamping (handler)
+*/
 command b2kSetDamping pControl, pLinear, pAngular
    local b
    put sBody[the long id of pControl] into b
@@ -1089,6 +1925,19 @@ command b2kSetDamping pControl, pLinear, pAngular
    if pAngular is not empty then b2SetAngularDamping b, pAngular
 end b2kSetDamping
 
+/**
+Summary: Wake a sleeping body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kWake tCrate
+
+Description:
+A control with no Kit body is ignored.
+
+References: b2kSleep (handler), b2kIsAwake (handler)
+*/
 command b2kWake pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1097,6 +1946,19 @@ command b2kWake pControl
 end b2kWake
 
 -- Send a body to sleep (it stops simulating until something wakes it).
+/**
+Summary: Put a body to sleep until something wakes it.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kSleep tCrate
+
+Description:
+A sleeping body stops simulating until a contact, a joint or a call such as <b2kWake> wakes it. A control with no Kit body is ignored.
+
+References: b2kWake (handler), b2kIsAwake (handler)
+*/
 command b2kSleep pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1107,6 +1969,23 @@ end b2kSleep
 -- Allow or forbid THIS body ever falling asleep (vs b2kEnableSleeping,
 -- which switches the whole world). The player controller forbids it: a
 -- character must respond to input even after standing still for minutes.
+/**
+Summary: Allow or forbid one body ever falling asleep.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFlag: true to allow sleep; anything else forbids it and wakes the body.
+
+Example:
+b2kSetSleepEnabled tHero, false
+
+Description:
+<b2kEnableSleeping> switches the whole world; this switches one
+body. The player controller forbids sleep on its body so it always responds
+to input. A control with no Kit body is ignored.
+
+References: b2kEnableSleeping (handler), b2kSetSleepThreshold (handler)
+*/
 command b2kSetSleepEnabled pControl, pFlag
    local b
    put sBody[the long id of pControl] into b
@@ -1117,6 +1996,21 @@ end b2kSetSleepEnabled
 
 -- Below this speed (pixels/sec) a body may fall asleep. Lower = stays awake
 -- longer; higher = sleeps sooner (saves CPU).
+/**
+Summary: Set the speed below which a body may fall asleep.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pPxPerSec: The speed in pixels per second. Lower keeps the body awake longer.
+
+Example:
+b2kSetSleepThreshold tCrate, 4
+
+Description:
+A control with no Kit body is ignored.
+
+References: b2kSetSleepEnabled (handler)
+*/
 command b2kSetSleepThreshold pControl, pPxPerSec
    local b
    put sBody[the long id of pControl] into b
@@ -1127,6 +2021,25 @@ end b2kSetSleepThreshold
 -- =====================================================================
 -- Acting on bodies   (velocities/kicks are in PIXELS/sec, screen-oriented)
 -- =====================================================================
+/**
+Summary: Set a body's velocity in pixels per second, and wake it.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pVxPx: Horizontal velocity in px/s (positive is right).
+
+pVyPx: Vertical velocity in px/s (positive is down).
+
+Example:
+b2kSetVelocity tHero, b2kAxis("moveX") * 240, item 2 of b2kVelocity(tHero)
+
+Description:
+Setting a velocity always wakes the body. Do not write a velocity
+every frame to a body that is meant to come to rest: it never sleeps. For a
+player under the controller use <b2kPlayerJump> for upward boosts. A control with no Kit body is ignored.
+
+References: b2kVelocity (handler), b2kPush (handler), b2kImpulse (handler)
+*/
 command b2kSetVelocity pControl, pVxPx, pVyPx
    local b
    put sBody[the long id of pControl] into b
@@ -1139,6 +2052,24 @@ command b2kSetVelocity pControl, pVxPx, pVyPx
    b2SetAwake b, true
 end b2kSetVelocity
 
+/**
+Summary: Add to a body's velocity in pixels per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDvxPx: Change in horizontal velocity, px/s.
+
+pDvyPx: Change in vertical velocity, px/s (negative is up).
+
+Example:
+b2kPush tHero, 0, -420
+
+Description:
+A one-shot kick that ignores mass: every body gains the same speed.
+It wakes the body. Use <b2kImpulse> for a mass-aware kick. A control with no Kit body is ignored.
+
+References: b2kImpulse (handler), b2kSetVelocity (handler)
+*/
 command b2kPush pControl, pDvxPx, pDvyPx
    local b
    put sBody[the long id of pControl] into b
@@ -1147,6 +2078,21 @@ command b2kPush pControl, pDvxPx, pDvyPx
    b2SetAwake b, true
 end b2kPush
 
+/**
+Summary: Set a body's angular velocity in degrees per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDegPerSec: The spin rate in degrees per second.
+
+Example:
+b2kSpin tWheel, 360
+
+Description:
+It replaces the current spin. A control with no Kit body is ignored.
+
+References: b2kSpinBy (handler), b2kSpinRate (handler)
+*/
 command b2kSpin pControl, pDegPerSec
    local b
    put sBody[the long id of pControl] into b
@@ -1155,6 +2101,21 @@ command b2kSpin pControl, pDegPerSec
 end b2kSpin
 
 -- Add to the current spin (vs b2kSpin which sets it absolutely).
+/**
+Summary: Add to a body's angular velocity, in degrees per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pDegPerSec: The change in spin rate, degrees per second.
+
+Example:
+b2kSpinBy tWheel, 90
+
+Description:
+It wakes the body. A control with no Kit body is ignored.
+
+References: b2kSpin (handler), b2kAngularImpulse (handler)
+*/
 command b2kSpinBy pControl, pDegPerSec
    local b
    put sBody[the long id of pControl] into b
@@ -1165,6 +2126,24 @@ end b2kSpinBy
 
 -- Continuous, screen-oriented force (thrusters, wind). Apply each frame for a
 -- sustained effect; b2kPush is the one-shot impulse equivalent.
+/**
+Summary: Apply a continuous force to a body's centre.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFxPx: Horizontal force, scaled by the Kit's pixels per metre (positive is right).
+
+pFyPx: Vertical force, scaled the same way (positive is down).
+
+Example:
+b2kForce tRocket, 0, -300
+
+Description:
+A force acts for one step, so call it every frame (from b2kFrame)
+for thrust or wind. It wakes the body. A control with no Kit body is ignored.
+
+References: b2kImpulse (handler), b2kTorque (handler)
+*/
 command b2kForce pControl, pFxPx, pFyPx
    local b
    put sBody[the long id of pControl] into b
@@ -1174,6 +2153,23 @@ end b2kForce
 
 -- A one-shot impulse (a sharp kick), screen-oriented. Mass-aware: heavier bodies
 -- move less. b2kPush changes velocity directly; this is the impulse equivalent.
+/**
+Summary: Apply a one-shot, mass-aware impulse to a body's centre.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pIxPx: Horizontal impulse, scaled by the Kit's pixels per metre (positive is right).
+
+pIyPx: Vertical impulse, scaled the same way (positive is down).
+
+Example:
+b2kImpulse tCrate, 0, -50
+
+Description:
+Heavier bodies move less. It wakes the body. A control with no Kit body is ignored.
+
+References: b2kPush (handler), b2kForce (handler)
+*/
 command b2kImpulse pControl, pIxPx, pIyPx
    local b
    put sBody[the long id of pControl] into b
@@ -1183,6 +2179,21 @@ end b2kImpulse
 
 -- A continuous turning force (same units as motor torque). Positive turns one way,
 -- negative the other. Apply each frame for a sustained twist; pairs with b2kForce.
+/**
+Summary: Apply a continuous turning force to a body.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pTorque: The torque, in Box2D units; the sign sets the direction.
+
+Example:
+b2kTorque tWheel, 20
+
+Description:
+Like <b2kForce>, call it every frame for a sustained twist. A control with no Kit body is ignored.
+
+References: b2kAngularImpulse (handler), b2kForce (handler)
+*/
 command b2kTorque pControl, pTorque
    local b
    put sBody[the long id of pControl] into b
@@ -1193,6 +2204,21 @@ end b2kTorque
 -- A one-shot twist (a sharp angular kick), mass-aware: bodies with more
 -- rotational inertia turn less. b2kSpinBy sets the spin directly; this is the
 -- impulse equivalent, and the angular partner of b2kImpulse.
+/**
+Summary: Apply a one-shot, mass-aware turning impulse.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pImpulse: The angular impulse, in Box2D units; the sign sets the direction.
+
+Example:
+b2kAngularImpulse tWheel, 2
+
+Description:
+Bodies with more rotational inertia turn less. A control with no Kit body is ignored.
+
+References: b2kTorque (handler), b2kSpinBy (handler)
+*/
 command b2kAngularImpulse pControl, pImpulse
    local b
    put sBody[the long id of pControl] into b
@@ -1201,6 +2227,23 @@ command b2kAngularImpulse pControl, pImpulse
 end b2kAngularImpulse
 
 -- Change a body's type at runtime: "static", "kinematic", or "dynamic".
+/**
+Summary: Change a body's type by name.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pType: "static", "kinematic" or "dynamic"; any other value means dynamic.
+
+Example:
+b2kSetType tPlatform, "kinematic"
+
+Description:
+A kinematic body moves only by the velocity you give it and is not
+pushed by others, which suits moving platforms. A non-static body is woken.
+A control with no Kit body is ignored.
+
+References: b2kSetStatic (handler), b2kSetDynamic (handler), b2kSetKinematic (handler), b2kBodyType (handler)
+*/
 command b2kSetType pControl, pType
    local tRef, tCode
    put the long id of pControl into tRef
@@ -1221,19 +2264,74 @@ command b2kSetType pControl, pType
    put true into sNeedFullSync
 end b2kSetType
 
+/**
+Summary: Make a body static (immovable).
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kSetStatic tCrate
+
+Description:
+The same as <b2kSetType> with "static".
+
+References: b2kSetType (handler), b2kSetDynamic (handler)
+*/
 command b2kSetStatic pControl
    b2kSetType pControl, "static"
 end b2kSetStatic
 
+/**
+Summary: Make a body dynamic (moved by forces and collisions).
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kSetDynamic tCrate
+
+Description:
+The same as <b2kSetType> with "dynamic".
+
+References: b2kSetType (handler), b2kSetStatic (handler)
+*/
 command b2kSetDynamic pControl
    b2kSetType pControl, "dynamic"
 end b2kSetDynamic
 
+/**
+Summary: Make a body kinematic (moved only by its velocity).
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kSetKinematic tLift
+b2kSetVelocity tLift, 0, -60
+
+Description:
+The same as <b2kSetType> with "kinematic".
+
+References: b2kSetType (handler), b2kSetVelocity (handler)
+*/
 command b2kSetKinematic pControl
    b2kSetType pControl, "kinematic"
 end b2kSetKinematic
 
 -- Temporarily take a body out of / put it back into the simulation.
+/**
+Summary: Take a body out of the simulation.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kMoveTo tDoor, -500, -500
+b2kDisable tDoor
+
+Description:
+A disabled body has no gravity and no collisions and its control
+stays where it is. Move it out of the way first if it should vanish. A control with no Kit body is ignored.
+
+References: b2kEnable (handler), b2kIsEnabled (handler)
+*/
 command b2kDisable pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1241,6 +2339,19 @@ command b2kDisable pControl
    b2DisableBody b
 end b2kDisable
 
+/**
+Summary: Put a disabled body back into the simulation.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kEnable tDoor
+
+Description:
+A control with no Kit body is ignored.
+
+References: b2kDisable (handler), b2kIsEnabled (handler)
+*/
 command b2kEnable pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1249,6 +2360,26 @@ command b2kEnable pControl
    put true into sNeedFullSync
 end b2kEnable
 
+/**
+Summary: Teleport a body to a screen point and angle.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pScreenX: The new centre x, in pixels.
+
+pScreenY: The new centre y, in pixels.
+
+pAngleDeg: The new angle in degrees. Empty means 0.
+
+Example:
+b2kMoveTo tCrate, 300, 100
+
+Description:
+The control is redrawn at once. Velocity is kept; follow it with
+<b2kSetVelocity> to stop the body. A control with no Kit body is ignored.
+
+References: b2kPosition (handler), b2kSetVelocity (handler), b2kSpriteMoveTo (handler)
+*/
 command b2kMoveTo pControl, pScreenX, pScreenY, pAngleDeg
    local tRef, tWx, tWy, tWa
    if pAngleDeg is empty then put 0 into pAngleDeg
@@ -1261,6 +2392,21 @@ command b2kMoveTo pControl, pScreenX, pScreenY, pAngleDeg
    b2kDrawBody tRef, tWx, tWy, tWa
 end b2kMoveTo
 
+/**
+Summary: Destroy a control's body and forget it.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kRemove tCoin
+
+Description:
+If the Kit created the control (b2kSpawn commands, sprites) the
+control is deleted too; a control you attached is left on the card. The
+body's joints are destroyed with it.
+
+References: b2kClear (handler), b2kSpriteRemove (handler)
+*/
 command b2kRemove pControl
    local tRef, tBody, tWasSpawned
    put the long id of pControl into tRef
@@ -1293,6 +2439,27 @@ end b2kRemove
 -- b2World_Explode: it's shape-perimeter aware (so a wide plank catches more blast
 -- than a small ball) and affects EVERY dynamic body in range, not just kit ones.
 -- pPowerPx is the impulse per unit length of facing surface; pRadiusPx the reach.
+/**
+Summary: Push dynamic bodies away from a point with a radial blast.
+
+pScreenX: The blast centre x, in pixels.
+
+pScreenY: The blast centre y, in pixels.
+
+pRadiusPx: The reach in pixels. Empty means 180.
+
+pPowerPx: The impulse per unit of facing surface, scaled by the Kit's pixels per metre. Empty means 900.
+
+Example:
+b2kExplode the mouseH, the mouseV, 200, 1200
+
+Description:
+It uses Box2D's own explosion, which is shape-aware (a wide plank
+catches more than a small ball) and affects every dynamic body in range, not
+only Kit bodies. With no world it does nothing.
+
+References: b2kExplodeLegacy (handler), b2kImpulse (handler)
+*/
 command b2kExplode pScreenX, pScreenY, pRadiusPx, pPowerPx
    if pRadiusPx is empty then put 180 into pRadiusPx
    if pPowerPx is empty then put 900 into pPowerPx
@@ -1303,6 +2470,27 @@ end b2kExplode
 
 -- The original velocity-based blast (pre-v3): kicks only kit-tracked dynamic
 -- bodies, ignoring their size. Kept for callers that relied on the old feel.
+/**
+Summary: The older velocity-based blast, for Kit bodies only.
+
+pScreenX: The blast centre x, in pixels.
+
+pScreenY: The blast centre y, in pixels.
+
+pRadiusPx: The reach in pixels. Empty means 180.
+
+pPowerPx: The speed added at the centre, falling to 0 at the edge. Empty means 900.
+
+Example:
+b2kExplodeLegacy 300, 200
+
+Description:
+It adds velocity directly to every non-static Kit body in range,
+ignoring size and mass. Kept for scripts that relied on that feel; new code
+should use <b2kExplode>.
+
+References: b2kExplode (handler)
+*/
 command b2kExplodeLegacy pScreenX, pScreenY, pRadiusPx, pPowerPx
    local cx, cy, tRadM, tRef, b, dx, dy, d, f
    if pRadiusPx is empty then put 180 into pRadiusPx
@@ -1327,6 +2515,21 @@ end b2kExplodeLegacy
 -- =====================================================================
 -- Getters
 -- =====================================================================
+/**
+Summary: The raw Box2D body handle behind a control.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The body handle, or empty when the control has no Kit body.
+
+Example:
+put b2kBodyOf(tCrate) into tBody
+
+Description:
+Use it to mix Kit code with calls to the raw b2 layer.
+
+References: b2kWorld (handler), b2kRegister (handler)
+*/
 function b2kBodyOf pControl
    return sBody[the long id of pControl]
 end b2kBodyOf
@@ -1334,6 +2537,18 @@ end b2kBodyOf
 -- A body's position in SCREEN pixels as "x,y" (the position partner of
 -- b2kVelocity). Controls already follow their body, but this reads the exact,
 -- sub-pixel centre - handy for aiming, distance checks, or mixing with b2...
+/**
+Summary: A body's centre in screen pixels.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: "x,y" in screen pixels (sub-pixel), or "0,0" when the control has no body.
+
+Example:
+put item 1 of b2kPosition(tHero) into tHeroX
+
+References: b2kWorldCenter (handler), b2kVelocity (handler), b2kMoveTo (handler)
+*/
 function b2kPosition pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1343,6 +2558,21 @@ end b2kPosition
 
 -- A body's centre of mass in SCREEN pixels as "x,y". Differs from b2kPosition
 -- for off-centre or compound shapes; it's the true pivot for spin and torque.
+/**
+Summary: A body's centre of mass in screen pixels.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: "x,y" in screen pixels, or "0,0" when the control has no body.
+
+Example:
+put b2kWorldCenter(tLever) into tPivot
+
+Description:
+It differs from <b2kPosition> for off-centre shapes; it is the true pivot for spin and torque.
+
+References: b2kPosition (handler)
+*/
 function b2kWorldCenter pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1350,6 +2580,18 @@ function b2kWorldCenter pControl
    return b2kToScreenX(b2BodyWorldCenterX(b)) & "," & b2kToScreenY(b2BodyWorldCenterY(b))
 end b2kWorldCenter
 
+/**
+Summary: A body's velocity in pixels per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: "vx,vy" in px/s with y down, or "0,0" when the control has no body.
+
+Example:
+put item 2 of b2kVelocity(tHero) into tFallSpeed
+
+References: b2kSetVelocity (handler), b2kSpeed (handler)
+*/
 function b2kVelocity pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1357,6 +2599,18 @@ function b2kVelocity pControl
    return (b2BodyVX(b) * sScale) & "," & (- b2BodyVY(b) * sScale)
 end b2kVelocity
 
+/**
+Summary: A body's speed in pixels per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The speed, or 0 when the control has no body.
+
+Example:
+if b2kSpeed(tBall) > 600 then b2kSound "whoosh"
+
+References: b2kVelocity (handler)
+*/
 function b2kSpeed pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1364,6 +2618,18 @@ function b2kSpeed pControl
    return sqrt((b2BodyVX(b) * sScale) ^ 2 + (b2BodyVY(b) * sScale) ^ 2)
 end b2kSpeed
 
+/**
+Summary: A body's rotation in degrees.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The angle in degrees (counter-clockwise positive, not wrapped), or 0 when the control has no body.
+
+Example:
+put round(b2kAngle(tPlank)) into field "Angle"
+
+References: b2kSpinRate (handler), b2kMoveTo (handler)
+*/
 function b2kAngle pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1371,6 +2637,18 @@ function b2kAngle pControl
    return b2BodyAngle(b) * 180 / kPI
 end b2kAngle
 
+/**
+Summary: Report whether a body is awake.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: true or false; false when the control has no body.
+
+Example:
+if not b2kIsAwake(tCrate) then b2kWake tCrate
+
+References: b2kWake (handler), b2kSleep (handler)
+*/
 function b2kIsAwake pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1379,6 +2657,18 @@ function b2kIsAwake pControl
 end b2kIsAwake
 
 -- Current rotation speed in DEGREES/sec (the getter for b2kSpin / b2kSpinBy).
+/**
+Summary: A body's rotation speed in degrees per second.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The angular velocity, or 0 when the control has no body.
+
+Example:
+put b2kSpinRate(tWheel) into tRate
+
+References: b2kSpin (handler), b2kSpinBy (handler)
+*/
 function b2kSpinRate pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1386,6 +2676,18 @@ function b2kSpinRate pControl
    return b2BodyAngularVelocity(b) * 180 / kPI
 end b2kSpinRate
 
+/**
+Summary: Report whether a body uses continuous (bullet) collision.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: true or false; false when the control has no body.
+
+Example:
+put b2kIsBullet(tShot) into tCCD
+
+References: b2kSetBullet (handler)
+*/
 function b2kIsBullet pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1393,6 +2695,18 @@ function b2kIsBullet pControl
    return b2BodyIsBullet(b)
 end b2kIsBullet
 
+/**
+Summary: Report whether a body is in the simulation.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: true or false; false when the control has no body.
+
+Example:
+if not b2kIsEnabled(tDoor) then b2kEnable tDoor
+
+References: b2kEnable (handler), b2kDisable (handler)
+*/
 function b2kIsEnabled pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1400,6 +2714,18 @@ function b2kIsEnabled pControl
    return b2BodyIsEnabled(b)
 end b2kIsEnabled
 
+/**
+Summary: A body's mass.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The mass in Box2D units (kilograms), or 0 when the control has no body.
+
+Example:
+put b2kMass(tCrate) into tMass
+
+References: b2kSetDensity (handler)
+*/
 function b2kMass pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1408,6 +2734,18 @@ function b2kMass pControl
 end b2kMass
 
 -- The body's per-body gravity multiplier (the getter for b2kSetGravityScale).
+/**
+Summary: A body's gravity multiplier.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: The gravity scale, or 0 when the control has no body.
+
+Example:
+put b2kGravityScale(tBalloon) into tScale
+
+References: b2kSetGravityScale (handler)
+*/
 function b2kGravityScale pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1416,6 +2754,18 @@ function b2kGravityScale pControl
 end b2kGravityScale
 
 -- The body's drag as "linear,angular" (the getter for b2kSetDamping).
+/**
+Summary: A body's linear and angular damping.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: "linear,angular", or "0,0" when the control has no body.
+
+Example:
+put item 1 of b2kDamping(tFeather) into tDrag
+
+References: b2kSetDamping (handler)
+*/
 function b2kDamping pControl
    local b
    put sBody[the long id of pControl] into b
@@ -1424,6 +2774,18 @@ function b2kDamping pControl
 end b2kDamping
 
 -- Body type as a word: "static", "kinematic", or "dynamic" (mirrors b2kSetType).
+/**
+Summary: A body's type as a word.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+Returns: "static", "kinematic" or "dynamic"; "static" when the control has no body.
+
+Example:
+if b2kBodyType(tCrate) is "dynamic" then b2kPush tCrate, 0, -200
+
+References: b2kSetType (handler)
+*/
 function b2kBodyType pControl
    local b, tCode
    put sBody[the long id of pControl] into b
@@ -1435,11 +2797,34 @@ function b2kBodyType pControl
 end b2kBodyType
 
 -- How many bodies the kit is currently tracking.
+/**
+Summary: How many bodies the Kit is tracking.
+
+Returns: The number of controls with a Kit body.
+
+Example:
+put b2kBodyCount() into field "Bodies"
+
+References: b2kAwakeCount (handler), b2kAwakeBodyCount (handler)
+*/
 function b2kBodyCount
    return the number of lines of the keys of sBody
 end b2kBodyCount
 
 -- How many dynamic bodies are currently awake (i.e. actively simulating).
+/**
+Summary: How many non-static Kit bodies are awake.
+
+Returns: The count, walked over the Kit's own bodies.
+
+Example:
+put b2kAwakeCount() into field "Awake"
+
+Description:
+<b2kAwakeBodyCount> asks Box2D instead and counts bodies the Kit does not track too.
+
+References: b2kBodyCount (handler), b2kAwakeBodyCount (handler)
+*/
 function b2kAwakeCount
    local tRef, tCount
    put 0 into tCount
@@ -1450,6 +2835,23 @@ function b2kAwakeCount
 end b2kAwakeCount
 
 -- Which attached control sits at a screen point (empty if none).
+/**
+Summary: The Kit control whose body covers a screen point.
+
+pScreenX: The point's x, in pixels.
+
+pScreenY: The point's y, in pixels.
+
+Returns: The control's long id, or empty when no Kit body is there.
+
+Example:
+put b2kControlAt(the mouseH, the mouseV) into tPicked
+
+Description:
+With the camera on, pass world pixels from <b2kCamMouseX> and <b2kCamMouseY>.
+
+References: b2kControlContains (handler), b2kGrab (handler)
+*/
 function b2kControlAt pScreenX, pScreenY
    if sWorld is empty then return empty
    return sCtrl[b2BodyAtPoint(sWorld, b2kToWorldX(pScreenX), b2kToWorldY(pScreenY))]
@@ -1458,6 +2860,22 @@ end b2kControlAt
 -- True if SCREEN point (x,y) is inside this control's actual collision shape -
 -- rotation- and shape-aware, unlike a bounding-box test. b2kControlAt searches
 -- every body; this tests one control you already have (e.g. a precise click hit).
+/**
+Summary: Report whether a screen point is inside one control's collision shape.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pScreenX: The point's x, in pixels.
+
+pScreenY: The point's y, in pixels.
+
+Returns: true when the point is inside the shape (rotation and shape aware); false otherwise or when the control has no shape.
+
+Example:
+if b2kControlContains(tGear, the mouseH, the mouseV) then b2kSpin tGear, 180
+
+References: b2kControlAt (handler)
+*/
 function b2kControlContains pControl, pScreenX, pScreenY
    local tRef
    put the long id of pControl into tRef
@@ -1467,6 +2885,32 @@ end b2kControlContains
 
 -- Cast a ray between two screen points; returns the control hit (or empty).
 -- Then b2kRayHitX() / b2kRayHitY() give the hit point in screen pixels.
+/**
+Summary: Cast a ray between two screen points and find the closest hit.
+
+pX1: Start x, in pixels.
+
+pY1: Start y, in pixels.
+
+pX2: End x, in pixels.
+
+pY2: End y, in pixels.
+
+Returns: The Kit control hit, or empty when nothing is hit or the body is not a Kit body.
+
+Example:
+get b2kRayHit(100, 300, 600, 300)
+put b2kRayHitX() into tHitX
+
+Description:
+After a hit, <b2kRayHitX>, <b2kRayHitY>, <b2kRayHitNormalX>,
+<b2kRayHitNormalY> and <b2kRayDist> describe it; after a miss they are empty.
+Walls and chains count as hits even though they return empty, so test
+<b2kRayHitX> to tell a wall from a miss. A ray that starts inside a shape
+does not report that shape.
+
+References: b2kRayHitX (handler), b2kRayDist (handler), b2kRayHitAll (handler)
+*/
 function b2kRayHit pX1, pY1, pX2, pY2
    local dx, dy
    if sWorld is not empty and \
@@ -1493,24 +2937,74 @@ function b2kRayHit pX1, pY1, pX2, pY2
    return empty
 end b2kRayHit
 
+/**
+Summary: The x of the last ray hit, in screen pixels.
+
+Returns: The rounded x, or empty when the last ray missed.
+
+Example:
+if b2kRayHitX() is not empty then put b2kRayHitX() into tX
+
+References: b2kRayHit (handler), b2kRayHitY (handler)
+*/
 function b2kRayHitX
    return sRayX
 end b2kRayHitX
 
+/**
+Summary: The y of the last ray hit, in screen pixels.
+
+Returns: The rounded y, or empty when the last ray missed.
+
+Example:
+put b2kRayHitY() into tGroundY
+
+References: b2kRayHit (handler), b2kRayHitX (handler)
+*/
 function b2kRayHitY
    return sRayY
 end b2kRayHitY
 
 -- Surface normal (a unit direction, screen-oriented) at the last ray hit.
+/**
+Summary: The x part of the surface normal at the last ray hit.
+
+Returns: A unit-vector component, screen oriented, or empty when the last ray missed.
+
+Example:
+put b2kRayHitNormalX() into tNX
+
+References: b2kRayHit (handler), b2kRayHitNormalY (handler)
+*/
 function b2kRayHitNormalX
    return sRayNX
 end b2kRayHitNormalX
 
+/**
+Summary: The y part of the surface normal at the last ray hit.
+
+Returns: A unit-vector component, screen oriented (negative points up), or empty when the last ray missed.
+
+Example:
+if b2kRayHitNormalY() < -0.7 then put true into tIsFloor
+
+References: b2kRayHit (handler), b2kRayHitNormalX (handler)
+*/
 function b2kRayHitNormalY
    return sRayNY
 end b2kRayHitNormalY
 
 -- Distance in pixels from the ray's start to the last hit point.
+/**
+Summary: The distance from the last ray's start to its hit, in pixels.
+
+Returns: The distance, or empty when the last ray missed.
+
+Example:
+put b2kRayDist() into tGap
+
+References: b2kRayHit (handler)
+*/
 function b2kRayDist
    return sRayDist
 end b2kRayDist
@@ -1523,11 +3017,37 @@ end b2kRayDist
 -- nothing repeated on a 0-step one); indices are 1-based. Each accessor
 -- returns the touching control's long id (empty for a wall, the ground,
 -- or any body the kit isn't tracking).
+/**
+Summary: How many pairs of bodies began touching this frame.
+
+Returns: The count, 0 when none.
+
+Example:
+if b2kContactCount() > 0 then put b2kContactA(1) && b2kContactB(1) into tPair
+
+Description:
+Poll it from b2kFrame instead of, or alongside, the b2kContact message. Events are collected after every fixed step of the frame, so none
+is lost on a two-step frame or repeated on a zero-step one.
+
+References: b2kContactA (handler), b2kContactB (handler), b2kEndContactCount (handler), b2kContactTarget (handler)
+*/
 function b2kContactCount
    if sEvtCN is empty then return 0
    return sEvtCN
 end b2kContactCount
 
+/**
+Summary: The first control of a pair that began touching this frame.
+
+pIndex: The 1-based index of the event within this frame.
+
+Returns: The control's long id, or empty for a wall, the ground, an untracked body or an index out of range.
+
+Example:
+put b2kContactA(1) into tFirst
+
+References: b2kContactCount (handler), b2kContactB (handler)
+*/
 function b2kContactA pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1538,6 +3058,18 @@ function b2kContactA pIndex
    return sCtrl[sEvtCA[pIndex]]
 end b2kContactA
 
+/**
+Summary: The second control of a pair that began touching this frame.
+
+pIndex: The 1-based index of the event within this frame.
+
+Returns: The control's long id, or empty for a wall, the ground, an untracked body or an index out of range.
+
+Example:
+put b2kContactB(1) into tSecond
+
+References: b2kContactCount (handler), b2kContactA (handler)
+*/
 function b2kContactB pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1548,11 +3080,37 @@ function b2kContactB pIndex
    return sCtrl[sEvtCB[pIndex]]
 end b2kContactB
 
+/**
+Summary: How many pairs of bodies stopped touching this frame.
+
+Returns: The count, 0 when none.
+
+Example:
+put b2kEndContactCount() into tPartings
+
+Description:
+Events are collected after every fixed step of the frame, so none
+is lost on a two-step frame or repeated on a zero-step one.
+
+References: b2kEndContactA (handler), b2kEndContactB (handler), b2kContactCount (handler)
+*/
 function b2kEndContactCount
    if sEvtEN is empty then return 0
    return sEvtEN
 end b2kEndContactCount
 
+/**
+Summary: The first control of a pair that stopped touching this frame.
+
+pIndex: The 1-based index of the event within this frame.
+
+Returns: The control's long id, or empty for a wall, the ground, an untracked body or an index out of range.
+
+Example:
+put b2kEndContactA(1) into tFirst
+
+References: b2kEndContactCount (handler), b2kEndContactB (handler)
+*/
 function b2kEndContactA pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1563,6 +3121,18 @@ function b2kEndContactA pIndex
    return sCtrl[sEvtEA[pIndex]]
 end b2kEndContactA
 
+/**
+Summary: The second control of a pair that stopped touching this frame.
+
+pIndex: The 1-based index of the event within this frame.
+
+Returns: The control's long id, or empty for a wall, the ground, an untracked body or an index out of range.
+
+Example:
+put b2kEndContactB(1) into tSecond
+
+References: b2kEndContactCount (handler), b2kEndContactA (handler)
+*/
 function b2kEndContactB pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1578,6 +3148,30 @@ end b2kEndContactB
 -- =====================================================================
 -- Revolute pivot at screen point (x,y). If ctrlB is empty, pins ctrlA to the
 -- world at that point (great for pendulums and swinging doors).
+/**
+Summary: Pin two controls together, or one to the world, at a screen point.
+
+pCtrlA: The control, by reference (the long id of the control is safest).
+
+pCtrlB: The second control, or empty to pin the first to the world.
+
+pScreenX: The pivot x, in pixels.
+
+pScreenY: The pivot y, in pixels.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kHinge tDoor, empty, 300, 120
+put the result into tHinge
+b2kHingeLimit tHinge, -90, 0
+
+Description:
+A revolute joint: the bodies keep the pivot point in common and
+rotate freely about it. Good for pendulums, doors and wheels on a fixed axle.
+
+References: b2kMotor (handler), b2kHingeLimit (handler), b2kHingeAngle (handler), b2kRemoveJoint (handler)
+*/
 command b2kHinge pCtrlA, pCtrlB, pScreenX, pScreenY
    local bA, bB, wx, wy, aA, aB, j
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -1598,6 +3192,24 @@ command b2kHinge pCtrlA, pCtrlB, pScreenX, pScreenY
    return j
 end b2kHinge
 
+/**
+Summary: Glue two controls rigidly together.
+
+pCtrlA: The control, by reference (the long id of the control is safest).
+
+pCtrlB: The second control, by reference.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kWeld tCart, tCrate
+put the result into tGlue
+
+Description:
+The bodies keep their current relative position and angle. <b2kWeldSpring> makes the weld springy.
+
+References: b2kWeldSpring (handler), b2kRemoveJoint (handler)
+*/
 command b2kWeld pCtrlA, pCtrlB
    local bA, bB, wx, wy, aA, refA, j
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -1613,6 +3225,29 @@ command b2kWeld pCtrlA, pCtrlB
 end b2kWeld
 
 -- Distance link. pLengthPx defaults to the current distance between centres.
+/**
+Summary: Link two controls by a distance joint between their centres.
+
+pCtrlA: The control, by reference (the long id of the control is safest).
+
+pCtrlB: The second control, by reference.
+
+pLengthPx: The rest length in pixels. Empty means the current distance between the centres.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kRope tAnchor, tBob
+put the result into tRope
+b2kSpring tRope, 4, 0.3
+
+Description:
+As built, the joint holds the bodies at the rest length. Use
+<b2kRopeRange> for a slack rope with a minimum and maximum, and <b2kSpring>
+to make it springy.
+
+References: b2kRopeRange (handler), b2kRopeLength (handler), b2kSpring (handler), b2kRemoveJoint (handler)
+*/
 command b2kRope pCtrlA, pCtrlB, pLengthPx
    local bA, bB, tLen, dx, dy, j
    put sBody[the long id of pCtrlA] into bA
@@ -1629,6 +3264,20 @@ command b2kRope pCtrlA, pCtrlB, pLengthPx
    return j
 end b2kRope
 
+/**
+Summary: Drive a hinge joint at a set speed.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pDegPerSec: The target speed in degrees per second.
+
+pMaxTorque: The most torque the motor may use. Empty means 1000.
+
+Example:
+b2kMotor tHinge, 180
+
+References: b2kMotorOff (handler), b2kHinge (handler)
+*/
 command b2kMotor pJoint, pDegPerSec, pMaxTorque
    if pJoint is empty or pJoint <= 0 then exit b2kMotor
    if pMaxTorque is empty then put 1000 into pMaxTorque
@@ -1636,33 +3285,114 @@ command b2kMotor pJoint, pDegPerSec, pMaxTorque
 end b2kMotor
 
 -- Optional revolute (hinge) limits/readout. Angles are in DEGREES.
+/**
+Summary: Limit a hinge joint's angle.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pLowerDeg: The lowest angle in degrees.
+
+pUpperDeg: The highest angle in degrees.
+
+Example:
+b2kHingeLimit tHinge, -45, 45
+
+Description:
+Angles are measured from the pose the bodies had when the hinge was made.
+
+References: b2kHingeLimitOff (handler), b2kHingeAngle (handler)
+*/
 command b2kHingeLimit pJoint, pLowerDeg, pUpperDeg
    if pJoint is empty or pJoint <= 0 then exit b2kHingeLimit
    b2RevoluteEnableLimit pJoint, true, pLowerDeg * kPI / 180, pUpperDeg * kPI / 180
 end b2kHingeLimit
 
+/**
+Summary: A hinge joint's current angle.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Returns: The angle in degrees, or 0 for an empty or 0 handle.
+
+Example:
+put round(b2kHingeAngle(tHinge)) into field "Angle"
+
+References: b2kHingeLimit (handler), b2kHinge (handler)
+*/
 function b2kHingeAngle pJoint
    if pJoint is empty or pJoint <= 0 then return 0
    return b2RevoluteAngle(pJoint) * 180 / kPI
 end b2kHingeAngle
 
 -- Rope (distance) extras: read length, set a min/max range, make it springy.
+/**
+Summary: A distance joint's current length.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Returns: The length in pixels, or 0 for an empty or 0 handle.
+
+Example:
+put b2kRopeLength(tRope) into tLen
+
+References: b2kRopeSetLength (handler), b2kRope (handler)
+*/
 function b2kRopeLength pJoint
    if pJoint is empty or pJoint <= 0 then return 0
    return b2DistanceLength(pJoint) * sScale
 end b2kRopeLength
 
 -- Set a rope (distance) joint's exact rest length, in pixels.
+/**
+Summary: Set a distance joint's rest length.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pLengthPx: The rest length in pixels.
+
+Example:
+b2kRopeSetLength tRope, 120
+
+References: b2kRopeLength (handler), b2kRopeRange (handler)
+*/
 command b2kRopeSetLength pJoint, pLengthPx
    if pJoint is empty or pJoint <= 0 then exit b2kRopeSetLength
    b2DistanceSetLength pJoint, pLengthPx / sScale
 end b2kRopeSetLength
 
+/**
+Summary: Set a distance joint's minimum and maximum length.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pMinPx: The shortest length in pixels.
+
+pMaxPx: The longest length in pixels.
+
+Example:
+b2kRopeRange tRope, 0, 200
+
+References: b2kRope (handler), b2kRopeSetLength (handler)
+*/
 command b2kRopeRange pJoint, pMinPx, pMaxPx
    if pJoint is empty or pJoint <= 0 then exit b2kRopeRange
    b2DistanceSetLengthRange pJoint, pMinPx / sScale, pMaxPx / sScale
 end b2kRopeRange
 
+/**
+Summary: Make a distance joint springy.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pHertz: The spring stiffness in hertz.
+
+pDamping: The damping ratio. Empty means 0.5.
+
+Example:
+b2kSpring tRope, 3, 0.2
+
+References: b2kRope (handler), b2kWeldSpring (handler), b2kWheelSpring (handler)
+*/
 command b2kSpring pJoint, pHertz, pDamping
    if pJoint is empty or pJoint <= 0 then exit b2kSpring
    if pDamping is empty then put 0.5 into pDamping
@@ -1670,6 +3400,20 @@ command b2kSpring pJoint, pHertz, pDamping
 end b2kSpring
 
 -- Make a weld springy (0 hertz = rigid again).
+/**
+Summary: Make a weld joint springy.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pHertz: The stiffness in hertz for both the linear and angular parts; 0 makes the weld rigid again.
+
+pDamping: The damping ratio. Empty means 0.5.
+
+Example:
+b2kWeldSpring tGlue, 5
+
+References: b2kWeld (handler), b2kSpring (handler)
+*/
 command b2kWeldSpring pJoint, pHertz, pDamping
    if pJoint is empty or pJoint <= 0 then exit b2kWeldSpring
    if pDamping is empty then put 0.5 into pDamping
@@ -1679,6 +3423,27 @@ end b2kWeldSpring
 -- Slider (prismatic): constrain pCtrlA to slide along an axis relative to
 -- pCtrlB (or the world if empty). pAxisDeg is the on-screen slide direction
 -- (0 = horizontal, 90 = vertical; default vertical). Drive it with b2kSliderMotor.
+/**
+Summary: Let one control slide along an axis relative to another, or to the world.
+
+pCtrlA: The control that slides, by reference.
+
+pCtrlB: The control it slides against, or empty for the world.
+
+pAxisDeg: The on-screen slide direction in degrees: 0 is horizontal, 90 vertical. Empty means 90.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kSlider tLift, empty, 90
+put the result into tTrack
+b2kSliderLimit tTrack, -200, 0
+
+Description:
+A prismatic joint. Drive it with <b2kSliderMotor> and bound it with <b2kSliderLimit>.
+
+References: b2kSliderMotor (handler), b2kSliderLimit (handler), b2kSliderPos (handler), b2kRemoveJoint (handler)
+*/
 command b2kSlider pCtrlA, pCtrlB, pAxisDeg
    local bMover, bFixed, wax, way, ca, sa, lax, lay, anchX, anchY, aFix, aMov, refA, fixAng, j
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -1704,17 +3469,60 @@ command b2kSlider pCtrlA, pCtrlB, pAxisDeg
    return j
 end b2kSlider
 
+/**
+Summary: Drive a slider joint at a set speed.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pPxPerSec: The target speed in pixels per second along the axis.
+
+pMaxForce: The most force the motor may use. Empty means 1000.
+
+Example:
+b2kSliderMotor tTrack, 80
+
+References: b2kSliderMotorOff (handler), b2kSlider (handler)
+*/
 command b2kSliderMotor pJoint, pPxPerSec, pMaxForce
    if pJoint is empty or pJoint <= 0 then exit b2kSliderMotor
    if pMaxForce is empty then put 1000 into pMaxForce
    b2PrismaticEnableMotor pJoint, true, pPxPerSec / sScale, pMaxForce
 end b2kSliderMotor
 
+/**
+Summary: Limit a slider joint's travel.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pLowerPx: The lowest translation in pixels.
+
+pUpperPx: The highest translation in pixels.
+
+Example:
+b2kSliderLimit tTrack, -200, 0
+
+Description:
+Translation is measured along the joint's axis from where the joint was made.
+
+References: b2kSliderLimitOff (handler), b2kSliderPos (handler)
+*/
 command b2kSliderLimit pJoint, pLowerPx, pUpperPx
    if pJoint is empty or pJoint <= 0 then exit b2kSliderLimit
    b2PrismaticEnableLimit pJoint, true, pLowerPx / sScale, pUpperPx / sScale
 end b2kSliderLimit
 
+/**
+Summary: A slider joint's current translation.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Returns: The translation in pixels along the axis, or 0 for an empty or 0 handle.
+
+Example:
+if b2kSliderPos(tTrack) <= -200 then b2kSliderMotor tTrack, 80
+
+References: b2kSliderLimit (handler), b2kSlider (handler)
+*/
 function b2kSliderPos pJoint
    if pJoint is empty or pJoint <= 0 then return 0
    return b2PrismaticTranslation(pJoint) * sScale
@@ -1723,6 +3531,28 @@ end b2kSliderPos
 -- Wheel: a sprung sliding axis + free spin (vehicle wheels). pChassis carries
 -- pWheel; anchor defaults to the wheel's centre, suspension axis to world "up".
 -- Drive with b2kWheelMotor, tune ride with b2kWheelSpring.
+/**
+Summary: Attach a wheel to a chassis with a sprung axis and free spin.
+
+pChassis: The chassis control, by reference.
+
+pWheel: The wheel control, by reference.
+
+pScreenX: The anchor x in pixels. Empty means the wheel's centre.
+
+pScreenY: The anchor y in pixels, used when an anchor x is given.
+
+pAxisDeg: The suspension axis in screen degrees. Empty means straight up.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kWheel tCar, tFrontWheel
+put the result into tAxle
+b2kWheelMotor tAxle, -720
+
+References: b2kWheelMotor (handler), b2kWheelSpring (handler), b2kRemoveJoint (handler)
+*/
 command b2kWheel pChassis, pWheel, pScreenX, pScreenY, pAxisDeg
    local bA, bB, anchX, anchY, aA, aB, wax, way, ca, sa, lax, lay, angA, j
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -1755,12 +3585,40 @@ command b2kWheel pChassis, pWheel, pScreenX, pScreenY, pAxisDeg
    return j
 end b2kWheel
 
+/**
+Summary: Drive a wheel joint at a set spin speed.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pDegPerSec: The target spin in degrees per second.
+
+pMaxTorque: The most torque the motor may use. Empty means 1000.
+
+Example:
+b2kWheelMotor tAxle, -720
+
+References: b2kWheelMotorOff (handler), b2kWheel (handler)
+*/
 command b2kWheelMotor pJoint, pDegPerSec, pMaxTorque
    if pJoint is empty or pJoint <= 0 then exit b2kWheelMotor
    if pMaxTorque is empty then put 1000 into pMaxTorque
    b2WheelEnableMotor pJoint, true, pDegPerSec * kPI / 180, pMaxTorque
 end b2kWheelMotor
 
+/**
+Summary: Tune a wheel joint's suspension.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+pHertz: The spring stiffness in hertz. Empty means 4.
+
+pDamping: The damping ratio. Empty means 0.7.
+
+Example:
+b2kWheelSpring tAxle, 6, 0.5
+
+References: b2kWheel (handler)
+*/
 command b2kWheelSpring pJoint, pHertz, pDamping
    if pJoint is empty or pJoint <= 0 then exit b2kWheelSpring
    if pHertz is empty then put 4 into pHertz
@@ -1770,30 +3628,115 @@ end b2kWheelSpring
 
 -- OFF switches: the b2k... joint wrappers above only ever turn a feature ON, so
 -- these let callers disable a motor or limit again (free swing / unbounded slide).
+/**
+Summary: Turn a hinge joint's motor off.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kMotorOff tHinge
+
+Description:
+The hinge swings freely again.
+
+References: b2kMotor (handler)
+*/
 command b2kMotorOff pJoint
    if pJoint is not empty and pJoint > 0 then b2RevoluteEnableMotor pJoint, false, 0, 0
 end b2kMotorOff
 
+/**
+Summary: Remove a hinge joint's angle limits.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kHingeLimitOff tHinge
+
+References: b2kHingeLimit (handler)
+*/
 command b2kHingeLimitOff pJoint
    if pJoint is not empty and pJoint > 0 then b2RevoluteEnableLimit pJoint, false, 0, 0
 end b2kHingeLimitOff
 
+/**
+Summary: Turn a slider joint's motor off.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kSliderMotorOff tTrack
+
+References: b2kSliderMotor (handler)
+*/
 command b2kSliderMotorOff pJoint
    if pJoint is not empty and pJoint > 0 then b2PrismaticEnableMotor pJoint, false, 0, 0
 end b2kSliderMotorOff
 
+/**
+Summary: Remove a slider joint's travel limits.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kSliderLimitOff tTrack
+
+References: b2kSliderLimit (handler)
+*/
 command b2kSliderLimitOff pJoint
    if pJoint is not empty and pJoint > 0 then b2PrismaticEnableLimit pJoint, false, 0, 0
 end b2kSliderLimitOff
 
+/**
+Summary: Turn a wheel joint's motor off.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kWheelMotorOff tAxle
+
+References: b2kWheelMotor (handler)
+*/
 command b2kWheelMotorOff pJoint
    if pJoint is not empty and pJoint > 0 then b2WheelEnableMotor pJoint, false, 0, 0
 end b2kWheelMotorOff
 
+/**
+Summary: Destroy a joint.
+
+pJoint: The joint handle a Kit joint constructor reported. Empty or 0 makes this a no-op.
+
+Example:
+b2kRemoveJoint tRope
+
+Description:
+Works for every joint the Kit makes, including <b2kMotorTo> and <b2kNoCollide> joints. A stale handle is harmless.
+
+References: b2kHinge (handler), b2kRope (handler), b2kNoCollide (handler)
+*/
 command b2kRemoveJoint pJoint
    if pJoint is not empty and pJoint > 0 then b2DestroyJoint pJoint
 end b2kRemoveJoint
 
+/**
+Summary: Convert a world point to a raw body's local frame.
+
+pBody: A raw body handle (see b2kBodyOf).
+
+pWx: The world x, in metres.
+
+pWy: The world y, in metres.
+
+Returns: "lx,ly" in metres in the body's local frame.
+
+Example:
+put b2kLocalAnchor(b2kBodyOf(tDoor), b2kToWorldX(300), b2kToWorldY(120)) into tAnchor
+
+Description:
+A helper the joint constructors use to place anchors.
+
+References: b2kBodyOf (handler), b2kHinge (handler)
+*/
 function b2kLocalAnchor pBody, pWx, pWy
    local bcx, bcy, ba, dx, dy, c, s
    put b2BodyX(pBody) into bcx
@@ -1814,6 +3757,31 @@ end b2kLocalAnchor
 -- "capsule". While the loop runs, overlaps are delivered to your b2kContactTarget
 -- as `on b2kSensorEnter pSensorCtrl, pVisitorCtrl` / `on b2kSensorExit ...`. The
 -- kit enables sensor events on every body it creates, so sensors detect them.
+/**
+Summary: Give a control a static sensor body: it reports overlaps but never blocks.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pShape: "box" (the default), "ball" or "capsule".
+
+Returns: The body handle through the result, or 0 when there is no world or the control has no size.
+
+Example:
+b2kAddSensor the long id of graphic "Goal"
+b2kContactTarget the long id of me
+
+Description:
+Each frame, bodies that entered or left the sensor are reported to
+the contact target (<b2kContactTarget>) as b2kSensorEnter and b2kSensorExit,
+with the sensor control and the visitor control. The frame target does not
+get them. The Kit enables sensor events on every body it creates, so its
+bodies are detected.
+
+Sensor messages suit one-shot triggers such as coins and goals. For presence
+(pressure plates) poll <b2kOverlapMoving> each frame instead.
+
+References: b2kSensorCount (handler), b2kSetSensor (handler), b2kOverlapMoving (handler)
+*/
 command b2kAddSensor pControl, pShape
    local tRef
    if sWorld is empty then return 0
@@ -1843,16 +3811,59 @@ end b2kAddSensor
 -- Flip a control's collision between solid and SENSOR (a non-solid trigger that
 -- reports overlaps but never blocks). The flag lives on the shape, so rebuild the
 -- shape afterwards with b2kReshape - it re-applies the sensor state from here.
+/**
+Summary: Mark a control's shape as a sensor or as solid, for its next rebuild.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pFlag: true for a sensor, anything else for solid.
+
+Example:
+b2kSetSensor tZone, true
+b2kReshape tZone, "box"
+
+Description:
+The sensor flag lives on the shape, so this only records the
+choice. Rebuild the shape with <b2kReshape> to apply it.
+
+References: b2kReshape (handler), b2kAddSensor (handler)
+*/
 command b2kSetSensor pControl, pFlag
    put (pFlag is true) into sSensor[the long id of pControl]
 end b2kSetSensor
 
 -- Polling alternative to the on b2kSensorEnter/Exit messages (read in on b2kFrame).
 -- Counts/indices are 1-based; each returns a control (empty for untracked bodies).
+/**
+Summary: How many sensor entries happened this frame.
+
+Returns: The count, 0 when none.
+
+Example:
+if b2kSensorCount() > 0 then put b2kSensorEnterVisitor(1) into tWho
+
+Description:
+The polling alternative to the b2kSensorEnter message; read it from
+b2kFrame. Events are collected after every fixed step of the frame.
+
+References: b2kSensorEnterSensor (handler), b2kSensorEnterVisitor (handler), b2kSensorExitCount (handler)
+*/
 function b2kSensorCount
    if sEvtSN is empty then return 0
    return sEvtSN
 end b2kSensorCount
+/**
+Summary: The sensor control of an entry this frame.
+
+pIndex: The 1-based index of the entry within this frame.
+
+Returns: The sensor's long id, or empty for an untracked body or an index out of range.
+
+Example:
+put b2kSensorEnterSensor(1) into tZone
+
+References: b2kSensorCount (handler), b2kSensorEnterVisitor (handler)
+*/
 function b2kSensorEnterSensor pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1862,6 +3873,18 @@ function b2kSensorEnterSensor pIndex
    if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSS[pIndex]]
 end b2kSensorEnterSensor
+/**
+Summary: The visiting control of an entry this frame.
+
+pIndex: The 1-based index of the entry within this frame.
+
+Returns: The visitor's long id, or empty for an untracked body or an index out of range.
+
+Example:
+put b2kSensorEnterVisitor(1) into tWho
+
+References: b2kSensorCount (handler), b2kSensorEnterSensor (handler)
+*/
 function b2kSensorEnterVisitor pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1871,10 +3894,32 @@ function b2kSensorEnterVisitor pIndex
    if pIndex < 1 or pIndex > sEvtSN then return empty
    return sCtrl[sEvtSV[pIndex]]
 end b2kSensorEnterVisitor
+/**
+Summary: How many sensor exits happened this frame.
+
+Returns: The count, 0 when none.
+
+Example:
+put b2kSensorExitCount() into tLeft
+
+References: b2kSensorExitSensor (handler), b2kSensorExitVisitor (handler), b2kSensorCount (handler)
+*/
 function b2kSensorExitCount
    if sEvtXN is empty then return 0
    return sEvtXN
 end b2kSensorExitCount
+/**
+Summary: The sensor control of an exit this frame.
+
+pIndex: The 1-based index of the exit within this frame.
+
+Returns: The sensor's long id, or empty for an untracked body or an index out of range.
+
+Example:
+put b2kSensorExitSensor(1) into tZone
+
+References: b2kSensorExitCount (handler), b2kSensorExitVisitor (handler)
+*/
 function b2kSensorExitSensor pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1884,6 +3929,18 @@ function b2kSensorExitSensor pIndex
    if pIndex < 1 or pIndex > sEvtXN then return empty
    return sCtrl[sEvtXS[pIndex]]
 end b2kSensorExitSensor
+/**
+Summary: The visiting control of an exit this frame.
+
+pIndex: The 1-based index of the exit within this frame.
+
+Returns: The visitor's long id, or empty for an untracked body or an index out of range.
+
+Example:
+put b2kSensorExitVisitor(1) into tWho
+
+References: b2kSensorExitCount (handler), b2kSensorExitSensor (handler)
+*/
 function b2kSensorExitVisitor pIndex
    -- ENGINE-FOUND 2026-08-16 (on the EndContact pair, fixed as a family):
    -- b2kEventsReset zeroes the COUNTS and leaves the entry arrays, so an
@@ -1901,6 +3958,25 @@ end b2kSensorExitVisitor
 -- b2kSetCategory / b2kSetMask take a comma- or space-separated list of layer
 -- names (or raw numbers). Two shapes collide only if EACH one's category appears
 -- in the other's mask (and no shared negative group forbids it).
+/**
+Summary: Define or look up a named collision layer.
+
+pName: The layer's name.
+
+Returns: The layer's bit value through the result, or 0 when all 31 nameable layers are taken.
+
+Example:
+b2kDefineLayer "enemies"
+put the result into tBit
+
+Description:
+Layers are handed out from bit 1 up to bit 2^30. The top bit, 2^31,
+is the Kit's reserved "oneway" layer for chains; it can be named in a list
+but is never handed out. You rarely need to call this yourself: the layer
+lists of <b2kSetCategory> and <b2kSetMask> define names as they meet them.
+
+References: b2kLayerBits (handler), b2kSetCategory (handler), b2kSetMask (handler)
+*/
 command b2kDefineLayer pName
    if sLayers[pName] is not empty then return sLayers[pName]
    if sNextBit is empty or sNextBit < 1 then put 1 into sNextBit
@@ -1914,6 +3990,21 @@ command b2kDefineLayer pName
    return sLayers[pName]
 end b2kDefineLayer
 
+/**
+Summary: Turn a list of layer names into a bitmask.
+
+pLayerList: A comma or space separated list of layer names or raw numbers.
+
+Returns: The combined bit value.
+
+Example:
+put b2kLayerBits("player,enemies") into tMask
+
+Description:
+Unknown names are defined on the way (<b2kDefineLayer>); "oneway" is bit 2^31.
+
+References: b2kDefineLayer (handler)
+*/
 function b2kLayerBits pLayerList
    local tBits, tL
    put 0 into tBits
@@ -1938,6 +4029,23 @@ function b2kLayerBits pLayerList
    return tBits
 end b2kLayerBits
 
+/**
+Summary: Set which collision layers a control belongs to.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pLayerList: A comma or space separated list of layer names or raw numbers.
+
+Example:
+b2kSetCategory tSlime, "enemies"
+
+Description:
+Two shapes collide only when each one's category is in the other's
+mask. The shape keeps its mask and group. A control with no Kit shape is
+ignored.
+
+References: b2kSetMask (handler), b2kSetCollisionGroup (handler), b2kDefineLayer (handler)
+*/
 command b2kSetCategory pControl, pLayerList
    local s, tM
    put sShapeH[the long id of pControl] into s
@@ -1958,6 +4066,23 @@ command b2kSetCategory pControl, pLayerList
    b2SetShapeFilter s, b2kLayerBits(pLayerList), tM, b2ShapeFilterGroup(s)
 end b2kSetCategory
 
+/**
+Summary: Set which collision layers a control collides with.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pLayerList: A comma or space separated list of layer names or raw numbers.
+
+Example:
+b2kSetMask tGhost, "walls"
+
+Description:
+The reserved "oneway" bit is always added, so a body with a custom
+mask still stands on <b2kChain> terrain. The shape keeps its category and
+group. A control with no Kit shape is ignored.
+
+References: b2kSetCategory (handler), b2kNoCollide (handler)
+*/
 command b2kSetMask pControl, pLayerList
    local s, tC
    put sShapeH[the long id of pControl] into s
@@ -1977,6 +4102,21 @@ end b2kSetMask
 
 -- Group index: bodies sharing a NEGATIVE group never collide; a POSITIVE group
 -- always collide. Overrides category/mask. 0 (default) = use category/mask.
+/**
+Summary: Set a control's collision group index.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pGroup: A negative group never collides with its own group; a positive one always does; 0 uses category and mask.
+
+Example:
+b2kSetCollisionGroup tRagdollArm, -1
+
+Description:
+The group overrides category and mask. A control with no Kit shape is ignored.
+
+References: b2kSetCategory (handler), b2kNoCollide (handler)
+*/
 command b2kSetCollisionGroup pControl, pGroup
    local s, tC, tM
    put sShapeH[the long id of pControl] into s
@@ -2003,6 +4143,32 @@ end b2kSetCollisionGroup
 -- segment PAST the surface you need on each side (over solid ground the
 -- ghost tails can simply continue flat). A chain whose endpoints sit AT the
 -- platform edges has non-solid ends -- bodies fall straight through them.
+/**
+Summary: Build smooth static terrain from a list of screen points.
+
+pPoints: Screen points, one "x,y" per line. At least 4 points.
+
+pLoop: true to close the chain into a loop; anything else leaves it open.
+
+Returns: The chain handle through the result, or 0 when there is no world.
+
+Example:
+b2kChain "900,400" & cr & "600,400" & cr & "300,400" & cr & "0,400"
+put the result into tGround
+
+Description:
+A chain has no inner corners for fast bodies to catch on. It is
+invisible (draw a graphic to match) and one-sided: the solid side is to the
+right of the direction the points run, so list a floor's top surface right to
+left. On an open chain the first and last segments are ghost anchors that do
+not collide, so run the chain one segment past the surface you need at
+each end.
+
+Every Kit chain carries the reserved "oneway" layer, which lets the player
+drop through it. It is not a tracked body, so <b2kClear> leaves it.
+
+References: b2kSmoothGround (handler), b2kAddChain (handler), b2kWall (handler)
+*/
 command b2kChain pPoints, pLoop
    local tBody, p, tChain
    if sWorld is empty then return 0
@@ -2023,6 +4189,22 @@ command b2kChain pPoints, pLoop
    return tChain
 end b2kChain
 
+/**
+Summary: Build an open chain of smooth static terrain.
+
+pPoints: Screen points, one "x,y" per line. At least 4 points.
+
+Returns: The chain handle through the result, or 0 when there is no world.
+
+Example:
+b2kSmoothGround tPoints
+put the result into tGround
+
+Description:
+The same as <b2kChain> with pLoop false; its ghost rule and winding apply.
+
+References: b2kChain (handler)
+*/
 command b2kSmoothGround pPoints
    -- statement call + the result: OXT cannot call commands function-style.
    -- Mind b2kChain's GHOST RULE: the outer two points anchor, not collide.
@@ -2038,6 +4220,28 @@ end b2kSmoothGround
 -- the control's centre, so moving the control moves the terrain with it. pLoop
 -- true closes the outline into a solid blob; false leaves a one-sided ground
 -- line. Great for smooth, rolling, concave terrain a fast body won't catch on.
+/**
+Summary: Give a control a static chain body from its outline points.
+
+pControl: The control, by reference (the long id of the control is safest).
+
+pPoints: Screen points, one "x,y" per line.
+
+pLoop: true to close the outline into a solid blob; anything else leaves an open line.
+
+Returns: The body handle through the result, or 0 when there is no world.
+
+Example:
+b2kAddChain the long id of graphic "Hill", the points of graphic "Hill", false
+
+Description:
+Unlike <b2kChain> the body is registered against the control, so
+<b2kControlAt>, <b2kMoveTo> and <b2kRemove> treat it like any static part.
+The points are taken relative to the control's centre. These chains are solid
+terrain and do not carry the "oneway" layer.
+
+References: b2kChain (handler), b2kRemove (handler)
+*/
 command b2kAddChain pControl, pPoints, pLoop
    local tRef, tCx, tCy, tBody, p, lx, ly
    if sWorld is empty then return 0
@@ -2063,6 +4267,29 @@ end b2kAddChain
 -- NOTE: this asks the BROADPHASE, whose boxes are fattened (~0.1m = a few
 -- px) -- a region touching the floor reports the floor. For presence
 -- checks (plates, buttons) use b2kOverlapMoving.
+/**
+Summary: The Kit controls whose bodies overlap a screen rectangle.
+
+pX1: One corner's x, in pixels.
+
+pY1: One corner's y, in pixels.
+
+pX2: The other corner's x, in pixels.
+
+pY2: The other corner's y, in pixels.
+
+Returns: The controls' long ids, one per line, or empty.
+
+Example:
+put b2kOverlap(100, 100, 200, 200) into tInside
+
+Description:
+It asks Box2D's broadphase, whose boxes are slightly enlarged
+(about 0.1 m, a few pixels), so a rectangle touching the floor reports the
+floor. Use <b2kOverlapMoving> for presence checks.
+
+References: b2kOverlapMoving (handler), b2kOverlapCircle (handler)
+*/
 function b2kOverlap pX1, pY1, pX2, pY2
    if sWorld is empty then return empty
    return b2kQueryToControls(b2OverlapAABB(sWorld, b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)))
@@ -2074,6 +4301,29 @@ end b2kOverlap
 -- itself overlap it forever; filtering statics asks what a plate means:
 -- "is some THING on me?" (Dynamic and kinematic bodies count; sleeping
 -- ones still register.)
+/**
+Summary: The non-static Kit controls overlapping a screen rectangle.
+
+pX1: One corner's x, in pixels.
+
+pY1: One corner's y, in pixels.
+
+pX2: The other corner's x, in pixels.
+
+pY2: The other corner's y, in pixels.
+
+Returns: The controls' long ids, one per line, or empty.
+
+Example:
+put (b2kOverlapMoving(400, 380, 460, 400) is not empty) into tPlateDown
+
+Description:
+The presence poll for pressure plates and buttons: static bodies
+are filtered out, dynamic and kinematic bodies count, and sleeping bodies
+still register.
+
+References: b2kOverlap (handler), b2kAddSensor (handler)
+*/
 function b2kOverlapMoving pX1, pY1, pX2, pY2
    local tLine, tOut
    put empty into tOut
@@ -2086,18 +4336,67 @@ function b2kOverlapMoving pX1, pY1, pX2, pY2
 end b2kOverlapMoving
 
 -- Controls whose body overlaps a screen circle.
+/**
+Summary: The Kit controls whose bodies overlap a screen circle.
+
+pX: The centre x, in pixels.
+
+pY: The centre y, in pixels.
+
+pRadiusPx: The radius, in pixels.
+
+Returns: The controls' long ids, one per line, or empty.
+
+Example:
+put b2kOverlapCircle(the mouseH, the mouseV, 40) into tNear
+
+References: b2kOverlap (handler)
+*/
 function b2kOverlapCircle pX, pY, pRadiusPx
    if sWorld is empty then return empty
    return b2kQueryToControls(b2OverlapCircle(sWorld, b2kToWorldX(pX), b2kToWorldY(pY), pRadiusPx / sScale))
 end b2kOverlapCircle
 
 -- Every control a ray crosses, nearest-first (vs b2kRayHit's single closest).
+/**
+Summary: Every Kit control a ray between two screen points crosses.
+
+pX1: Start x, in pixels.
+
+pY1: Start y, in pixels.
+
+pX2: End x, in pixels.
+
+pY2: End y, in pixels.
+
+Returns: The controls' long ids, one per line, nearest first, or empty.
+
+Example:
+put b2kRayHitAll(0, 200, 600, 200) into tLine
+
+References: b2kRayHit (handler)
+*/
 function b2kRayHitAll pX1, pY1, pX2, pY2
    if sWorld is empty then return empty
    return b2kQueryToControls(b2RayCastAll(sWorld, b2kToWorldX(pX1), b2kToWorldY(pY1), b2kToWorldX(pX2), b2kToWorldY(pY2)))
 end b2kRayHitAll
 
 -- Shared: turn the current query result (count) into a newline list of controls.
+/**
+Summary: Turn the last raw query's rows into Kit controls.
+
+pCount: The row count the raw query returned.
+
+Returns: The controls' long ids, one per line; rows with no Kit control are skipped.
+
+Example:
+put b2kQueryToControls(tCount) into tControls
+
+Description:
+A helper behind <b2kOverlap>, <b2kOverlapCircle> and <b2kRayHitAll>.
+
+References: b2kOverlap (handler)
+*/
 function b2kQueryToControls pCount
    local i, c, tList
    put empty into tList
@@ -2114,6 +4413,34 @@ end b2kQueryToControls
 -- Drive pMover toward a target pose relative to pRef (a moving anchor; empty =
 -- the world). Offsets are in screen pixels / degrees from pRef's centre. Great for
 -- followers, lifts and character motion. Returns a joint handle (b2kRemoveJoint).
+/**
+Summary: Drive a control toward a pose offset from another control or the world.
+
+pMover: The control to drive, by reference.
+
+pRef: The control the offset is measured from, or empty for the world.
+
+pOffsetXPx: The target x offset, in pixels.
+
+pOffsetYPx: The target y offset, in pixels (positive is down).
+
+pAngleDeg: The target angle offset in degrees. Empty means 0.
+
+pMaxForce: The most force the joint may use. Empty means 1000.
+
+pMaxTorque: The most torque the joint may use. Empty means 1000.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kMotorTo tPet, tHero, -40, 0, 0
+put the result into tLeash
+
+Description:
+A motor joint, good for followers and lifts. Remove it with <b2kRemoveJoint>.
+
+References: b2kRemoveJoint (handler), b2kSlider (handler)
+*/
 command b2kMotorTo pMover, pRef, pOffsetXPx, pOffsetYPx, pAngleDeg, pMaxForce, pMaxTorque
    local bMover, bRef
    put sBody[the long id of pMover] into bMover
@@ -2129,6 +4456,25 @@ end b2kMotorTo
 
 -- Stop two specific controls from colliding with each other (without changing how
 -- either collides with anything else). Returns a joint handle (b2kRemoveJoint).
+/**
+Summary: Stop two controls colliding with each other.
+
+pCtrlA: The control, by reference (the long id of the control is safest).
+
+pCtrlB: The second control, by reference.
+
+Returns: The joint handle through the result, or 0 when a control has no body or there is no world.
+
+Example:
+b2kNoCollide tHero, tPet
+put the result into tPass
+
+Description:
+A filter joint: only this pair stops colliding; each still
+collides with everything else. Remove it with <b2kRemoveJoint>.
+
+References: b2kRemoveJoint (handler), b2kSetCollisionGroup (handler)
+*/
 command b2kNoCollide pCtrlA, pCtrlB
    local bA, bB
    put sBody[the long id of pCtrlA] into bA
@@ -2141,29 +4487,106 @@ end b2kNoCollide
 -- World tuning (advanced) + perf readout
 -- =====================================================================
 -- Below this approach speed (px/sec) collisions stop bouncing, even if bouncy.
+/**
+Summary: Set the speed below which collisions stop bouncing.
+
+pPxPerSec: The approach speed, in pixels per second.
+
+Example:
+b2kSetRestitutionThreshold 30
+
+Description:
+A higher value removes small jittery bounces. With no world it does nothing.
+
+References: b2kSetBounce (handler)
+*/
 command b2kSetRestitutionThreshold pPxPerSec
    if sWorld is not empty then b2SetRestitutionThreshold sWorld, pPxPerSec / sScale
 end b2kSetRestitutionThreshold
 
 -- Contact softness: stiffness (hertz), damping ratio, max separation-fix speed (px/sec).
+/**
+Summary: Tune contact softness for the world.
+
+pHertz: Contact stiffness, in hertz.
+
+pDamping: The contact damping ratio.
+
+pPushPx: The fastest speed, in pixels per second, at which overlapping shapes are pushed apart.
+
+Example:
+b2kSetContactTuning 30, 10, 5
+
+Description:
+With no world it does nothing.
+
+References: b2kSetJointTuning (handler)
+*/
 command b2kSetContactTuning pHertz, pDamping, pPushPx
    if sWorld is not empty then b2SetContactTuning sWorld, pHertz, pDamping, pPushPx / sScale
 end b2kSetContactTuning
 
+/**
+Summary: Tune joint softness for the world.
+
+pHertz: Joint stiffness, in hertz.
+
+pDamping: The joint damping ratio.
+
+Example:
+b2kSetJointTuning 60, 2
+
+Description:
+With no world it does nothing.
+
+References: b2kSetContactTuning (handler)
+*/
 command b2kSetJointTuning pHertz, pDamping
    if sWorld is not empty then b2SetJointTuning sWorld, pHertz, pDamping
 end b2kSetJointTuning
 
 -- Clamp how fast any body can move (px/sec) - stops runaway speeds.
+/**
+Summary: Limit how fast any body can move.
+
+pPxPerSec: The top speed, in pixels per second.
+
+Example:
+b2kSetMaxSpeed 1800
+
+Description:
+With no world it does nothing.
+*/
 command b2kSetMaxSpeed pPxPerSec
    if sWorld is not empty then b2SetMaximumLinearSpeed sWorld, pPxPerSec / sScale
 end b2kSetMaxSpeed
 
+/**
+Summary: Turn the solver's warm starting on or off.
+
+pFlag: true to reuse the last step's solution (the default), false to turn it off.
+
+Example:
+b2kEnableWarmStarting true
+
+Description:
+Warm starting makes stacks faster and more stable. With no world it does nothing.
+*/
 command b2kEnableWarmStarting pFlag
    if sWorld is not empty then b2EnableWarmStarting sWorld, (pFlag is true)
 end b2kEnableWarmStarting
 
 -- A quick perf readout in milliseconds: "totalStep,collide,solve" for the last step.
+/**
+Summary: Timings for the last physics step.
+
+Returns: "totalStep,collide,solve" in milliseconds, or empty with no world.
+
+Example:
+put b2kProfile() into field "Perf"
+
+References: b2kAwakeBodyCount (handler)
+*/
 function b2kProfile
    if sWorld is empty then return empty
    b2WorldProfileUpdate sWorld
@@ -2171,6 +4594,19 @@ function b2kProfile
 end b2kProfile
 
 -- How many dynamic bodies are awake right now (native count, vs b2kAwakeCount).
+/**
+Summary: How many bodies Box2D has awake.
+
+Returns: The native count, or 0 with no world.
+
+Example:
+put b2kAwakeBodyCount() into field "Awake"
+
+Description:
+It counts every awake body in the world, including bodies the Kit does not track.
+
+References: b2kAwakeCount (handler), b2kProfile (handler)
+*/
 function b2kAwakeBodyCount
    if sWorld is empty then return 0
    return b2AwakeBodyCount(sWorld)
@@ -2179,6 +4615,25 @@ end b2kAwakeBodyCount
 -- =====================================================================
 -- Dragging: call b2kGrab from mouseDown and b2kRelease from mouseUp.
 -- =====================================================================
+/**
+Summary: Start dragging the dynamic body under a screen point.
+
+pScreenX: The point's x, in pixels.
+
+pScreenY: The point's y, in pixels.
+
+Returns: The grabbed control, or empty when no dynamic body is there.
+
+Example:
+get b2kGrab(b2kCamMouseX(), b2kCamMouseY())
+
+Description:
+Call it from mouseDown and <b2kRelease> from mouseUp. While a body
+is held, the loop pulls it toward the mouse each frame with a mouse joint.
+With the camera on, pass <b2kCamMouseX> and <b2kCamMouseY>.
+
+References: b2kRelease (handler), b2kControlAt (handler)
+*/
 function b2kGrab pScreenX, pScreenY
    local tWx, tWy, tBody
    if sWorld is empty then return empty   -- grab before setup: nothing to hit
@@ -2194,6 +4649,17 @@ function b2kGrab pScreenX, pScreenY
    return empty
 end b2kGrab
 
+/**
+Summary: Let go of a dragged body.
+
+Example:
+b2kRelease
+
+Description:
+Safe to call when nothing is held.
+
+References: b2kGrab (handler)
+*/
 command b2kRelease
    if sDragJoint is not empty and sDragJoint > 0 then b2DestroyJoint sDragJoint
    put 0 into sDragJoint
@@ -2210,6 +4676,24 @@ end b2kRelease
 -- rawKeyDown with no paired ups), focus stealing by fields/buttons, and
 -- frontscript plumbing. Letter keys bind BOTH keysym cases ("w" = 119 and
 -- 87) because the reported code shifts with the Shift key.
+/**
+Summary: Turn on the per-frame keyboard sample.
+
+Example:
+b2kInputOn
+b2kFrameTarget the long id of me
+
+Description:
+Each frame the loop reads the keys held down and compares them with
+the previous frame, so the key, action and axis queries work from b2kFrame.
+No focus or key messages are needed.
+
+It also fills empty bindings: action "jump" (space), action "dash" (shift, x),
+axis "moveX" (left, a / right, d) and axis "moveY" (up, w / down, s). Your own
+bindings are kept.
+
+References: b2kInputOff (handler), b2kKeyIsDown (handler), b2kBindAction (handler), b2kAxis (handler)
+*/
 command b2kInputOn
    put true into sInputOn
    put comma into sKeysNow
@@ -2221,18 +4705,52 @@ command b2kInputOn
    if sAxisNeg["moveY"] is empty then b2kBindAxis "moveY", "up,w", "down,s"
 end b2kInputOn
 
+/**
+Summary: Turn off the per-frame keyboard sample.
+
+Example:
+b2kInputOff
+
+Description:
+Every key reads as up afterwards. Bindings are kept.
+
+References: b2kInputOn (handler), b2kInputIsOn (handler)
+*/
 command b2kInputOff
    put false into sInputOn
    put comma into sKeysNow
    put comma into sKeysPrev
 end b2kInputOff
 
+/**
+Summary: Report whether the keyboard sample is on.
+
+Returns: true or false.
+
+Example:
+if not b2kInputIsOn() then b2kInputOn
+
+References: b2kInputOn (handler)
+*/
 function b2kInputIsOn
    return (sInputOn is true)
 end b2kInputIsOn
 
 -- Internal, called by the loop each frame while armed. The sets are stored
 -- comma-wrapped (",65361,32,") so membership is one `contains` test.
+/**
+Summary: Take this frame's keyboard sample.
+
+Example:
+b2kInputTick
+
+Description:
+Internal: the loop and <b2kStepOnce> call it once per frame. The
+current key set becomes the previous one and a new set is read from the
+keyboard, or from the injected keys. A no-op while input is off.
+
+References: b2kInputOn (handler), b2kInputInject (handler)
+*/
 command b2kInputTick
    if sInputOn is not true then exit b2kInputTick
    put sKeysNow into sKeysPrev
@@ -2247,11 +4765,34 @@ end b2kInputTick
 -- empty = nothing held) until b2kInputInjectOff. Deterministic input for
 -- the self-test harness, input replays, and cutscene "ghost" players --
 -- edges fall out of the normal frame diff exactly as with real keys.
+/**
+Summary: Replace the keyboard with a scripted set of held keys.
+
+pKeys: A comma list of key names or codes to hold; empty holds nothing.
+
+Example:
+b2kInputInject "right,space"
+
+Description:
+Until <b2kInputInjectOff>, each frame's sample reads this set
+instead of the keyboard, and pressed and released edges come from the normal
+frame comparison. For tests, input replays and scripted characters.
+
+References: b2kInputInjectOff (handler), b2kInputTick (handler)
+*/
 command b2kInputInject pKeys
    put true into sInjectOn
    put b2kKeyListCodes(pKeys) into sInjectKeys
 end b2kInputInject
 
+/**
+Summary: Return to reading the real keyboard.
+
+Example:
+b2kInputInjectOff
+
+References: b2kInputInject (handler)
+*/
 command b2kInputInjectOff
    put false into sInjectOn
    put empty into sInjectKeys
@@ -2261,6 +4802,18 @@ end b2kInputInjectOff
 -- comma-separated. Numbers >= 32 pass through as raw keycodes; single
 -- characters resolve to their code (letters to both cases, per the
 -- Shift-keysym behaviour the Phase 0 spike confirmed).
+/**
+Summary: The keycodes a key name matches.
+
+pKey: A key name (left, right, up, down, space, return, escape, tab, shift, control, alt, backspace, delete), a single character, or a raw keycode.
+
+Returns: A comma list of keycodes. A letter gives both cases; a number of 32 or more is returned as is; an unknown name gives 0.
+
+Example:
+put b2kKeyCodes("w") into tCodes
+
+References: b2kKeyName (handler), b2kKeyListCodes (handler)
+*/
 function b2kKeyCodes pKey
    local tLower, tUpper
    if pKey is a number and pKey >= 32 then return pKey
@@ -2306,6 +4859,18 @@ function b2kKeyCodes pKey
 end b2kKeyCodes
 
 -- The reverse map, for readouts: a keycode -> its friendly name (or itself).
+/**
+Summary: The friendly name of a keycode.
+
+pCode: A keycode.
+
+Returns: The key's name, a lower-case letter or digit, or the code itself when it has no name.
+
+Example:
+put b2kKeyName(65361) into tName
+
+References: b2kKeyCodes (handler), b2kKeysHeld (handler)
+*/
 function b2kKeyName pCode
    switch pCode
       case 65361
@@ -2346,6 +4911,23 @@ function b2kKeyName pCode
 end b2kKeyName
 
 -- True when any of pKey's candidate codes is in the given set.
+/**
+Summary: Report whether a key is in a comma-wrapped keycode set.
+
+pSet: A set of keycodes wrapped in commas, such as ",65361,32,".
+
+pKey: A key name (left, right, up, down, space, return, escape, tab, shift, control, alt, backspace, delete), a single character, or a raw keycode.
+
+Returns: true when any of the key's codes is in the set; false for an empty set.
+
+Example:
+put b2kKeyInSet(",32,", "space") into tHeld
+
+Description:
+A helper behind <b2kKeyIsDown>, <b2kKeyPressed> and <b2kKeyReleased>.
+
+References: b2kCodesInSet (handler), b2kKeyIsDown (handler)
+*/
 function b2kKeyInSet pSet, pKey
    local tC
    if pSet is empty or pSet is comma then return false
@@ -2355,20 +4937,72 @@ function b2kKeyInSet pSet, pKey
    return false
 end b2kKeyInSet
 
+/**
+Summary: Report whether a key is held this frame.
+
+pKey: A key name (left, right, up, down, space, return, escape, tab, shift, control, alt, backspace, delete), a single character, or a raw keycode.
+
+Returns: true or false.
+
+Example:
+if b2kKeyIsDown("left") then b2kPush tShip, -10, 0
+
+Description:
+Needs <b2kInputOn>; read it from b2kFrame.
+
+References: b2kKeyPressed (handler), b2kKeyReleased (handler), b2kInputOn (handler)
+*/
 function b2kKeyIsDown pKey
    return b2kKeyInSet(sKeysNow, pKey)
 end b2kKeyIsDown
 
 -- Edge queries: true only on the single frame the state changed.
+/**
+Summary: Report whether a key went down this frame.
+
+pKey: A key name (left, right, up, down, space, return, escape, tab, shift, control, alt, backspace, delete), a single character, or a raw keycode.
+
+Returns: true only on the frame the key went down.
+
+Example:
+if b2kKeyPressed("space") then b2kPush tHero, 0, -420
+
+References: b2kKeyIsDown (handler), b2kKeyReleased (handler)
+*/
 function b2kKeyPressed pKey
    return b2kKeyInSet(sKeysNow, pKey) and not b2kKeyInSet(sKeysPrev, pKey)
 end b2kKeyPressed
 
+/**
+Summary: Report whether a key came up this frame.
+
+pKey: A key name (left, right, up, down, space, return, escape, tab, shift, control, alt, backspace, delete), a single character, or a raw keycode.
+
+Returns: true only on the frame the key came up.
+
+Example:
+if b2kKeyReleased("space") then put false into tCharging
+
+References: b2kKeyIsDown (handler), b2kKeyPressed (handler)
+*/
 function b2kKeyReleased pKey
    return b2kKeyInSet(sKeysPrev, pKey) and not b2kKeyInSet(sKeysNow, pKey)
 end b2kKeyReleased
 
 -- Everything held right now, as friendly names (debug HUDs).
+/**
+Summary: Every key held this frame, by name.
+
+Returns: The names separated by spaces, or empty.
+
+Example:
+put b2kKeysHeld() into field "Keys"
+
+Description:
+Handy for a debug display.
+
+References: b2kKeyName (handler), b2kKeyIsDown (handler)
+*/
 function b2kKeysHeld
    local tOut, tC
    put empty into tOut
@@ -2383,12 +5017,42 @@ end b2kKeysHeld
 -- The name->keycode resolution happens ONCE, at bind time (the cached
 -- code list is what the per-frame queries scan) -- these run inside the
 -- player tick and game code every frame, so they must stay cheap.
+/**
+Summary: Name a set of keys as one action.
+
+pName: The action's name, such as "jump".
+
+pKeyList: A comma list of key names, such as "space,up,w".
+
+Example:
+b2kBindAction "fire", "x,control"
+
+Description:
+Any bound key counts, and pressed and released treat the set as one key. Keycodes are resolved once, here.
+
+References: b2kActionIsDown (handler), b2kActionPressed (handler), b2kBindAxis (handler)
+*/
 command b2kBindAction pName, pKeyList
    put pKeyList into sKeyActions[pName]
    put b2kKeyListCodes(pKeyList) into sKeyActionsC[pName]
 end b2kBindAction
 
 -- Internal: a friendly key list -> every matching keycode, comma list.
+/**
+Summary: Every keycode a comma list of key names matches.
+
+pKeyList: A comma list of key names or codes.
+
+Returns: A comma list of keycodes.
+
+Example:
+put b2kKeyListCodes("left,a") into tCodes
+
+Description:
+A helper the bind commands use.
+
+References: b2kKeyCodes (handler), b2kBindAction (handler)
+*/
 function b2kKeyListCodes pKeyList
    local tK, tOut
    put empty into tOut
@@ -2404,6 +5068,23 @@ function b2kKeyListCodes pKeyList
 end b2kKeyListCodes
 
 -- Internal: is any of these (pre-resolved) keycodes in the given set?
+/**
+Summary: Report whether any of a list of keycodes is in a comma-wrapped set.
+
+pSet: A set of keycodes wrapped in commas.
+
+pCodes: A comma list of keycodes.
+
+Returns: true when any code is in the set; false for an empty set.
+
+Example:
+put b2kCodesInSet(",32,", "32,65362") into tAny
+
+Description:
+A helper behind the action and axis queries.
+
+References: b2kKeyInSet (handler), b2kActionIsDown (handler)
+*/
 function b2kCodesInSet pSet, pCodes
    local tC
    if pSet is empty or pSet is comma then return false
@@ -2413,15 +5094,51 @@ function b2kCodesInSet pSet, pCodes
    return false
 end b2kCodesInSet
 
+/**
+Summary: Report whether any key of an action is held.
+
+pName: The action's name.
+
+Returns: true or false; false for an action that was never bound.
+
+Example:
+if b2kActionIsDown("fire") then put true into tCharging
+
+References: b2kBindAction (handler), b2kActionPressed (handler)
+*/
 function b2kActionIsDown pName
    return b2kCodesInSet(sKeysNow, sKeyActionsC[pName])
 end b2kActionIsDown
 
+/**
+Summary: Report whether an action started this frame.
+
+pName: The action's name.
+
+Returns: true on the frame the first of its keys went down.
+
+Example:
+if b2kActionPressed("jump") then b2kPush tHero, 0, -420
+
+References: b2kBindAction (handler), b2kActionReleased (handler)
+*/
 function b2kActionPressed pName
    if not b2kCodesInSet(sKeysNow, sKeyActionsC[pName]) then return false
    return not b2kCodesInSet(sKeysPrev, sKeyActionsC[pName])
 end b2kActionPressed
 
+/**
+Summary: Report whether an action ended this frame.
+
+pName: The action's name.
+
+Returns: true on the frame the last of its keys came up.
+
+Example:
+if b2kActionReleased("fire") then put false into tCharging
+
+References: b2kBindAction (handler), b2kActionPressed (handler)
+*/
 function b2kActionReleased pName
    if not b2kCodesInSet(sKeysPrev, sKeyActionsC[pName]) then return false
    return not b2kCodesInSet(sKeysNow, sKeyActionsC[pName])
@@ -2429,6 +5146,20 @@ end b2kActionReleased
 
 -- Axes: -1 / 0 / +1 from two key sets ("moveX" defaults to left,a / right,d).
 -- Both directions held = 0, which is what character movement wants.
+/**
+Summary: Define a -1, 0, +1 axis from two key sets.
+
+pName: The axis's name, such as "moveX".
+
+pNegKeys: A comma list of keys for the -1 direction.
+
+pPosKeys: A comma list of keys for the +1 direction.
+
+Example:
+b2kBindAxis "steer", "left,a", "right,d"
+
+References: b2kAxis (handler), b2kBindAction (handler)
+*/
 command b2kBindAxis pName, pNegKeys, pPosKeys
    put pNegKeys into sAxisNeg[pName]
    put pPosKeys into sAxisPos[pName]
@@ -2436,6 +5167,18 @@ command b2kBindAxis pName, pNegKeys, pPosKeys
    put b2kKeyListCodes(pPosKeys) into sAxisPosC[pName]
 end b2kBindAxis
 
+/**
+Summary: Read an axis.
+
+pName: The axis's name.
+
+Returns: -1, 0 or 1. Both directions held, or neither, gives 0.
+
+Example:
+b2kSetVelocity tHero, b2kAxis("moveX") * 240, item 2 of b2kVelocity(tHero)
+
+References: b2kBindAxis (handler)
+*/
 function b2kAxis pName
    local tNeg, tPos
    put b2kCodesInSet(sKeysNow, sAxisNegC[pName]) into tNeg
@@ -2447,6 +5190,20 @@ end b2kAxis
 
 -- Real elapsed ms folded into the last frame -- drive animations and user
 -- timers from this, not the step count (a frame may run 0..n fixed steps).
+/**
+Summary: The real time the last frame covered.
+
+Returns: Milliseconds, or 0 before the first frame. A hand step counts as one 1/60 s step.
+
+Example:
+add b2kFrameMS() to tTimer
+
+Description:
+Drive animations and game timers from this, not the frame count: a
+frame may run zero, one or several fixed physics steps.
+
+References: b2kFrameTarget (handler)
+*/
 function b2kFrameMS
    if sFrameMS is empty then return 0
    return sFrameMS
@@ -2481,10 +5238,38 @@ end b2kFrameMS
 -- deterministically too, so whatever was sliced before the save is reused.
 -- Call b2kSheetsWipe to force a clean reload (e.g. after the user picks a new
 -- asset folder). OFF by default, so single-shot examples are unchanged.
+/**
+Summary: Keep loaded sheets alive across teardowns.
+
+pFlag: true (or empty) to keep sheets, false to wipe them with each teardown (the starting state).
+
+Example:
+b2kSheetPersist true
+
+Description:
+With persistence on, sheets survive <b2kTeardown> like sounds do, so
+a multi-level game loads its atlases once and an identical reload is a no-op.
+The Kit's source and frame images have stable names and are marked with
+where they came from, so a saved stack carries them: on reopen a load adopts
+the images already in the stack, and an atlas needs neither its PNG nor its
+XML. <b2kSheetsWipe> still clears everything.
+
+References: b2kSheetPersists (handler), b2kSheetLoadAtlas (handler), b2kSheetsWipe (handler)
+*/
 command b2kSheetPersist pFlag
    put (pFlag is not false) into sSheetKeep
 end b2kSheetPersist
 
+/**
+Summary: Report whether sheets survive teardown.
+
+Returns: true or false.
+
+Example:
+put b2kSheetPersists() into tKeep
+
+References: b2kSheetPersist (handler)
+*/
 function b2kSheetPersists
    return (sSheetKeep is true)
 end b2kSheetPersists
@@ -2495,6 +5280,36 @@ end b2kSheetPersists
 -- between cells px). Pass pFW/pFH 0 (or empty) to register the image with
 -- NO grid and name regions yourself with b2kSheetAddFrame -- the path for
 -- packed sheets that have no Kenney-style XML.
+/**
+Summary: Register an image file as a sheet of numbered grid frames.
+
+pName: The sheet's name.
+
+pPath: The image file's path.
+
+pFW: Frame width in pixels; 0 or empty registers no grid.
+
+pFH: Frame height in pixels; 0 or empty registers no grid.
+
+pCount: Optional number of frames to register; empty means every whole cell.
+
+pMargin: Optional outer border in pixels. Empty means 0.
+
+pSpacing: Optional gap between cells in pixels. Empty means 0.
+
+Returns: The sheet's frame count through the result, or 0 when the file cannot be loaded.
+
+Example:
+b2kSheetLoad "coins", tFolder & "/coins.png", 32, 32
+put the result into tFrames
+
+Description:
+Frames are numbered 1 to N left to right, top to bottom. With no
+grid, name regions yourself with <b2kSheetAddFrame>. The image is loaded into
+a hidden image the Kit owns.
+
+References: b2kSheetLoadAtlas (handler), b2kSheetFromImage (handler), b2kAnimDef (handler), b2kSpriteNew (handler)
+*/
 command b2kSheetLoad pName, pPath, pFW, pFH, pCount, pMargin, pSpacing
    local tRef, tSig
    put pPath & "|" & pFW & "|" & pFH & "|" & pCount & "|" & pMargin & "|" & pSpacing into tSig
@@ -2511,6 +5326,34 @@ end b2kSheetLoad
 -- Register an image already in the stack (e.g. base64-embedded art) as a
 -- grid sheet. The image is used in place and never deleted by the Kit.
 -- Same grid arguments as b2kSheetLoad (margin/spacing; 0x0 = no grid).
+/**
+Summary: Register an image already in the stack as a grid sheet.
+
+pName: The sheet's name.
+
+pImgRef: The image, by reference.
+
+pFW: Frame width in pixels; 0 or empty registers no grid.
+
+pFH: Frame height in pixels; 0 or empty registers no grid.
+
+pCount: Optional number of frames to register; empty means every whole cell.
+
+pMargin: Optional outer border in pixels. Empty means 0.
+
+pSpacing: Optional gap between cells in pixels. Empty means 0.
+
+Returns: The sheet's frame count through the result.
+
+Example:
+b2kSheetFromImage "hero", the long id of image "HeroArt", 48, 48
+put the result into tFrames
+
+Description:
+The image is used in place and the Kit never deletes it.
+
+References: b2kSheetLoad (handler), b2kSheetAddFrame (handler)
+*/
 command b2kSheetFromImage pName, pImgRef, pFW, pFH, pCount, pMargin, pSpacing
    local tRef, tSig
    put the long id of pImgRef into tRef
@@ -2531,6 +5374,32 @@ end b2kSheetFromImage
 -- frame size 0 for no grid), then add each frame by name; regions may be
 -- any size and position and can also be added on top of a grid or atlas.
 -- Redefining a name re-bakes its slice on next use.
+/**
+Summary: Name one rectangular region of a loaded sheet as a frame.
+
+pSheet: The sheet's name.
+
+pFrame: The frame's name.
+
+pX: The region's left, in source pixels.
+
+pY: The region's top, in source pixels.
+
+pW: The region's width in pixels, at least 1.
+
+pH: The region's height in pixels, at least 1.
+
+Example:
+b2kSheetAddFrame "items", "key", 0, 64, 32, 32
+
+Description:
+The path for packed sheets that have no XML: load the source with a
+frame size of 0, then add each frame. It also works on top of a grid or an
+atlas. Redefining a name drops its old slices. Bad arguments, or a sheet
+that is not loaded, are ignored.
+
+References: b2kSheetLoad (handler), b2kSheetFrameNames (handler)
+*/
 command b2kSheetAddFrame pSheet, pFrame, pX, pY, pW, pH
    local tId
    if sSheetSrc[pSheet] is empty then exit b2kSheetAddFrame
@@ -2575,6 +5444,29 @@ end b2kSheetAddFrame
 -- the pixels AND the names -- and a later load ADOPTS it with no file access
 -- at all (b2kSheetAdoptAtlas): the art folder may be gone, renamed, or on
 -- another machine, because the two paths are then only the cache key.
+/**
+Summary: Register a packed atlas: a PNG and its TextureAtlas XML.
+
+pName: The sheet's name.
+
+pPngPath: The PNG file's path.
+
+pXmlPath: The XML file's path. Empty means the PNG path with an xml extension.
+
+Returns: The sheet's frame count through the result, or 0 when a file cannot be read.
+
+Example:
+b2kSheetLoadAtlas "chars", tFolder & "/spritesheet-characters-default.png"
+put the result into tFrames
+
+Description:
+The XML names each region in SubTexture tags (the Kenney format),
+and frames are addressed by those names. With <b2kSheetPersist> on, the first
+load stamps the regions on the Kit's source image and a later load, even in a
+reopened saved stack, adopts them with no file access.
+
+References: b2kSheetPersist (handler), b2kSheetAdoptAtlas (handler), b2kSheetFrameNames (handler), b2kAnimDef (handler)
+*/
 command b2kSheetLoadAtlas pName, pPngPath, pXmlPath
    local tRef, tXml, tLine, tNm, tX, tY, tW, tH, tSig, tN
    if pXmlPath is empty then
@@ -2629,6 +5521,21 @@ end b2kSheetLoadAtlas
 -- pixels and definition order (the NAME LAST, so a name holding a comma
 -- survives a round trip). Introspection for any sheet; for an atlas it is
 -- also the stamp a persisting load leaves on its source image.
+/**
+Summary: Every frame region of a sheet, one per line.
+
+pName: The sheet's name.
+
+Returns: Lines of "x,y,w,h,name" in source pixels, in definition order; empty for an unknown sheet.
+
+Example:
+put b2kSheetAtlasRows("chars") into field "Regions"
+
+Description:
+The name comes last so a name with a comma survives. For a persisting atlas this is also the stamp a saved stack adopts.
+
+References: b2kSheetAdoptAtlas (handler), b2kSheetFrameNames (handler)
+*/
 function b2kSheetAtlasRows pName
    local tKey, tOut
    put empty into tOut
@@ -2649,6 +5556,29 @@ end b2kSheetAtlasRows
 -- is found by its key's position (b2kSheetKeyIndex): one row skipped would
 -- shift every later frame onto its neighbour's pixels, so a malformed stamp
 -- adopts nothing. Reports the frame count; 0 = nothing to adopt.
+/**
+Summary: Register an atlas from the stamp a saved stack carries.
+
+pName: The sheet's name.
+
+pPngPath: The PNG path the atlas was first loaded from.
+
+pXmlPath: The XML path the atlas was first loaded from.
+
+Returns: The frame count through the result, or 0 when there is nothing to adopt.
+
+Example:
+b2kSheetAdoptAtlas "chars", tPng, tXml
+put the result into tFrames
+
+Description:
+Internal: <b2kSheetLoadAtlas> calls it when sheets persist. It
+adopts only when the image b2ksheet_ plus the sheet name exists and was
+stamped from the same PNG and XML paths, and a malformed stamp adopts
+nothing. It reads no file.
+
+References: b2kSheetLoadAtlas (handler), b2kSheetAtlasRows (handler)
+*/
 command b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
    local tImg, tRows, tLine, tKeys, tRegion, tCount, i
    put "b2ksheet_" & pName into tImg
@@ -2689,16 +5619,54 @@ command b2kSheetAdoptAtlas pName, pPngPath, pXmlPath
    return the number of lines of sSheetKeys[pName]
 end b2kSheetAdoptAtlas
 
+/**
+Summary: How many frames a sheet has.
+
+pName: The sheet's name.
+
+Returns: The frame count, 0 for an unknown sheet.
+
+Example:
+put b2kSheetFrames("coins") into tN
+
+References: b2kSheetHasFrame (handler), b2kSheetFrameNames (handler)
+*/
 function b2kSheetFrames pName
    return the number of lines of sSheetKeys[pName]
 end b2kSheetFrames
 
+/**
+Summary: Report whether a sheet has a frame.
+
+pName: The sheet's name.
+
+pFrame: The frame's name or number.
+
+Returns: true or false.
+
+Example:
+if b2kSheetHasFrame("chars", "character_beige_jump") then put true into tCanJump
+
+References: b2kSheetFrames (handler)
+*/
 function b2kSheetHasFrame pName, pFrame
    return (sSheetRegion[pName][pFrame] is not empty)
 end b2kSheetHasFrame
 
 -- Every frame key of a sheet, one per line, in definition order --
 -- introspect an atlas you didn't make ("what is this frame called?").
+/**
+Summary: Every frame key of a sheet.
+
+pName: The sheet's name.
+
+Returns: The frame names or numbers, one per line, in definition order.
+
+Example:
+put b2kSheetFrameNames("chars") into field "Frames"
+
+References: b2kSheetFrames (handler), b2kSheetAtlasRows (handler)
+*/
 function b2kSheetFrameNames pName
    return sSheetKeys[pName]
 end b2kSheetFrameNames
@@ -2708,6 +5676,24 @@ end b2kSheetFrameNames
 -- already-sliced frames are dropped and re-bake at the new scale, but live
 -- sprites keep their button rects. The engine does the resampling, so any
 -- frame size displays at any sprite size.
+/**
+Summary: Set the display scale of a sheet's frames.
+
+pName: The sheet's name.
+
+pScale: The scale factor, clamped to 0.05-8. The default is 1.
+
+Example:
+b2kSheetLoad "tiles", tPath, 70, 70
+b2kSheetScale "tiles", 0.9
+
+Description:
+Set it right after loading, before making sprites: frames already
+sliced are dropped and re-sliced at the new scale, but existing sprite
+buttons keep their size.
+
+References: b2kSheetFrameSize (handler), b2kSheetLoad (handler)
+*/
 command b2kSheetScale pName, pScale
    local tKey, tId
    put b2kClamp(pScale, 0.05, 8) into pScale
@@ -2737,6 +5723,20 @@ end b2kSheetScale
 
 -- A frame's DISPLAY size as "w,h" (its region size times the sheet scale) --
 -- lay out tiles and platforms from this instead of hard-coding pixels.
+/**
+Summary: A frame's display size.
+
+pName: The sheet's name.
+
+pFrame: The frame's name or number.
+
+Returns: "w,h" in pixels (the region times the sheet scale), or empty for an unknown frame.
+
+Example:
+put item 1 of b2kSheetFrameSize("tiles", "grass") into tTileW
+
+References: b2kSheetScale (handler)
+*/
 function b2kSheetFrameSize pName, pFrame
    local tRegion, tScale
    put sSheetRegion[pName][pFrame] into tRegion
@@ -2748,6 +5748,24 @@ end b2kSheetFrameSize
 
 -- Define a named animation: pFrames is a comma list of frame names and/or
 -- 1-based indices, with numeric ranges ("1-8") expanded. pLoop defaults true.
+/**
+Summary: Define a named animation over a sheet's frames.
+
+pSheet: The sheet's name.
+
+pAnim: The animation's name.
+
+pFrames: A comma list of frame names and numbers; a numeric range such as 1-8 expands.
+
+pFPS: Frames per second, clamped to 0.1-120.
+
+pLoop: false for a one-shot animation; anything else loops.
+
+Example:
+b2kAnimDef "chars", "walk", "character_beige_walk_a,character_beige_walk_b", 6, true
+
+References: b2kSpritePlay (handler), b2kSpriteOnFinish (handler)
+*/
 command b2kAnimDef pSheet, pAnim, pFrames, pFPS, pLoop
    local tKey, tList, tItem, tA, tB, i
    put pSheet & "|" & pAnim into tKey
@@ -2780,6 +5798,32 @@ end b2kAnimDef
 -- It is an ordinary Kit control: pass it to b2kAddCapsule/b2kAddBox for a
 -- body (buttons render position-only with rotation locked), or bind it to
 -- another control's body with b2kSpriteBind.
+/**
+Summary: Create a sprite: a transparent button showing a sheet frame.
+
+pSheet: The sheet's name.
+
+pFrame: The frame to show. Empty means the sheet's first frame.
+
+pX: The centre x in pixels. Empty means the card's centre.
+
+pY: The centre y in pixels. Empty means the card's centre.
+
+Returns: The sprite's long id through the result, or empty for an unknown sheet or frame.
+
+Example:
+b2kSpriteNew "chars", "character_beige_idle", 200, 100
+put the result into tSpr
+b2kSpritePlay tSpr, "walk"
+
+Description:
+The button is sized to the frame. It is an ordinary Kit control:
+give it a body with <b2kAddCapsule> or <b2kAddBox> (sprites follow position
+and do not rotate), or pin it to another control with <b2kSpriteBind>.
+<b2kClear> removes it.
+
+References: b2kSpritePlay (handler), b2kSpriteBind (handler), b2kSpriteRemove (handler)
+*/
 command b2kSpriteNew pSheet, pFrame, pX, pY
    local tName, tRef, tKey, tRegion, tW, tH
    if sSheetKeys[pSheet] is empty then return empty
@@ -2827,6 +5871,27 @@ end b2kSpriteNew
 
 -- A sprite backed by an animated GIF file: the engine plays it; the Kit's
 -- play/stop/frame calls drive repeatCount/currentFrame instead of icons.
+/**
+Summary: Create a sprite from an animated GIF file.
+
+pPath: The GIF file's path.
+
+pX: The centre x in pixels. Empty means the card's centre.
+
+pY: The centre y in pixels. Empty means the card's centre.
+
+Returns: The image's long id through the result, or empty when the file cannot be loaded.
+
+Example:
+b2kSpriteFromGIF tFolder & "/flame.gif", 300, 200
+put the result into tFlame
+
+Description:
+The engine plays the GIF. <b2kSpritePlay> and <b2kSpriteStop> set
+its repeatCount and <b2kSpriteSetFrame> its currentFrame.
+
+References: b2kSpriteNew (handler), b2kSpriteRemove (handler)
+*/
 command b2kSpriteFromGIF pPath, pX, pY
    local tName, tRef, tData
    put URL ("binfile:" & pPath) into tData   -- content-load, like the sheets
@@ -2872,6 +5937,24 @@ end b2kSpriteFromGIF
 
 -- Start a named animation; a no-op if it is already playing (so calling it
 -- every frame from a state machine is free) unless pRestart forces frame 1.
+/**
+Summary: Play a named animation on a sprite.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pAnim: The animation's name, defined with b2kAnimDef for the sprite's sheet.
+
+pRestart: true to restart from the first frame when it is already playing.
+
+Example:
+b2kSpritePlay tSpr, "walk"
+
+Description:
+Playing the animation that is already playing does nothing, so a
+state machine can call it every frame. An unknown animation is ignored.
+
+References: b2kAnimDef (handler), b2kSpriteStop (handler), b2kSpriteAnim (handler), b2kSpriteFPS (handler)
+*/
 command b2kSpritePlay pCtrl, pAnim, pRestart
    local tRef, tKey
    -- ENGINE-FOUND 2026-08-16: an empty control is a harmless no-op, per the
@@ -2907,6 +5990,16 @@ command b2kSpritePlay pCtrl, pAnim, pRestart
    b2kSpriteShowFrame tRef, line 1 of sAnimList[tKey]
 end b2kSpritePlay
 
+/**
+Summary: Stop a sprite's animation on its current frame.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+Example:
+b2kSpriteStop tSpr
+
+References: b2kSpritePlay (handler), b2kSpriteSetFrame (handler)
+*/
 command b2kSpriteStop pCtrl
    local tRef
    if pCtrl is empty then exit b2kSpriteStop   -- family law: empty ref = no-op
@@ -2922,6 +6015,18 @@ command b2kSpriteStop pCtrl
    put true into sSprLiveDirty
 end b2kSpriteStop
 
+/**
+Summary: The animation a sprite is playing.
+
+pCtrl: The sprite control, by reference.
+
+Returns: The animation's name, or empty when stopped or the control is gone.
+
+Example:
+if b2kSpriteAnim(tSpr) is empty then b2kSpritePlay tSpr, "idle"
+
+References: b2kSpritePlay (handler)
+*/
 function b2kSpriteAnim pCtrl
    try
       return sSprAnim[the long id of pCtrl]
@@ -2931,6 +6036,18 @@ function b2kSpriteAnim pCtrl
 end b2kSpriteAnim
 
 -- Show one frame by name/index (stops any running animation first).
+/**
+Summary: Show one frame on a sprite, stopping any animation.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pFrame: The frame's name or number.
+
+Example:
+b2kSpriteSetFrame tSpr, "character_beige_hit"
+
+References: b2kSpriteFrame (handler), b2kSpriteStop (handler)
+*/
 command b2kSpriteSetFrame pCtrl, pFrame
    local tRef
    if pCtrl is empty then exit b2kSpriteSetFrame   -- family law: empty ref = no-op
@@ -2948,6 +6065,18 @@ command b2kSpriteSetFrame pCtrl, pFrame
    b2kSpriteShowFrame tRef, pFrame
 end b2kSpriteSetFrame
 
+/**
+Summary: The frame a sprite is showing.
+
+pCtrl: The sprite control, by reference.
+
+Returns: The frame's name or number, or empty.
+
+Example:
+put b2kSpriteFrame(tSpr) into tShown
+
+References: b2kSpriteSetFrame (handler)
+*/
 function b2kSpriteFrame pCtrl
    try
       return sSprFrameKey[the long id of pCtrl]
@@ -2957,6 +6086,18 @@ function b2kSpriteFrame pCtrl
 end b2kSpriteFrame
 
 -- Per-sprite speed override (empty = use each animation's own fps).
+/**
+Summary: Override a sprite's animation speed.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pFPS: Frames per second; empty goes back to each animation's own speed.
+
+Example:
+b2kSpriteFPS tSpr, 12
+
+References: b2kSpritePlay (handler), b2kAnimDef (handler)
+*/
 command b2kSpriteFPS pCtrl, pFPS
    local tRef
    if pCtrl is empty then exit b2kSpriteFPS   -- family law: empty ref = no-op
@@ -2967,6 +6108,21 @@ end b2kSpriteFPS
 
 -- Face left (true) or right (false). The mirrored frame image is created
 -- the first time it is needed, by flip-cloning the sliced frame.
+/**
+Summary: Make a sprite face left or right.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pFlag: true to mirror the frames (face left), false for the art as drawn.
+
+Example:
+b2kSpriteFlipH tSpr, true
+
+Description:
+Mirrored frames are made the first time they are needed and shared by every sprite of the sheet.
+
+References: b2kSpriteFlipped (handler), b2kSheetEnsureFlip (handler)
+*/
 command b2kSpriteFlipH pCtrl, pFlag
    local tRef
    -- ENGINE-FOUND 2026-08-16 (the b2kSpritePlay guard's sibling, one engine
@@ -2983,6 +6139,18 @@ command b2kSpriteFlipH pCtrl, pFlag
    if sSprFrameKey[tRef] is not empty then b2kSpriteShowFrame tRef, sSprFrameKey[tRef]
 end b2kSpriteFlipH
 
+/**
+Summary: Report whether a sprite is mirrored.
+
+pCtrl: The sprite control, by reference.
+
+Returns: true or false.
+
+Example:
+put b2kSpriteFlipped(tSpr) into tFacingLeft
+
+References: b2kSpriteFlipH (handler)
+*/
 function b2kSpriteFlipped pCtrl
    try
       return (sSprFlip[the long id of pCtrl] is true)
@@ -2993,6 +6161,24 @@ end b2kSpriteFlipped
 
 -- When a NON-looping animation finishes, send pMessage to the frame target
 -- with the sprite and the animation name (attack/death/effect chaining).
+/**
+Summary: Name a message to send when a one-shot animation ends.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pMessage: The message name; empty turns it off.
+
+Example:
+b2kSpriteOnFinish tSpr, "heroAttackDone"
+
+Description:
+When a non-looping animation on this sprite ends, the Kit sends the
+message to the frame target (<b2kFrameTarget>) with two parameters, the
+sprite and the animation name. It fires for every non-looping animation,
+whoever started it.
+
+References: b2kAnimDef (handler), b2kFrameTarget (handler)
+*/
 command b2kSpriteOnFinish pCtrl, pMessage
    if pCtrl is empty then exit b2kSpriteOnFinish   -- family law: empty ref = no-op
    put pMessage into sSprMsg[the long id of pCtrl]
@@ -3001,6 +6187,26 @@ end b2kSpriteOnFinish
 -- Pin this sprite to another control's position each frame (offset in px) --
 -- the standard pattern for "art bigger than the collision shape": give an
 -- invisible control the body, bind the sprite to it.
+/**
+Summary: Pin a sprite to another control's position every frame.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+pBodyCtrl: The control to follow, by reference. Empty makes this a no-op.
+
+pDX: Optional x offset in pixels. Empty means 0.
+
+pDY: Optional y offset in pixels. Empty means 0.
+
+Example:
+b2kSpriteBind tArt, tHitbox, 0, -6
+
+Description:
+The usual pattern for art bigger than its collision shape: an
+invisible control owns the body and the sprite follows it.
+
+References: b2kSpriteUnbind (handler), b2kSpriteNew (handler)
+*/
 command b2kSpriteBind pCtrl, pBodyCtrl, pDX, pDY
    local tRef
    -- family law: an empty ref on either side is a no-op (both are dereffed)
@@ -3012,6 +6218,16 @@ command b2kSpriteBind pCtrl, pBodyCtrl, pDX, pDY
    put true into sSprLiveDirty   -- it now needs per-frame service
 end b2kSpriteBind
 
+/**
+Summary: Stop a sprite following another control.
+
+pCtrl: The sprite control, by reference. Empty makes this a no-op.
+
+Example:
+b2kSpriteUnbind tArt
+
+References: b2kSpriteBind (handler)
+*/
 command b2kSpriteUnbind pCtrl
    if pCtrl is empty then exit b2kSpriteUnbind   -- family law: empty ref = no-op
    delete variable sSprBind[the long id of pCtrl]
@@ -3019,6 +6235,19 @@ command b2kSpriteUnbind pCtrl
 end b2kSpriteUnbind
 
 -- Remove a sprite (and its body, if it has one).
+/**
+Summary: Remove a sprite, and its body if it has one.
+
+pCtrl: The sprite control, by reference.
+
+Example:
+b2kSpriteRemove tSpr
+
+Description:
+A control that is already gone is still cleared from the Kit's records.
+
+References: b2kSpriteNew (handler), b2kRemove (handler)
+*/
 command b2kSpriteRemove pCtrl
    local tRef
    try
@@ -3041,6 +6270,19 @@ command b2kSpriteRemove pCtrl
 end b2kSpriteRemove
 
 -- Internal: drop a sprite's registry entries (the control is already gone).
+/**
+Summary: Drop a sprite's records once its control is gone.
+
+pRef: The sprite's long id.
+
+Example:
+b2kSpriteForget tSpr
+
+Description:
+Internal: <b2kSpriteRemove> and the sprite tick call it. It deletes no control.
+
+References: b2kSpriteRemove (handler)
+*/
 command b2kSpriteForget pRef
    local tLn
    delete variable sSprSheet[pRef]
@@ -3066,6 +6308,17 @@ command b2kSpriteForget pRef
 end b2kSpriteForget
 
 -- Internal: remove every live sprite (b2kClear / b2kTeardown path).
+/**
+Summary: Remove every sprite.
+
+Example:
+b2kSpritesClear
+
+Description:
+Internal: <b2kClear> and <b2kTeardown> call it. Sheets stay loaded.
+
+References: b2kSpriteRemove (handler), b2kClear (handler)
+*/
 command b2kSpritesClear
    local tRef, tList
    put sSprRefs into tList
@@ -3079,6 +6332,21 @@ end b2kSpritesClear
 
 -- Internal: forget one sheet -- its regions, anims, sliced/mirrored frame
 -- images, and (if the Kit loaded it) the hidden source image.
+/**
+Summary: Forget one sheet.
+
+pName: The sheet's name.
+
+Example:
+b2kSheetForget "coins"
+
+Description:
+It deletes the sheet's sliced and mirrored frame images, the source
+image if the Kit loaded it, and the sheet's animations. Sprites that show it
+stay on the card.
+
+References: b2kSheetsWipe (handler)
+*/
 command b2kSheetForget pName
    local tKey, tId
    if sSheetSrc[pName] is empty and sSheetKeys[pName] is empty then exit b2kSheetForget
@@ -3126,6 +6394,19 @@ command b2kSheetForget pName
 end b2kSheetForget
 
 -- Internal: every sheet + every sprite (b2kTeardown path).
+/**
+Summary: Forget every sheet and remove every sprite.
+
+Example:
+b2kSheetsWipe
+
+Description:
+It also deletes Kit-made sprite and sheet images a previous session
+left on the card. <b2kTeardown> calls it unless sheets persist; call it
+yourself to force a clean reload.
+
+References: b2kSheetForget (handler), b2kSheetPersist (handler), b2kSpriteSweepOrphans (handler)
+*/
 command b2kSheetsWipe
    local tName
    b2kSpritesClear
@@ -3152,6 +6433,22 @@ end b2kSheetsWipe
 -- script is pasted in), but the controls persist -- registry cleanup can't
 -- see them, so a reopened stack would show ghost sprites frozen on their
 -- last frame. Swept by name prefix on every teardown.
+/**
+Summary: Delete Kit controls a previous session left on the card.
+
+pKeepAssets: true to keep sheet images (sources and frames) and delete only sprites and dead viewports.
+
+Example:
+b2kSpriteSweepOrphans false
+
+Description:
+A reopened stack resets script variables but keeps its controls,
+so old sprites would linger frozen. It deletes controls on this card
+named with the Kit's prefixes: dead camera viewports (ungrouped first),
+sprites, and unless kept, sheet images. Teardowns call it.
+
+References: b2kSheetsWipe (handler), b2kTeardown (handler)
+*/
 command b2kSpriteSweepOrphans pKeepAssets
    local tAgain, i, tName, tHit
    -- 1) dissolve dead viewports first. Ungrouping RENUMBERS the card's
@@ -3205,6 +6502,25 @@ end b2kSpriteSweepOrphans
 -- pixel size immediately -- the exact path b2kSheetFromImage users (and
 -- the platformer's embedded placeholder) already exercise successfully.
 -- lockLoc only AFTER the content, so the control has auto-sized first.
+/**
+Summary: Load an image file into the hidden source image of a sheet.
+
+pName: The sheet's name.
+
+pPath: The image file's path.
+
+Returns: The source image's long id, or empty on failure.
+
+Example:
+put b2kSheetSourceFromFile("coins", tPath) into tImg
+
+Description:
+Internal: the sheet loaders call it. The file is loaded as image
+content. When sheets persist and an image already loaded from the same path
+is in the stack, it is reused without reading the file.
+
+References: b2kSheetLoad (handler), b2kSheetLoadAtlas (handler)
+*/
 function b2kSheetSourceFromFile pName, pPath
    local tImg, tData
    put "b2ksheet_" & pName into tImg
@@ -3247,6 +6563,29 @@ end b2kSheetSourceFromFile
 -- cells; both default 0 (edge-to-edge, the common case). A frame size of
 -- 0/empty registers NO grid -- the caller names regions with
 -- b2kSheetAddFrame instead.
+/**
+Summary: Register numbered grid frames over a sheet's source image.
+
+pName: The sheet's name.
+
+pFW: Frame width in pixels; 0 or empty registers no grid.
+
+pFH: Frame height in pixels; 0 or empty registers no grid.
+
+pCount: Optional number of frames to register; empty means every whole cell.
+
+pMargin: Optional outer border in pixels. Empty means 0.
+
+pSpacing: Optional gap between cells in pixels. Empty means 0.
+
+Example:
+b2kSheetGridRegions "coins", 32, 32, empty, 0, 0
+
+Description:
+Internal: the grid loaders call it. A frame size below 1 registers nothing.
+
+References: b2kSheetLoad (handler), b2kSheetFromImage (handler)
+*/
 command b2kSheetGridRegions pName, pFW, pFH, pCount, pMargin, pSpacing
    local tCols, tRows, tMax, i, tC, tR
    if sSheetSrc[pName] is empty then exit b2kSheetGridRegions
@@ -3270,6 +6609,23 @@ command b2kSheetGridRegions pName, pFW, pFH, pCount, pMargin, pSpacing
 end b2kSheetGridRegions
 
 -- Internal: one attribute value out of an XML tag line (attr="value").
+/**
+Summary: Read one attribute value from an XML tag line.
+
+pLine: A line holding one XML tag.
+
+pAttr: The attribute's name.
+
+Returns: The attribute's value, or empty when it is absent.
+
+Example:
+put b2kXmlAttr(tLine, "width") into tW
+
+Description:
+The atlas loader's small parser.
+
+References: b2kSheetLoadAtlas (handler)
+*/
 function b2kXmlAttr pLine, pAttr
    local tFrom, tLen
    put offset(pAttr & "=" & quote, pLine) into tFrom
@@ -3285,6 +6641,23 @@ end b2kXmlAttr
 -- Internal: the 1-based position of a frame key in its sheet's key list --
 -- a STABLE id (load order is deterministic) used to name sliced frames so a
 -- SAVED stack can find and reuse them (b2kSheetPersist), never duplicating.
+/**
+Summary: A frame's position in its sheet.
+
+pSheet: The sheet's name.
+
+pKey: The frame's name or number.
+
+Returns: The 1-based position in definition order, or 0 when absent.
+
+Example:
+put b2kSheetKeyIndex("chars", "character_beige_idle") into tPos
+
+Description:
+It names saved slices so a reopened stack can find and reuse them.
+
+References: b2kSheetSliceSig (handler)
+*/
 function b2kSheetKeyIndex pSheet, pKey
    local i, tK
    put 0 into i
@@ -3301,10 +6674,42 @@ end b2kSheetKeyIndex
 -- slice as uB2kSig and re-checked on reuse, so a reopened stack that reuses a
 -- sheet NAME for different art, or changes a sheet's scale, re-slices instead
 -- of adopting stale pixels (the name alone is not a safe identity).
+/**
+Summary: A sheet's provenance stamp.
+
+pSheet: The sheet's name.
+
+Returns: A string naming the sheet's source, its load arguments and its scale.
+
+Example:
+put b2kSheetSliceSig("chars") into tSig
+
+Description:
+A saved slice is reused only when its stamp matches, so new art or a new scale is re-sliced.
+
+References: b2kSheetKeyIndex (handler), b2kSheetEnsureIcon (handler)
+*/
 function b2kSheetSliceSig pSheet
    return sSheetPath[pSheet] & "|" & b2kNumberOr(sSheetScale[pSheet], 1)
 end b2kSheetSliceSig
 
+/**
+Summary: Slice a frame's image now instead of on first display.
+
+pSheet: The sheet's name.
+
+pKey: The frame's name or number.
+
+Example:
+b2kSheetEnsureIcon "chars", "character_beige_hit"
+
+Description:
+Frames are sliced lazily, and a slice made mid-game costs a visible
+hitch. Pre-warm frames that first appear during play. The result is cached,
+so a second call is free.
+
+References: b2kSheetEnsureFlip (handler), b2kSheetScale (handler)
+*/
 command b2kSheetEnsureIcon pSheet, pKey
    local tRegion, tX, tY, tW, tH, tSW, tRowPx, tFD, tFA, y, tName, tScale, tW2, tH2
    if sSheetIcon[pSheet][pKey] is not empty then exit b2kSheetEnsureIcon
@@ -3377,6 +6782,21 @@ end b2kSheetEnsureIcon
 
 -- Internal: the mirrored copy of a frame (falls back to the unmirrored
 -- frame if this engine's flip throws, so facing left never errors).
+/**
+Summary: Make a frame's mirrored image now instead of on first display.
+
+pSheet: The sheet's name.
+
+pKey: The frame's name or number.
+
+Example:
+b2kSheetEnsureFlip "chars", "character_beige_walk_a"
+
+Description:
+It slices the frame first if needed. If this engine's flip fails, the unmirrored frame is used.
+
+References: b2kSheetEnsureIcon (handler), b2kSpriteFlipH (handler)
+*/
 command b2kSheetEnsureFlip pSheet, pKey
    local tName
    if sSheetFlip[pSheet][pKey] is not empty then exit b2kSheetEnsureFlip
@@ -3406,6 +6826,23 @@ end b2kSheetEnsureFlip
 
 -- Internal: point a sprite's icon at a frame, honouring its facing. Skips
 -- the property set when the icon is already right (the sDrawKey idea).
+/**
+Summary: Point a sprite's icon at a frame.
+
+pRef: The sprite's long id.
+
+pKey: The frame's name or number.
+
+Example:
+b2kSpriteShowFrame tSpr, 3
+
+Description:
+Internal: it honours the sprite's facing and skips the icon set when
+the frame is already shown. It does not stop an animation; use
+<b2kSpriteSetFrame> for that.
+
+References: b2kSpriteSetFrame (handler)
+*/
 command b2kSpriteShowFrame pRef, pKey
    local tSheet, tIcon
    put sSprSheet[pRef] into tSheet
@@ -3427,6 +6864,19 @@ end b2kSpriteShowFrame
 -- Internal: per-frame service -- bound sprites follow their body's control,
 -- playing animations advance on wall-clock time. Vanished controls are
 -- forgotten, like the body sync does.
+/**
+Summary: Run one frame of sprite service.
+
+Example:
+b2kSpritesTick
+
+Description:
+Internal: the loop calls it each frame. Bound sprites follow their
+control and playing animations advance on wall-clock time; sprites whose
+control vanished are forgotten. Only bound or playing sprites are visited.
+
+References: b2kSpriteBind (handler), b2kSpritePlay (handler)
+*/
 command b2kSpritesTick
    local tNow, tRef, tDead, tSheet, tAnim, tAKey, tList, tStep, tN, tLoc, tBX, tBY
    if sSprRefs is empty then exit b2kSpritesTick
@@ -3527,6 +6977,35 @@ end b2kSpritesTick
 -- a sprite showing the sheet's first frame is created and bound on top --
 -- so the collision size (pW x pH) is independent of the art size.
 -- Reports the player control (give that to b2kCamFollow, sensors, etc).
+/**
+Summary: Create a platformer player in one call.
+
+pX: The centre x in pixels. Not a number means the world origin's x.
+
+pY: The centre y in pixels. Not a number means the world origin's y.
+
+pW: The collision width in pixels. Empty means 32.
+
+pH: The collision height in pixels. Empty means 48.
+
+pSheet: Optional sheet name: a sprite of its first frame is created and pinned on top.
+
+Returns: The player control's long id through the result, or empty when there is no world.
+
+Example:
+b2kPlayerMake 200, 100, 32, 48, "chars"
+put the result into gHero
+b2kPlayerAnims "idle", "walk", "jump"
+b2kCamFollow gHero
+
+Description:
+It creates a rectangle graphic as the body host (hidden when a
+sprite of the sheet is made), attaches it with <b2kPlayerAttach>, and turns
+input on. The collision size is independent of the art size. Give the
+returned control to <b2kCamFollow> and your hazard checks.
+
+References: b2kPlayerAttach (handler), b2kPlayerAnims (handler), b2kPlayerSet (handler), b2kPlayer (handler)
+*/
 command b2kPlayerMake pX, pY, pW, pH, pSheet
    local tName, tRef, tArt
    if sWorld is empty then return empty
@@ -3569,6 +7048,24 @@ end b2kPlayerMake
 -- Adopt an existing control (or sprite) as the player. A capsule body is
 -- added if it has none -- then the controller also sets its material (low
 -- friction); a body you made yourself is left exactly as you tuned it.
+/**
+Summary: Make an existing control the player.
+
+pCtrl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kPlayerAttach the long id of graphic "Hitbox"
+
+Description:
+A control without a body gets a capsule body with low friction
+(0.08) and no bounce; a body you made yourself keeps its material. The body
+gets fixed rotation and is never allowed to sleep, and input is turned on.
+
+There is one player at a time: attaching another replaces the controller's
+state, and the old body and sprite stay. With no world it does nothing.
+
+References: b2kPlayerMake (handler), b2kPlayerRemove (handler), b2kPlayerAnims (handler)
+*/
 command b2kPlayerAttach pCtrl
    local tRef
    if sWorld is empty then exit b2kPlayerAttach
@@ -3647,6 +7144,20 @@ end b2kPlayerAttach
 
 -- Internal: which control's animations the controller drives -- the
 -- player itself when it is a sprite, else the first sprite bound to it.
+/**
+Summary: Find the control whose animations the controller drives.
+
+Example:
+b2kPlayerResolveArt
+put b2kPlayerSprite() into tArt
+
+Description:
+Internal: the player itself if it is a sprite, else the first
+sprite pinned to it with <b2kSpriteBind>. Call it after binding new art to an
+existing player.
+
+References: b2kPlayerSprite (handler), b2kSpriteBind (handler)
+*/
 command b2kPlayerResolveArt
    local tRef
    put empty into sPlayArt
@@ -3675,6 +7186,31 @@ end b2kPlayerResolveArt
 -- capsule height as a fraction of standing, <1 to crawl), platformCarry
 -- (1 = ride moving platforms). Settable any time, before or after the
 -- player exists; unknown keys are stored verbatim for your own use.
+/**
+Summary: Set a player tuning knob.
+
+pKey: The knob's name (case does not matter).
+
+pValue: The new value; empty goes back to the default.
+
+Example:
+b2kPlayerSet "jumpSpeed", 520
+b2kPlayerSet "airJumps", 1
+
+Description:
+Knobs: moveSpeed, accel, airAccel, jumpSpeed, jumpCut, coyoteMs,
+bufferMs, maxFall, maxSlopeDeg, dropMs, climbSpeed, swimSpeed, swimJump,
+swimGravity, swimMaxFall, hurtPopX, hurtPopY, hurtMs, invulnMs, and the
+opt-in airJumps, wallJumpX, wallJumpY, wallSlideMax, dashSpeed, dashMs,
+dashCooldownMs, airDash, duckScale and platformCarry (<b2kPlayerDefault>
+gives each default). Unknown keys are stored for your own use.
+
+Set them before or after the player exists; a change applies from the next
+frame. <b2kClear> keeps them; <b2kTeardown> and <b2kPlayerRemove> reset
+them.
+
+References: b2kPlayerGet (handler), b2kPlayerDefault (handler), b2kPlayerTuneCache (handler)
+*/
 command b2kPlayerSet pKey, pValue
    put pValue into sPlayTune[toLower(pKey)]
    b2kPlayerTuneCache
@@ -3682,6 +7218,17 @@ end b2kPlayerSet
 
 -- Internal: resolve the knobs into flat locals ONCE per change -- the
 -- tick reads these every frame and must not pay name lookups for them.
+/**
+Summary: Copy the tuning knobs into the controller's fast variables.
+
+Example:
+b2kPlayerTuneCache
+
+Description:
+Internal: <b2kPlayerSet> calls it, so a knob takes effect on the next frame.
+
+References: b2kPlayerSet (handler)
+*/
 command b2kPlayerTuneCache
    put b2kPlayerGet("moveSpeed") into sPlayMoveSpd
    put b2kPlayerGet("accel") into sPlayAccelG
@@ -3720,6 +7267,18 @@ command b2kPlayerTuneCache
    end if
 end b2kPlayerTuneCache
 
+/**
+Summary: Read a player tuning knob.
+
+pKey: The knob's name (case does not matter).
+
+Returns: The knob's value, or its default when unset. A known knob set to a non-number reads as its default.
+
+Example:
+put b2kPlayerGet("jumpSpeed") into tJump
+
+References: b2kPlayerSet (handler), b2kPlayerDefault (handler)
+*/
 function b2kPlayerGet pKey
    local tDef
    put toLower(pKey) into pKey
@@ -3731,6 +7290,23 @@ function b2kPlayerGet pKey
 end b2kPlayerGet
 
 -- Internal: the defaults (spec section 6 -- a 32x48 px player, scale 40).
+/**
+Summary: The shipped default of a player tuning knob.
+
+pKey: The knob's name in lower case, such as "jumpspeed".
+
+Returns: The default value, or empty for a knob the controller does not know.
+
+Example:
+put b2kPlayerDefault("jumpspeed") into tStock
+
+Description:
+The defaults suit a 32 by 48 px player at scale 40: moveSpeed 220,
+jumpSpeed 460, maxFall 900, and so on. The opt-in actions default to off.
+<b2kPlayerGet> lower-cases its key for you; this does not.
+
+References: b2kPlayerGet (handler), b2kPlayerSet (handler)
+*/
 function b2kPlayerDefault pKey
    switch pKey
       case "movespeed"
@@ -3809,6 +7385,42 @@ end b2kPlayerDefault
 -- the Wave 4 pSwim falls back to the fall pose -- sheets without those
 -- frames still read correctly. Wave 5 slots: pWall (wall-slide) falls back
 -- to the fall pose, pDash falls back to the run pose.
+/**
+Summary: Map the controller's states to the art's animation names.
+
+pIdle: Animation for standing still.
+
+pRun: Animation for running.
+
+pJump: Animation for rising.
+
+pFall: Optional animation for falling. Empty uses the jump animation.
+
+pLand: Optional one-shot touch-down animation, held for its own length.
+
+pDuck: Optional crouch animation. Empty uses idle.
+
+pClimb: Optional ladder animation. Empty uses jump.
+
+pHurt: Optional knockback animation. Empty uses jump.
+
+pSwim: Optional swim animation. Empty uses the fall animation.
+
+pWall: Optional wall-slide animation. Empty uses the fall animation.
+
+pDash: Optional dash animation. Empty uses run.
+
+Example:
+b2kPlayerAnims "idle", "walk", "jump", "fall", "land"
+
+Description:
+The controller then plays these on the player's art and flips it to
+face the way it moves. If your game uses <b2kSpriteOnFinish> on the player's
+art, map a looping animation to hurt: a one-shot hurt pose fires the finish
+message mid-knockback.
+
+References: b2kPlayerState (handler), b2kAnimDef (handler), b2kPlayerSprite (handler)
+*/
 command b2kPlayerAnims pIdle, pRun, pJump, pFall, pLand, pDuck, pClimb, pHurt, pSwim, pWall, pDash
    put pIdle into sPlayAnims["idle"]
    put pRun into sPlayAnims["run"]
@@ -3853,16 +7465,46 @@ command b2kPlayerAnims pIdle, pRun, pJump, pFall, pLand, pDuck, pClimb, pHurt, p
    if sPlayArt is empty then b2kPlayerResolveArt
 end b2kPlayerAnims
 
+/**
+Summary: The player control.
+
+Returns: The player's long id, or empty when there is no player.
+
+Example:
+put b2kPlayer() into tHero
+
+References: b2kPlayerSprite (handler), b2kPlayerMake (handler)
+*/
 function b2kPlayer
    return sPlayRef
 end b2kPlayer
 
 -- The art control the controller animates (empty = none resolved yet).
+/**
+Summary: The control the controller animates.
+
+Returns: The art control, or empty when none is found.
+
+Example:
+put b2kPlayerSprite() into tArt
+
+References: b2kPlayer (handler), b2kPlayerResolveArt (handler)
+*/
 function b2kPlayerSprite
    return sPlayArt
 end b2kPlayerSprite
 
 -- Grounded this frame (post-tick; false on the frame a jump launches).
+/**
+Summary: Report whether the player is grounded this frame.
+
+Returns: true or false; false on the frame a jump launches.
+
+Example:
+if b2kPlayerOnGround() then put 0 into tAirTime
+
+References: b2kPlayerState (handler)
+*/
 function b2kPlayerOnGround
    return (sPlayGrounded is true)
 end b2kPlayerOnGround
@@ -3872,10 +7514,34 @@ end b2kPlayerOnGround
 -- puffs, landing sounds). A drop-through renders as "fall". The Wave 5
 -- states (wallslide, dash) only appear when their knobs are enabled.
 -- Empty = no player.
+/**
+Summary: The player's current state.
+
+Returns: idle, run, jump, fall, duck, climb, hurt, swim, wallslide or dash, or land for one frame on touch-down; empty when there is no player.
+
+Example:
+if b2kPlayerState() is "land" then b2kSound "land"
+
+Description:
+Read it from b2kFrame. A drop-through reads as fall. The wallslide
+and dash states appear only when their knobs are on.
+
+References: b2kPlayerOnGround (handler), b2kPlayerAnims (handler)
+*/
 function b2kPlayerState
    return sPlayState
 end b2kPlayerState
 
+/**
+Summary: Which way the player faces.
+
+Returns: 1 for right, -1 for left (the last horizontal input).
+
+Example:
+b2kSpawnBall item 1 of b2kPosition(b2kPlayer()) + 30 * b2kPlayerFacing(), 100, 12
+
+References: b2kPlayerState (handler)
+*/
 function b2kPlayerFacing
    if sPlayFacing is -1 then return -1
    return 1
@@ -3885,10 +7551,33 @@ end b2kPlayerFacing
 -- the player is in a reshaped duck/crawl). Head-reach logic should read
 -- these live rather than bake a constant (gotcha 28: a hitbox taller than
 -- the visible art bumps things the head never touches).
+/**
+Summary: The player capsule's current half-height.
+
+Returns: Pixels, or 0 when there is no player.
+
+Example:
+put item 2 of b2kPosition(b2kPlayer()) - b2kPlayerHalfH() into tHeadY
+
+Description:
+It shrinks during a reshaped crawl, so read it live rather than using a constant.
+
+References: b2kPlayerHalfW (handler)
+*/
 function b2kPlayerHalfH
    return b2kNumberOr(sPlayHalfH, 0)
 end b2kPlayerHalfH
 
+/**
+Summary: The player capsule's half-width.
+
+Returns: Pixels, or 0 when there is no player.
+
+Example:
+put b2kPlayerHalfW() into tHalfW
+
+References: b2kPlayerHalfH (handler)
+*/
 function b2kPlayerHalfW
    return b2kNumberOr(sPlayHalfW, 0)
 end b2kPlayerHalfW
@@ -3896,10 +7585,30 @@ end b2kPlayerHalfW
 -- This frame's ladder / water zone membership (the controller computes
 -- these every tick anyway -- read them for "press UP to climb" prompts,
 -- splash effects, breath meters, without recomputing the rects yourself).
+/**
+Summary: Report whether the player is inside a ladder zone this frame.
+
+Returns: true or false.
+
+Example:
+if b2kPlayerInLadder() then show field "ClimbHint"
+
+References: b2kPlayerAddLadder (handler), b2kPlayerInWater (handler)
+*/
 function b2kPlayerInLadder
    return (sPlayInLad is true)
 end b2kPlayerInLadder
 
+/**
+Summary: Report whether the player is inside a water zone this frame.
+
+Returns: true or false.
+
+Example:
+if b2kPlayerInWater() then subtract b2kFrameMS() from tBreath
+
+References: b2kPlayerAddWater (handler), b2kPlayerInLadder (handler)
+*/
 function b2kPlayerInWater
    return (sPlayInWat is true)
 end b2kPlayerInWater
@@ -3907,6 +7616,22 @@ end b2kPlayerInWater
 -- Programmatic jump (springs, double-jump powerups): the same launch as a
 -- pressed jump but WITHOUT the grounded/coyote gate -- the caller decides
 -- when it is allowed. Uses the jumpSpeed knob unless given a speed.
+/**
+Summary: Make the player jump, with no ground check.
+
+pSpeed: The launch speed in px/s. Empty means the jumpSpeed knob.
+
+Example:
+b2kPlayerJump 700
+
+Description:
+The same launch as a pressed jump, for springs and power-ups; the
+caller decides when it is allowed. Use it for every upward boost: a raw
+upward velocity on a grounded player is treated as a rebound and snapped
+away.
+
+References: b2kPlayerSet (handler), b2kPlayerOnGround (handler)
+*/
 command b2kPlayerJump pSpeed
    local tVel
    if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerJump
@@ -3928,6 +7653,29 @@ end b2kPlayerJump
 -- physics objects -- and are WORLD state: b2kClear wipes them.
 -- TIP: run the zone a little above a platform at the ladder's top, so
 -- walking off that edge while holding DOWN grabs the ladder.
+/**
+Summary: Register a ladder zone.
+
+pX1: One corner's x, in pixels.
+
+pY1: One corner's y, in pixels.
+
+pX2: The other corner's x, in pixels.
+
+pY2: The other corner's y, in pixels.
+
+Example:
+b2kPlayerAddLadder 600, 180, 640, 420
+
+Description:
+While the player's centre is inside, UP starts a climb (DOWN too
+when airborne): gravity stops, y moves at climbSpeed and x at half speed,
+and JUMP leaves with a normal jump. Zones are plain rectangles with no
+physics; <b2kClear> removes them. Start the zone a little above the
+platform at the ladder's top. Corners that are not numbers are ignored.
+
+References: b2kPlayerInLadder (handler), b2kPlayerAddWater (handler)
+*/
 command b2kPlayerAddLadder pX1, pY1, pX2, pY2
    if pX1 is not a number or pY1 is not a number \
          or pX2 is not a number or pY2 is not a number then exit b2kPlayerAddLadder
@@ -3947,6 +7695,28 @@ end b2kPlayerAddLadder
 -- WORLD state (b2kClear wipes them), exactly like the ladder zones.
 -- TIP: top the zone a little ABOVE the water's surface tiles, so the dive
 -- in and the surface-out break the water where the surface art sits.
+/**
+Summary: Register a water (swim) zone.
+
+pX1: One corner's x, in pixels.
+
+pY1: One corner's y, in pixels.
+
+pX2: The other corner's x, in pixels.
+
+pY2: The other corner's y, in pixels.
+
+Example:
+b2kPlayerAddWater 900, 300, 1200, 460
+
+Description:
+While the player's centre is inside, it swims: gravity drops to
+swimGravity, sinking is capped at swimMaxFall, UP and DOWN move at swimSpeed,
+and each JUMP press is an upward stroke. Zones have no physics; <b2kClear>
+removes them. Top the zone a little above the drawn water surface.
+
+References: b2kPlayerInWater (handler), b2kPlayerAddLadder (handler)
+*/
 command b2kPlayerAddWater pX1, pY1, pX2, pY2
    if pX1 is not a number or pY1 is not a number \
          or pX2 is not a number or pY2 is not a number then exit b2kPlayerAddWater
@@ -3966,6 +7736,23 @@ end b2kPlayerAddWater
 -- no-ops and b2kPlayerHurtIs() stays true (skip your hazard checks).
 -- Games keep their respawn flow for LETHAL hits (pits, kill planes):
 -- contact damage knocks back, falling dies -- the Wave 2 split.
+/**
+Summary: Knock the player back from a hit.
+
+pFromX: The x the hit came from; the player pops away from it. Empty pops backward from the facing.
+
+Example:
+if not b2kPlayerHurtIs() then b2kPlayerHurt item 1 of b2kPosition(tSlime)
+
+Description:
+The contact-damage standard: an away pop (hurtPopX, hurtPopY), the
+hurt state, input ignored until hurtMs has passed or the first landing after
+half of it, whichever is later, then an invulnMs mercy window in which
+this command does nothing. Ignored while control is off. Keep your respawn flow
+for lethal falls.
+
+References: b2kPlayerHurtIs (handler), b2kPlayerControl (handler), b2kPlayerRespawn (handler)
+*/
 command b2kPlayerHurt pFromX
    local tDir
    if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerHurt
@@ -4002,6 +7789,16 @@ end b2kPlayerHurt
 -- True through the knockback AND the mercy window that follows it: the
 -- one gate a game's hazard checks need (poll it before calling
 -- b2kPlayerHurt -- though a hurt inside the window already no-ops).
+/**
+Summary: Report whether the player is in knockback or its mercy window.
+
+Returns: true or false.
+
+Example:
+if b2kPlayerHurtIs() then put true into tSkipHazards
+
+References: b2kPlayerHurt (handler)
+*/
 function b2kPlayerHurtIs
    if sPlayHurt is true then return true
    if sPlayInvulnUntil is not empty and sPlayInvulnUntil > 0 and sPlayClock < sPlayInvulnUntil then return true
@@ -4012,6 +7809,23 @@ end b2kPlayerHurtIs
 -- but it writes neither velocity nor animations (the maxFall clamp stays
 -- live -- it is the character's terminal velocity). For cutscenes,
 -- hit poses, scripted deaths; physics and the Kit run on.
+/**
+Summary: Give the controller control of the player, or make it only observe.
+
+pFlag: false to observe only; anything else gives control back.
+
+Example:
+b2kPlayerControl false
+
+Description:
+While observing, ground, state and facing stay fresh but the
+controller writes no velocity and no animation (the maxFall limit still
+applies); use it for cutscenes and scripted poses. Either call cancels a
+knockback in progress with no mercy window. Giving control back re-applies
+the state's animation.
+
+References: b2kPlayerHurt (handler), b2kPlayerRespawn (handler)
+*/
 command b2kPlayerControl pFlag
    put (pFlag is not false) into sPlayControl
    -- an EXPLICIT control call overrides a knockback in flight: the game
@@ -4038,6 +7852,23 @@ end b2kPlayerControl
 -- respawn most games hand-roll (b2kMoveTo + b2kSetVelocity + clearing a
 -- pile of flags) in one call. Tuning and zones are kept (world/config
 -- state). Empty pX/pY reuse the current centre (an in-place reset).
+/**
+Summary: Teleport the player and reset it to a clean standing idle.
+
+pX: The new centre x in pixels. Not a number keeps the current x.
+
+pY: The new centre y in pixels. Not a number keeps the current y.
+
+Example:
+b2kPlayerRespawn 120, 300
+
+Description:
+Velocity is zeroed; jump, hurt, dash, climb, swim, drop and duck
+states are cleared; the air-jump budget is refilled and control is on.
+Tuning and zones are kept.
+
+References: b2kPlayerHurt (handler), b2kMoveTo (handler)
+*/
 command b2kPlayerRespawn pX, pY
    local tB
    if sPlayRef is empty or sBody[sPlayRef] is empty then exit b2kPlayerRespawn
@@ -4067,6 +7898,19 @@ end b2kPlayerRespawn
 
 -- Tear down the controller, tuning included. The body and sprite remain
 -- yours: remove them with b2kRemove / b2kSpriteRemove as usual.
+/**
+Summary: Remove the player controller.
+
+Example:
+b2kPlayerRemove
+b2kRemove tHero
+
+Description:
+The controller's state and tuning go. The body and sprite stay;
+remove them with <b2kRemove> and <b2kSpriteRemove>.
+
+References: b2kPlayerAttach (handler), b2kPlayerForget (handler)
+*/
 command b2kPlayerRemove
    b2kPlayerForget true
 end b2kPlayerRemove
@@ -4075,6 +7919,22 @@ end b2kPlayerRemove
 -- config and survives, like input bindings); teardown/remove pass true.
 -- Ladder zones are WORLD state, so they go either way; a mid-climb or
 -- mid-drop body gets its gravity scale and collision mask back first.
+/**
+Summary: Drop the controller's state.
+
+pFull: true to drop the tuning knobs too.
+
+Example:
+b2kPlayerForget false
+
+Description:
+Internal: <b2kClear> passes false and <b2kTeardown> and
+<b2kPlayerRemove> pass true. A climb, swim, dash or drop in progress is ended
+first so the body gets its gravity and mask back. Ladder and water zones go
+either way.
+
+References: b2kPlayerRemove (handler), b2kClear (handler)
+*/
 command b2kPlayerForget pFull
    if sPlayClimb is true and sPlayRef is not empty and sBody[sPlayRef] is not empty then
       b2kPlayerClimbEnd sBody[sPlayRef]
@@ -4151,6 +8011,23 @@ end b2kPlayerForget
 -- frame and report phantom landings while rising THROUGH a one-way
 -- chain (the bridge route). Plain upward motion is NOT skipped -- running
 -- up a slope moves the capsule upward while genuinely grounded.
+/**
+Summary: Run the controller's ground probe.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+pVY: The body's vertical velocity in px/s, screen oriented (negative is rising).
+
+Example:
+b2kPlayerProbe b2kBodyOf(b2kPlayer()), 0
+
+Description:
+Internal: three short rays down from the capsule decide whether the
+player is grounded (a surface whose normal points up within maxSlopeDeg).
+Skipped while the controller's own jump is still rising.
+
+References: b2kPlayerOnGround (handler), b2kPlayerTick (handler)
+*/
 command b2kPlayerProbe pBody, pVY
    local tX, tY, tOff
    put false into sPlayGrounded
@@ -4192,6 +8069,19 @@ end b2kPlayerProbe
 
 -- Internal: enter the climb -- gravity parks at 0 (the body's own scale
 -- is saved and restored, so a game-tuned floatiness survives a ladder).
+/**
+Summary: Start the climb's gravity hold.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerClimbStart b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: saves the body's gravity scale and sets it to 0. A repeated start is a no-op.
+
+References: b2kPlayerClimbEnd (handler)
+*/
 command b2kPlayerClimbStart pBody
    if sPlayClimb is true then exit b2kPlayerClimbStart
    put b2BodyGravityScale(pBody) into sPlayGravSave
@@ -4200,6 +8090,19 @@ command b2kPlayerClimbStart pBody
    put false into sPlayJumping
 end b2kPlayerClimbStart
 
+/**
+Summary: End the climb's gravity hold.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerClimbEnd b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: restores the saved gravity scale. Without a start it is a no-op.
+
+References: b2kPlayerClimbStart (handler)
+*/
 command b2kPlayerClimbEnd pBody
    if sPlayClimb is not true then exit b2kPlayerClimbEnd
    b2SetGravityScale pBody, b2kNumberOr(sPlayGravSave, 1)
@@ -4210,6 +8113,19 @@ end b2kPlayerClimbEnd
 -- Internal: enter the swim -- gravity drops to swimGravity (buoyant; the
 -- body's own scale is saved and restored, like the climb). Mutually
 -- exclusive with the climb: the tick only ever starts one of them.
+/**
+Summary: Start the swim's buoyancy.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerSwimStart b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: saves the body's gravity scale and sets it to swimGravity. A repeated start is a no-op.
+
+References: b2kPlayerSwimEnd (handler)
+*/
 command b2kPlayerSwimStart pBody
    if sPlaySwim is true then exit b2kPlayerSwimStart
    put b2BodyGravityScale(pBody) into sPlaySwimGravSave
@@ -4218,6 +8134,19 @@ command b2kPlayerSwimStart pBody
    put false into sPlayJumping
 end b2kPlayerSwimStart
 
+/**
+Summary: End the swim's buoyancy.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerSwimEnd b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: restores the saved gravity scale. Without a start it is a no-op.
+
+References: b2kPlayerSwimStart (handler)
+*/
 command b2kPlayerSwimEnd pBody
    if sPlaySwim is not true then exit b2kPlayerSwimEnd
    b2SetGravityScale pBody, b2kNumberOr(sPlaySwimGravSave, 1)
@@ -4227,6 +8156,18 @@ end b2kPlayerSwimEnd
 
 -- Internal: open the drop-through window -- take the reserved one-way
 -- bit out of the player's mask so chains (alone) stop colliding.
+/**
+Summary: Open the drop-through window.
+
+Example:
+b2kPlayerDropStart
+
+Description:
+Internal: takes the reserved one-way bit (2^31) out of the player's
+collision mask, so one-way chains alone stop colliding, for dropMs.
+
+References: b2kPlayerDropRestore (handler), b2kChain (handler)
+*/
 command b2kPlayerDropStart
    local tS, tM
    put sShapeH[sPlayRef] into tS
@@ -4244,6 +8185,17 @@ command b2kPlayerDropStart
    put sRayY into sPlayDropLineY   -- the grounding ray's hit = the surface line
 end b2kPlayerDropStart
 
+/**
+Summary: Close the drop-through window.
+
+Example:
+b2kPlayerDropRestore
+
+Description:
+Internal: puts back the mask <b2kPlayerDropStart> saved.
+
+References: b2kPlayerDropStart (handler)
+*/
 command b2kPlayerDropRestore
    local tS
    put 0 into sPlayDropUntil
@@ -4258,6 +8210,20 @@ end b2kPlayerDropRestore
 -- like the climb) so the burst is a flat horizontal zip; the tick holds vx
 -- at dashSpeed for dashMs, then b2kPlayerDashEnd restores gravity. The
 -- cooldown (dashReady) gates the next start.
+/**
+Summary: Start a dash.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerDashStart b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: saves the gravity scale and sets it to 0, and starts the
+dash timer and cooldown in the facing direction. A repeated start is a no-op.
+
+References: b2kPlayerDashEnd (handler)
+*/
 command b2kPlayerDashStart pBody
    if sPlayDash is true then exit b2kPlayerDashStart
    put b2BodyGravityScale(pBody) into sPlayDashGravSave
@@ -4269,6 +8235,19 @@ command b2kPlayerDashStart pBody
    put false into sPlayJumping
 end b2kPlayerDashStart
 
+/**
+Summary: End a dash.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+Example:
+b2kPlayerDashEnd b2kBodyOf(b2kPlayer())
+
+Description:
+Internal: restores the saved gravity scale. Without a start it is a no-op.
+
+References: b2kPlayerDashStart (handler)
+*/
 command b2kPlayerDashEnd pBody
    if sPlayDash is not true then exit b2kPlayerDashEnd
    b2SetGravityScale pBody, b2kNumberOr(sPlayDashGravSave, 1)
@@ -4280,6 +8259,21 @@ end b2kPlayerDashEnd
 -- A near-vertical hit within a capsule-width is a wall -> sPlayWall = the
 -- side (-1 left, 1 right; 0 = none). Runs only while the wall system is on
 -- AND the player is airborne, so the steady-state budget is untouched.
+/**
+Summary: Look for a wall beside the player.
+
+pBody: The player's raw body handle, b2kBodyOf(b2kPlayer()).
+
+pAxis: The side to look: -1 left, 1 right, 0 the facing.
+
+Example:
+b2kPlayerWallProbe b2kBodyOf(b2kPlayer()), 1
+
+Description:
+Internal: one sideways ray for the wall-slide and wall-jump system. Its result has no public reader.
+
+References: b2kPlayerTick (handler)
+*/
 command b2kPlayerWallProbe pBody, pAxis
    local tDir
    put 0 into sPlayWall
@@ -4317,6 +8311,21 @@ end b2kPlayerWallProbe
 -- ghost-layer defect, run 5). A category of 0 means the readback found no
 -- shape at all, so the restore is skipped rather than stamping a
 -- collides-with-nothing filter onto the new one.
+/**
+Summary: Shrink the player to a crawl, or stand up when there is room.
+
+pWantDuck: true to crawl; anything else stands up if a ray finds headroom.
+
+Example:
+b2kPlayerDuckSet true
+
+Description:
+Only active when duckScale is below 1 (the default is 1, a no-op).
+The capsule is rebuilt shorter with the feet planted, keeping its collision
+filter, with friction 0.08 and no bounce.
+
+References: b2kPlayerStandUp (handler), b2kPlayerHalfH (handler)
+*/
 command b2kPlayerDuckSet pWantDuck
    local tNewH, tShift, tNeed, tS, tCat, tMask, tGrp
    if sPlayRef is empty then exit b2kPlayerDuckSet
@@ -4369,6 +8378,17 @@ end b2kPlayerDuckSet
 
 -- Internal (Wave 5): restore the capsule to standing height, feet planted.
 -- Used by the duck exit (with headroom) and by b2kPlayerRespawn (forced).
+/**
+Summary: Restore the player's standing capsule.
+
+Example:
+b2kPlayerStandUp
+
+Description:
+Internal: stands the player up with no headroom check whenever it is ducked. <b2kPlayerRespawn> uses it.
+
+References: b2kPlayerDuckSet (handler)
+*/
 command b2kPlayerStandUp
    local tShift, tS, tCat, tMask, tGrp
    if sPlayDucked is not true or sPlayRef is empty then exit b2kPlayerStandUp
@@ -4403,6 +8423,20 @@ end b2kPlayerStandUp
 -- applies the anim it picks. Exits in one compare when unused. The
 -- Wave 2 paths (drop window, ladders, hurt) each cost ONE compare per
 -- frame while idle -- the tick's steady-state budget is unchanged.
+/**
+Summary: Run one frame of the player controller.
+
+Example:
+b2kPlayerTick
+
+Description:
+Internal: the loop and <b2kStepOnce> call it after the input
+sample. It probes the ground, applies input, jumping, ladders, water, hurt
+and the opt-in actions, and picks the animation. It exits at once when there
+is no player.
+
+References: b2kPlayerAttach (handler), b2kStepOnce (handler)
+*/
 command b2kPlayerTick
    local tNow, tDT, tB, tVX, tVY, tAxis, tAxisY, tTarget, tAcc, tStep
    local tPrevState, tWrite, tInZone, tDuck, tClimbJump, i, tInWater
@@ -4811,6 +8845,21 @@ command b2kPlayerTick
 end b2kPlayerTick
 
 -- Internal: drive the art's animation and facing from the current state.
+/**
+Summary: Play the animation and facing for the player's state.
+
+pNow: The controller's clock, in milliseconds.
+
+pVX: The player's horizontal velocity, in px/s.
+
+Example:
+b2kPlayerShowState 0, 0
+
+Description:
+Internal: the tick calls it while the controller has control and art.
+
+References: b2kPlayerAnims (handler), b2kPlayerTick (handler)
+*/
 command b2kPlayerShowState pNow, pVX
    local tWant, tAnim, tAKey, tFPS, tFlip
    put sPlayState into tWant
@@ -4860,6 +8909,24 @@ end b2kPlayerShowState
 -- infinite-distance parallax backdrop. Map mouse points with
 -- b2kCamMouseX/Y. Level coordinates should start at 0,0: an invisible
 -- anchor pins the group's content origin there, so scroll == view corner.
+/**
+Summary: Turn on the scrolling camera.
+
+pRect: The viewport rect on the card. Empty means the card's rect.
+
+Example:
+b2kCamOn
+b2kCamBounds 0, 0, 3072, 640
+b2kCamFollow gHero, 0.18
+
+Description:
+It creates a clipped viewport group the loop scrolls. While it is on,
+controls the Kit creates go inside it and keep world-pixel locations. Turn
+it on before building the level, after any static backdrop. Check
+<b2kCamStatus> afterwards: a failure is reported there, not thrown.
+
+References: b2kCamOff (handler), b2kCamFollow (handler), b2kCamBounds (handler), b2kCamStatus (handler)
+*/
 command b2kCamOn pRect
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tG
@@ -4954,6 +9021,17 @@ command b2kCamOn pRect
 end b2kCamOn
 
 -- Dissolve the viewport: children return to the card with their world locs.
+/**
+Summary: Turn off the camera.
+
+Example:
+b2kCamOff
+
+Description:
+The viewport is dissolved and its controls return to the card with their world locations. <b2kTeardown> calls it.
+
+References: b2kCamOn (handler)
+*/
 command b2kCamOff
    if sCamGroup is empty then exit b2kCamOff
    try
@@ -4968,17 +9046,53 @@ command b2kCamOff
    put empty into sInCam
 end b2kCamOff
 
+/**
+Summary: Report whether the camera is on.
+
+Returns: true or false.
+
+Example:
+if not b2kCamIsOn() then b2kCamOn
+
+References: b2kCamOn (handler)
+*/
 function b2kCamIsOn
    return (sCamGroup is not empty)
 end b2kCamIsOn
 
 -- The viewport group's reference (empty when the camera is off) -- create
 -- your own level controls inside it: create graphic "x" in b2kCamGroup().
+/**
+Summary: The camera's viewport group.
+
+Returns: The group's long id, or empty when the camera is off.
+
+Example:
+create graphic "Sign" in b2kCamGroup()
+
+Description:
+Create your own level controls inside it so they scroll.
+
+References: b2kCamAdopt (handler), b2kCamOn (handler)
+*/
 function b2kCamGroup
    return sCamGroup
 end b2kCamGroup
 
 -- Move an existing control (IDE-designed levels) into the viewport.
+/**
+Summary: Move an existing control into the camera's viewport.
+
+pCtrl: The control, by reference (the long id of the control is safest).
+
+Example:
+b2kCamAdopt the long id of graphic "Platform1"
+
+Description:
+For levels laid out in the IDE. With the camera off it does nothing.
+
+References: b2kCamGroup (handler)
+*/
 command b2kCamAdopt pCtrl
    if sCamGroup is empty then exit b2kCamAdopt
    try
@@ -4996,21 +9110,75 @@ command b2kCamAdopt pCtrl
    end try
 end b2kCamAdopt
 
+/**
+Summary: Make the camera follow a control.
+
+pCtrl: The control, by reference (the long id of the control is safest).
+
+pLerp: Optional smoothing, 0.01 to 1 (1 snaps). The default is 0.15.
+
+Example:
+b2kCamFollow gHero, 0.18
+
+Description:
+The camera eases toward the control, and snaps when the control would leave the view.
+
+References: b2kCamUnfollow (handler), b2kCamDeadzone (handler)
+*/
 command b2kCamFollow pCtrl, pLerp
    put the long id of pCtrl into sCamFollow
    if pLerp is a number then put b2kClamp(pLerp, 0.01, 1) into sCamLerp
 end b2kCamFollow
 
+/**
+Summary: Stop the camera following.
+
+Example:
+b2kCamUnfollow
+
+References: b2kCamFollow (handler), b2kCamGoto (handler)
+*/
 command b2kCamUnfollow
    put empty into sCamFollow
 end b2kCamUnfollow
 
 -- Follow only once the target leaves a centre box (0 = always centre).
+/**
+Summary: Set a centre box the target may move in before the camera chases.
+
+pW: The box's width in pixels; 0 always centres.
+
+pH: The box's height in pixels; 0 always centres.
+
+Example:
+b2kCamDeadzone 140, 600
+
+References: b2kCamFollow (handler)
+*/
 command b2kCamDeadzone pW, pH
    put b2kNumberOr(pW, 0) into sCamDZW
    put b2kNumberOr(pH, 0) into sCamDZH
 end b2kCamDeadzone
 
+/**
+Summary: Keep the view inside the level's rectangle.
+
+pX1: The level's left, in world pixels.
+
+pY1: The level's top, in world pixels.
+
+pX2: The level's right, in world pixels.
+
+pY2: The level's bottom, in world pixels.
+
+Example:
+b2kCamBounds 0, 0, 3072, 640
+
+Description:
+Set the bounds before <b2kCamGoto>.
+
+References: b2kCamOn (handler), b2kCamGoto (handler)
+*/
 command b2kCamBounds pX1, pY1, pX2, pY2
    put pX1 into sCamB1X
    put pY1 into sCamB1Y
@@ -5027,17 +9195,54 @@ command b2kCamBounds pX1, pY1, pX2, pY2
    end if
 end b2kCamBounds
 
+/**
+Summary: Cut the view to a world point.
+
+pX: The new view centre x, in world pixels.
+
+pY: The new view centre y, in world pixels.
+
+Example:
+b2kCamGoto 0, 320
+
+Description:
+The point is clamped to the bounds and applied at once.
+
+References: b2kCamPos (handler), b2kCamBounds (handler)
+*/
 command b2kCamGoto pX, pY
    put b2kNumberOr(pX, sCamX) into sCamX
    put b2kNumberOr(pY, sCamY) into sCamY
    b2kCamApply
 end b2kCamGoto
 
+/**
+Summary: The view's centre.
+
+Returns: "x,y" in world pixels.
+
+Example:
+put b2kCamPos() into tView
+
+References: b2kCamGoto (handler)
+*/
 function b2kCamPos
    return round(sCamX) & comma & round(sCamY)
 end b2kCamPos
 
 -- A decaying random view offset on top of the follow (impacts, blasts).
+/**
+Summary: Shake the view for a moment.
+
+pAmpPx: The shake size in pixels, 0-200.
+
+pMs: How long it lasts, in milliseconds, 0-5000.
+
+Example:
+b2kCamShake 8, 300
+
+References: b2kCamOn (handler)
+*/
 command b2kCamShake pAmpPx, pMs
    put b2kClamp(pAmpPx, 0, 200) into sCamShakeAmp
    put the milliseconds + b2kClamp(pMs, 0, 5000) into sCamShakeEnd
@@ -5045,12 +9250,32 @@ end b2kCamShake
 
 -- The mouse in WORLD pixels (camera-aware) -- use these for b2kGrab,
 -- spawning at the pointer, click-picking, instead of the mouseH/V.
+/**
+Summary: The mouse's x in world pixels.
+
+Returns: The mouse x adjusted for the camera scroll; the plain mouseH when the camera is off.
+
+Example:
+get b2kGrab(b2kCamMouseX(), b2kCamMouseY())
+
+References: b2kCamMouseY (handler), b2kGrab (handler)
+*/
 function b2kCamMouseX
    if sCamGroup is empty then return the mouseH
    set the itemDelimiter to comma
    return the mouseH - (item 1 of the rect of sCamGroup) + the hScroll of sCamGroup
 end b2kCamMouseX
 
+/**
+Summary: The mouse's y in world pixels.
+
+Returns: The mouse y adjusted for the camera scroll; the plain mouseV when the camera is off.
+
+Example:
+put b2kCamMouseY() into tWorldY
+
+References: b2kCamMouseX (handler)
+*/
 function b2kCamMouseY
    if sCamGroup is empty then return the mouseV
    set the itemDelimiter to comma
@@ -5060,12 +9285,35 @@ end b2kCamMouseY
 -- Health: empty = camera fine (or simply off); otherwise the reason the
 -- camera could not run properly (create-group/scroll failures). Check it
 -- after b2kCamOn and degrade your level gracefully.
+/**
+Summary: Why the camera is not working, if it is not.
+
+Returns: Empty when healthy (or off), otherwise the reason.
+
+Example:
+if b2kCamStatus() is not empty then answer b2kCamStatus()
+
+References: b2kCamOn (handler)
+*/
 function b2kCamStatus
    return sCamNote
 end b2kCamStatus
 
 -- "visual" when this engine reports/sets grouped locs scroll-adjusted,
 -- else "content". Diagnostic; the Kit compensates automatically.
+/**
+Summary: Which grouped-location model this engine uses.
+
+Returns: "visual" when grouped controls report scroll-adjusted locations, else "content".
+
+Example:
+put b2kCamLocSemantics() into tModel
+
+Description:
+A diagnostic from the probe <b2kCamOn> runs; the Kit compensates either way.
+
+References: b2kCamShiftX (handler)
+*/
 function b2kCamLocSemantics
    if sCamLocVisual is true then return "visual"
    return "content"
@@ -5073,12 +9321,39 @@ end b2kCamLocSemantics
 
 -- Internal: the scroll to subtract when WRITING a position into the
 -- viewport on a visual-semantics engine (0 otherwise / outside it).
+/**
+Summary: The horizontal scroll to subtract when placing a control in the viewport.
+
+pRef: The control's long id.
+
+Returns: The scroll in pixels on a visual-model engine for a control inside the viewport, else 0.
+
+Example:
+set the loc of tRef to tX - b2kCamShiftX(tRef), tY - b2kCamShiftY(tRef)
+
+Description:
+<b2kSpriteMoveTo> and the renderer apply it for you.
+
+References: b2kCamShiftY (handler), b2kCamLocSemantics (handler), b2kSpriteMoveTo (handler)
+*/
 function b2kCamShiftX pRef
    if sCamLocVisual is not true then return 0
    if sInCam[pRef] is not true then return 0
    return sCamCurH
 end b2kCamShiftX
 
+/**
+Summary: The vertical scroll to subtract when placing a control in the viewport.
+
+pRef: The control's long id.
+
+Returns: The scroll in pixels on a visual-model engine for a control inside the viewport, else 0.
+
+Example:
+put b2kCamShiftY(tRef) into tShift
+
+References: b2kCamShiftX (handler)
+*/
 function b2kCamShiftY pRef
    if sCamLocVisual is not true then return 0
    if sInCam[pRef] is not true then return 0
@@ -5088,6 +9363,25 @@ end b2kCamShiftY
 -- Move ANY sprite/control to a WORLD position, camera-correct (use this
 -- instead of `set the loc` for things you animate by hand, like a patrol
 -- path -- outside a camera it is a plain loc set).
+/**
+Summary: Move a control to a world position, camera-correct.
+
+pCtrl: The control, by reference. Empty makes this a no-op.
+
+pX: The world x, in pixels.
+
+pY: The world y, in pixels.
+
+Example:
+b2kSpriteMoveTo tBat, tBatX, 200
+
+Description:
+Use it instead of setting the loc for things you animate by hand,
+such as patrols. Outside a camera it is a plain loc set. It does not move a
+body; use <b2kMoveTo> for that.
+
+References: b2kMoveTo (handler), b2kCamShiftX (handler)
+*/
 command b2kSpriteMoveTo pCtrl, pX, pY
    local tRef
    if pCtrl is empty then exit b2kSpriteMoveTo   -- family law: empty ref = no-op
@@ -5098,6 +9392,19 @@ end b2kSpriteMoveTo
 -- Internal, called by the loop each frame: chase the followed control. The
 -- follow eases, but the target is GUARANTEED on screen: if it would leave
 -- the view (fast falls, teleports, lerp lag), the camera snaps to it.
+/**
+Summary: Run one frame of the camera.
+
+Example:
+b2kCamTick
+
+Description:
+Internal: the loop calls it each frame. It chases the followed
+control, then applies the view with <b2kCamApply>, and forces the scroll if
+the target ever ends up outside the view.
+
+References: b2kCamApply (handler), b2kCamFollow (handler)
+*/
 command b2kCamTick
    local tLoc, tTX, tTY, tHalfW, tHalfH
    if sCamGroup is empty then exit b2kCamTick
@@ -5143,6 +9450,17 @@ command b2kCamTick
 end b2kCamTick
 
 -- Internal: clamp to bounds, add shake, write the scroll (skip when same).
+/**
+Summary: Write the camera's scroll.
+
+Example:
+b2kCamApply
+
+Description:
+Internal: clamps the view to the bounds, adds any shake and sets the group's scroll when it changed.
+
+References: b2kCamTick (handler), b2kCamBounds (handler)
+*/
 command b2kCamApply
    local tVW, tVH, tHalfW, tHalfH, tX, tY, tH, tV, tNow
    if sCamGroup is empty then exit b2kCamApply
@@ -5209,6 +9527,23 @@ end b2kCamApply
 -- event-driven.
 
 -- Import a WAV/AIFF/AU file as a named sound (replaces any same name).
+/**
+Summary: Import a sound file under a name.
+
+pName: The sound's name.
+
+pPath: A WAV, AIFF or AU file's path.
+
+Example:
+b2kSoundLoad "boom", tFolder & "/boom.wav"
+
+Description:
+The file becomes an audioClip in the stack, replacing a sound of the
+same name. A missing file or failed import is reported by <b2kSoundStatus>,
+not thrown.
+
+References: b2kSound (handler), b2kToneMake (handler), b2kSoundStatus (handler)
+*/
 command b2kSoundLoad pName, pPath
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tCount
@@ -5237,6 +9572,30 @@ end b2kSoundLoad
 -- 22 KB per second of audio, built once -- keep SFX short.
 --   b2kToneMake "coin", "1319,1760", 36          -- a two-note blip
 --   b2kToneMake "win", "523,659,784,1047", 110   -- a little fanfare
+/**
+Summary: Synthesize a sound from note frequencies, with no asset file.
+
+pName: The sound's name.
+
+pFreqs: A comma list of frequencies in hertz; 0 is a rest.
+
+pMsPerNote: Each note's length in milliseconds, 5-2000.
+
+pVolPct: Volume 0-100. Empty means 60.
+
+pShape: "sine" for a soft tone; anything else is a square wave.
+
+Example:
+b2kToneMake "coin", "1319,1760", 36
+b2kSound "coin"
+
+Description:
+It builds an 8-bit mono WAV at 22050 Hz in script, with a decay on
+each note, and imports it as an audioClip, replacing a sound of the same
+name. About 22 KB per second: keep effects short.
+
+References: b2kSound (handler), b2kToneBytes (handler), b2kSoundLoad (handler)
+*/
 command b2kToneMake pName, pFreqs, pMsPerNote, pVolPct, pShape
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip, tData, tPath, tCount, tF
@@ -5271,6 +9630,24 @@ end b2kToneMake
 
 -- Internal: pMs of one note as 8-bit unsigned mono PCM at 22050 Hz,
 -- with a linear decay across the note (clickless and plucky).
+/**
+Summary: Synthesize one note as raw samples.
+
+pFreq: The frequency in hertz; 0 or below is a rest.
+
+pMs: The length in milliseconds.
+
+pVolPct: Volume 0-100.
+
+pShape: "sine", or anything else for square.
+
+Returns: 8-bit unsigned mono samples at 22050 Hz with a linear decay, or empty for a zero length.
+
+Example:
+put b2kToneBytes(880, 50, 60, "sine") into tSamples
+
+References: b2kWavWrap (handler), b2kToneMake (handler)
+*/
 function b2kToneBytes pFreq, pMs, pVolPct, pShape
    local tRate, tN, tOut, i, tPhase, tStep, tAmp, tEnv, tS
    put 22050 into tRate
@@ -5302,6 +9679,18 @@ function b2kToneBytes pFreq, pMs, pVolPct, pShape
 end b2kToneBytes
 
 -- Internal: wrap raw 8-bit mono 22050 Hz samples in a WAV container.
+/**
+Summary: Wrap raw samples in a WAV file header.
+
+pData: 8-bit mono samples at 22050 Hz.
+
+Returns: The bytes of a WAV file.
+
+Example:
+put b2kWavWrap(tSamples) into URL ("binfile:" & tPath)
+
+References: b2kToneBytes (handler), b2kLE32 (handler)
+*/
 function b2kWavWrap pData
    local tLen
    put the number of bytes in pData into tLen
@@ -5312,15 +9701,54 @@ end b2kWavWrap
 
 -- Internal: little-endian byte packers (hand-rolled: no binaryEncode
 -- format-letter portability worries).
+/**
+Summary: Pack a number as two little-endian bytes.
+
+pN: A whole number from 0 to 65535.
+
+Returns: Two bytes.
+
+Example:
+put b2kLE16(1) into tBytes
+
+References: b2kLE32 (handler), b2kWavWrap (handler)
+*/
 function b2kLE16 pN
    return numToByte(pN mod 256) & numToByte(pN div 256 mod 256)
 end b2kLE16
 
+/**
+Summary: Pack a number as four little-endian bytes.
+
+pN: A whole number from 0 to 4294967295.
+
+Returns: Four bytes.
+
+Example:
+put b2kLE32(22050) into tBytes
+
+References: b2kLE16 (handler), b2kWavWrap (handler)
+*/
 function b2kLE32 pN
    return numToByte(pN mod 256) & numToByte(pN div 256 mod 256) & numToByte(pN div 65536 mod 256) & numToByte(pN div 16777216 mod 256)
 end b2kLE32
 
 -- Play a named sound (cuts whatever is playing -- the audioClip model).
+/**
+Summary: Play a named sound.
+
+pName: The sound's name.
+
+Example:
+b2kSound "coin"
+
+Description:
+The engine plays one clip at a time, so this cuts whatever is
+playing. Unknown names, mute and dead audio are silent no-ops; a failed play
+turns audio off for the session and <b2kSoundStatus> says why.
+
+References: b2kSoundLoop (handler), b2kSoundMute (handler), b2kToneMake (handler)
+*/
 command b2kSound pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
@@ -5336,6 +9764,19 @@ command b2kSound pName
 end b2kSound
 
 -- Loop a named sound until b2kSoundStop / the next play (ambience).
+/**
+Summary: Loop a named sound until stopped.
+
+pName: The sound's name.
+
+Example:
+b2kSoundLoop "wind"
+
+Description:
+It plays until <b2kSoundStop> or the next sound.
+
+References: b2kSoundStop (handler), b2kSound (handler)
+*/
 command b2kSoundLoop pName
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    local tClip
@@ -5350,6 +9791,14 @@ command b2kSoundLoop pName
    end try
 end b2kSoundLoop
 
+/**
+Summary: Stop the current sound.
+
+Example:
+b2kSoundStop
+
+References: b2kSoundLoop (handler)
+*/
 command b2kSoundStop
    try
       play stop
@@ -5359,17 +9808,53 @@ end b2kSoundStop
 
 -- Mute is a preference: it survives b2kTeardown and stack resets are up
 -- to the caller (store it in a custom property if you want it saved).
+/**
+Summary: Mute or unmute the Kit's sounds.
+
+pFlag: true to mute; anything else unmutes.
+
+Example:
+b2kSoundMute true
+
+Description:
+Muting also stops the current sound. The setting survives <b2kTeardown> but not a reopened stack; save it yourself if needed.
+
+References: b2kSoundMuted (handler)
+*/
 command b2kSoundMute pFlag
    put (pFlag is true) into sSndMute
    if sSndMute then b2kSoundStop
 end b2kSoundMute
 
+/**
+Summary: Report whether sounds are muted.
+
+Returns: true or false.
+
+Example:
+put b2kSoundMuted() into tMuted
+
+References: b2kSoundMute (handler)
+*/
 function b2kSoundMuted
    return (sSndMute is true)
 end b2kSoundMuted
 
 -- The engine-GLOBAL output volume (the playLoudness, 0-100): it affects
 -- every stack's audio, so games should expose it, not hardcode it.
+/**
+Summary: Set the engine's global playback volume.
+
+pPct: Volume 0-100.
+
+Example:
+b2kSoundVolume 70
+
+Description:
+It sets the playLoudness, which affects every stack's audio, so let the user choose it.
+
+References: b2kSoundMute (handler)
+*/
 command b2kSoundVolume pPct
    local tErr -- a REFERENCED catch variable must be declared: undeclared, strict OXT throws a second error that masks the real one (checker check 15)
    try
@@ -5379,6 +9864,18 @@ command b2kSoundVolume pPct
    end try
 end b2kSoundVolume
 
+/**
+Summary: Report whether a named sound exists.
+
+pName: The sound's name.
+
+Returns: true or false; true too for a clip a saved stack carried in.
+
+Example:
+if not b2kSoundIsLoaded("coin") then b2kToneMake "coin", "1319,1760", 36
+
+References: b2kSoundClip (handler)
+*/
 function b2kSoundIsLoaded pName
    return (b2kSoundClip(pName) is not empty)
 end b2kSoundIsLoaded
@@ -5389,6 +9886,22 @@ end b2kSoundIsLoaded
 -- already in the stack is ADOPTED into the registry instead of being made
 -- again. A game's "already built?" guard (b2kSoundIsLoaded) then holds
 -- across a reopen, where it used to re-synthesize every cue on every launch.
+/**
+Summary: The audioClip that plays a named sound.
+
+pName: The sound's name.
+
+Returns: The clip's name, or empty.
+
+Example:
+put b2kSoundClip("coin") into tClip
+
+Description:
+A clip already in the stack under the Kit's name for the sound (as
+in a reopened saved stack) is adopted instead of being made again.
+
+References: b2kSoundIsLoaded (handler), b2kSound (handler)
+*/
 function b2kSoundClip pName
    local tClip
    if pName is empty then return empty
@@ -5403,6 +9916,16 @@ end b2kSoundClip
 
 -- Empty = healthy; otherwise the most recent reason audio degraded
 -- (missing file, import failure, play failure). Plays never throw.
+/**
+Summary: Why audio is degraded, if it is.
+
+Returns: Empty when healthy, otherwise the latest reason (missing file, failed import or play).
+
+Example:
+if b2kSoundStatus() is not empty then put b2kSoundStatus() into field "Log"
+
+References: b2kSound (handler)
+*/
 function b2kSoundStatus
    return sSndNote
 end b2kSoundStatus
@@ -5410,6 +9933,19 @@ end b2kSoundStatus
 -- Internal: delete every Kit-made audioClip ("b2ksnd_" prefix -- catches
 -- a dead session's leftovers too) and reset the registry. The dead-flag
 -- resets (a fresh world may retry); the mute preference survives.
+/**
+Summary: Stop playback and delete every Kit sound.
+
+Example:
+b2kSoundsWipe
+
+Description:
+It deletes every Kit-made audioClip, including ones a previous
+session left in the stack, and resets audio after a failure. The mute
+setting survives.
+
+References: b2kSoundLoad (handler), b2kTeardown (handler)
+*/
 command b2kSoundsWipe
    local i, tName
    try
@@ -5500,6 +10036,20 @@ on b2kStep pGen
 end b2kStep
 
 -- Advance exactly one fixed step, even while paused (drives a Step button).
+/**
+Summary: Advance the world exactly one fixed step.
+
+Example:
+b2kPause
+b2kStepOnce
+
+Description:
+It works while paused, for a Step button or tests, and runs one
+full frame: sync, input, player, sprites, camera, events and b2kFrame. It
+does nothing unless the loop has been started.
+
+References: b2kPause (handler), b2kStart (handler)
+*/
 command b2kStepOnce
    if not sRunning then exit b2kStepOnce
    b2kEventsReset
@@ -5531,6 +10081,20 @@ end b2kStepOnce
 -- stopped world steps never - relying on it here would draw nothing at all.
 -- The running loop instead holds one lock across the whole frame and calls the
 -- lock-free, move-event-driven b2kSyncBodies directly.
+/**
+Summary: Redraw every awake, moving Kit body's control now.
+
+Example:
+b2kMoveTo tCrate, 300, 100
+b2kSync
+
+Description:
+For a stopped or paused world, such as an editor, where no step
+produces the move events the loop draws from. It holds one screen lock and
+always releases it.
+
+References: b2kSyncAll (handler), b2kSyncAllBodies (handler)
+*/
 command b2kSync
    lock screen
    try
@@ -5540,6 +10104,17 @@ command b2kSync
    unlock screen
 end b2kSync
 
+/**
+Summary: Redraw every awake, moving Kit body's control now.
+
+Example:
+b2kSyncAll
+
+Description:
+The same as <b2kSync>.
+
+References: b2kSync (handler)
+*/
 command b2kSyncAll
    lock screen
    try
@@ -5553,6 +10128,19 @@ end b2kSyncAll
 -- gives us the bodies that moved during the last step, so we use that event list
 -- instead of scanning every tracked control and calling body-is-awake/x/y/angle
 -- across the FFI for each one.
+/**
+Summary: Draw the bodies that moved in the last step.
+
+Example:
+b2kSyncBodies
+
+Description:
+Internal: the loop calls it under its screen lock. It reads
+Box2D's move events, applies the kill floor, and forgets controls that
+vanished.
+
+References: b2kSyncAllBodies (handler), b2kKillFloor (handler)
+*/
 command b2kSyncBodies
    if sNeedFullSync is true then
       b2kSyncAllBodies
@@ -5603,6 +10191,17 @@ end b2kSyncBodies
 -- Lock-free full scan (the caller owns the screen lock). Comprehensive fallback
 -- for script-side edits that do not come from a Box2D step event (for example
 -- changing a body type while paused).
+/**
+Summary: Draw every awake, non-static Kit body.
+
+Example:
+b2kSyncAllBodies
+
+Description:
+Internal: the caller holds the screen lock. <b2kSync> wraps it in one.
+
+References: b2kSync (handler), b2kSyncBodies (handler)
+*/
 command b2kSyncAllBodies
    local tRef, tBody, tWx, tWy, tWa, tDead
    put empty into tDead
@@ -5626,6 +10225,19 @@ command b2kSyncAllBodies
    b2kPruneDeadRefs tDead
 end b2kSyncAllBodies
 
+/**
+Summary: Forget controls that no longer exist.
+
+pDead: Control references, one per line.
+
+Example:
+b2kPruneDeadRefs tGone
+
+Description:
+Internal: destroys each one's body and drops every record of it, as <b2kRemove> would.
+
+References: b2kRemove (handler)
+*/
 command b2kPruneDeadRefs pDead
    local d, tBody
    repeat for each line d in pDead
@@ -5652,6 +10264,25 @@ command b2kPruneDeadRefs pDead
    end repeat
 end b2kPruneDeadRefs
 
+/**
+Summary: Place a control at a body pose.
+
+pRef: The control's long id.
+
+pWx: The body's x, in metres.
+
+pWy: The body's y, in metres.
+
+pWa: The body's angle, in radians.
+
+Example:
+b2kDrawBody tRef, 2, 3, 0
+
+Description:
+Internal: picks the renderer for the control's kind and skips the write when nothing visible changed.
+
+References: b2kDrawPoly (handler), b2kDrawBall (handler), b2kDrawImage (handler)
+*/
 command b2kDrawBody pRef, pWx, pWy, pWa
    local tSx, tSy, tKey
    switch sRender[pRef]
@@ -5674,6 +10305,25 @@ command b2kDrawBody pRef, pWx, pWy, pWa
    end switch
 end b2kDrawBody
 
+/**
+Summary: Redraw a polygon graphic at a body pose.
+
+pRef: The control's long id.
+
+pWx: The body's x, in metres.
+
+pWy: The body's y, in metres.
+
+pWa: The body's angle, in radians.
+
+Example:
+b2kDrawPoly tRef, 2, 3, 0.5
+
+Description:
+Internal: re-points the graphic from its stored outline.
+
+References: b2kDrawBody (handler), b2kCorner (handler)
+*/
 command b2kDrawPoly pRef, pWx, pWy, pWa
    local c, s, p, pt, tPts, tFirst, tKey
    set the itemDelimiter to comma   -- locs and anchors are "x,y" (gotcha 5)
@@ -5699,6 +10349,23 @@ command b2kDrawPoly pRef, pWx, pWy, pWa
    put tKey into sDrawKey[pRef]
 end b2kDrawPoly
 
+/**
+Summary: Redraw a ball graphic at a body position.
+
+pRef: The control's long id.
+
+pWx: The body's x, in metres.
+
+pWy: The body's y, in metres.
+
+Example:
+b2kDrawBall tRef, 2, 3
+
+Description:
+Internal: sets the graphic's rect from the stored radius.
+
+References: b2kDrawBody (handler)
+*/
 command b2kDrawBall pRef, pWx, pWy
    local tRp, tSx, tSy, tKey
    put sRad[pRef] * sScale into tRp
@@ -5717,6 +10384,25 @@ end b2kDrawBall
 -- also a CCW screen rotation, which matches `the angle` (CCW-positive). We keep
 -- the image at its design size and skip redundant re-rotations (each set of the
 -- angle resamples the image, but always from the original, so there's no drift).
+/**
+Summary: Move and rotate an image to a body pose.
+
+pRef: The control's long id.
+
+pWx: The body's x, in metres.
+
+pWy: The body's y, in metres.
+
+pWa: The body's angle, in radians.
+
+Example:
+b2kDrawImage tRef, 2, 3, 0.5
+
+Description:
+Internal: sets the image's angle in whole degrees and its location; the image keeps its design size.
+
+References: b2kDrawBody (handler)
+*/
 command b2kDrawImage pRef, pWx, pWy, pWa
    local tDeg, tSx, tSy, tKey
    put ((round(pWa * 180 / kPI) mod 360) + 360) mod 360 into tDeg
@@ -5732,6 +10418,28 @@ command b2kDrawImage pRef, pWx, pWy, pWa
    put tKey into sDrawKey[pRef]
 end b2kDrawImage
 
+/**
+Summary: One outline corner in screen pixels.
+
+pWx: The body's x, in metres.
+
+pWy: The body's y, in metres.
+
+pLx: The corner's local x, in metres.
+
+pLy: The corner's local y, in metres.
+
+c: The cosine of the body's angle.
+
+s: The sine of the body's angle.
+
+Returns: "x,y" in rounded screen pixels.
+
+Example:
+put b2kCorner(2, 3, 0.5, 0.5, 1, 0) into tPoint
+
+References: b2kDrawPoly (handler)
+*/
 function b2kCorner pWx, pWy, pLx, pLy, c, s
    local rx, ry
    put pLx * c - pLy * s into rx
@@ -5743,6 +10451,25 @@ end b2kCorner
 -- radius pR: two half-circle caps joined by straight edges. Built along local X
 -- and transposed to local Y when the capsule is vertical. Used only to draw the
 -- graphic; the collision shape is a true Box2D capsule.
+/**
+Summary: The local outline the Kit draws a capsule with.
+
+pL: The capsule's half-length, in metres.
+
+pR: The radius, in metres.
+
+pHoriz: true for a horizontal capsule, false for vertical.
+
+Returns: 18 local points in metres, one "x,y" per line.
+
+Example:
+put b2kCapsuleVerts(0.5, 0.3, false) into tOutline
+
+Description:
+Drawing only: the collision shape is a true capsule.
+
+References: b2kAddCapsule (handler)
+*/
 function b2kCapsuleVerts pL, pR, pHoriz
    local tV, i, a, lx, ly
    local n
@@ -5767,6 +10494,17 @@ end b2kCapsuleVerts
 
 -- Internal: zero the frame's event buffers (the loop calls this before
 -- it steps; the buffers then accumulate one harvest per fixed step).
+/**
+Summary: Zero this frame's event counts.
+
+Example:
+b2kEventsReset
+
+Description:
+Internal: the loop calls it before stepping. The event readers check the counts, so old entries are never returned.
+
+References: b2kHarvestEvents (handler)
+*/
 command b2kEventsReset
    put 0 into sEvtCN
    put 0 into sEvtEN
@@ -5777,6 +10515,17 @@ end b2kEventsReset
 -- Internal: pull THIS step's Box2D events into the frame buffers. Box2D
 -- keeps only the latest step's events, so this must run after every
 -- b2Step -- the dispatchers and pollers then see the whole frame.
+/**
+Summary: Collect the last step's contact and sensor events.
+
+Example:
+b2kHarvestEvents
+
+Description:
+Internal: runs after every fixed step, because Box2D keeps only the latest step's events.
+
+References: b2kEventsReset (handler), b2kContactCount (handler)
+*/
 command b2kHarvestEvents
    local tN, i
    put b2ContactsUpdate(sWorld) into tN
@@ -5803,6 +10552,17 @@ command b2kHarvestEvents
    end repeat
 end b2kHarvestEvents
 
+/**
+Summary: Send this frame's contact messages.
+
+Example:
+b2kDispatchContacts
+
+Description:
+Internal: sends b2kContact and b2kEndContact to the contact target, in step order. No target, no messages.
+
+References: b2kContactTarget (handler), b2kDispatchSensors (handler)
+*/
 command b2kDispatchContacts
    local i, tA, tB
    if sContactObj is empty then exit b2kDispatchContacts
@@ -5820,6 +10580,17 @@ end b2kDispatchContacts
 
 -- Deliver the frame's buffered sensor begin/end overlaps (if a target is
 -- set) as on b2kSensorEnter / on b2kSensorExit, in step order.
+/**
+Summary: Send this frame's sensor messages.
+
+Example:
+b2kDispatchSensors
+
+Description:
+Internal: sends b2kSensorEnter and b2kSensorExit to the contact target, in step order. No target, no messages.
+
+References: b2kContactTarget (handler), b2kDispatchContacts (handler)
+*/
 command b2kDispatchSensors
    local i, tS, tV
    if sContactObj is empty then exit b2kDispatchSensors
