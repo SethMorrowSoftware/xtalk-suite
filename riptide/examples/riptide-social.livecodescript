@@ -3822,9 +3822,9 @@ Example:
 put nxUriEncode(nxNpubEncode(tPubkey)) into tUri
 
 Description:
-The entity is decoded first, so an invalid one refuses. An nsec always
-refuses: a secret key in a URI ends up in somebody's chat log. An input
-that already starts with nostr: comes back unchanged.
+The entity is decoded first, so an invalid one refuses. An nsec
+always refuses: a secret key in a URI ends up in somebody's chat
+log. An input that already starts with nostr: comes back unchanged.
 
 References: nxUriDecode (handler), nxEntityDecode (handler)
 */
@@ -4343,8 +4343,8 @@ put nxFilterBuild(tFilter) into tFilterJson
 nxrSubscribe tRelay, "my-feed", tFilterJson
 
 Description:
-Keys: "ids" and "authors" (64-hex values, one per line), "kinds" (a
-comma list of kind numbers), "since", "until" and "limit" (non-negative
+The keys: "ids" and "authors" (64-hex values, one per line), "kinds"
+(a comma list of kind numbers), "since", "until" and "limit" (non-negative
 integers), "search" (text), and any single-letter tag filter keyed "#e",
 "#p" and so on (values one per line). Absent or empty keys are left out.
 
@@ -5605,8 +5605,8 @@ handler you register with <nxrSetCallback>, dispatched to the object set
 by <nxrInit>.
 
 Inbound events are verified (id and signature) before delivery unless
-you turn that off with <nxrSetVerify>. Call <nxrShutdown> from
-closeStack: there is no automatic unload.
+you turn that off with <nxrSetVerify>. Call <nxrShutdown>
+from closeStack: there is no automatic unload.
 
 The library defines the engine's socketError, socketClosed and
 socketTimeout messages and passes on any that are not for its own
@@ -6127,10 +6127,10 @@ put the result into tRelay
 nxrSetCallback tRelay, "relayEvent"
 
 Description:
-The handler is dispatched to the object set by <nxrInit>, with four
-arguments: the relay handle, the kind, and two kind-specific arguments
-(the kinds are listed under <nxrConnect>). Set it straight after
-connecting, before the "open" callback arrives.
+The handler is dispatched to the object set by <nxrInit>, with
+four arguments: the relay handle, the kind, and two kind-specific
+arguments (the kinds are listed under <nxrConnect>). Set it straight
+after connecting, before the "open" callback arrives.
 
 Dispatch is guarded: an error in your handler does not break the
 connection, and a missing handler is ignored. An unknown handle returns
@@ -13326,10 +13326,10 @@ oxPublishService 80, 8090
 put the result into tService
 
 Description:
-Unlike <oxCreateService>, OnionXT starts no listener and no peer callback
-fires: the external server owns the port. The result is a service handle,
-and the address arrives as for <oxCreateService>. <oxRemoveService>
-unpublishes it and leaves your server's socket alone.
+Unlike <oxCreateService>, OnionXT starts no listener and no peer
+callback fires: the external server owns the port. The result is a
+service handle, and the address arrives as for <oxCreateService>.
+<oxRemoveService> unpublishes it and leaves your server's socket alone.
 
 Your server must refuse any peer that is not 127.0.0.1 itself, because a
 listening port may be reachable from the local network, bypassing Tor.
@@ -14241,9 +14241,9 @@ onionxt-torrc into pDataDir (cookie authentication, tor's log to
 onionxt-tor.log there, tied to this process) and starts tor with it. Only
 after the launch is accepted are the SOCKS and control ports pointed at it.
 
-The result is empty or an "OnionXT: ..." reason. Empty does not mean tor is
-up: it does not wait for bootstrap, so connect with <oxConnectControl> and
-watch <oxBootstrapProgress>.
+The result is empty or an "OnionXT: ..." reason. Empty does not mean tor
+is up: it does not wait for bootstrap, so connect with <oxConnectControl>
+and watch <oxBootstrapProgress>.
 
 References: oxStopTor (handler), oxConnectControl (handler)
 */

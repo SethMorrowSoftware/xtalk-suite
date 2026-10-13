@@ -3663,9 +3663,9 @@ Example:
 put nxUriEncode(nxNpubEncode(tPubkey)) into tUri
 
 Description:
-The entity is decoded first, so an invalid one refuses. An nsec always
-refuses: a secret key in a URI ends up in somebody's chat log. An input
-that already starts with nostr: comes back unchanged.
+The entity is decoded first, so an invalid one refuses. An nsec
+always refuses: a secret key in a URI ends up in somebody's chat
+log. An input that already starts with nostr: comes back unchanged.
 
 References: nxUriDecode (handler), nxEntityDecode (handler)
 */
@@ -4184,8 +4184,8 @@ put nxFilterBuild(tFilter) into tFilterJson
 nxrSubscribe tRelay, "my-feed", tFilterJson
 
 Description:
-Keys: "ids" and "authors" (64-hex values, one per line), "kinds" (a
-comma list of kind numbers), "since", "until" and "limit" (non-negative
+The keys: "ids" and "authors" (64-hex values, one per line), "kinds"
+(a comma list of kind numbers), "since", "until" and "limit" (non-negative
 integers), "search" (text), and any single-letter tag filter keyed "#e",
 "#p" and so on (values one per line). Absent or empty keys are left out.
 

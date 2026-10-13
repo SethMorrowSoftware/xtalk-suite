@@ -420,7 +420,7 @@ Example:
 b2kResetTables
 
 Description:
-Internal: <b2kSetup> and <b2kTeardown> call it. It forgets every
+Internal handler: <b2kSetup> and <b2kTeardown> call it. It forgets every
 control-to-body pairing, shape, render kind and camera membership, but it
 destroys no body and deletes no control, so calling it on a live world leaves
 bodies the Kit no longer tracks.
@@ -642,7 +642,7 @@ Example:
 b2kEdge b2kToWorldX(0), b2kToWorldY(400), b2kToWorldX(300), b2kToWorldY(400)
 
 Description:
-Internal: <b2kWall> and <b2kAddWalls> build their segments with it.
+Internal handler: <b2kWall> and <b2kAddWalls> build their segments with it.
 With no world it is a quiet no-op. Most scripts want <b2kWall>, which takes
 screen pixels.
 
@@ -1364,7 +1364,7 @@ Example:
 b2kRegister the long id of graphic "Rock", tBody, true
 
 Description:
-Internal: the attach handlers call it. Registering a body you made
+Internal handler: the attach handlers call it. Registering a body you made
 with the raw b2 layer lets Kit getters and events find its control, but the
 Kit does not draw it until a render kind is set by an attach handler.
 
@@ -4705,7 +4705,7 @@ Example:
 b2kInputTick
 
 Description:
-Internal: the loop and <b2kStepOnce> call it once per frame. The
+Internal handler: the loop and <b2kStepOnce> call it once per frame. The
 current key set becomes the previous one and a new set is read from the
 keyboard, or from the injected keys. A no-op while input is off.
 
@@ -5532,7 +5532,7 @@ b2kSheetAdoptAtlas "chars", tPng, tXml
 put the result into tFrames
 
 Description:
-Internal: <b2kSheetLoadAtlas> calls it when sheets persist. It
+Internal handler: <b2kSheetLoadAtlas> calls it when sheets persist. It
 adopts only when the image b2ksheet_ plus the sheet name exists and was
 stamped from the same PNG and XML paths, and a malformed stamp adopts
 nothing. It reads no file.
@@ -6239,7 +6239,7 @@ Example:
 b2kSpriteForget tSpr
 
 Description:
-Internal: <b2kSpriteRemove> and the sprite tick call it. It deletes no control.
+Internal handler: <b2kSpriteRemove> and the sprite tick call it. It deletes no control.
 
 References: b2kSpriteRemove (handler)
 */
@@ -6275,7 +6275,7 @@ Example:
 b2kSpritesClear
 
 Description:
-Internal: <b2kClear> and <b2kTeardown> call it. Sheets stay loaded.
+Internal handler: <b2kClear> and <b2kTeardown> call it. Sheets stay loaded.
 
 References: b2kSpriteRemove (handler), b2kClear (handler)
 */
@@ -6475,7 +6475,7 @@ Example:
 put b2kSheetSourceFromFile("coins", tPath) into tImg
 
 Description:
-Internal: the sheet loaders call it. The file is loaded as image
+Internal handler: the sheet loaders call it. The file is loaded as image
 content. When sheets persist and an image already loaded from the same path
 is in the stack, it is reused without reading the file.
 
@@ -6542,7 +6542,7 @@ Example:
 b2kSheetGridRegions "coins", 32, 32, empty, 0, 0
 
 Description:
-Internal: the grid loaders call it. A frame size below 1 registers nothing.
+Internal handler: the grid loaders call it. A frame size below 1 registers nothing.
 
 References: b2kSheetLoad (handler), b2kSheetFromImage (handler)
 */
@@ -6797,8 +6797,8 @@ Example:
 b2kSpriteShowFrame tSpr, 3
 
 Description:
-Internal: it honours the sprite's facing and skips the icon set when
-the frame is already shown. It does not stop an animation; use
+Internal handler: it honours the sprite's facing and skips the icon set
+when the frame is already shown. It does not stop an animation; use
 <b2kSpriteSetFrame> for that.
 
 References: b2kSpriteSetFrame (handler)
@@ -6831,7 +6831,7 @@ Example:
 b2kSpritesTick
 
 Description:
-Internal: the loop calls it each frame. Bound sprites follow their
+Internal handler: the loop calls it each frame. Bound sprites follow their
 control and playing animations advance on wall-clock time; sprites whose
 control vanished are forgotten. Only bound or playing sprites are visited.
 
@@ -7112,8 +7112,8 @@ b2kPlayerResolveArt
 put b2kPlayerSprite() into tArt
 
 Description:
-Internal: the player itself if it is a sprite, else the first
-sprite pinned to it with <b2kSpriteBind>. Call it after binding new art to an
+Internal handler: the player itself if it is a sprite, else the first sprite
+pinned to it with <b2kSpriteBind>. Call it after binding new art to an
 existing player.
 
 References: b2kPlayerSprite (handler), b2kSpriteBind (handler)
@@ -7158,7 +7158,7 @@ b2kPlayerSet "jumpSpeed", 520
 b2kPlayerSet "airJumps", 1
 
 Description:
-Knobs: moveSpeed, accel, airAccel, jumpSpeed, jumpCut, coyoteMs,
+The knobs: moveSpeed, accel, airAccel, jumpSpeed, jumpCut, coyoteMs,
 bufferMs, maxFall, maxSlopeDeg, dropMs, climbSpeed, swimSpeed, swimJump,
 swimGravity, swimMaxFall, hurtPopX, hurtPopY, hurtMs, invulnMs, and the
 opt-in airJumps, wallJumpX, wallJumpY, wallSlideMax, dashSpeed, dashMs,
@@ -7185,7 +7185,7 @@ Example:
 b2kPlayerTuneCache
 
 Description:
-Internal: <b2kPlayerSet> calls it, so a knob takes effect on the next frame.
+Internal handler: <b2kPlayerSet> calls it, so a knob takes effect on the next frame.
 
 References: b2kPlayerSet (handler)
 */
@@ -7888,7 +7888,7 @@ Example:
 b2kPlayerForget false
 
 Description:
-Internal: <b2kClear> passes false and <b2kTeardown> and
+Internal handler: <b2kClear> passes false and <b2kTeardown> and
 <b2kPlayerRemove> pass true. A climb, swim, dash or drop in progress is ended
 first so the body gets its gravity and mask back. Ladder and water zones go
 either way.
@@ -7982,9 +7982,9 @@ Example:
 b2kPlayerProbe b2kBodyOf(b2kPlayer()), 0
 
 Description:
-Internal: three short rays down from the capsule decide whether the
-player is grounded (a surface whose normal points up within maxSlopeDeg).
-Skipped while the controller's own jump is still rising.
+Internal handler: three short rays down from the capsule decide whether
+the player is grounded (a surface whose normal points up within
+maxSlopeDeg). Skipped while the controller's own jump is still rising.
 
 References: b2kPlayerOnGround (handler), b2kPlayerTick (handler)
 */
@@ -8038,7 +8038,7 @@ Example:
 b2kPlayerClimbStart b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: saves the body's gravity scale and sets it to 0. A repeated start is a no-op.
+Internal handler: saves the body's gravity scale and sets it to 0. A repeated start is a no-op.
 
 References: b2kPlayerClimbEnd (handler)
 */
@@ -8059,7 +8059,7 @@ Example:
 b2kPlayerClimbEnd b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: restores the saved gravity scale. Without a start it is a no-op.
+Internal handler: restores the saved gravity scale. Without a start it is a no-op.
 
 References: b2kPlayerClimbStart (handler)
 */
@@ -8082,7 +8082,7 @@ Example:
 b2kPlayerSwimStart b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: saves the body's gravity scale and sets it to swimGravity. A repeated start is a no-op.
+Internal handler: saves the body's gravity scale and sets it to swimGravity. A repeated start is a no-op.
 
 References: b2kPlayerSwimEnd (handler)
 */
@@ -8103,7 +8103,7 @@ Example:
 b2kPlayerSwimEnd b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: restores the saved gravity scale. Without a start it is a no-op.
+Internal handler: restores the saved gravity scale. Without a start it is a no-op.
 
 References: b2kPlayerSwimStart (handler)
 */
@@ -8123,8 +8123,9 @@ Example:
 b2kPlayerDropStart
 
 Description:
-Internal: takes the reserved one-way bit (2^31) out of the player's
-collision mask, so one-way chains alone stop colliding, for dropMs.
+Internal handler: takes the reserved one-way bit (2^31) out of the
+player's collision mask, so one-way chains alone stop colliding, for
+dropMs.
 
 References: b2kPlayerDropRestore (handler), b2kChain (handler)
 */
@@ -8152,7 +8153,7 @@ Example:
 b2kPlayerDropRestore
 
 Description:
-Internal: puts back the mask <b2kPlayerDropStart> saved.
+Internal handler: puts back the mask <b2kPlayerDropStart> saved.
 
 References: b2kPlayerDropStart (handler)
 */
@@ -8179,7 +8180,7 @@ Example:
 b2kPlayerDashStart b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: saves the gravity scale and sets it to 0, and starts the
+Internal handler: saves the gravity scale and sets it to 0, and starts the
 dash timer and cooldown in the facing direction. A repeated start is a no-op.
 
 References: b2kPlayerDashEnd (handler)
@@ -8204,7 +8205,7 @@ Example:
 b2kPlayerDashEnd b2kBodyOf(b2kPlayer())
 
 Description:
-Internal: restores the saved gravity scale. Without a start it is a no-op.
+Internal handler: restores the saved gravity scale. Without a start it is a no-op.
 
 References: b2kPlayerDashStart (handler)
 */
@@ -8230,7 +8231,7 @@ Example:
 b2kPlayerWallProbe b2kBodyOf(b2kPlayer()), 1
 
 Description:
-Internal: one sideways ray for the wall-slide and wall-jump system. Its result has no public reader.
+Internal handler: one sideways ray for the wall-slide and wall-jump system. Its result has no public reader.
 
 References: b2kPlayerTick (handler)
 */
@@ -8345,7 +8346,7 @@ Example:
 b2kPlayerStandUp
 
 Description:
-Internal: stands the player up with no headroom check whenever it is ducked. <b2kPlayerRespawn> uses it.
+Internal handler: stands the player up with no headroom check whenever it is ducked. <b2kPlayerRespawn> uses it.
 
 References: b2kPlayerDuckSet (handler)
 */
@@ -8390,10 +8391,10 @@ Example:
 b2kPlayerTick
 
 Description:
-Internal: the loop and <b2kStepOnce> call it after the input
-sample. It probes the ground, applies input, jumping, ladders, water, hurt
-and the opt-in actions, and picks the animation. It exits at once when there
-is no player.
+Internal handler: the loop and <b2kStepOnce> call it after the input sample.
+It probes the ground, applies input, jumping, ladders, water, hurt and the
+opt-in actions, and picks the animation. It exits at once when there is no
+player.
 
 References: b2kPlayerAttach (handler), b2kStepOnce (handler)
 */
@@ -8816,7 +8817,7 @@ Example:
 b2kPlayerShowState 0, 0
 
 Description:
-Internal: the tick calls it while the controller has control and art.
+Internal handler: the tick calls it while the controller has control and art.
 
 References: b2kPlayerAnims (handler), b2kPlayerTick (handler)
 */
@@ -9359,7 +9360,7 @@ Example:
 b2kCamTick
 
 Description:
-Internal: the loop calls it each frame. It chases the followed
+Internal handler: the loop calls it each frame. It chases the followed
 control, then applies the view with <b2kCamApply>, and forces the scroll if
 the target ever ends up outside the view.
 
@@ -9417,7 +9418,7 @@ Example:
 b2kCamApply
 
 Description:
-Internal: clamps the view to the bounds, adds any shake and sets the group's scroll when it changed.
+Internal handler: clamps the view to the bounds, adds any shake and sets the group's scroll when it changed.
 
 References: b2kCamTick (handler), b2kCamBounds (handler)
 */
@@ -10095,7 +10096,7 @@ Example:
 b2kSyncBodies
 
 Description:
-Internal: the loop calls it under its screen lock. It reads
+Internal handler: the loop calls it under its screen lock. It reads
 Box2D's move events, applies the kill floor, and forgets controls that
 vanished.
 
@@ -10158,7 +10159,7 @@ Example:
 b2kSyncAllBodies
 
 Description:
-Internal: the caller holds the screen lock. <b2kSync> wraps it in one.
+Internal handler: the caller holds the screen lock. <b2kSync> wraps it in one.
 
 References: b2kSync (handler), b2kSyncBodies (handler)
 */
@@ -10194,7 +10195,7 @@ Example:
 b2kPruneDeadRefs tGone
 
 Description:
-Internal: destroys each one's body and drops every record of it, as <b2kRemove> would.
+Internal handler: destroys each one's body and drops every record of it, as <b2kRemove> would.
 
 References: b2kRemove (handler)
 */
@@ -10239,7 +10240,7 @@ Example:
 b2kDrawBody tRef, 2, 3, 0
 
 Description:
-Internal: picks the renderer for the control's kind and skips the write when nothing visible changed.
+Internal handler: picks the renderer for the control's kind and skips the write when nothing visible changed.
 
 References: b2kDrawPoly (handler), b2kDrawBall (handler), b2kDrawImage (handler)
 */
@@ -10280,7 +10281,7 @@ Example:
 b2kDrawPoly tRef, 2, 3, 0.5
 
 Description:
-Internal: re-points the graphic from its stored outline.
+Internal handler: re-points the graphic from its stored outline.
 
 References: b2kDrawBody (handler), b2kCorner (handler)
 */
@@ -10322,7 +10323,7 @@ Example:
 b2kDrawBall tRef, 2, 3
 
 Description:
-Internal: sets the graphic's rect from the stored radius.
+Internal handler: sets the graphic's rect from the stored radius.
 
 References: b2kDrawBody (handler)
 */
@@ -10359,7 +10360,7 @@ Example:
 b2kDrawImage tRef, 2, 3, 0.5
 
 Description:
-Internal: sets the image's angle in whole degrees and its location; the image keeps its design size.
+Internal handler: sets the image's angle in whole degrees and its location; the image keeps its design size.
 
 References: b2kDrawBody (handler)
 */
@@ -10461,7 +10462,7 @@ Example:
 b2kEventsReset
 
 Description:
-Internal: the loop calls it before stepping. The event readers check the counts, so old entries are never returned.
+Internal handler: the loop calls it before stepping. The event readers check the counts, so old entries are never returned.
 
 References: b2kHarvestEvents (handler)
 */
@@ -10482,7 +10483,7 @@ Example:
 b2kHarvestEvents
 
 Description:
-Internal: runs after every fixed step, because Box2D keeps only the latest step's events.
+Internal handler: runs after every fixed step, because Box2D keeps only the latest step's events.
 
 References: b2kEventsReset (handler), b2kContactCount (handler)
 */
@@ -10519,7 +10520,7 @@ Example:
 b2kDispatchContacts
 
 Description:
-Internal: sends b2kContact and b2kEndContact to the contact target, in step order. No target, no messages.
+Internal handler: sends b2kContact and b2kEndContact to the contact target, in step order. No target, no messages.
 
 References: b2kContactTarget (handler), b2kDispatchSensors (handler)
 */
@@ -10547,7 +10548,7 @@ Example:
 b2kDispatchSensors
 
 Description:
-Internal: sends b2kSensorEnter and b2kSensorExit to the contact target, in step order. No target, no messages.
+Internal handler: sends b2kSensorEnter and b2kSensorExit to the contact target, in step order. No target, no messages.
 
 References: b2kContactTarget (handler), b2kDispatchContacts (handler)
 */

@@ -100,8 +100,8 @@ handler you register with <nxrSetCallback>, dispatched to the object set
 by <nxrInit>.
 
 Inbound events are verified (id and signature) before delivery unless
-you turn that off with <nxrSetVerify>. Call <nxrShutdown> from
-closeStack: there is no automatic unload.
+you turn that off with <nxrSetVerify>. Call <nxrShutdown>
+from closeStack: there is no automatic unload.
 
 The library defines the engine's socketError, socketClosed and
 socketTimeout messages and passes on any that are not for its own
@@ -622,10 +622,10 @@ put the result into tRelay
 nxrSetCallback tRelay, "relayEvent"
 
 Description:
-The handler is dispatched to the object set by <nxrInit>, with four
-arguments: the relay handle, the kind, and two kind-specific arguments
-(the kinds are listed under <nxrConnect>). Set it straight after
-connecting, before the "open" callback arrives.
+The handler is dispatched to the object set by <nxrInit>, with
+four arguments: the relay handle, the kind, and two kind-specific
+arguments (the kinds are listed under <nxrConnect>). Set it straight
+after connecting, before the "open" callback arrives.
 
 Dispatch is guarded: an error in your handler does not break the
 connection, and a missing handler is ignored. An unknown handle returns

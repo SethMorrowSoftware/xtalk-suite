@@ -1912,8 +1912,8 @@ The 32-byte key is the witness program of the P2TR output; the parity
 byte goes in a script-path spend's control block. <cxTaprootTweak>
 returns the same thing as a named array.
 
-An empty pMerkleRoot is NOT 32 zero bytes, and the difference is
-consensus: the two give different output keys and addresses. If you
+An empty pMerkleRoot is NOT 32 zero bytes, and the difference
+is consensus: the two give different output keys and addresses. If you
 have no script tree, pass empty. Pass the same root to
 <cxTaprootTweakSeckey>.
 
