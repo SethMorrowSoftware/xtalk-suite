@@ -189,6 +189,10 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
     stays completable.
 26. **Art facing polarity is statically unverifiable**; pick a convention, list
     it in the example's verify list, let the OXT round report mirrored sprites.
+    In the platformer it is now held headlessly: every walker in both enemy
+    sheets faces LEFT (checked frame by frame 2026-10-14), `gSlimeFlip` true
+    means "the art faces left", and `check-platformer-levels.py` fails a sprite
+    that moves one way for 8 frames facing the other.
 27. **`the result` is consumed by the NEXT command**; capture it immediately
     after every `b2kSpawn*` or maker call.
 28. **Size the hitbox to the VISIBLE art**, feet-aligned, and read the body's
