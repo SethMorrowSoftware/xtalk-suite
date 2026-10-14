@@ -513,6 +513,16 @@ local gDebrisB, gDebrisSpr, gCrateB, gCrateSpr
 local gDustB, gDustUntil, gDustNext
 local gBlockChainA, gBlockChainB, gBlockFace
 local gGoalSpr, gNoticeUntil, gFlagNoteMS
+-- gHazardRefs: every floor hazard's sensor (lava, goo, spike strip), one long
+-- id a line, polled each frame by pfTickHazards: a sensor reports only the
+-- ENTRY, so a hero still inside one after the knockback (lava with a floor
+-- under it) was never hurt again and could wade the L2 bay.
+-- gJumpSfxQuiet: until when the jump chirp stays quiet, so a stomp, kick or
+-- spring sound is not cut off a frame later by the chirp of its own bounce
+-- (one audio clip plays at a time).
+-- gPausedAt: when the pause began, so resuming takes the paused time out of
+-- the level clock (gRunStart).
+local gHazardRefs, gJumpSfxQuiet, gPausedAt
 -- Polish pass (the showcase round): three classic mechanisms riding the
 -- Kit's JOINT + dynamics subsystems (all example-side, zero Kit change).
 -- The ROPE BRIDGE is a row of plank bodies hinged end-to-end and pinned
@@ -521,8 +531,14 @@ local gGoalSpr, gNoticeUntil, gFlagNoteMS
 -- EXPLOSIVE BARREL fires b2kExplode to scatter a woodpile of crates.
 -- Per-critter speed + squash frame let the slime FAMILY carry the new
 -- walker species (mouse, worm, ladybug, fire slime) with no new tables.
--- gSlimeFlip is the per-row facing polarity (gotcha 26): the snail's
--- sheet art faces the OPPOSITE way to the slimes', so it flips inverted.
+-- gSlimeFlip is the per-row facing polarity (gotcha 26): true = the art
+-- faces LEFT, so it shows unflipped walking left and mirrors walking right.
+-- Every walker in both enemy sheets faces LEFT (checked frame by frame
+-- 2026-10-14: slimes, mice, worms, ladybugs, snails, frogs, bats, snakes,
+-- spiders), so every facing row is true; false is left for the front-facing
+-- art (the mimic's grass block, the block slime), where a mirror changes
+-- nothing. Before that check the slimes, mice, worms and bats were false and
+-- walked backwards.
 local gSlimeSpeed, gSlimeFlat, gSlimeFlip
 local gBoulderN, gBoulderB, gBoulderSpr, gBoulderHomeX, gBoulderHomeY
 local gBoulderResetX, gBoulderT, gBoulderHurtR, gBoulderGrace, gBoulderVX
@@ -2157,7 +2173,13 @@ command pfStartGame
    put empty into gBlockFace
    put empty into gGoalSpr
    put 0 into gNoticeUntil
+   -- a banner still up from the level before (LEVEL n CLEAR!, a Locked
+   -- notice when R was pressed) would otherwise sit over the new level
+   -- until the intro ended: the frame only expires it while gNoticeUntil > 0
+   if there is a field "pfSplash" then set the visible of field "pfSplash" to false
    put 0 into gFlagNoteMS
+   put empty into gHazardRefs
+   put 0 into gJumpSfxQuiet
    -- the showcase round's mechanism tables start the run empty/idle
    put 0 into gBoulderN
    put empty into gBoulderB
@@ -2735,7 +2757,7 @@ command pfMakeSlime pIdx, pKind, pX, pMinX, pMaxX, pTopY
    put 60 into gSlimeDir[pIdx]
    put 60 into gSlimeSpeed[pIdx]
    put "slime_" & pKind & "_flat" into gSlimeFlat[pIdx]
-   put false into gSlimeFlip[pIdx]
+   put true into gSlimeFlip[pIdx]     -- slime art faces LEFT (gotcha 26)
    put pMinX into gSlimeMin[pIdx]
    put pMaxX into gSlimeMax[pIdx]
    put empty into gSlimeGoneAt[pIdx]
@@ -2781,10 +2803,10 @@ command pfMakeCritter pIdx, pKind, pX, pMinX, pMaxX, pTopY, pSpeed, pFrame, pAni
    put pSpeed into gSlimeDir[pIdx]
    put pSpeed into gSlimeSpeed[pIdx]
    put pFlat into gSlimeFlat[pIdx]
-   -- facing polarity (gotcha 26): most foes art faces RIGHT (flip false), but some
-   -- sheets (the ground ladybug) face LEFT like the snail - pass pFaceFlip true to
-   -- invert. The flying ladybug/bee/fish (pfAddMover) carry their own correction.
-   put (pFaceFlip is true) into gSlimeFlip[pIdx]
+   -- facing polarity (gotcha 26): every walker in both enemy sheets faces LEFT,
+   -- so the default is true; pass pFaceFlip true only for art that faces RIGHT
+   -- (none does today). The flyers (pfAddMover) carry their own correction.
+   put (pFaceFlip is not true) into gSlimeFlip[pIdx]
    put pMinX into gSlimeMin[pIdx]
    put pMaxX into gSlimeMax[pIdx]
    put empty into gSlimeGoneAt[pIdx]
@@ -2971,7 +2993,7 @@ command pfMakeBat pIdx, pX, pHangY, pMinX, pMaxX
    put 90 into gSlimeDir[pIdx]
    put 90 into gSlimeSpeed[pIdx]
    put empty into gSlimeFlat[pIdx]   -- the switch picks bat_hit.png
-   put false into gSlimeFlip[pIdx]
+   put true into gSlimeFlip[pIdx]     -- the bat art faces LEFT (gotcha 26)
    put pMinX into gSlimeMin[pIdx]
    put pMaxX into gSlimeMax[pIdx]
    put empty into gSlimeGoneAt[pIdx]
@@ -3263,6 +3285,7 @@ command pfMakeLava pL, pR, pSensorTop
    set the visible of it to false
    put the long id of graphic ("pf_lavasens" & pL) into tRef
    set the uPfHazardFlag of tRef to true
+   put tRef & cr after gHazardRefs
    b2kAddSensor tRef, "box"
 end pfMakeLava
 
@@ -3295,6 +3318,7 @@ command pfMakeSlimePool pL, pR, pSensorTop
    set the visible of it to false
    put the long id of graphic ("pf_goosens" & pL) into tRef
    set the uPfHazardFlag of tRef to true
+   put tRef & cr after gHazardRefs
    b2kAddSensor tRef, "box"
 end pfMakeSlimePool
 
@@ -3658,6 +3682,7 @@ command pfMakeSpikes pL, pR
    set the visible of it to false
    put the long id of graphic ("pf_spikesens" & pL) into tRef
    set the uPfHazardFlag of tRef to true
+   put tRef & cr after gHazardRefs
    b2kAddSensor tRef, "box"
 end pfMakeSpikes
 
@@ -4219,7 +4244,7 @@ command pfL1Cast
    -- NEW variety walkers (native foes art, stomp like any slime): a FAST
    -- mouse skitters the second act; a LADYBUG ambles the far meadow
    pfMakeCritter 5, "normal", 3076, 3000, 3160, 576, 120, "mouse_walk_a", "mousewalk", empty, 20, 30, "150,140,150", -4
-   pfMakeCritter 6, "normal", 4456, 4360, 4540, 576, 72, "ladybug_walk_a", "ladywalk", empty, 22, 30, "200,70,70", -4, empty, true   -- ladybug art faces LEFT: pFaceFlip true
+   pfMakeCritter 6, "normal", 4456, 4360, 4540, 576, 72, "ladybug_walk_a", "ladywalk", empty, 22, 30, "200,70,70", -4   -- ladybug art faces LEFT, like every walker
    -- Wave 6 (bestiary II): a meadow FROG hops at you in the far-meadow clearing
    -- (between the ladybug and the gauntlet cloud). Stomp it; do not stand by it.
    pfMakeFrog 10, 4660, 4600, 4780, 576
@@ -4792,7 +4817,7 @@ command pfL3Cast
    end if
    pfMakeSlime 1, "normal", 2113, 2078, 2118, 576   -- right limit pulled IN off the crusher: at 2148 its right edge (2172) all but touched the crusher body (left 2178 - a 6px gap) and the two stuck together; 2118 -> far edge 2142 clears the crusher by 36px (the slime body is 48px wide). Coin stays at 2113, inside the band.
    -- a LADYBUG ambles the early ice (new variety; native foes art)
-   pfMakeCritter 2, "normal", 1100, 1010, 1180, 576, 64, "ladybug_walk_a", "ladywalk", empty, 22, 30, "200,70,70", -4, empty, true   -- ladybug art faces LEFT: pFaceFlip true
+   pfMakeCritter 2, "normal", 1100, 1010, 1180, 576, 64, "ladybug_walk_a", "ladywalk", empty, 22, 30, "200,70,70", -4   -- ladybug art faces LEFT, like every walker
    pfMakeThwomp 1, 2208     -- it guards the red key
    -- the glacier's ROLLING ICE BOULDER: it slides the icy flat HEAD-ON at
    -- the climbing hero, who must leap it (jumping lifts him clear of the
@@ -5848,12 +5873,14 @@ on b2kFrame
       b2kSound "land"
    end if
    if gHeroState is "jump" and gPrevState is not "jump" and gHurtLock is not true then
-      b2kSound "jump"   -- also chirps on the slime-stomp bounce: earned
+      -- not on a stomp, kick or spring bounce: its own sound is playing
+      if the milliseconds > gJumpSfxQuiet then b2kSound "jump"
    end if
    if gHeroState is "jump" or gHeroState is "fall" then
       put the milliseconds into gAirMS   -- "was airborne recently", for the stomp window
    end if
    put gHeroState into gPrevState
+   pfTickHazards
    pfTickGate
    pfTickSwitchGates
    pfTickSlimes
@@ -5928,6 +5955,39 @@ end b2kFrame
 -- b2kPlayerAttach + b2kPlayerAnims now do all of it inside the Kit --
 -- with accel, coyote time, jump buffering and a real slope test the
 -- hand-rolled version never had.)
+
+-- A floor hazard keeps hurting while the hero stays in it. Its sensor
+-- reports only the entry (b2kSensorEnter), so a hero knocked back INTO the
+-- lava, or landing in it again inside the mercy window, was never hurt again
+-- and could walk the floor under the L2 lift bay. pfOuch spends a heart only
+-- outside the mercy window, so a poll every frame costs at most one heart a
+-- knockback, as a fresh entry would.
+command pfTickHazards
+   local tRef, tPos, tHW, tHH
+   if gHazardRefs is empty then exit pfTickHazards
+   if gHurtLock is true or gWinLock is true then exit pfTickHazards
+   if b2kPlayerHurtIs() then exit pfTickHazards
+   set the itemDelimiter to comma
+   put b2kPlayerHalfW() into tHW
+   put b2kPlayerHalfH() into tHH
+   repeat for each line tRef in gHazardRefs
+      if tRef is empty then next repeat
+      put b2kPosition(tRef) into tPos
+      if tPos is empty then next repeat
+      if abs(gHeroPX - item 1 of tPos) >= (the width of tRef) / 2 + tHW - 2 then next repeat
+      if abs(gHeroPY - item 2 of tPos) >= (the height of tRef) / 2 + tHH - 2 then next repeat
+      pfOuch item 1 of tPos
+      exit repeat
+   end repeat
+end pfTickHazards
+
+-- The game's own boosts (a stomp bounce, a shell kick, the springboard):
+-- the Kit's jump, with the jump chirp held back for a moment so the sound
+-- the boost just played is heard (one audio clip plays at a time).
+command pfBoostHero pSpeed
+   b2kPlayerJump pSpeed
+   put the milliseconds + 250 into gJumpSfxQuiet
+end pfBoostHero
 
 -- The kinematic gate chases its open/closed height; the plate's colour
 -- tracks its state. Anything on the plate (the hero OR the crate) holds
@@ -6378,7 +6438,7 @@ command pfTickSpiders
             if gSpiderX[i] <= gSpiderMinX[i] then put abs(gSpiderDir[i]) into gSpiderDir[i]
             if gSpiderX[i] >= gSpiderMaxX[i] then put -abs(gSpiderDir[i]) into gSpiderDir[i]
             b2kSpriteMoveTo gSpiderSpr[i], gSpiderX[i], gSpiderHangY[i]
-            b2kSpriteFlipH gSpiderSpr[i], (gSpiderDir[i] < 0)
+            b2kSpriteFlipH gSpiderSpr[i], (gSpiderDir[i] > 0)   -- the art faces LEFT (gotcha 26)
             -- the hero passing beneath (close in x, below the bar) drops it
             if abs(gHeroPX - gSpiderX[i]) < 44 and gHeroPY > gSpiderHangY[i] + 20 then put "drop" into gSpiderState[i]
             break
@@ -6532,7 +6592,7 @@ command pfTickSpring
    if abs(gHeroPX - gSpringX) < 28 and tBottom >= 524 and \
          tBottom <= 560 and the milliseconds > gSpringMS then
       put the milliseconds + 420 into gSpringMS
-      b2kPlayerJump 620   -- ~320px apex: comfortably reaches the sky coin
+      pfBoostHero 620   -- ~320px apex: comfortably reaches the sky coin
       b2kSound "spring"
       b2kSpriteSetFrame gSpringSpr, "spring_out"
       put the milliseconds + 260 into gSpringBackMS
@@ -7188,7 +7248,7 @@ on b2kContact pA, pB
             b2kSpriteSetFrame gSlimeSpr[tWhich], "snail_shell"
          end if
          b2kSound "stomp"
-         b2kPlayerJump 260
+         pfBoostHero 260
       else
          pfOuch tFX
       end if
@@ -7206,7 +7266,7 @@ on b2kContact pA, pB
       put "shellslide" into gSlimeKind[tWhich]
       b2kSetVelocity tFoe, gSlimeDir[tWhich], 0
       b2kSound "kick"
-      if tStomp and tAbove then b2kPlayerJump 260
+      if tStomp and tAbove then pfBoostHero 260
       exit b2kContact
    end if
    if tKind is "shellslide" then
@@ -7216,7 +7276,7 @@ on b2kContact pA, pB
          put 0 into gSlimeDir[tWhich]
          b2kSetVelocity tFoe, 0, item 2 of b2kVelocity(tFoe)
          b2kSound "stomp"
-         b2kPlayerJump 260
+         pfBoostHero 260
       else
          pfOuch tFX
       end if
@@ -7226,7 +7286,7 @@ on b2kContact pA, pB
       -- one-stomp critters; their touch knocks back like everything
       if tStomp and tAbove then
          pfSquashSlime tWhich
-         b2kPlayerJump 260
+         pfBoostHero 260
       else
          pfOuch tFX
       end if
@@ -7235,7 +7295,7 @@ on b2kContact pA, pB
    -- ===== the classic slimes =====
    if tKind is not "spike" and tStomp and tAbove then
       pfSquashSlime tWhich
-      b2kPlayerJump 260   -- the API jump: exempt from the ground-snap
+      pfBoostHero 260   -- the API jump: exempt from the ground-snap
                           -- (a raw upward set-velocity on a grounded
                           -- player is treated as solver rebound)
    else
@@ -7357,12 +7417,16 @@ command pfLevelClear
    add gStars to gStarsBank
    add gStarsTotal to gStarsAllTotal
    pfNotice "LEVEL " & gLevel & " CLEAR!", 1400
-   send pfNextLevel to me in 1200 milliseconds
+   send "pfNextLevel" to me in 1200 milliseconds   -- quoted: a bare name only works while it is undeclared
 end pfLevelClear
 
 -- Fires from pfLevelClear's send. If an R-restart beat us here the
 -- rebuild already reset gWinLock - a stale advance must then no-op.
 command pfNextLevel
+   -- Delayed by `send` from pfLevelClear, so the defaultStack is whatever is
+   -- current when it arrives, and pfStartGame names controls unqualified: pin
+   -- it first, as pfCardFadeStep does (gate: tools/check-timer-stack-pin.py).
+   set the defaultStack to the short name of this stack
    if gWinLock is not true then exit pfNextLevel
    add 1 to gLevel
    pfStartGame
@@ -7431,6 +7495,7 @@ command pfTogglePause
    local tTop
    if b2kIsRunning() then
       b2kPause
+      put the milliseconds into gPausedAt
       set the label of button "pfbtn_pause" to "Resume"
       -- show the controls overlay, raised to the very top (above the HUD + world)
       if there is a graphic "pfPauseShade" then
@@ -7442,6 +7507,9 @@ command pfTogglePause
       end if
    else
       b2kResume
+      -- the level clock does not count the pause
+      if gPausedAt is a number then add the milliseconds - gPausedAt to gRunStart
+      put empty into gPausedAt
       set the label of button "pfbtn_pause" to "Pause"
       if there is a graphic "pfPauseShade" then
          set the visible of graphic "pfPauseShade" to false
@@ -7482,7 +7550,7 @@ on mouseUp
    put the short name of the target into tName
    switch tName
       case "pfbtn_reset"
-         pfStartGame
+         if gWinLock is not true then pfStartGame   -- see rawKeyDown
          break
       case "pfbtn_pause"
          pfTogglePause
@@ -7547,7 +7615,9 @@ on rawKeyDown pKeyCode
       exit rawKeyDown
    end if
    if pKeyCode is 114 or pKeyCode is 82 then
-      pfStartGame
+      -- not while a level clears or the run is won: its totals are banked
+      -- already, and a replay would bank them a second time
+      if gWinLock is not true then pfStartGame
       exit rawKeyDown
    end if
    if pKeyCode is 109 or pKeyCode is 77 then

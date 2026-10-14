@@ -4865,6 +4865,27 @@ BUDGET_BUILD = 1000000         # one level's build (pfStartGame)
 BUDGET_IMPORT = 10000000       # openCard: the first-run import
 LEVELS = 7
 
+# Enemy art that faces LEFT as drawn, so a sprite showing it must be
+# mirrored exactly while it moves RIGHT (box2dxt CLAUDE.md gotcha 26). Read
+# off the two enemy sheets frame by frame on 2026-10-14
+# (spritesheet-enemies-default for "foes", enemies.png for "spooks"): every
+# walker, flyer and swimmer in both faces left. Left out on purpose: the
+# front-facing art (barnacles, block slimes, the mimic's grass block, ghosts,
+# piranhas, the rearing serpents, saws, spinners, idle frogs), where a mirror
+# changes nothing, and every squashed or dead frame, which never walks.
+FACES_LEFT = re.compile(
+    r"^(bee_[ab]|fly_[ab]|fish_(blue|yellow)_swim_[ab]|ladybug_(fly|walk_[ab])"
+    r"|mouse_walk_[ab]|worm_(normal|ring)_move_[ab]"
+    r"|slime_(normal|spike|fire)_walk_[ab]|snail_walk_[ab]|frog_jump"
+    r"|bat(_fly)?\.png|spider_walk[12]\.png|snake(_walk)?\.png"
+    r"|slime(Green|Blue)(_walk|_blue)?\.png|(mouse|worm)(_walk)?\.png"
+    r"|fly(_fly)?\.png|bee(_fly)?\.png|ladyBug(_walk|_fly)?\.png"
+    r"|fish(Green|Pink)(_swim)?\.png)$")
+# How many frames in a row a sprite may move one way while facing the other
+# before it is a finding: a patrol turns its sprite in the frame it turns,
+# so a real mismatch lasts its whole walk, and a short one is a bump.
+FACING_FRAMES = 8
+
 
 class Failure(Exception):
     """The game did not do what a player would see it do: reported with
@@ -4894,6 +4915,8 @@ class Run(object):
         self.verbose = verbose
         self.builds = []               # (gLevel, gBuilding) per pfStartGame
         self.event_stmts = {}          # message -> most statements it ran
+        self.facing = {}               # sprite id -> [world x, wrong streak]
+        self.facing_seen = set()       # (level, frame) already reported
         ip.hooks["pfstartgame"] = self._on_build
 
     def say(self, msg):
@@ -4957,7 +4980,62 @@ class Run(object):
             w.ms = until_ms
 
     def frames(self, n):
-        self.pump_to(self.w.ms + n * FRAME_MS)
+        for _k in range(n):
+            self.pump_to(self.w.ms + FRAME_MS)
+            self.watch_facing()
+
+    def watch_facing(self):
+        """Every Kit sprite showing left-facing enemy art (FACES_LEFT) must
+        be mirrored exactly while it moves right, judged by its WORLD x
+        frame to frame (the camera group's scroll added back, so the view
+        moving is not the sprite moving). FACING_FRAMES wrong frames in a
+        row is a finding, once per level and frame name."""
+        keys = self.g("sSprFrameKey")
+        flips = self.g("sSprFlip")
+        if not isinstance(keys, dict):
+            return
+        w = self.w
+        live = set()
+        for o in w.flat():
+            if o.kind != "button" or o.gone or not o.name.startswith("b2kspr_"):
+                continue
+            lid = w.long_id(o)
+            key = _s(LCS._arr_get(keys, lid)) if LCS._arr_has(keys, lid) else ""
+            if not FACES_LEFT.match(key):
+                continue
+            live.add(o.id)
+            x = (o.rect[0] + o.rect[2]) / 2.0
+            up = o.owner
+            while up is not None and up.kind == "group":
+                x += float(_s(up.props.get("hscroll", 0)) or 0)
+                up = up.owner
+            state = self.facing.get(o.id)
+            if state is None:
+                self.facing[o.id] = [x, 0]
+                continue
+            dx = x - state[0]
+            state[0] = x
+            if abs(dx) < 0.5:
+                continue
+            flipped = isinstance(flips, dict) and LCS._arr_has(flips, lid) \
+                and _true(LCS._arr_get(flips, lid))
+            if flipped == (dx > 0):
+                state[1] = 0
+                continue
+            state[1] += 1
+            seen = (self.level(), key)
+            if state[1] == FACING_FRAMES and seen not in self.facing_seen:
+                self.facing_seen.add(seen)
+                w.problems.append(
+                    "L%s: a %s sprite moved %s for %d frames facing the other "
+                    "way, near x %d (the art faces LEFT, so it must be "
+                    "mirrored exactly while it moves right; box2dxt CLAUDE.md "
+                    "gotcha 26)" % (self.level(), key,
+                                    "right" if dx > 0 else "left",
+                                    FACING_FRAMES, x))
+        for oid in list(self.facing):
+            if oid not in live:
+                del self.facing[oid]
 
     def key(self, code):
         """A key press as the engine delivers it (rawKeyDown to the card);

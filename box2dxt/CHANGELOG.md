@@ -8,6 +8,37 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **The platformer's walkers face the way they walk** (2026-10-14). Every
+  walker in both enemy sheets faces LEFT, but the slimes, mice, worms and
+  bats were set to the opposite polarity (gotcha 26) and walked backwards;
+  the ladybug carried a per-call inversion and the spider flipped the wrong
+  way. Every facing row is now true (the art faces left), and
+  `tools/check-platformer-levels.py` watches every enemy sprite for 8 frames
+  of moving one way while facing the other, on every level, with a seeded
+  fixture (the old slime polarity) in `tools/test-platformer-levels.py`.
+- **Platformer review fixes** (2026-10-14), each verified statically +
+  headless (all three level-gate profiles green); needs an OXT play pass:
+  - A floor hazard (lava, goo, a spike strip) keeps hurting while the hero
+    stays in it. Its sensor reports only the entry, so a hero knocked back
+    into the L2 lava could wade the floor under the lift bay; `pfTickHazards`
+    now polls the hazards each frame, and `pfOuch`'s mercy window still
+    limits it to one heart a knockback. **Behaviour change**: wading lava no
+    longer works.
+  - R and the Reset button do nothing while a level clears or on the win
+    screen: a restart there banked that level's totals a second time.
+    **Behaviour change.**
+  - The level clock no longer counts a pause.
+  - A banner left from the level before (LEVEL n CLEAR!, a Locked notice)
+    is hidden when a level starts, not when its intro ends.
+  - A stomp, kick or spring sound is no longer cut off a frame later by the
+    jump chirp of its own bounce (one audio clip plays at a time):
+    `pfBoostHero` holds the chirp back for 250 ms.
+  - `send "pfNextLevel"` is quoted: a bare name works only while it is not
+    declared, and the IDE's explicitVariables compile refuses it. Quoted,
+    `tools/check-timer-stack-pin.py` sees the timer and found that
+    `pfNextLevel` reached `pfStartGame`'s unqualified controls with no pin:
+    it now pins the defaultStack, as `pfCardFadeStep` does.
+
 - **Every platformer level is now built and played by a gate** (2026-10-08).
   `tools/check-platformer-levels.py` runs the shipped game headlessly on a
   model of the engine over the committed Linux library (real Box2D), three

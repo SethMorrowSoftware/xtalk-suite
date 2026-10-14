@@ -35,6 +35,10 @@ The seeded defects, and what each stands in for:
   7. An error no `try` catches, thrown as a flag advances to L3: on an
      engine the script-error dialog, and the end of that handler chain.
      The gate must report it as such, never as a Python traceback.
+  8. The slimes facing the way they shipped until 2026-10-14: gSlimeFlip
+     false, as if their art faced right, when every enemy frame faces LEFT,
+     so every slime walked backwards (box2dxt CLAUDE.md gotcha 26). The
+     gate's sprite-facing watch must name it.
 
 Each mutation is asserted to APPLY (its anchor must occur exactly once), so
 a rename in the shipped game fails this test rather than silently turning a
@@ -103,6 +107,11 @@ FIXTURES = [
      '   pfStartGame\nend pfNextLevel\n',
      "placeholder",
      ("a script error no `try` caught", "pfNoSuchControl")),
+    ("the slimes walking backwards (gSlimeFlip false; gotcha 26)",
+     '   put true into gSlimeFlip[pIdx]     -- slime art faces LEFT (gotcha 26)\n',
+     '   put false into gSlimeFlip[pIdx]\n',
+     "art",
+     ("slime_normal_walk_", "facing the other way", "gotcha 26")),
 ]
 
 
