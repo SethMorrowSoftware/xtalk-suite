@@ -7423,6 +7423,10 @@ end pfLevelClear
 -- Fires from pfLevelClear's send. If an R-restart beat us here the
 -- rebuild already reset gWinLock - a stale advance must then no-op.
 command pfNextLevel
+   -- Delayed by `send` from pfLevelClear, so the defaultStack is whatever is
+   -- current when it arrives, and pfStartGame names controls unqualified: pin
+   -- it first, as pfCardFadeStep does (gate: tools/check-timer-stack-pin.py).
+   set the defaultStack to the short name of this stack
    if gWinLock is not true then exit pfNextLevel
    add 1 to gLevel
    pfStartGame

@@ -34,7 +34,10 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
     jump chirp of its own bounce (one audio clip plays at a time):
     `pfBoostHero` holds the chirp back for 250 ms.
   - `send "pfNextLevel"` is quoted: a bare name works only while it is not
-    declared, and the IDE's explicitVariables compile refuses it.
+    declared, and the IDE's explicitVariables compile refuses it. Quoted,
+    `tools/check-timer-stack-pin.py` sees the timer and found that
+    `pfNextLevel` reached `pfStartGame`'s unqualified controls with no pin:
+    it now pins the defaultStack, as `pfCardFadeStep` does.
 
 - **Every platformer level is now built and played by a gate** (2026-10-08).
   `tools/check-platformer-levels.py` runs the shipped game headlessly on a
