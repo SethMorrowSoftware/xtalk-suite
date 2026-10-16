@@ -162,17 +162,27 @@ jobs:
         # which is the copy that is known to work. When a member's dependencies
         # change, change them there and mirror the row here - do not re-derive
         # them, which is what produced the failure above. ONE deliberate
-        # exception: torrentxt's x86_64-linux row diverges from its native lane
-        # on purpose - the RELEASE build runs in a manylinux container for the
-        # portability floor (see that row), while native-torrentxt.yml stays a
-        # stock runner because it exists for fast per-push feedback and its
-        # artifacts are never committed.
+        # exception: the 64-bit Linux rows (x86_64-linux and arm64-linux) of
+        # every member here diverge from their native lanes on purpose - the
+        # RELEASE build runs in a manylinux_2_28 container for the portability
+        # floor (see torrentxt's row for why 2.28), while the native-*.yml
+        # lanes stay stock runners because they exist for fast per-push
+        # feedback and their artifacts are never committed. torrentxt and
+        # box2dxt moved first; sodiumxt, enetxt and datachannelxt followed on
+        # 2026-10-16 (work plan 1.2 #1), because a stock ubuntu-24.04 build
+        # inherits that runner's glibc: the 2026-09-12 files needed 2.33
+        # (sodiumxt) and 2.38 plus a dynamic libssl.so.3 (datachannelxt), so
+        # neither loaded on Ubuntu 22.04, Debian 12 or RHEL 9, and OXT-Beyond,
+        # which bundles them, promises glibc 2.31. The 32-bit x86-linux rows
+        # stay on the stock runner: there is no i686 manylinux_2_28 image,
+        # so their floors are measured and stated, not held (work plan 1.1).
         include:
           # ---- sodiumxt: builds libsodium from source; vcpkg + NMake on Windows
           - member: sodiumxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
-            apt: g++ cmake ninja-build
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
           - member: sodiumxt
             platform_id: x86-linux
             os: ubuntu-24.04
@@ -190,7 +200,8 @@ jobs:
           - member: sodiumxt
             platform_id: arm64-linux
             os: ubuntu-24.04-arm
-            apt: g++ cmake ninja-build
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
           - member: sodiumxt
             platform_id: x86_64-win32
             os: windows-2025
@@ -237,7 +248,7 @@ jobs:
             os: ubuntu-24.04
             container: quay.io/pypa/manylinux_2_28_x86_64
             manylinux: "1"
-            manylinux_deps: "1"    # Boost + static OpenSSL; torrentxt alone needs them
+            manylinux_deps: "1"    # Boost + static OpenSSL (datachannelxt uses the OpenSSL)
             cmake_args: -DBOOST_ROOT=/opt/boost-1.86.0 -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
             build_jobs: 2          # libtorrent from source OOMs a runner at -j4
           - member: torrentxt
@@ -273,11 +284,13 @@ jobs:
           - member: enetxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
-            apt: g++ cmake ninja-build
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
           - member: enetxt
             platform_id: arm64-linux
             os: ubuntu-24.04-arm
-            apt: g++ cmake ninja-build
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
           - member: enetxt
             platform_id: x86-linux
             os: ubuntu-24.04
@@ -347,14 +360,27 @@ jobs:
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBOX2D_AVX2=OFF
 
           # ---- datachannelxt: OpenSSL, including the i386 one for the 32-bit lane
+          #
+          # The 64-bit Linux rows take torrentxt's container and its pinned,
+          # hash-checked static OpenSSL 3.5.4 (the version the mac dylib
+          # already carries), so DTLS is inside the .so and no libssl.so.3 is
+          # needed at all: the floor assertion below refuses a dynamic one.
+          # The step also unpacks Boost, which this member never reads.
           - member: datachannelxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
-            apt: g++ cmake ninja-build libssl-dev
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            manylinux_deps: "1"
+            cmake_args: -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
           - member: datachannelxt
             platform_id: arm64-linux
             os: ubuntu-24.04-arm
-            apt: g++ cmake ninja-build libssl-dev
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            manylinux_deps: "1"
+            openssl_target: linux-aarch64
+            cmake_args: -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
           - member: datachannelxt
             platform_id: x86-linux
             os: ubuntu-24.04
@@ -409,10 +435,11 @@ jobs:
       # The image supplies the old-glibc toolchain (gcc-toolset on PATH) and a
       # CPython under /opt/python; cmake and ninja come from that CPython's
       # pip, so the lane never depends on which build tools a given image tag
-      # happens to bundle. Shared by every containerized row (torrentxt and,
-      # since 2026-08-23, box2dxt), which is why it is a separate step from
-      # the Boost/OpenSSL acquisition below - box2dxt needs the tools and
-      # none of the dependencies.
+      # happens to bundle. Shared by every containerized row (torrentxt;
+      # box2dxt since 2026-08-23; sodiumxt, enetxt and datachannelxt since
+      # 2026-10-16), which is why it is a separate step from the Boost/OpenSSL
+      # acquisition below - most of them need the tools and none of the
+      # dependencies.
       - name: Provision build tools (manylinux lanes)
         if: matrix.manylinux
         shell: bash
@@ -433,7 +460,7 @@ jobs:
       # which carries the flattened boost/ tree. OpenSSL builds static
       # (no-shared no-module) so the resulting .so carries its TLS stack
       # instead of requiring a host libssl soname.
-      - name: Acquire pinned deps (torrentxt manylinux lane)
+      - name: Acquire pinned deps (torrentxt and datachannelxt manylinux lanes)
         if: matrix.manylinux_deps
         shell: bash
         working-directory: /

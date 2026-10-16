@@ -219,6 +219,9 @@ Debian 12 (2.36) or RHEL 9 (2.34)**, nor can torrentxt's 32-bit build. The S1 Li
 machine needs glibc 2.38 or newer to load all six members. The 2026-09-25 Linux
 machine, Kubuntu 24.04 by the maintainer's account (a release that ships glibc 2.39;
 the run did not print it), loaded all six.
+Since 2026-10-16 the 64-bit release rows of every CMake member build in a manylinux_2_28
+container and assert a 2.28 floor (1.2 #1); the table above measures the committed
+files, which keep these floors until a dispatch rebuilds them.
 
 **macOS floors** (the oldest macOS whose system libraries have every symbol each
 committed universal-mac dylib imports, read with `llvm-nm -u` on both slices,
@@ -286,7 +289,7 @@ keeping the scaffold for its report.
 
 | # | Work | Why | Size | Blocked by |
 |---|---|---|---|---|
-| 1 | **Choose a suite Linux glibc floor.** Move each Linux release row into a manylinux container (as torrentxt's x86_64 row and box2dxt's per-push lane already do), or publish every measured floor (sodiumxt states none). Add a check to `tools/install-release-binaries.py` that refuses a floor above the stated one | Section 1.1: two members cannot load on current LTS distributions, and box2dxt's x86 floor regressed silently | M | owner, then dispatch |
+| 1 | **Choose a suite Linux glibc floor.** CHOSEN 2026-10-16 for the 64-bit rows: glibc 2.28 (manylinux_2_28), the owner's call while making OXT-Beyond 0.2.6 stable, which promises 2.31. Every x86_64-linux and arm64-linux release row of the CMake members now builds in a manylinux_2_28 container, datachannelxt's with torrentxt's pinned static OpenSSL, and each lane's "Assert the portability floor" step refuses a GLIBC_ symbol above 2.28 or a dynamic libssl, libcrypto, libstdc++ or libgcc_s; the committed files keep section 1.1's floors until a dispatch rebuilds them. Left: the 32-bit x86-linux rows (no i686 manylinux_2_28 image; the 2.17 manylinux2014_i686 one cannot host GitHub's node20 actions, so it would take `native-box2dxt.yml`'s `docker run` shape), coinxt's job (2.25 by section 1.1, not containerized), and moving the floor check into `tools/install-release-binaries.py` so a hand-assembled bundle meets it too | Section 1.1: two members cannot load on current LTS distributions, and box2dxt's x86 floor regressed silently | M | dispatch (64-bit); none (the rest) |
 | 4 | **Supply-chain hygiene.** SHA-pin the 54 `uses:` lines in `.github/workflows` (none is pinned today); add a root SECURITY.md with a disclosure contact (only nocloud has one); add a gate that checks coinxt's vendored trezor-crypto and libsecp256k1 against the commits `coinxt/native/vendor/VENDOR.md` names. No member has had an external security review | Standing gaps found by the 2026-09-08 blockchain research, re-verified 2026-09-23 | M | owner |
 | 6 | macOS Gatekeeper/quarantine guidance for the unsigned universal dylibs, written from the first Mac session's record (runbook 2.1 and row 24 ask it to record the first-load behaviour and remedy) | None exists; unsigned distribution was accepted 2026-08-23 | S | engine |
 | 8 | Publishing follow-ups: watch each member repository's first generated `gates.yml` / `native.yml` run and record the result; put the `XTALK_PUBLISH_TOKEN` expiry in a calendar (rotation steps: MEMBER-REPO-SPLIT section 2) | This session's GitHub scope cannot see the member repositories' runs; the token is the owner's | S | owner |
