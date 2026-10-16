@@ -220,8 +220,13 @@ machine needs glibc 2.38 or newer to load all six members. The 2026-09-25 Linux
 machine, Kubuntu 24.04 by the maintainer's account (a release that ships glibc 2.39;
 the run did not print it), loaded all six.
 Since 2026-10-16 the 64-bit release rows of every CMake member build in a manylinux_2_28
-container and assert a 2.28 floor (1.2 #1); the table above measures the committed
-files, which keep these floors until a dispatch rebuilds them.
+container and assert a 2.28 floor (1.2 #1). The release dispatch of 2026-10-16 (run
+38837804799 from fac0257, committed as e7300f5) rebuilt them; measured the same way on
+the committed files, the 64-bit floors are now: sodiumxt 2.25, torrentxt 2.28, enetxt
+2.14 (arm64 2.17; it keeps the system libstdc++, held to GLIBCXX_3.4.25), datachannelxt
+2.25 with OpenSSL linked in (no `libssl.so.3`), coinxt 2.25 and box2dxt 2.17, so all
+six load on Ubuntu 20.04, Debian 11, RHEL 8 or newer (INFERRED from the symbols; no
+engine has loaded these files yet). The x86-linux column above is unchanged.
 
 **macOS floors** (the oldest macOS whose system libraries have every symbol each
 committed universal-mac dylib imports, read with `llvm-nm -u` on both slices,
@@ -245,7 +250,10 @@ or avoid what is newer than it. So since 2026-10-09 every release mac lane build
 `MACOSX_DEPLOYMENT_TARGET` 10.15 (clang raises arm64 to 11.0), and
 `tools/install-release-binaries.py` refuses a slice built for anything newer (its
 `MAC_FLOOR`, and `--mac-floor` in the lanes). The committed files keep the floors
-above until a dispatch rebuilds them (1.2 #28). The table is INFERRED from the
+above until a dispatch rebuilds them (1.2 #28). The 2026-10-16 dispatch (above)
+did: every committed universal-mac dylib's slices now say 10.15 (x86_64) and 11.0
+(arm64), read from each slice's LC_BUILD_VERSION; the table is the record of the
+files before it. The table is INFERRED from the
 imports and those availability tables. The first Mac report, a forum tester on
 OXT-Beyond on 2026-10-08, never reached a library: by its error text, box2dxt's
 extension was not loaded (INFERRED, engine note 4.1).
