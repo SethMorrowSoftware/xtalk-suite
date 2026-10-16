@@ -344,14 +344,16 @@ worse than no gate, because it answers the question nobody asks twice.
   `aligned_alloc`, new in 10.15; clang raises the arm64 slice to 11.0), and the release lanes
   assert it with the installer's `--mac-floor`. The target decides what a build imports, and dyld
   refuses a library only for a missing import, never for its tag: built with no target (so for
-  the runner's 15.0), the committed torrentxt and datachannelxt dylibs need macOS 15 and enetxt's
-  11 until a dispatch rebuilds them (work plan 1.1 has the table).
+  the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
+  macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
-  from the 2026-09-12 dispatch (run 34657390798 from 0f17ab5, commit 421bab3). Their
-  `x86_64-win32` builds first met an engine on 2026-09-24: the D-23 suite paste loaded all six
-  and ran every member's sections (runbook section 8), on a 64-bit OXT by the maintainer's
+  from the 2026-10-16 dispatch (run 38837804799 from fac0257, commit e7300f5: the 64-bit Linux
+  rows at glibc 2.28 and every mac slice at 10.15 and 11.0), bar the x86-linux rows it left
+  unchanged; no engine has loaded them yet. The records below are of the 2026-09-12 dispatch's
+  (run 34657390798 from 0f17ab5, commit 421bab3). Its `x86_64-win32` builds first met an engine
+  on 2026-09-24: the D-23 suite paste loaded all six and ran every member's sections (runbook section 8), on a 64-bit OXT by the maintainer's
   account (given 2026-09-26), and again on 2026-09-25 on that machine (the builds INFERRED the
   same: nothing newer is committed, and torrentxt's 997-byte refusals pass). Their
   `x86_64-linux` builds (sodiumxt's and box2dxt's still run 12's) first met an engine on the
