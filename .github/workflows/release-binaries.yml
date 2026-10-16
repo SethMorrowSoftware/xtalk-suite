@@ -281,16 +281,23 @@ jobs:
             cmake_args: -DTORRENTXT_USE_SYSTEM_LIBTORRENT=ON -A Win32
 
           # ---- enetxt: ENet is vendored/fetched; no external dependency at all
+          # enetxt's shim is C++ linked against the SYSTEM libstdc++, as it
+          # has always shipped (it never took -static-libstdc++, and adding it
+          # would be a link change for no gain), so its rows say so and the
+          # floor assertion holds that runtime to what AlmaLinux 8's gcc 8
+          # provides instead of refusing it.
           - member: enetxt
             platform_id: x86_64-linux
             os: ubuntu-24.04
             container: quay.io/pypa/manylinux_2_28_x86_64
             manylinux: "1"
+            system_cxx: "1"
           - member: enetxt
             platform_id: arm64-linux
             os: ubuntu-24.04-arm
             container: quay.io/pypa/manylinux_2_28_aarch64
             manylinux: "1"
+            system_cxx: "1"
           - member: enetxt
             platform_id: x86-linux
             os: ubuntu-24.04
@@ -701,9 +708,31 @@ jobs:
           so="src/code/${{ matrix.platform_id }}/${{ matrix.member }}.so"
           echo "dynamic dependencies:"
           readelf -d "$so" | grep NEEDED || true
-          if readelf -d "$so" | grep -E 'Shared library: \[(libssl|libcrypto|libstdc\+\+|libgcc_s|libboost)'; then
+          if [ -n "${{ matrix.system_cxx }}" ]; then
+            static='libssl|libcrypto|libboost'
+          else
+            static='libssl|libcrypto|libstdc\+\+|libgcc_s|libboost'
+          fi
+          if readelf -d "$so" | grep -E "Shared library: \[($static)"; then
             echo "FAIL: a dependency that must be static is dynamic"
             exit 1
+          fi
+          # A row that links the system's C++ runtime (system_cxx) may need
+          # no more of it than manylinux_2_28 allows (PEP 600's policy, as
+          # auditwheel applies it): GLIBCXX_3.4.25 and CXXABI_1.3.11, what
+          # gcc 8's libstdc++ on AlmaLinux 8 provides. The image's newer
+          # gcc-toolset links anything newer in statically, so this holds
+          # unless a build sneaks a runtime past it.
+          if [ -n "${{ matrix.system_cxx }}" ]; then
+            for pair in GLIBCXX_3.4.25 CXXABI_1.3.11; do
+              tag=${pair%_*}
+              top=$(objdump -T "$so" | grep -oE "${tag}_[0-9]+(\.[0-9]+)+" | sort -uV | tail -1)
+              echo "max $tag version referenced: ${top:-none}"
+              if [ -n "$top" ] && [ "$(printf '%s\n' "$top" "$pair" | sort -V | tail -1)" != "$pair" ]; then
+                echo "FAIL: the $tag floor is above $pair"
+                exit 1
+              fi
+            done
           fi
           max=$(objdump -T "$so" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sort -uV | tail -1)
           echo "max glibc symbol version referenced: $max"
