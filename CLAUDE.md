@@ -137,9 +137,9 @@ ratchet), proven by `tools/test-cross-library-names.py` mutating real corpus fil
 
 **The gate list is the script:** the `== suite:` block of `tools/build-all.sh` plus each member's
 `tools/run-gates.sh` (the member owns its list; the walker delegates). `bash tools/build-all.sh
---gates` is the compiler-free set that `suite-gates.yml` runs on every push. Never glob
-`tools/*.py` for it: that directory also holds fixture tests, generators, a data module and the
-publisher. Write no gate counts in prose; the gates print them. A fixture test runs before its gate.
+--gates` is the compiler-free set that `suite-gates.yml` runs on every pull request and push to
+main. Never glob `tools/*.py` for it: that directory also holds fixture tests, generators, a data
+module and the publisher. Write no gate counts in prose; the gates print them. A fixture test runs before its gate.
 The gates whose reason is not in their name:
 
 - `check-doc-status-consistency.py` refuses a BLANKET negative (a whole page or member said never
@@ -327,7 +327,11 @@ worse than no gate, because it answers the question nobody asks twice.
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
 - **Only ROOT workflows run in the monorepo.** `suite-gates.yml`: `build-all.sh --gates` on every
-  push, plus the native cross-member job when a change touches it. `native-<member>.yml`: the
+  pull request and push to main (a newer commit cancels a pull request's older run, never main's),
+  with coinxt's `run-gates.sh` in a job beside it (its wallet gates are most of the time). On a pull
+  request only the members its diff can reach run (`member-registry.py --affected`: the member and
+  every member listing it as a gate sibling); main runs all. Plus the native cross-member job when
+  a change touches it. `native-<member>.yml`: the
   member's matrix and sanitizer lanes, scoped by `paths:`; artifacts only, it NEVER commits a
   binary. Member `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5

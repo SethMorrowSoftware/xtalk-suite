@@ -380,6 +380,16 @@ if [ -f tools/check-member-standalone.py ]; then
   echo "== suite: tools/check-member-standalone.py =="
   python3 tools/check-member-standalone.py
 fi
+# What that readiness BUYS (2026-10-20): since no member gate reads outside
+# its member and its listed siblings, a pull request runs only the gates of
+# the members its change can reach (suite-gates.yml asks
+# `member-registry.py --affected`; main always runs every member). The rule's
+# fixtures run here, on every event, so a broken rule fails the suite gates
+# rather than silently skipping a member's.
+if [ -f tools/member-registry.py ]; then
+  echo "== suite: tools/member-registry.py --selftest =="
+  python3 tools/member-registry.py --selftest
+fi
 # The publisher itself (tools/publish-members.py) writes to eleven
 # repositories that are not this one, from .github/workflows/
 # publish-members.yml, so this is where its promises are held: it replays
