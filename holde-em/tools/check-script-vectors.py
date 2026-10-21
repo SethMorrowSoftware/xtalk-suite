@@ -209,6 +209,7 @@ SECTIONS = [
     ("heTestLeafRun", 39, 0),
     ("heTestLeafRun2", 83, 0),
     ("heTestLeafRun3", 50, 0),          # every leg pure or gGame-only: nothing skips
+    ("heTestBotRun", 31, 0),            # v0.25.7 computer opponents: pure, nothing skips
 ]
 TOTAL_FLOOR = 600
 

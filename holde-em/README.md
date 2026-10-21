@@ -28,8 +28,9 @@ no extensions at all.
 2. **Paste the stack.** `File > New Mainstack`, then `Object > Stack Script`; paste all
    of [`src/holdem.livecodescript`](src/holdem.livecodescript) and apply.
 3. **Close the stack window and reopen it.** Reopening builds the table (1024x640) and
-   opens on the lobby. Press **Leave (play hotseat)** for a local game. Close the window
-   when done: that stops the session and cancels this stack's timers.
+   opens on the lobby. Press **Play vs computer** to play the computer at once, or
+   **Leave (play hotseat)** for a local game where people take every seat. Close the
+   window when done: that stops the session and cancels this stack's timers.
 4. **For online play**, install **TorrentXT** (`org.openxtalk.library.torrent`) and
    **SodiumXT** (`org.openxtalk.library.sodium`) via `Tools > Extension Manager`.
    Optional: the **Box2Dxt Kit** (the `box2dxt-kit` stack in use) for card art, and a
@@ -40,6 +41,10 @@ no extensions at all.
 
 ## What it does
 
+- **Play vs computer (v0.25.7).** You take seat 1 and the computer plays the rest: a
+  plain sparring partner (hand strength, pot odds, a little aggression and the odd
+  bluff), whose cards stay face down until a showdown. Its moves go through the same
+  betting engine as a click, so the transcript and History are a hotseat game's.
 - **Hotseat, 2-6 seats.** Settings: opening chips, SB/BB, ante, seats, the blind
   schedule (fixed, every N hands, or every M minutes) and deal speed. Hands play at a
   dealing pace (`kHeStreetRevealMs`, `kHeRunoutStepMs`, `kHeShowdownHoldMs`,
@@ -69,6 +74,13 @@ conservation, no negative stacks, termination) over ~90k fuzzed configs, includi
 dead-button rule.
 
 ## Status
+
+**v0.25.7 (harness 49), 2026-10-21.** Play vs computer, face-down card backs and the result in
+words ran on an engine on Windows (OXT-Beyond 9.7.1, through its MCP bridge): nine bot hands
+dealt and settled with the chips conserved, and the prebuilt stack OXT-Beyond ships opened with
+no `assets` folder and drew its carried card art. The harness's new section 25 has run only
+through the family interpreter: verified statically; needs an OXT pass. The rest below is
+unchanged from v0.25.6.
 
 **v0.25.6 (harness 48).** The folded harness is engine-green at v0.25.6 (harness 48):
 **929/0** on 2026-09-26 (in the suite paste, on Linux and then on Windows), every section
