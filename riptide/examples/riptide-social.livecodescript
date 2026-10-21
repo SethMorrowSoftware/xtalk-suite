@@ -19000,9 +19000,16 @@ command raSyncExpire pNow
    end repeat
 end raSyncExpire
 
--- False for the DHT's "found nothing" answer: a signature of zeros.
+-- False for the DHT's "found nothing" answer: a signature of zeros, or
+-- seq 0. Every head this app (or any older build) publishes starts at seq
+-- 1, so a seq-0 answer is never one; on OXT-Beyond (2026-10-21) a lookup
+-- for a key that never published came back at seq 0 and was still not
+-- recognised by its signature alone.
 function raSignedEvent pEvent
    local tSig
+   if ("s" & pEvent["seq"]) is "s0" then
+      return false
+   end if
    put pEvent["signature"] into tSig
    replace "0" with empty in tSig
    return tSig is not empty
@@ -19064,12 +19071,12 @@ end raSyncFillSlot
 -- walk from its newest post.
 command raSyncHeadArrived pEvent, pHandle
    local tHead, tFloor
-   -- AN UNSIGNED ANSWER IS "NOT FOUND", not a forgery: libtorrent reports
-   -- a lookup that found no item as an event with an all-zero signature
-   -- and an empty value (seen on OXT-Beyond, 2026-10-21, where every one
-   -- was logged as a REFUSED truncated head). No real head carries a zero
-   -- signature. The slot stays until its deadline, so a later answer to
-   -- the same lookup is still taken; raSyncExpire says it once.
+   -- THE "FOUND NOTHING" ANSWER IS NOT A FORGERY: libtorrent reports a
+   -- lookup that found no item as an event with no head in it (seen on
+   -- OXT-Beyond, 2026-10-21, where every one was logged as a REFUSED
+   -- truncated head); raSignedEvent tells it apart. The slot stays until
+   -- its deadline, so a later answer to the same lookup is still taken;
+   -- raSyncExpire says it once.
    if not raSignedEvent(pEvent) then
       exit raSyncHeadArrived
    end if
