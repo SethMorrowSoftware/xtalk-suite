@@ -197,7 +197,9 @@ def derive_split(path):
     for b in builders() | local_builders(text):
         built |= set(re.findall(r'^\s*%s\s+"(%s)"' % (b, NAME), text, re.M))
     if re.search(r"^\s*uiChrome\b", text, re.M):
-        built |= {"uiTitle", "uiStatus"}
+        # uiChrome builds its band too; a demo that restyles the chrome
+        # (riptide hides the band) names it, and that is not an unbuilt name
+        built |= {"uiTitle", "uiStatus", "uiBand"}
     if re.search(r"^\s*uiFooter\b", text, re.M):
         built.add("uiFooter")
     # A control the demo creates itself, by name, is built too.
