@@ -6,6 +6,34 @@ phase by phase, and what each result proves. Record results in the suite's
 `CLAUDE.md` move only on a dated report. Which phases are done and which
 legs are owed is in `README.md`'s status.
 
+**The controls moved on 2026-10-21 (the social UI, ra-ui-social-12).** The
+steps below name the v11 controls; on the current app read them this way. The
+Feed card is Home, and unlocking happens on the welcome card before it. "Paste
+a handle and Fetch" is now Follow (Home's Follow someone panel, or the
+Following card): the timeline then fills on its own, and Refresh asks again at
+once. The "seq N: <text>" lines and the walk's log lines are in Activity
+(prefixed `feed:`), and the display name is set on your own Profile. Start DM is
+Messages, then paste a handle under New chat (or Message on a post or profile);
+Connect dials the conversation on screen. `Nostr >` and the other rails are in
+the sidebar under MORE.
+
+### The social layer, two machines (owed)
+
+1. A and B both create identities and set a display name on their Profile.
+2. A copies their handle (Home, Copy my handle); B follows it. Done when B's
+   timeline shows A's posts, named, within a minute or two (Refresh to hurry).
+3. B follows A back; A replies to one of B's posts (Reply under it). Done
+   when B's timeline shows the reply drawn as "Replying to B" with the quote.
+4. A renames themselves and saves. Done when B's next sync shows the new name
+   on A's posts without a new post.
+5. B locks, closes OXT, reopens and unlocks. Done when the follow list and the
+   posts are there before the network answers (the sealed social cache).
+6. Leave A unlocked over two hours without posting; then B (fresh restart)
+   still finds A's posts (the keep-alive republish).
+7. A messages B (Message on B's profile, then Connect on both). Done when
+   both sides show the conversation with bubbles and B's list shows an
+   unread count while B is elsewhere.
+
 ## Setup, once per machine
 
 1. Install the extensions: sodiumxt (required), torrentxt (feed, media,

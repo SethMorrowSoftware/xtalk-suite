@@ -17952,9 +17952,8 @@ command raIdentityReady
    -- identity already knew rather than from nothing
    raAppLoad
    raSocialLoad
-   if sMyName is empty then
-      put "Riptide user" into sMyName
-   end if
+   -- no placeholder name: a follower would see every unnamed person as
+   -- the same "Riptide user"; unnamed, everyone shows as @<their handle>
    raStartSession
    if sSession is an integer and sSession > 0 then
       put rsRequestHead(sSession, sHandle) into tOk
@@ -19417,8 +19416,8 @@ function raFollowHandle pHandle, pCard
    raSocialMark
    put 0 into sSyncChecked[tH]
    put 0 into sSyncRoundAt
-   raFollowSay pCard, "Following" && raNameOf(tH) & ". Their posts appear as the network answers (usually under a minute).", "ok"
-   raSay "Now following" && raNameOf(tH) & ".", "ok"
+   raFollowSay pCard, "Following" && raNameOf(tH) & ".", "ok"
+   raSay "Now following" && raNameOf(tH) & ". Their posts appear as the network answers, usually within a minute.", "ok"
    raPaintAll
    return true
 end raFollowHandle

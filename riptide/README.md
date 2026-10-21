@@ -29,6 +29,15 @@ pass for the anon persona and a live-relay pass for Nostr).
   and the app's draft change detection compares text, not number; its review (2026-09-27)
   did the same for the UTF-8 round trip (a valid text reading nan was refused) and the
   app's outbound inbox match. Verified statically + headless; needs an OXT pass.
+- **The social UI and layer** (ra-ui-social-12, 2026-10-21): a welcome card and a
+  sidebar in the IDE's slate-and-indigo look, and a usable social network on the
+  same protocol - a follow list, a multi-author timeline synced from the DHT, a
+  sealed per-identity post cache, replies (a text convention inside an ordinary
+  post), profiles with display names, a keep-alive republish, and one encrypted
+  conversation per person. No wire format or library change. Its boot self-check
+  ran 12/0/0 on OXT-Beyond on Windows the same day, every card was looked at, and a
+  post published from one identity was found again on the DHT and verified; a
+  second identity's follow and the two-machine legs need an OXT pass.
 - **Phase 8** (the Nostr bridge, built 2026-08-29): the library is executed headlessly
   against the real committed CoinXT by `tools/check-script-vectors.py`, which settles
   logic, not parser behaviour, and its offline compute (the `RIPTAPP1` store and the
@@ -43,10 +52,11 @@ a verified walk. `CLAUDE.md` holds the dated evidence ledger.
 
 ## What ships
 
-- **`examples/riptide-social.livecodescript`**, the app, on the suite UI kit: FIVE
-  cards - Feed (identity, publish, the verified chain walk, the media strip), Messages
-  (DMs + the Call button), Devices (the LAN mesh), Anon (the persona and the live guard
-  panel), and Nostr (the phase-8 bridge). `tools/check-demo-boot.py` boots it
+- **`examples/riptide-social.livecodescript`**, the app, on the suite UI kit: a
+  welcome card and nine places behind a sidebar - Home (compose, the timeline of
+  everyone you follow, follow by handle, media), Profile, Following, Messages (one
+  conversation per person + the Call button), My devices (the LAN mesh), Anonymous
+  persona (with the live guard panel), Nostr bridge (phase 8) and Activity. `tools/check-demo-boot.py` boots it
   headlessly; `examples/README.md` is its run guide.
 - **`src/riptide.livecodescript`**, the pure-script `rs*` library, one line per rail:
   - identity: the master seed and the `RIPTKEY1` sealed key file (Argon2id + secretbox);
