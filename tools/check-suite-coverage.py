@@ -561,9 +561,11 @@ HOLDEM_WORKLIST = {
     "engine-media": (
         "its own body drives the b2k Kit, an audioClip, or the stack's file "
         "on disk - and the Kit half is forbidden outright by check 7d",
-        ["heHasKit", "heKitReload", "heKitTryInit", "heProbeKit",
-         "heProbeSounds", "heSndPlay", "heSndTryInit", "heStackFolder",
-         "heUIShowCardIn"],
+        ["heHasKit", "heKitCarriedPath", "heKitLayerSprites", "heKitReload",
+         "heKitSourceWidth", "heKitSweepStaleSprites", "heKitTryInit",
+         "heProbeKit", "heProbeSounds", "heSndPlay", "heSndTryInit",
+         "heStackFolder", "heUIHideHole", "heUIShowCardBack",
+         "heUIShowCardIn", "heUIShowHoleBack"],
     ),
     # Bodies that create, delete, or read/write a property of a control on the
     # card. Testing them needs holde-em's own table built, and check 7d refuses
@@ -587,7 +589,12 @@ HOLDEM_WORKLIST = {
          "heSettingsRefresh", "heSettingsSetVisible", "heSettingsVisible",
          "heTableLogoRender", "heTransportCycle", "heUIClearCards",
          "heUIPromptToAct", "heUISetStatus", "heUIShowdownReveal",
-         "heWipeChrome"],
+         "heWipeChrome",
+         # v0.25.7's computer opponents: a bot's turn greys the action row and
+         # arms a timer that acts at the table; a computer game opens by
+         # building the table and dealing (its moves, heBotChoiceOf, are pure
+         # and pinned in section 25)
+         "heBotSchedule", "heBotTick", "heBotsStart"],
     ),
     # THE REAL DEBT, and the only category with no excuse attached to it: 129
     # handlers whose bodies are arithmetic, list work, string work or state

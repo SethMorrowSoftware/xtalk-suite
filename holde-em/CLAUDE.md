@@ -15,8 +15,8 @@ v0.25.2 on 2026-08-27) and the Box2Dxt Kit (`b2k*`, optional presentation).
 ONE paste-and-run stack, `src/holdem.livecodescript`, holds the game, its
 self-test harness, the diagnostics `heProbeSodium` / `heProbeTorrent` /
 `heProbeKit` / `heProbeSounds`, and the carried onionxt layer between
-`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.6,
-`kHeHarnessV` 48, `kUIVersion` 15, table protocol (`kHeEnvV`) 2.
+`tools/sync-demo-embeds.py` sentinels. Current: `kHeVersion` 0.25.7,
+`kHeHarnessV` 49, `kUIVersion` 16, table protocol (`kHeEnvV`) 2.
 
 `holdem-spec.md` is the contract. Where code differs, the code wins and the
 spec is updated. Because chips may someday carry value, read spec 2 (threat
@@ -69,7 +69,8 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    review's 6, the relay's pre-verify, a joiner's naming and a cfg
    re-signed mid-game; its round 2's 18, the open-hand seat rule and
    History's late joiner; and that round's review's 2, a dealt seat no sit
-   filled and a seat's stack after the first hand). Call sites
+   filled and a seat's stack after the first hand); v48 -> v49 on
+   2026-10-21 for section 25, the computer opponents' 31). Call sites
    are not checks (at v40, 374 sites reported 507 checks), so an engine run
    RECORDS a new total rather than matching the last: the first v45 total,
    2026-09-24, was 721 passed with every extension present, plus the 5
@@ -488,12 +489,13 @@ clipboard and `msg`, ending `==== n pass, m fail, k skip ====`. `heSelfTest()`
 is quiet: it returns the report with the first line `n passed, m failed, k skipped`
 (riptide's `rsSelfTest` shape; until 2026-09-25 the skip count sat on a prose second
 line, which the suite paste's merge never counted), builds no control, never touches the clipboard,
-and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 25
+and sweeps pending `heNet*` sends. Both drive `heTestRunAllSections`, 26
 sections in run order: 1 Evaluator, 2 Betting, 3 Ante, 4 Level, 5 Legal,
 6 Schedule, 7 Shuffle, 8 Fold, 9 Crypto, 10 Receipt, 11 Deal, 12 DealOrder,
 13 Lobby, 14 NetSim, 15 NetPlay, 16 Level2, 17 Onion, 18 Oracle, 19 Level2Void
 (the 4e bots), 20 Liveness, 21 Helpers, 22 Leaf, 23 Leaf2, 24 Leaf3 (the
-consensus-critical leaves, 2026-09-24), 25 `heProbeSodium` (which ends with a
+consensus-critical leaves, 2026-09-24), 25 Bot (the computer opponents and
+the result in words, v0.25.7, 2026-10-21), 26 `heProbeSodium` (which ends with a
 bare `put tRpt`, so it writes `msg`; deliberate, harmless).
 The 5 member skips are the live legs (tor table, three-machine oracle round,
 onion-hosted oracle, live timed table, tor redial). They are counted on the
@@ -601,6 +603,7 @@ sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 | 2026-09-26 (Windows; the suite's engine preflight, and the Kit report's clocks "Saturday, September 26, 2026 7:24 PM" and "7:28 PM", two paste runs) | Windows (the engine reports Win32), OXT 9.6.3 by the evening's preflight (INFERRED for the paste runs, whether they shared its launch not stated); by the maintainer's account (given after the pass) the machine of 2026-09-24 and 2026-09-25 (64-bit by the earlier account), a fresh stack, and the two paste runs ONE launch's on-open Run all and its second; Copy results not stated; suite paste | the batch paste twice (INFERRED from its version lines: the board stamp `suite-board-0961bb91e5ee`, this member's "stack v0.25.6  harness v48" and riptide's fourth probe line; presumably main's at `a812580`), 2857/2/10 each time; folded holde-em v0.25.6 / h48 through `heSelfTest` (its header: "holde-em self-test  stack v0.25.6  harness v48") | **929/0/5** in both runs (board row 931/0/5): the first Windows run of v0.25.6 and h48, every line as on Linux on 2026-09-26 (the 4:23 PM row), all 24 sections green, `heProbeSodium` ok ("holde-em 0.25.6, harness v48"), the five live legs SKIPped by name and merged. So v0.25.6's turn binding, table protocol 2 and the refusals it names, History's rules, one dealLevel per hand, the open-hand seat rule and the late joiner have run on Windows too, all on ONE machine through simulated wires (sections 14 and 15 are single-machine loopbacks). The live legs, the standalone `heRunSelftest`, the hotseat hands and every multi-machine exit stay owed. The paste's two failures were the live loopbacks, not this member's |
 | 2026-09-26 (Windows; the same evening, after the paste runs) | Windows by the maintainer's account (the message names the platform only; presumably the machine of the pass, and OXT 9.6.3 by that evening's preflight, INFERRED) | the standalone stack's `heRunSelftest` (its header: "holde-em self-test  stack v0.25.6  harness v48") | **929/0/5**, `RESULT: green`, every section's lines the same as the paste's folded report of that evening bar the fold's `he1` name prefix (compared line by line): the fold and the standalone stack agree on an engine at h48, and `heProbeSodium` ok (its `sxHash(empty,32)` is BLAKE2b-256's published empty digest). The first recorded standalone `heRunSelftest` at v0.25.4 or later (work plan Engine #1's half, closed with the row below); the five live legs SKIPped by name |
 | 2026-09-26 (Windows; the same evening) | as the row above, by the maintainer's account; the b2k Kit NOT loaded ("it was not the spritecheet version", verbatim), so the flat table | a six-seat hotseat session on the standalone stack, pasted back as its transcript ("here's a sample hold-em game in the gotseat transcript", verbatim) | Four hands to one winner (seat 5, all 2400 chips), sb 1 / bb 2, 400 each, the Level 0 deal; by the maintainer's account no error dialog, and "the layout for hold em looked decent, we saw all acrds etc." (verbatim), the Phase 1 exit's eye for the flat table. Headlessly, `tools/fold-kat.py`, which now holds the transcript verbatim, re-derives every deal from its revealed seeds (18 commitments, every hole and board card), accepts every blind and act, verifies every settle (pots 810, 807, 776 and 2014; hand 4 a three-way all-in with a side pot and seat 5's uncalled 386 returned) and matches the dead-button schedule (buttons 1, 1, 3, 3): the engine's deal (`sxHash` through SodiumXT), betting engine and settlement agree with the mirrors on a session a person played. The first six-seat hotseat session on record (the 2026-08-17 hands were heads-up). Work plan Engine #1 and #2 closed, and runbook row 14; the sprite-card table is Engine #10 |
+| 2026-10-21 (Windows; OXT-Beyond 9.7.1-OXT build 25923, Win32 x86_64) | Seth's PC, driven by Claude through OXT-Beyond's xTalk MCP Bridge, each run approved by the maintainer; the b2k Kit loaded (the box2dxt-kit stack OXT-Beyond ships) | v0.25.7 / h49 as the STACK SCRIPT of a fresh stack (not the harness, not the suite paste): the lobby's Play vs computer, then a driver stack playing seat You on timers while the five bots played; then the prebuilt `Texas Holdem.oxtstack` (built with `holde-em/assets` as the default folder, saved, removed from memory, the Kit's sheets wiped, reopened from a folder with NO assets beside it) | the Kit card faces and the face-down Kenney backs drawn at card size; hands 1-9 dealt, acted on by the bots and settled with chips conserved, folding bots' cards mucked, the bots' holes turned up at showdown, the result line in words ("Boris wins 6 with a pair." shape); the prebuilt stack adopted 53 face frames and 15 back frames with no file and dealt a bot hand. Found and fixed on the way: a re-init drew faces at twice their size, the bet slider drew as a lone thumb at 16 px, sprites hid the bet chips and captions, each reopen piled up 17 sprites, and the carried backs were never adopted. The harness's section 25 ran only through the family interpreter (31/0): verified statically; needs an OXT pass; so do the 720p eye on a full session, macOS and Linux |
 
 ## 7. Status
 

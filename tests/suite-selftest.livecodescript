@@ -726,12 +726,15 @@ local rs1sSkip
 local rs1sRsTestSession
 
 -- ---- holde-em: the full he* self-test ----
-constant he1kHeVersion = "0.25.6"
-constant he1kHeHarnessV = "48"
-constant he1kUIVersion = "15"
+constant he1kHeVersion = "0.25.7"
+constant he1kHeHarnessV = "49"
+constant he1kUIVersion = "16"
 constant he1kHeRankChars = "23456789TJQKA"
 constant he1kHeSuitChars = "cdhs"
 constant he1kHeCardBackFrame = "cardBack_red2"
+constant he1kHeCardBackColor = "170,40,48"
+constant he1kHeBotThinkMs = 550
+constant he1kHeBotThinkSpreadMs = 650
 constant he1kHeRngMul = 16807
 constant he1kHeRngMod = 2147483647
 constant he1kHeRngMax = 2147483646
@@ -828,6 +831,8 @@ local he1gCardSpr
 local he1gKitSuffix
 local he1gKitBackSuffix   -- the BACKS sheet's own frame-name suffix (gotcha 24: per-sheet)
 local he1gKitLastErr      -- why the last he1heKitTryInit dropped to flat (for he1heProbeKit)
+local he1gBackSpr
+local he1gBotWait
 local he1gAvatarOn
 local he1gSndChk
 local he1gSndOk
@@ -41471,6 +41476,7 @@ command he1heCfgDefaults
    put "on" into he1gCfg["sounds"]             -- "on" | "off" (casino-audio SFX)
    put "rp1" into he1gCfg["transport"]         -- "rp1" (DHT swarm) | "onion" (Tor, 2f)
    put "play" into he1gCfg["hostMode"]         -- "play" | "oracle" (Phase 3 deck oracle)
+   put "people" into he1gCfg["opponents"]      -- "people" (hotseat) | "computer" (v0.25.7)
 end he1heCfgDefaults
 
 command he1heCfgEnsure
@@ -41486,6 +41492,10 @@ command he1heCfgEnsure
    -- Phase 3 (v0.21.0): same backfill for the host mode
    if he1gCfg["hostMode"] is empty then
       put "play" into he1gCfg["hostMode"]
+   end if
+   -- v0.25.7: same backfill for the opponents (a saved he1gCfg predates them)
+   if he1gCfg["opponents"] is empty then
+      put "people" into he1gCfg["opponents"]
    end if
 end he1heCfgEnsure
 
@@ -41534,6 +41544,14 @@ command he1heTableNew
    put he1gCfg["levelEvery"] into he1gGame["levelEvery"]
    put he1gCfg["levelMinutes"] into he1gGame["levelMinutes"]
    put he1gCfg["speed"] into he1gGame["speed"]
+   -- v0.25.7: computer opponents in every seat but 1. A local choice of who
+   -- presses the buttons, so it is not in the transcript: the hands, the
+   -- cfg line and every audit are the hotseat ones.
+   if he1gCfg["opponents"] is "computer" then
+      put "true" into he1gGame["bots"]
+   else
+      put "false" into he1gGame["bots"]
+   end if
    put 0 into he1gGame["curLevel"]
    put the milliseconds into he1gGame["tableStartMs"]   -- clock zero for time-based levels
    he1heSpeedPace he1gCfg["speed"]
@@ -41736,7 +41754,20 @@ command he1heHandStart
    -- (deep-dive P1). The HUD/network poll loops are free-running and untouched.
    he1heCancelPacedSteps
    put he1heSeatsAlive() into he1tOccList
+   -- v0.25.7: against the computer the game is over when the person is out
+   if he1gGame["bots"] is "true" and "1" is not among the items of he1tOccList then
+      he1heUISetStatus "You are out of chips. Press Deal to play a new game."
+      he1heTableNew
+      he1heUIClearCards
+      exit he1heHandStart
+   end if
    if he1heCountItems(he1tOccList) < 2 then
+      if he1gGame["bots"] is "true" then
+         he1heUISetStatus "You win the game: everyone else is out of chips! Press Deal to play again."
+         he1heTableNew
+         he1heUIClearCards
+         exit he1heHandStart
+      end if
       he1heUISetStatus "Game over -- one stack left. Starting a fresh table."
       he1heTableNew
       -- the finished game's board/hole cards are still painted (the pending
@@ -41885,6 +41916,10 @@ command he1heActionDo pSeatNum, pVerb, pAmount
       exit he1heActionDo
    end if
    he1heEngineDo "act", pSeatNum, pVerb & comma & pAmount
+   -- v0.25.7: a computer opponent that folds mucks its face-down cards
+   if he1heBotSeat(pSeatNum) and he1gGame["state"]["foldedBy"][pSeatNum] is "true" then
+      he1heUIHideHole pSeatNum
+   end if
    he1heHudMark
    -- only prompt the next actor if the action stayed on the same street; a
    -- street close / runout / showdown handed off to a paced step that will
@@ -41942,7 +41977,8 @@ command he1heCancelPacedSteps
    repeat for each line he1tMsgLine in the pendingMessages
       put item 3 of he1tMsgLine into he1tName
       if he1tName is "he1heRevealStep" or he1tName is "he1heRunoutStep" \
-            or he1tName is "he1heSettleStep" or he1tName is "he1heNextHandTick" then
+            or he1tName is "he1heSettleStep" or he1tName is "he1heNextHandTick" \
+            or he1tName is "he1heBotTick" then
          cancel item 1 of he1tMsgLine
       end if
    end repeat
@@ -42013,7 +42049,18 @@ command he1heScheduleRunout
    -- remaining streets out ONE AT A TIME on a timer so the board comes like a
    -- real all-in, not all at once. he1heRunoutStep deals a street, advances the
    -- engine, and reschedules itself until the engine reaches showdown.
+   local he1tSeatNum
    put "runout" into he1gGame["phase"]
+   -- v0.25.7: all in with the betting closed, the hands still in turn face
+   -- up before the board runs out, as at a real table
+   if he1gGame["bots"] is "true" then
+      set the itemDelimiter to comma
+      repeat for each item he1tSeatNum in he1heBetInHandList(he1gGame["state"])
+         if he1heBotSeat(he1tSeatNum) then
+            he1heUIShowHole he1tSeatNum, he1gGame["deal"]["holesBy"][he1tSeatNum]
+         end if
+      end repeat
+   end if
    he1heHudMark
    send "he1heRunoutStep" to me in he1hePaceMs("paceRunout", he1kHeRunoutStepMs) milliseconds
 end he1heScheduleRunout
@@ -42071,6 +42118,10 @@ command he1heScheduleShowdown
       repeat for each item he1tSeatNum in he1tInHandList
          put he1tDealA["holesBy"][he1tSeatNum] & comma & he1tBoardIdxList into he1tSevenList
          put he1heEval7(he1tSevenList) into he1tRanksA[he1tSeatNum]
+         -- v0.25.7: a computer opponent's cards turn face up at the showdown
+         if he1heBotSeat(he1tSeatNum) then
+            he1heUIShowHole he1tSeatNum, he1tDealA["holesBy"][he1tSeatNum]
+         end if
       end repeat
       he1heUIShowdownReveal he1tInHandList, he1tRanksA
       put he1hePaceMs("paceShowdown", he1kHeShowdownHoldMs) into he1tHoldMs
@@ -42093,7 +42144,7 @@ end he1heSettleStep
 
 command he1heHandSettle
    -- settle from the stashed showdown ranks, log the deltas, schedule next hand
-   local he1tStateA, he1tRanksA, he1tSeatNum, he1tDeltasA, he1tDeltasTxt
+   local he1tStateA, he1tRanksA, he1tSeatNum, he1tDeltasA, he1tDeltasTxt, he1tPot
    set the itemDelimiter to comma
    put he1gGame["state"] into he1tStateA
    put he1gGame["showdownRanks"] into he1tRanksA
@@ -42109,7 +42160,12 @@ command he1heHandSettle
 
    put "between" into he1gGame["phase"]
    he1heSndPlay "win"
-   he1heUISetStatus "Hand " & he1gGame["handNum"] & " settled: " & he1tDeltasTxt
+   -- v0.25.7: the result in words (it was the raw deltas, "1:-2|2:-2|...")
+   put 0 into he1tPot
+   repeat for each item he1tSeatNum in he1tStateA["occ"]
+      add he1tStateA["handBy"][he1tSeatNum] to he1tPot
+   end repeat
+   he1heUISetStatus "Hand " & he1gGame["handNum"] & ": " & he1heSettleWordsOf(he1tDeltasA, he1tStateA["occ"], he1tRanksA, he1tPot)
    he1heHudMark
    send "he1heNextHandTick" to me in he1hePaceMs("paceNextHand", he1kHeNextHandDelayMs) milliseconds
 end he1heHandSettle
@@ -42310,7 +42366,9 @@ command he1heBuildTable
    create scrollbar "heBetSlider"
    -- a scale, not a scrollbar: no arrow buttons, a draggable thumb on a track
    set the style of scrollbar "heBetSlider" to "scale"
-   set the rect of scrollbar "heBetSlider" to "528,538,1004,554"
+   -- 26 tall since v0.25.7: at 16 the Windows trackbar drew no track and its
+   -- thumb sat at the left end whatever the value (seen 2026-10-21)
+   set the rect of scrollbar "heBetSlider" to "528,530,1004,556"
    set the visible of scrollbar "heBetSlider" to false
    he1heMakeActionButton "heBtnMin", "Min", 608
    he1heMakeActionButton "heBtnHalf", "1/2 Pot", 688
@@ -42441,13 +42499,19 @@ command he1heBuildLobby
    set the textColor of field "heLobbyNet" to "150,220,150"
    set the borderWidth of field "heLobbyNet" to 0
 
+   -- the bottom row is THREE buttons since v0.25.7 (he1kUIVersion 16): Play vs
+   -- computer, the hotseat Leave, the host's Start Game, in the same 232..792
+   -- span the create row uses
+   create button "heBtnBots"
+   set the rect of button "heBtnBots" to "232,516,408,548"
+   set the label of button "heBtnBots" to "Play vs computer"
    create button "heBtnLeave"
-   set the rect of button "heBtnLeave" to "232,516,472,548"
+   set the rect of button "heBtnLeave" to "424,516,600,548"
    set the label of button "heBtnLeave" to "Leave (play hotseat)"
    -- host-only: seats everyone who has joined and deals hand 1 (Phase 2d);
    -- he1heLobbyRefresh keeps it enabled only for a host with 2+ joined players
    create button "heBtnStartGame"
-   set the rect of button "heBtnStartGame" to "492,516,732,548"
+   set the rect of button "heBtnStartGame" to "616,516,792,548"
    set the label of button "heBtnStartGame" to "Start Game"
 
    he1heLobbyHide
@@ -42480,7 +42544,7 @@ command he1heLobbySetVisible pOn
    end if
    put "heLobbyTitle,heJoinLabel,heTorLine,heJoinCode,heLobbyId,heLobbyTable," \
          & "heRosterHdr,heNetHdr,heLobbyRoster,heLobbyNet" into he1tFields
-   put "heBtnCreate,heBtnJoin,heBtnTransport,heBtnHostMode,heBtnCopyCode,heBtnLeave,heBtnStartGame" into he1tButtons
+   put "heBtnCreate,heBtnJoin,heBtnTransport,heBtnHostMode,heBtnCopyCode,heBtnBots,heBtnLeave,heBtnStartGame" into he1tButtons
    put the itemDelimiter into he1tOldDelim
    set the itemDelimiter to comma
    repeat for each item he1tNm in he1tFields
@@ -43594,6 +43658,94 @@ function he1heStackFolder
    return he1tOut
 end he1heStackFolder
 
+command he1heKitLayerSprites
+   -- v0.25.7: a seat's action caption and its bet chip and amount sit ON its
+   -- own cards by design (check-table-layout's EXEMPTIONS), but the sprites
+   -- are pooled after the build, so they covered them: You's bet and every
+   -- seat's WINNER went under the cards. Each hole sprite moves to just under
+   -- its seat's caption (the caption, chip and amount are made after it, so
+   -- they all stay above), faces first and then backs, so a back still
+   -- covers its face.
+   local he1tSeatNum, he1tHalf, he1tSlot, he1tLayErr
+   set the itemDelimiter to comma
+   repeat with he1tSeatNum = 1 to he1kHeDefaultSeats
+      if there is a field ("heSeatState" & he1tSeatNum) then
+         repeat for each item he1tHalf in "a,b"
+            put "heHole" & he1tSeatNum & he1tHalf into he1tSlot
+            try
+               if he1gCardSpr[he1tSlot] is not empty then
+                  set the layer of he1gCardSpr[he1tSlot] to the layer of field ("heSeatState" & he1tSeatNum)
+               end if
+            catch he1tLayErr
+            end try
+         end repeat
+         repeat for each item he1tHalf in "a,b"
+            put "heHole" & he1tSeatNum & he1tHalf into he1tSlot
+            try
+               if he1gBackSpr[he1tSlot] is not empty then
+                  set the layer of he1gBackSpr[he1tSlot] to the layer of field ("heSeatState" & he1tSeatNum)
+               end if
+            catch he1tLayErr
+            end try
+         end repeat
+      end if
+   end repeat
+end he1heKitLayerSprites
+
+command he1heKitSweepStaleSprites
+   -- delete every Kit sprite button on the table card that this session did
+   -- not pool. he1heKitTryInit has just emptied he1gCardSpr, so on a reopen every
+   -- "b2kspr_" button is a leftover of a saved session (the Kit names its
+   -- sprites so); within one session a re-init's old set goes too, and the
+   -- Kit forgets a sprite whose control has vanished. This stack is the only
+   -- maker of sprites on its card (he1heKitTryInit pools them all).
+   local he1tN, he1tName
+   repeat with he1tN = the number of buttons of card 1 of this stack down to 1
+      put the short name of button he1tN of card 1 of this stack into he1tName
+      if he1tName begins with "b2kspr_" then
+         delete button he1tN of card 1 of this stack
+      end if
+   end repeat
+end he1heKitSweepStaleSprites
+
+function he1heKitSourceWidth pSheet, pFrame
+   -- a frame's width in SOURCE pixels, from the sheet's own regions (v0.25.7).
+   -- b2kSheetFrameSize answers at the sheet's CURRENT scale, and sheets persist
+   -- for the session, so a second kit init (a chrome rebuild, he1heKitReload)
+   -- read the already-scaled width, set the scale back to 1 and drew every
+   -- card at its full 140 px. Falls back to the scaled size when the sheet
+   -- lists no region for the frame.
+   local he1tLine
+   set the itemDelimiter to comma
+   repeat for each line he1tLine in b2kSheetAtlasRows(pSheet)
+      if item 5 of he1tLine is pFrame then
+         return item 3 of he1tLine
+      end if
+   end repeat
+   return item 1 of b2kSheetFrameSize(pSheet, pFrame)
+end he1heKitSourceWidth
+
+function he1heKitCarriedPath pSheet, pWhich
+   -- v0.25.7: the png path (pWhich "png") or xml path ("xml") that the Kit
+   -- stamped on the sheet image this stack CARRIES (b2ksheet_<pSheet>, left by
+   -- a persisting b2kSheetLoadAtlas and kept by a save), or empty when there
+   -- is none or it holds no frame regions, so b2kSheetLoadAtlas could not
+   -- adopt it. he1heKitTryInit hands these paths back to the Kit unchanged: its
+   -- adoption matches them as text, and the file they name need not exist.
+   local he1tImg
+   put "b2ksheet_" & pSheet into he1tImg
+   if there is not an image he1tImg of this stack then
+      return ""
+   end if
+   if the uB2kAtlasRows of image he1tImg of this stack is empty then
+      return ""
+   end if
+   if pWhich is "xml" then
+      return the uB2kAtlasXml of image he1tImg of this stack
+   end if
+   return the uB2kSrcPath of image he1tImg of this stack
+end he1heKitCarriedPath
+
 function he1heSwapExt pPath, pNewExt
    -- pPath with its trailing ".<ext>" replaced by pNewExt (e.g. ".xml"), so a .png
    -- atlas path yields its sibling TextureAtlas .xml. Copied to a local before the
@@ -43616,6 +43768,7 @@ command he1heKitTryInit
    put "flat" into he1gUIMode
    put 0 into he1gAnimBusy
    put empty into he1gCardSpr
+   put empty into he1gBackSpr
    put empty into he1gKitSuffix
    put empty into he1gKitBackSuffix
    put empty into he1gKitLastErr
@@ -43642,11 +43795,30 @@ command he1heKitTryInit
    if he1tBackPng ends with ".xml" then
       put he1heSwapExt(he1tBackPng, ".png") into he1tBackPng
    end if
-   if he1tPng is empty or there is not a file (he1tPng) then
-      exit he1heKitTryInit
-   end if
    put he1heSwapExt(he1tPng, ".xml") into he1tXml
    put he1heSwapExt(he1tBackPng, ".xml") into he1tBackXml
+   -- v0.25.7: no atlas on disk is not the end when the stack CARRIES the art.
+   -- A persisting load (b2kSheetPersist, below) leaves the decoded sheet in
+   -- this stack as image b2ksheet_<name>, stamped with the png and xml paths
+   -- it came from and every frame's region, and the Kit adopts that image
+   -- with no file at all -- but only under those same two paths (its
+   -- provenance rule, b2kSheetAdoptAtlas). A stack saved after one kit init
+   -- (the prebuilt demo OXT-Beyond ships) therefore opens on another machine,
+   -- where the folder it was built from never existed, with its stamped
+   -- paths, never the ones derived here.
+   if he1tPng is empty or there is not a file (he1tPng) then
+      put he1heKitCarriedPath("heCards", "png") into he1tPng
+      put he1heKitCarriedPath("heCards", "xml") into he1tXml
+      if he1tPng is empty then
+         exit he1heKitTryInit
+      end if
+   end if
+   if he1tBackPng is empty or there is not a file (he1tBackPng) then
+      if he1heKitCarriedPath("heCardBacks", "png") is not empty then
+         put he1heKitCarriedPath("heCardBacks", "png") into he1tBackPng
+         put he1heKitCarriedPath("heCardBacks", "xml") into he1tBackXml
+      end if
+   end if
    try
       -- put the Kit's handlers on the message path IF it is a separately-loaded stack;
       -- if they are already here (merged in / differently-named host), skip it -- a
@@ -43668,7 +43840,7 @@ command he1heKitTryInit
       end if
       -- scale the sheet so a Kenney card (140 px wide) displays at the slot width,
       -- then pre-warm every face (a lazy first slice costs ~250 ms mid-hand).
-      put item 1 of b2kSheetFrameSize("heCards", "cardSpadesA" & he1gKitSuffix) into he1tFrameW
+      put he1heKitSourceWidth("heCards", "cardSpadesA" & he1gKitSuffix) into he1tFrameW
       if he1tFrameW is not a number or he1tFrameW is 0 then
          put 140 into he1tFrameW
       end if
@@ -43676,6 +43848,11 @@ command he1heKitTryInit
       repeat with he1tIdx = 1 to 52
          b2kSheetEnsureIcon "heCards", he1heKenneyFrame(he1tIdx) & he1gKitSuffix
       end repeat
+      -- a saved stack carries the sprites its last session pooled (Kit sprites
+      -- are plain buttons), and a reopen pools a new set: sweep the old ones
+      -- first, or every reopen-and-save leaves 17 more behind, and one saved
+      -- mid-hand keeps showing its cards over the table (v0.25.7)
+      he1heKitSweepStaleSprites
       -- pool ONE bodiless sprite over each card slot (pooled at build, never mid-hand);
       -- he1heUIShowCardIn swaps its frame and shows it. Positioned at the slot centre.
       repeat for each key he1tSlot in he1gSlotCenter
@@ -43692,23 +43869,46 @@ command he1heKitTryInit
       -- conventions vary per sheet -- a custom uHeBacksPath atlas may keep or
       -- strip ".png" and carry a different card width than the faces sheet).
       try
-         if he1tBackPng is not empty and there is a file (he1tBackPng) then
+         -- a prebuilt stack carries the backs sheet with no file beside it:
+         -- the Kit adopts the carried image when handed its stamped paths
+         if he1tBackPng is not empty and (there is a file (he1tBackPng) \
+               or he1heKitCarriedPath("heCardBacks", "png") is he1tBackPng) then
             b2kSheetLoadAtlas "heCardBacks", he1tBackPng, he1tBackXml
             if b2kSheetHasFrame("heCardBacks", he1kHeCardBackFrame & ".png") then
                put ".png" into he1gKitBackSuffix
             else
                put empty into he1gKitBackSuffix
             end if
-            put item 1 of b2kSheetFrameSize("heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix) \
+            put he1heKitSourceWidth("heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix) \
                   into he1tBackFrameW
             if he1tBackFrameW is not a number or he1tBackFrameW is 0 then
                put he1tFrameW into he1tBackFrameW
             end if
             b2kSheetScale "heCardBacks", he1kHeCardW / he1tBackFrameW
             b2kSheetEnsureIcon "heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix
+            -- v0.25.7: the backs were loaded and never drawn. Pool one face-down
+            -- sprite over each HOLE slot too (the board is never dealt face
+            -- down), layered above the face sprite; he1heUIShowCardBack shows it
+            -- and he1heUIShowCardIn hides it again.
+            repeat for each key he1tSlot in he1gSlotCenter
+               if he1tSlot begins with "heHole" then
+                  put he1gSlotCenter[he1tSlot] into he1tCtr
+                  b2kSpriteNew "heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix, \
+                        item 1 of he1tCtr, item 2 of he1tCtr
+                  put the result into he1tSpr
+                  if he1tSpr is not empty then
+                     b2kSpriteMoveTo he1tSpr, item 1 of he1tCtr, item 2 of he1tCtr
+                     set the visible of he1tSpr to false
+                     put he1tSpr into he1gBackSpr[he1tSlot]
+                  end if
+               end if
+            end repeat
          end if
       catch he1tBacksErr
+         -- the faces stand; keep the reason for he1heProbeKit
+         put "backs: " & he1tBacksErr into he1gKitLastErr
       end try
+      he1heKitLayerSprites
       put "kit" into he1gUIMode
    catch he1tKitErr
       -- keep the reason: he1heProbeKit's whole job is naming the exact gap, and a
@@ -43803,6 +44003,16 @@ command he1heKitReload
       end repeat
    end if
    put empty into he1gCardSpr
+   if he1gBackSpr is an array then
+      repeat for each key he1tSlot in he1gBackSpr
+         put he1gBackSpr[he1tSlot] into he1tSpr
+         try
+            b2kSpriteRemove he1tSpr
+         catch he1tRmErr
+         end try
+      end repeat
+   end if
+   put empty into he1gBackSpr
    he1heKitTryInit
    he1heUIClearCards
    put "kit reload done -- UI mode is now: " & he1gUIMode & \
@@ -43866,6 +44076,446 @@ function he1heQuickAmountOf pStateA, pSeatNum, pKind
    return he1tTo
 end he1heQuickAmountOf
 
+function he1heBotPreflopOf pHoleList
+   -- 0..100 for two hole cards before the flop: pairs first (22 is 55, AA
+   -- 91), then two high cards, with a little more for suited and connected
+   local he1tA, he1tB, he1tHi, he1tLo, he1tScore
+   set the itemDelimiter to comma
+   put he1heCardRankVal(item 1 of pHoleList) into he1tA
+   put he1heCardRankVal(item 2 of pHoleList) into he1tB
+   put max(he1tA, he1tB) into he1tHi
+   put min(he1tA, he1tB) into he1tLo
+   if he1tHi is he1tLo then
+      return 55 + (he1tHi - 2) * 3
+   end if
+   -- he1tHi * 2 + he1tLo runs 8 (3-2) .. 41 (A-K): scaled onto 0..60
+   put ((he1tHi * 2 + he1tLo - 8) * 60) div 33 into he1tScore
+   if he1heCardSuitVal(item 1 of pHoleList) is he1heCardSuitVal(item 2 of pHoleList) then
+      add 8 to he1tScore
+   end if
+   if he1tHi - he1tLo is 1 then
+      add 6 to he1tScore
+   else if he1tHi - he1tLo is 2 then
+      add 3 to he1tScore
+   end if
+   return min(he1tScore, 100)
+end he1heBotPreflopOf
+
+function he1heBotBestOf pCards
+   -- the packed rank (he1heRank5's) of the best five of 5, 6 or 7 cards
+   local he1tN, he1tSkip, he1tPos, he1tFive, he1tRank, he1tBest
+   set the itemDelimiter to comma
+   put the number of items of pCards into he1tN
+   if he1tN is 5 then
+      return he1heRank5(pCards)
+   end if
+   if he1tN is 7 then
+      return he1heEval7(pCards)
+   end if
+   put empty into he1tBest
+   repeat with he1tSkip = 1 to he1tN
+      put empty into he1tFive
+      repeat with he1tPos = 1 to he1tN
+         if he1tPos is not he1tSkip then
+            put item he1tPos of pCards & comma after he1tFive
+         end if
+      end repeat
+      delete char -1 of he1tFive
+      put he1heRank5(he1tFive) into he1tRank
+      if he1tBest is empty or he1tRank > he1tBest then
+         put he1tRank into he1tBest
+      end if
+   end repeat
+   return he1tBest
+end he1heBotBestOf
+
+function he1heBotGroupCatOf pCards
+   -- the category the RANK GROUPS of any number of cards make on their own
+   -- (0 none, 1 pair, 2 two pair, 3 trips, 6 full house, 7 quads), straights
+   -- and flushes aside: what the board alone already shows everyone
+   local he1tIdx, he1tCountA, he1tRankVal, he1tPairs, he1tTrips, he1tQuads
+   set the itemDelimiter to comma
+   repeat for each item he1tIdx in pCards
+      add 1 to he1tCountA[he1heCardRankVal(he1tIdx)]
+   end repeat
+   put 0 into he1tPairs
+   put 0 into he1tTrips
+   put 0 into he1tQuads
+   repeat for each key he1tRankVal in he1tCountA
+      switch he1tCountA[he1tRankVal]
+         case 2
+            add 1 to he1tPairs
+            break
+         case 3
+            add 1 to he1tTrips
+            break
+         case 4
+            add 1 to he1tQuads
+            break
+      end switch
+   end repeat
+   if he1tQuads > 0 then
+      return 7
+   end if
+   if he1tTrips > 0 and (he1tPairs > 0 or he1tTrips > 1) then
+      return 6
+   end if
+   if he1tTrips > 0 then
+      return 3
+   end if
+   if he1tPairs > 1 then
+      return 2
+   end if
+   if he1tPairs is 1 then
+      return 1
+   end if
+   return 0
+end he1heBotGroupCatOf
+
+function he1heBotDrawOf pHoleList, pBoardList
+   -- 0..14 for a draw still live on the flop or turn: a flush draw (four of a
+   -- suit, one of them ours) or an open-ended straight draw (four in a row
+   -- with room at both ends, one of them ours)
+   local he1tAll, he1tIdx, he1tSuitA, he1tSuit, he1tHasRank, he1tLo, he1tHoleRanks, he1tRun, he1tR, he1tOurs, he1tScore
+   set the itemDelimiter to comma
+   put pHoleList & comma & pBoardList into he1tAll
+   put 0 into he1tScore
+   repeat for each item he1tIdx in he1tAll
+      add 1 to he1tSuitA[he1heCardSuitVal(he1tIdx)]
+      put true into he1tHasRank[he1heCardRankVal(he1tIdx)]
+   end repeat
+   repeat for each key he1tSuit in he1tSuitA
+      if he1tSuitA[he1tSuit] is 4 then
+         if he1heCardSuitVal(item 1 of pHoleList) is he1tSuit \
+               or he1heCardSuitVal(item 2 of pHoleList) is he1tSuit then
+            put 14 into he1tScore
+         end if
+      end if
+   end repeat
+   put he1heCardRankVal(item 1 of pHoleList) & comma & he1heCardRankVal(item 2 of pHoleList) into he1tHoleRanks
+   -- an open-ended run lo..lo+3 needs lo-1 and lo+4 on the board's scale (2..14)
+   repeat with he1tLo = 3 to 10
+      put true into he1tRun
+      put false into he1tOurs
+      repeat with he1tR = he1tLo to he1tLo + 3
+         if he1tHasRank[he1tR] is not true then
+            put false into he1tRun
+         end if
+         if he1tR is among the items of he1tHoleRanks then
+            put true into he1tOurs
+         end if
+      end repeat
+      if he1tRun and he1tOurs and he1tHasRank[he1tLo - 1] is not true and he1tHasRank[he1tLo + 4] is not true then
+         put max(he1tScore, 10) into he1tScore
+      end if
+   end repeat
+   return he1tScore
+end he1heBotDrawOf
+
+function he1heBotMadeOf pHoleList, pBoardList
+   -- 0..100 for a hand after the flop: the category of the best five,
+   -- marked DOWN when the board alone makes it (everyone holds that), a pair
+   -- split into top pair or better and the rest, plus any live draw
+   local he1tBest, he1tCat, he1tPairRank, he1tTopBoard, he1tIdx, he1tScore
+   set the itemDelimiter to comma
+   put he1heBotBestOf(pHoleList & comma & pBoardList) into he1tBest
+   put (char 1 to 2 of he1tBest) + 0 into he1tCat
+   put 0 into he1tTopBoard
+   repeat for each item he1tIdx in pBoardList
+      put max(he1tTopBoard, he1heCardRankVal(he1tIdx)) into he1tTopBoard
+   end repeat
+   switch he1tCat
+      case 0
+         put 10 into he1tScore
+         break
+      case 1
+         put (char 3 to 4 of he1tBest) + 0 into he1tPairRank
+         if he1tPairRank >= he1tTopBoard then
+            put 58 into he1tScore
+         else
+            put 40 into he1tScore
+         end if
+         break
+      case 2
+         put 68 into he1tScore
+         break
+      case 3
+         put 76 into he1tScore
+         break
+      case 4
+         put 84 into he1tScore
+         break
+      case 5
+         put 88 into he1tScore
+         break
+      case 6
+         put 93 into he1tScore
+         break
+      case 7
+         put 97 into he1tScore
+         break
+      default
+         put 99 into he1tScore
+   end switch
+   -- the board plays: a pair, two pair, trips, a boat or quads that are all
+   -- on the board are everyone's hand, worth what our high cards add
+   if he1tCat <= 3 or he1tCat is 6 or he1tCat is 7 then
+      if he1heBotGroupCatOf(pBoardList) >= he1tCat then
+         put 12 into he1tScore
+      end if
+   end if
+   if the number of items of pBoardList < 5 and he1tScore < 84 then
+      add he1heBotDrawOf(pHoleList, pBoardList) to he1tScore
+   end if
+   return min(he1tScore, 100)
+end he1heBotMadeOf
+
+function he1heBotSizeOf pStateA, pSeatNum, pKind, pVerb, pMaxTo
+   -- a bet or raise TO the quick-bet size pKind (he1heQuickAmountOf clamps it to
+   -- the legal range); a size that reaches the whole stack goes in as all-in
+   local he1tTo
+   put he1heQuickAmountOf(pStateA, pSeatNum, pKind) into he1tTo
+   if he1tTo >= pMaxTo then
+      return "allin," & pMaxTo
+   end if
+   return pVerb & comma & he1tTo
+end he1heBotSizeOf
+
+function he1heBotChoiceOf pStateA, pSeatNum, pHoleList, pBoardList, pRoll
+   -- the bot's move as "verb,amount", one of the actions he1heBetLegal offers
+   -- (empty when the seat is not the one to act). PURE (H5): pinned by
+   -- harness section 25 for legality over many states and rolls.
+   local he1tLegal, he1tLine, he1tCanCheck, he1tCallAmt, he1tAggVerb, he1tMaxTo, he1tPot, he1tOwe
+   local he1tStr, he1tSeat, he1tBB, he1tPreflop, he1tKind, he1tWantRaise, he1tWantCall
+   set the itemDelimiter to comma
+   put he1heBetLegal(pStateA, pSeatNum) into he1tLegal
+   if he1tLegal is empty then
+      return ""
+   end if
+   put false into he1tCanCheck
+   put empty into he1tCallAmt
+   put empty into he1tAggVerb
+   put empty into he1tMaxTo
+   repeat for each line he1tLine in he1tLegal
+      switch word 1 of he1tLine
+         case "check"
+            put true into he1tCanCheck
+            break
+         case "call"
+            put word 2 of he1tLine into he1tCallAmt
+            break
+         case "bet"
+         case "raise"
+            put word 1 of he1tLine into he1tAggVerb
+            put word 3 of he1tLine into he1tMaxTo
+            break
+      end switch
+   end repeat
+   put 0 into he1tPot
+   repeat for each item he1tSeat in pStateA["occ"]
+      add pStateA["handBy"][he1tSeat] to he1tPot
+   end repeat
+   put pStateA["betCur"] - pStateA["streetBy"][pSeatNum] into he1tOwe
+   put pStateA["bb"] into he1tBB
+   if he1tBB is not a number or he1tBB < 1 then
+      put 1 into he1tBB
+   end if
+   put (pBoardList is empty) into he1tPreflop
+   if he1tPreflop then
+      put he1heBotPreflopOf(pHoleList) into he1tStr
+   else
+      put he1heBotMadeOf(pHoleList, pBoardList) into he1tStr
+   end if
+   -- the size of a bet or raise: half the pot, the whole pot with a monster
+   put "half" into he1tKind
+   if he1tStr >= 85 and pRoll <= 40 then
+      put "pot" into he1tKind
+   end if
+   if he1tCanCheck then
+      -- nothing to call: bet a strong hand, sometimes a fair one, rarely air
+      if he1tAggVerb is not empty and (he1tStr >= 70 or (he1tStr >= 50 and pRoll <= 35) or pRoll <= 6) then
+         return he1heBotSizeOf(pStateA, pSeatNum, he1tKind, he1tAggVerb, he1tMaxTo)
+      end if
+      return "check,0"
+   end if
+   put false into he1tWantRaise
+   put false into he1tWantCall
+   if he1tPreflop then
+      -- facing a blind or a raise before the flop: the price in big blinds
+      if he1tStr >= 72 and pRoll <= 65 then
+         put true into he1tWantRaise
+      else if he1tStr >= 58 and pRoll <= 12 then
+         put true into he1tWantRaise
+      end if
+      if he1tOwe <= he1tBB then
+         put (he1tStr >= 28 or pRoll <= 15) into he1tWantCall
+      else if he1tOwe <= he1tBB * 4 then
+         put (he1tStr >= 45) into he1tWantCall
+      else
+         put (he1tStr >= 64) into he1tWantCall
+      end if
+   else
+      -- after the flop: call when the hand beats the pot odds it is offered
+      -- (the share of the pot the call would be), raise a strong one
+      if he1tStr >= 80 and pRoll <= 55 then
+         put true into he1tWantRaise
+      end if
+      put (he1tStr >= 15 + (he1tOwe * 100) div (he1tPot + he1tOwe)) into he1tWantCall
+      if not he1tWantCall and pRoll <= 5 and he1tOwe * 3 <= he1tPot then
+         put true into he1tWantCall
+      end if
+   end if
+   if he1tWantRaise and he1tAggVerb is not empty then
+      return he1heBotSizeOf(pStateA, pSeatNum, he1tKind, he1tAggVerb, he1tMaxTo)
+   end if
+   if (he1tWantCall or he1tWantRaise) and he1tCallAmt is not empty then
+      return "call," & he1tCallAmt
+   end if
+   return "fold,0"
+end he1heBotChoiceOf
+
+function he1heBotBoardOf pDealA, pStreet
+   -- the board cards dealt by street pStreet, as a comma list of indices
+   -- (empty before the flop): what every seat can see
+   switch pStreet
+      case "flop"
+         return pDealA["flopList"]
+      case "turn"
+         return pDealA["flopList"] & comma & pDealA["turnIx"]
+      case "river"
+         return pDealA["flopList"] & comma & pDealA["turnIx"] & comma & pDealA["riverIx"]
+   end switch
+   return ""
+end he1heBotBoardOf
+
+function he1heBotSeat pSeatNum
+   -- true when pSeatNum is a computer opponent at this table
+   return he1gGame["bots"] is "true" and pSeatNum is not 1 and pSeatNum is not 0
+end he1heBotSeat
+
+command he1heBotSchedule pSeatNum
+   -- a bot's turn: the action row goes inert, the status line says who is
+   -- thinking, and he1heBotTick plays the turn after a short pause (the stale
+   -- guard is he1gBotWait: one seat, one hand, one turn)
+   local he1tMs
+   he1heDisableActions
+   put pSeatNum & "|" & he1gGame["handNum"] & "|" & he1gGame["state"]["actN"] into he1gBotWait
+   he1heUISetStatus item pSeatNum of he1kHeSeatNames & " is thinking..."
+   put trunc((he1kHeBotThinkMs + random(he1kHeBotThinkSpreadMs)) * he1heSpeedMult(he1gGame["speed"])) into he1tMs
+   send "he1heBotTick" to me in he1tMs milliseconds
+end he1heBotSchedule
+
+on he1heBotTick
+   local he1tSeatNum, he1tChoice, he1tActN, he1tVerb
+   -- pin the stack: a `send ... in` tick has no defaultStack guarantee, and every
+   -- control this reaches is named unqualified (OXT-ENGINE-NOTES 5.3)
+   set the defaultStack to the short name of this stack
+   if he1gGame["phase"] is not "hand" then
+      exit he1heBotTick
+   end if
+   put he1gGame["state"]["toAct"] into he1tSeatNum
+   if not he1heBotSeat(he1tSeatNum) then
+      exit he1heBotTick
+   end if
+   if he1gBotWait is not (he1tSeatNum & "|" & he1gGame["handNum"] & "|" & he1gGame["state"]["actN"]) then
+      exit he1heBotTick
+   end if
+   put empty into he1gBotWait
+   put he1gGame["state"]["actN"] into he1tActN
+   put he1heBotChoiceOf(he1gGame["state"], he1tSeatNum, he1gGame["deal"]["holesBy"][he1tSeatNum], \
+         he1heBotBoardOf(he1gGame["deal"], he1gGame["state"]["street"]), random(100)) into he1tChoice
+   if he1tChoice is empty then
+      put "fold,0" into he1tChoice
+   end if
+   set the itemDelimiter to comma
+   put item 1 of he1tChoice into he1tVerb
+   he1heActionDo he1tSeatNum, he1tVerb, item 2 of he1tChoice
+   -- a refused move would leave the same turn open: check or fold instead, so
+   -- a bot can never stall the table
+   if he1gGame["phase"] is "hand" and he1gGame["state"]["toAct"] is he1tSeatNum \
+         and he1gGame["state"]["actN"] is he1tActN then
+      if "check" is among the lines of he1heBetLegal(he1gGame["state"], he1tSeatNum) then
+         he1heActionDo he1tSeatNum, "check", 0
+      else
+         he1heActionDo he1tSeatNum, "fold", 0
+      end if
+   end if
+end he1heBotTick
+
+command he1heBotsStart
+   -- the lobby's "Play vs computer": a fresh table with the person in seat 1
+   -- and computer opponents in the rest, dealt at once
+   he1heNetStop
+   he1heCfgEnsure
+   put "computer" into he1gCfg["opponents"]
+   he1heTableNew
+   he1heUIClearCards
+   he1heLobbyHide
+   he1heHandStart
+end he1heBotsStart
+
+function he1heSettleWordsOf pDeltasA, pOccList, pRanksA, pPot
+   -- the status line after a hand, in words: "Cleo wins 12 with a pair",
+   -- "You win 30", "Ada and Eve split 40". PURE (H5); pinned in section 25.
+   -- Before v0.25.7 the line was the raw deltas ("1:-2|2:-2|3:-2|4:10|...").
+   -- pPot is the whole pot the hand built (every seat's commitment), which
+   -- is what the table showed as POT; a lone winner "wins" that.
+   local he1tSeat, he1tWinners, he1tN, he1tName, he1tTxt, he1tLabel
+   set the itemDelimiter to comma
+   put empty into he1tWinners
+   put 0 into he1tN
+   repeat for each item he1tSeat in pOccList
+      if pDeltasA[he1tSeat] > 0 then
+         add 1 to he1tN
+         put he1tSeat & comma after he1tWinners
+      end if
+   end repeat
+   if he1tN is 0 then
+      return "The hand is over: no chips changed hands."
+   end if
+   delete char -1 of he1tWinners
+   if he1tN is 1 then
+      put item he1tWinners of he1kHeSeatNames into he1tName
+      if he1tName is "You" then
+         put "You win " & pPot into he1tTxt
+      else
+         put he1tName & " wins " & pPot into he1tTxt
+      end if
+      put pRanksA[he1tWinners] into he1tLabel
+      if he1tLabel is not empty then
+         put " with " & he1heHandLabelWords(he1heHandLabel(he1tLabel)) after he1tTxt
+      end if
+      return he1tTxt & "."
+   end if
+   put empty into he1tTxt
+   repeat with he1tSeat = 1 to he1tN
+      put item (item he1tSeat of he1tWinners) of he1kHeSeatNames into he1tName
+      if he1tSeat is he1tN then
+         put " and " & he1tName after he1tTxt
+      else if he1tSeat > 1 then
+         put ", " & he1tName after he1tTxt
+      else
+         put he1tName after he1tTxt
+      end if
+   end repeat
+   return he1tTxt & " split the pot of " & pPot & "."
+end he1heSettleWordsOf
+
+function he1heHandLabelWords pLabel
+   -- he1heHandLabel's names, read after "with": "one pair" reads "a pair",
+   -- "flush" reads "a flush", "two pair" and "high card" stay as they are
+   switch pLabel
+      case "one pair"
+         return "a pair"
+      case "two pair"
+      case "four of a kind"
+      case "three of a kind"
+      case "high card"
+         return pLabel
+   end switch
+   return "a " & pLabel
+end he1heHandLabelWords
+
 command he1heUISetStatus pTxt
    -- keep the last status text in the store as well as on the felt (v0.24.0).
    -- The field is the display; the copy is what lets a headless harness pin
@@ -43894,6 +44544,11 @@ command he1heUIPromptToAct
    -- waiting (he1heNetGameReact disables the buttons and says who is up)
    if he1gGame["online"] is "true" and he1tSeatNum is not he1heNetMySeat() then
       he1heDisableActions
+      exit he1heUIPromptToAct
+   end if
+   -- v0.25.7: a computer opponent's turn plays itself, after a pause
+   if he1heBotSeat(he1tSeatNum) then
+      he1heBotSchedule he1tSeatNum
       exit he1heUIPromptToAct
    end if
    put he1heBetLegal(he1gGame["state"], he1tSeatNum) into he1tLegalTxt
@@ -44258,7 +44913,12 @@ command he1heUIHandStart
    put he1gGame["deal"] into he1tDealA
    set the itemDelimiter to comma
    repeat for each item he1tSeatNum in he1gGame["occ"]
-      he1heUIShowHole he1tSeatNum, he1tDealA["holesBy"][he1tSeatNum]
+      -- v0.25.7: a computer opponent's cards are dealt face down
+      if he1heBotSeat(he1tSeatNum) then
+         he1heUIShowHoleBack he1tSeatNum
+      else
+         he1heUIShowHole he1tSeatNum, he1tDealA["holesBy"][he1tSeatNum]
+      end if
    end repeat
    he1heSndPlay "deal"
    he1heUISetStatus "Hand " & he1gGame["handNum"] & " dealt -- blinds " & he1gGame["sb"] & "/" & he1gGame["bb"] & " posted."
@@ -44284,6 +44944,9 @@ command he1heUIShowCardIn pSlotName, pIdx
          put he1gCardSpr[pSlotName] into he1tSpr
          b2kSpriteSetFrame he1tSpr, he1heKenneyFrame(pIdx) & he1gKitSuffix
          set the visible of he1tSpr to true
+         if he1gBackSpr[pSlotName] is not empty then
+            set the visible of he1gBackSpr[pSlotName] to false
+         end if
          if there is a field pSlotName then
             set the visible of field pSlotName to false
          end if
@@ -44303,6 +44966,66 @@ command he1heUIShowCardIn pSlotName, pIdx
    set the backgroundColor of field pSlotName to he1kHeWhite
    set the visible of field pSlotName to true
 end he1heUIShowCardIn
+
+command he1heUIShowCardBack pSlotName
+   -- v0.25.7: a card dealt FACE DOWN (a computer opponent's hole card). Kit
+   -- mode shows the pooled back sprite; without it (no Kit, no backs sheet, or
+   -- a sprite call that throws) the slot's flat field shows a blank card in
+   -- the back's red, with any face sprite over it hidden.
+   local he1tShowErr
+   if he1gUIMode is "kit" and he1gBackSpr[pSlotName] is not empty then
+      try
+         if he1gCardSpr[pSlotName] is not empty then
+            set the visible of he1gCardSpr[pSlotName] to false
+         end if
+         set the visible of he1gBackSpr[pSlotName] to true
+         if there is a field pSlotName then
+            set the visible of field pSlotName to false
+         end if
+         exit he1heUIShowCardBack
+      catch he1tShowErr
+      end try
+   end if
+   if he1gCardSpr[pSlotName] is not empty then
+      try
+         set the visible of he1gCardSpr[pSlotName] to false
+      catch he1tShowErr
+      end try
+   end if
+   if there is not a field pSlotName then
+      exit he1heUIShowCardBack
+   end if
+   set the text of field pSlotName to empty
+   set the backgroundColor of field pSlotName to he1kHeCardBackColor
+   set the visible of field pSlotName to true
+end he1heUIShowCardBack
+
+command he1heUIShowHoleBack pSeatNum
+   he1heUIShowCardBack "heHole" & pSeatNum & "a"
+   he1heUIShowCardBack "heHole" & pSeatNum & "b"
+end he1heUIShowHoleBack
+
+command he1heUIHideHole pSeatNum
+   -- v0.25.7: a computer opponent's fold mucks its cards: both hole slots go
+   -- blank, face sprite, back sprite and flat field alike
+   local he1tSlotName, he1tHalf, he1tHideErr
+   set the itemDelimiter to comma
+   repeat for each item he1tHalf in "a,b"
+      put "heHole" & pSeatNum & he1tHalf into he1tSlotName
+      try
+         if he1gCardSpr[he1tSlotName] is not empty then
+            set the visible of he1gCardSpr[he1tSlotName] to false
+         end if
+         if he1gBackSpr[he1tSlotName] is not empty then
+            set the visible of he1gBackSpr[he1tSlotName] to false
+         end if
+      catch he1tHideErr
+      end try
+      if there is a field he1tSlotName then
+         set the visible of field he1tSlotName to false
+      end if
+   end repeat
+end he1heUIHideHole
 
 command he1heUIShowBoardStreet pStreetName, pIdxList
    local he1tIdx, he1tPos
@@ -44380,6 +45103,10 @@ command he1heUIClearCards
    if he1gUIMode is "kit" then
       repeat for each key he1tSlot in he1gCardSpr
          put he1gCardSpr[he1tSlot] into he1tSpr
+         set the visible of he1tSpr to false
+      end repeat
+      repeat for each key he1tSlot in he1gBackSpr
+         put he1gBackSpr[he1tSlot] into he1tSpr
          set the visible of he1tSpr to false
       end repeat
    end if
@@ -44594,6 +45321,7 @@ command he1heTestRunAllSections
    he1heRunSection "he1heTestLeafRun"
    he1heRunSection "he1heTestLeafRun2"
    he1heRunSection "he1heTestLeafRun3"
+   he1heRunSection "he1heTestBotRun"
    he1heRunSection "he1heProbeSodium"
 end he1heTestRunAllSections
 
@@ -48967,6 +49695,130 @@ command he1heTestLeafRun2
    he1heTContains "leaf2: ...carrying the wire type", he1gGame["log"], "handStart"
    put he1tSaved into he1gGame
 end he1heTestLeafRun2
+
+command he1heTestBotRun
+   -- v0.25.7 computer opponents (he1heBotChoiceOf and its scores) and the
+   -- result line in words (he1heSettleWordsOf). The bot is pure, so it is pinned
+   -- the way the betting engine is: every move it makes, over whole hands at
+   -- several stack depths and every style of roll, must be one he1heBetApply
+   -- ACCEPTS, and every hand must reach a showdown or a fold-win.
+   -- Cards: index = (rank - 2) * 4 + suit, suits c d h s = 1..4.
+   local he1tStateA, he1tWords, he1tDeltasA, he1tRanksA, he1tSavedBots
+   put return & "-- 25. computer opponents: scores, legal moves, whole hands; the result in words" & return after he1gRpt
+   set the itemDelimiter to comma
+   -- preflop scores: AA 91, 22 55, AKs 74 (60 + suited 8 + connected 6), 72o 14
+   he1heTAssert "bot: AA preflop", he1heBotPreflopOf("51,52"), 91
+   he1heTAssert "bot: 22 preflop", he1heBotPreflopOf("1,2"), 55
+   he1heTAssert "bot: AKs preflop", he1heBotPreflopOf("52,48"), 74
+   he1heTAssert "bot: 72o preflop", he1heBotPreflopOf("21,2"), 14
+   -- the rank groups the board alone shows
+   he1heTAssert "bot: board groups, none", he1heBotGroupCatOf("2,7,52"), 0
+   he1heTAssert "bot: board groups, a pair", he1heBotGroupCatOf("1,2,52"), 1
+   he1heTAssert "bot: board groups, a boat", he1heBotGroupCatOf("1,2,3,51,52"), 6
+   -- best of six is the best of its five-card subsets (a flush in clubs)
+   he1heTAssert "bot: best of six finds the flush", char 1 to 2 of he1heBotBestOf("1,9,17,33,49,52"), "05"
+   he1heTAssert "bot: best of seven is he1heEval7", he1heBotBestOf("1,9,17,33,49,52,2"), he1heEval7("1,9,17,33,49,52,2")
+   -- made hands: top pair beats an under pair; a pair that is all board is worth little
+   he1heTAssert "bot: top pair (As Kd on A-7-2)", he1heBotMadeOf("52,46", "51,21,2"), 58
+   he1heTAssert "bot: board pair plays (Kd Qc on 7-7-2, no draw)", he1heBotMadeOf("46,41", "21,22,2"), 12
+   he1heTAssert "bot: a flush draw adds to a weak hand", he1heBotDrawOf("1,9", "17,33,50"), 14
+   he1heTAssert "bot: board seen by street", he1heBotBoardOf(he1heTBotDeal(), "turn"), "3,7,11,15"
+   -- every move legal, whole hands to the end, four depths, many rolls
+   he1heTAssert "bot: heads-up hands play out legally", he1heTBotHands("100,100", "1,2"), "ok"
+   he1heTAssert "bot: six-handed hands play out legally", he1heTBotHands("400,400,400,400,400,400", "1,2,3,4,5,6"), "ok"
+   he1heTAssert "bot: short stacks play out legally", he1heTBotHands("3,40,7,400", "1,2,3,4"), "ok"
+   he1heTAssert "bot: deep stacks play out legally", he1heTBotHands("5000,5000,5000", "1,2,3"), "ok"
+   -- not the seat to act: no move
+   put he1heTBlinds(he1heTNewHand(1, 2, "100,100,100", "1,2,3", 1)) into he1tStateA
+   he1heTAssert "bot: no move out of turn", he1heBotChoiceOf(he1tStateA, 2, "51,52", "", 50), ""
+   -- facing a bet with nothing, it folds; with aces it never folds
+   he1heTAssert "bot: 72o folds to a big raise", \
+         item 1 of he1heBotChoiceOf(he1heTAct(he1tStateA, 1, "raise,40", "", "bot: setup a raise to 40"), 2, "21,2", "", 90), "fold"
+   he1heTAssert "bot: AA does not fold preflop", \
+         (item 1 of he1heBotChoiceOf(he1tStateA, 1, "51,52", "", 99) is not "fold"), "true"
+   -- sizing: the quick-bet amount, or all-in once it reaches the stack
+   he1heTAssert "bot: a size under the stack is the quick-bet amount", \
+         he1heBotSizeOf(he1tStateA, 1, "pot", "raise", 100000), "raise," & he1heQuickAmountOf(he1tStateA, 1, "pot")
+   he1heTAssert "bot: a size reaching the stack goes all-in", he1heBotSizeOf(he1tStateA, 1, "pot", "raise", 1), "allin,1"
+   -- which seats are bots: every seat but You (1), and only in a computer game
+   put he1gGame["bots"] into he1tSavedBots
+   put "true" into he1gGame["bots"]
+   he1heTAssert "bot: seat 2 is a bot in a computer game", he1heBotSeat(2), "true"
+   he1heTAssert "bot: seat 1 is You, never a bot", he1heBotSeat(1), "false"
+   put empty into he1gGame["bots"]
+   he1heTAssert "bot: no bots in a game with people", he1heBotSeat(2), "false"
+   put he1tSavedBots into he1gGame["bots"]
+   -- the result line in words
+   put -2 into he1tDeltasA[1]
+   put -2 into he1tDeltasA[2]
+   put 4 into he1tDeltasA[3]
+   put "011413120900" into he1tRanksA[3]
+   he1heTAssert "words: one winner, with the hand", he1heSettleWordsOf(he1tDeltasA, "1,2,3", he1tRanksA, 6), "Boris wins 6 with a pair."
+   put 4 into he1tDeltasA[1]
+   put -4 into he1tDeltasA[3]
+   put empty into he1tRanksA
+   he1heTAssert "words: You win, a fold-win names no hand", he1heSettleWordsOf(he1tDeltasA, "1,2,3", he1tRanksA, 6), "You win 6."
+   put 1 into he1tDeltasA[1]
+   put 1 into he1tDeltasA[2]
+   put -2 into he1tDeltasA[3]
+   he1heTAssert "words: a split", he1heSettleWordsOf(he1tDeltasA, "1,2,3", he1tRanksA, 6), "You and Ada split the pot of 6."
+   he1heTAssert "words: a flush reads a flush", he1heHandLabelWords("flush"), "a flush"
+   he1heTAssert "words: two pair stays", he1heHandLabelWords("two pair"), "two pair"
+end he1heTestBotRun
+
+function he1heTBotDeal
+   -- a fixed deal for the bot hands: two cards per seat from 23 up, the
+   -- board 3,7,11 then 15 then 19 (no card dealt twice)
+   local he1tDealA, he1tSeatNum
+   repeat with he1tSeatNum = 1 to 6
+      put (19 + he1tSeatNum * 4) & comma & (20 + he1tSeatNum * 4) into he1tDealA["holesBy"][he1tSeatNum]
+   end repeat
+   put "3,7,11" into he1tDealA["flopList"]
+   put 15 into he1tDealA["turnIx"]
+   put 19 into he1tDealA["riverIx"]
+   return he1tDealA
+end he1heTBotDeal
+
+function he1heTBotHands pStacksList, pOccList
+   -- play 25 hands, every button, every seat a bot, rolls walking 1..100;
+   -- "ok", or the first move he1heBetApply refused / the first hand that stalls
+   local he1tDealA, he1tHand, he1tButton, he1tStateA, he1tSteps, he1tSeat, he1tChoice, he1tNext, he1tRoll
+   set the itemDelimiter to comma
+   put he1heTBotDeal() into he1tDealA
+   put 0 into he1tRoll
+   repeat with he1tHand = 1 to 25
+      put item ((he1tHand - 1) mod (the number of items of pOccList)) + 1 of pOccList into he1tButton
+      put he1heTBlinds(he1heTNewHand(1, 2, pStacksList, pOccList, he1tButton)) into he1tStateA
+      put 0 into he1tSteps
+      repeat while he1tStateA["phase"] is "acting" or he1tStateA["phase"] is "runout"
+         add 1 to he1tSteps
+         if he1tSteps > 200 then
+            return "hand " & he1tHand & " stalled in " & he1tStateA["phase"]
+         end if
+         if he1tStateA["phase"] is "runout" then
+            put he1heBetApply(he1tStateA, "board", 0, 0) into he1tStateA
+            next repeat
+         end if
+         put he1tStateA["toAct"] into he1tSeat
+         put (he1tRoll mod 100) + 1 into he1tRoll
+         put he1heBotChoiceOf(he1tStateA, he1tSeat, he1tDealA["holesBy"][he1tSeat], \
+               he1heBotBoardOf(he1tDealA, he1tStateA["street"]), he1tRoll) into he1tChoice
+         if he1tChoice is empty then
+            return "hand " & he1tHand & ": no move for seat " & he1tSeat
+         end if
+         put he1heBetApply(he1tStateA, "act", he1tSeat, he1tChoice) into he1tNext
+         if he1tNext["err"] is not empty then
+            return "hand " & he1tHand & ": seat " & he1tSeat & " " & he1tChoice & " refused: " & he1tNext["err"]
+         end if
+         put he1tNext into he1tStateA
+         put 7 + he1tRoll into he1tRoll
+      end repeat
+      if he1tStateA["phase"] is not "showdown" and he1tStateA["phase"] is not "handdone" then
+         return "hand " & he1tHand & " ended in " & he1tStateA["phase"]
+      end if
+   end repeat
+   return "ok"
+end he1heTBotHands
 
 command he1heTestLeafRun3
    -- 24: THIRD TRANCHE of the coverage worklist's no-test category
