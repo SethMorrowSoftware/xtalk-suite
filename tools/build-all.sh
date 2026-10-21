@@ -257,6 +257,20 @@ if [ -f tools/check-dictionary-docs.py ]; then
   echo "== suite: tools/check-dictionary-docs.py =="
   python3 tools/check-dictionary-docs.py
 fi
+# The .lce packages lce-packages.yml builds are made from a TABLE of files
+# (tools/build-lce-packages.py PACKAGES), and a renamed helper, a moved licence
+# or a Windows library that starts importing a runtime DLL nobody bundles
+# would surface only when someone builds a release. `table` holds the table to
+# the tree with no compiler and no engine; the fixture proves its refusals and
+# the package checks first.
+if [ -f tools/test-build-lce-packages.py ]; then
+  echo "== suite: tools/test-build-lce-packages.py =="
+  python3 tools/test-build-lce-packages.py
+fi
+if [ -f tools/build-lce-packages.py ]; then
+  echo "== suite: tools/build-lce-packages.py table =="
+  python3 tools/build-lce-packages.py table
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal
