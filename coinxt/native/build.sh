@@ -19,6 +19,9 @@
 #         sh native/build.sh pack             # the SHIPPED library into src/code/
 #         sh native/build.sh pack x86-linux   # ... for an explicit platform id
 #                                             # (REQUIRED for any cross build)
+#         sh native/build.sh web              # src/code/wasm32-emscripten/coinxt.a
+#                                             # for OXT-Beyond's web IDE, tested
+#                                             # under node (needs Emscripten)
 #
 # Run from the CoinXT/ directory (or anywhere; paths are resolved from this file).
 
@@ -167,202 +170,12 @@ compile_secp() {
   echo "$_objs"
 }
 
-case "${1:-lib}" in
-  lib)
-    # Pick the platform extension (best effort; default .so).
-    ext=so
-    case "$(uname -s 2>/dev/null || echo unknown)" in
-      Darwin*) ext=dylib ;;
-      MINGW*|MSYS*|CYGWIN*) ext=dll ;;
-    esac
-    out="$here/libcoinxt.$ext"
-    stage=$(mktemp -d)
-    trap 'rm -rf "$stage"' EXIT
-    secp_objs=$(compile_secp "$stage" cc)
-    cc -O2 $warn $secp_cppflags $inc -fPIC -shared "$here/coinxt.c" $vendor_src \
-       $secp_objs -o "$out" $(platform_libs "$ext")
-    echo "built $out"
-    ;;
-  pack)
-    # The shipped artifact. Three things make it different from the `lib`
-    # target, and each of them is load-bearing:
-    #
-    #  1. THE NAME. src/coinxt.lcb binds to "c:coinxt>cnx_*". The engine resolves
-    #     that leading token to a file named `coinxt.<ext>` inside the packaged
-    #     extension, NOT `libcoinxt.<ext>` - the `lib` prefix that is idiomatic
-    #     everywhere else in Unix is exactly wrong here. Every sibling member
-    #     ships the same way (sodiumxt.so, enetxt.so, datachannelxt.so).
-    #  2. THE PATH. src/code/<arch>-<platform>/ is where the engine looks, and
-    #     the directory names are the engine's spelling, not uname's.
-    #  3. THE SURFACE. src/coinxt.map narrows the exports to the cnx_* entry
-    #     points; see that file for why shipping the vendored
-    #     trezor-crypto names into an engine process is not acceptable. If the
-    #     linker will not take a version script we say so loudly and continue,
-    #     because a wide-surface library that WORKS beats no library at all - but
-    #     you should not commit that one.
-    #
-    # The platform id may be given explicitly:  sh native/build.sh pack x86-linux
-    # CROSS BUILDS MUST DO THIS. `uname` describes the MACHINE, not the output,
-    # so a 32-bit build driven by a `cc` that wraps `gcc -m32` still reports
-    # x86_64 - and would file an x86 library into x86_64-linux/, silently
-    # overwriting a good committed binary with one for the wrong architecture.
-    # Deriving it is only safe for a native build, so that stays the default and
-    # anything else says what it is building.
-    if [ $# -ge 2 ]; then
-      platform_id="$2"
-      case "$platform_id" in
-        *-mac|universal-mac) ext=dylib ;;
-        *-win32)             ext=dll ;;
-        *)                   ext=so ;;
-      esac
-    else
-      ext=so
-      plat=linux
-      case "$(uname -s 2>/dev/null || echo unknown)" in
-        Darwin*)              ext=dylib; plat=mac ;;
-        MINGW*|MSYS*|CYGWIN*) ext=dll;   plat=win32 ;;
-      esac
-      case "$(uname -m 2>/dev/null || echo unknown)" in
-        x86_64|amd64)  arch=x86_64 ;;
-        i?86)          arch=x86 ;;
-        arm64|aarch64) arch=arm64 ;;
-        *)             arch=$(uname -m) ;;
-      esac
-      # macOS ships one fat binary for both slices, under the engine's own name
-      # for it; there is no per-arch mac directory in this family.
-      if [ "$plat" = mac ]; then
-        platform_id=universal-mac
-      else
-        platform_id="$arch-$plat"
-      fi
-    fi
-    dir="$root/src/code/$platform_id"
-    out="$dir/coinxt.$ext"
-    # Build to a scratch dir and move the result into place only on success.
-    # Writing straight to $out would truncate a good committed binary the moment
-    # a build failed, and `mkdir -p` up front would leave an empty platform
-    # directory behind that reads as "this platform is supported" when it is not.
-    stage=$(mktemp -d)
-    trap 'rm -rf "$stage"' EXIT
-    staged="$stage/coinxt.$ext"
-
-    # ---- the export surface, per object format ------------------------------
-    # Same goal on every platform: ship the cnx_* entry points and NOTHING
-    # else (see src/coinxt.map for why a wide surface is unacceptable here). The
-    # MECHANISM differs by object format, and picking the wrong one fails OPEN -
-    # you get a working library with 77 exports - so each is handled explicitly
-    # rather than left to a default:
-    #
-    #   ELF   a linker version script (src/coinxt.map). Filters at link time, so
-    #         it reaches the vendored units too.
-    #   PE    a .def file. MinGW AUTO-EXPORTS every global when no .def and no
-    #         __declspec(dllexport) is present - measured: 77 symbols - and a
-    #         version script is silently IGNORED for PE, which is exactly the
-    #         fail-open case. Supplying a .def turns auto-export off.
-    #   Mach-O  -exported_symbols_list. ld64 ignores a version script too.
-    #
-    # The .def and the symbols list are GENERATED from the compiled objects
-    # rather than committed, so they can never drift from the shim: whatever the
-    # objects define as a global cnx_* IS the export list, by construction.
-    NM_TOOL="${NM:-nm}"
-    STRIP_TOOL="${STRIP:-strip}"
-    CC_TOOL="${CC:-cc}"
-
-    # THE VENDORED UNITS ARE COMPILED HIDDEN; the shim is not. On ELF and PE the
-    # version script and the .def below narrow the surface at link time, and
-    # that used to be the whole mechanism. It is not enough for a Mach-O built
-    # OFF a Mac: the linker Zig ships for cross-building a dylib ignores
-    # -exported_symbols_list without a word (measured 2026-09-10, 257 vendored
-    # names shipped), and the freshness gate refuses the result. Hidden
-    # visibility on every vendored object makes the narrow surface a property
-    # of the objects, so it holds whichever linker assembles them; the shim's
-    # one non-cnx_ global, random_buffer, carries the attribute in the source.
-    # MinGW ignores -fvisibility on PE (its .def is what decides), so the flag
-    # is harmless there and the mechanism stays one line for every platform.
-    objs=""
-    obj="$stage/coinxt.o"
-    $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -c "$here/coinxt.c" -o "$obj"
-    objs="$objs $obj"
-    for src in $vendor_src; do
-      obj="$stage/$(basename "$src" .c).o"
-      $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -fvisibility=hidden -c "$src" -o "$obj"
-      objs="$objs $obj"
-    done
-    # Upstream libsecp256k1, with its own warning scope and a secp_ object
-    # prefix - see compile_secp above for both reasons.
-    objs="$objs $(compile_secp "$stage" "$CC_TOOL" -fvisibility=hidden)"
-
-    # Every global cnx_* the objects actually define. `nm -g --defined-only`
-    # spells a defined global as a T/D/R/B code in column 2.
-    exports=$($NM_TOOL -g --defined-only $objs 2>/dev/null \
-              | awk '$2 ~ /^[TDRB]$/ {print $3}' \
-              | sed 's/^_//' | grep '^cnx_' | sort -u)
-    if [ -z "$exports" ]; then
-      echo "build.sh pack: could not read any cnx_* export from the objects" >&2
-      echo "  ($NM_TOOL did not report them; set NM= to the matching nm)" >&2
-      exit 1
-    fi
-
-    ldflags=""
-    case "$ext" in
-      so)
-        vscript="$root/src/coinxt.map"
-        if [ ! -f "$vscript" ]; then
-          echo "build.sh pack: src/coinxt.map is missing; refusing to ship a" >&2
-          echo "  wide-surface library. Restore it." >&2
-          exit 1
-        fi
-        # Two probes, not one, and the order matters. The obvious single probe -
-        # "does a link WITH the version script succeed?" - cannot tell a linker
-        # that refuses version scripts from a toolchain that cannot link at all,
-        # and reports the second as the first. That is the worst confusion here,
-        # because the "fix" it implies is to ship the wide surface. So: prove the
-        # toolchain links a trivial shared object FIRST; only then does a failure
-        # with the script added mean what the message says.
-        if $CC_TOOL -fPIC -shared -o /dev/null -xc /dev/null 2>/dev/null; then
-          if $CC_TOOL -fPIC -shared -Wl,--version-script="$vscript" -o /dev/null -xc /dev/null 2>/dev/null; then
-            ldflags="-Wl,--version-script=$vscript"
-          else
-            echo "build.sh pack: this linker will not take src/coinxt.map;" >&2
-            echo "  refusing to ship a wide-surface library." >&2
-            exit 1
-          fi
-        fi
-        ;;
-      dll)
-        printf 'EXPORTS\n' > "$stage/coinxt.def"
-        for sym in $exports; do printf '%s\n' "$sym" >> "$stage/coinxt.def"; done
-        ldflags="$stage/coinxt.def"
-        ;;
-      dylib)
-        # ld64 wants the C symbol name with its leading underscore.
-        : > "$stage/coinxt.exp"
-        for sym in $exports; do printf '_%s\n' "$sym" >> "$stage/coinxt.exp"; done
-        ldflags="-Wl,-exported_symbols_list,$stage/coinxt.exp"
-        ;;
-    esac
-
-    $CC_TOOL -shared $objs $ldflags -o "$staged" $(platform_libs "$ext")
-    # Debug info and local symbols are dead weight in a committed binary and
-    # make the artifact differ run to run; --strip-unneeded keeps exactly the
-    # dynamic symbols the engine needs to bind. macOS strip needs -x (a plain
-    # strip on a dylib removes symbols the dynamic linker still wants).
-    if command -v "$STRIP_TOOL" > /dev/null 2>&1; then
-      if [ "$ext" = dylib ]; then
-        "$STRIP_TOOL" -x "$staged" 2>/dev/null || true
-      else
-        "$STRIP_TOOL" --strip-unneeded "$staged" 2>/dev/null || "$STRIP_TOOL" "$staged" 2>/dev/null || true
-      fi
-    fi
-    mkdir -p "$dir"
-    mv "$staged" "$out"
-    echo "built $out"
-    echo "exported symbols (the shipped surface):"
-    printf '  %s\n' $exports
-    ;;
-  asan)
-    tmp=$(mktemp -d)
-    cat > "$tmp/selftest.c" <<'EOF'
+# The self-test's C source: the hashes, the curve surface, BIP-32/39,
+# memzero, BIP-340/341 and combine, with their guards. ONE copy, run by two
+# targets: `asan` (instrumented, natively) and `web` (the shipped
+# wasm32-emscripten archive, under node).
+selftest_source() {
+  cat <<'EOF'
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -720,6 +533,204 @@ int main(void) {
   return 0;
 }
 EOF
+}
+
+case "${1:-lib}" in
+  lib)
+    # Pick the platform extension (best effort; default .so).
+    ext=so
+    case "$(uname -s 2>/dev/null || echo unknown)" in
+      Darwin*) ext=dylib ;;
+      MINGW*|MSYS*|CYGWIN*) ext=dll ;;
+    esac
+    out="$here/libcoinxt.$ext"
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    secp_objs=$(compile_secp "$stage" cc)
+    cc -O2 $warn $secp_cppflags $inc -fPIC -shared "$here/coinxt.c" $vendor_src \
+       $secp_objs -o "$out" $(platform_libs "$ext")
+    echo "built $out"
+    ;;
+  pack)
+    # The shipped artifact. Three things make it different from the `lib`
+    # target, and each of them is load-bearing:
+    #
+    #  1. THE NAME. src/coinxt.lcb binds to "c:coinxt>cnx_*". The engine resolves
+    #     that leading token to a file named `coinxt.<ext>` inside the packaged
+    #     extension, NOT `libcoinxt.<ext>` - the `lib` prefix that is idiomatic
+    #     everywhere else in Unix is exactly wrong here. Every sibling member
+    #     ships the same way (sodiumxt.so, enetxt.so, datachannelxt.so).
+    #  2. THE PATH. src/code/<arch>-<platform>/ is where the engine looks, and
+    #     the directory names are the engine's spelling, not uname's.
+    #  3. THE SURFACE. src/coinxt.map narrows the exports to the cnx_* entry
+    #     points; see that file for why shipping the vendored
+    #     trezor-crypto names into an engine process is not acceptable. If the
+    #     linker will not take a version script we say so loudly and continue,
+    #     because a wide-surface library that WORKS beats no library at all - but
+    #     you should not commit that one.
+    #
+    # The platform id may be given explicitly:  sh native/build.sh pack x86-linux
+    # CROSS BUILDS MUST DO THIS. `uname` describes the MACHINE, not the output,
+    # so a 32-bit build driven by a `cc` that wraps `gcc -m32` still reports
+    # x86_64 - and would file an x86 library into x86_64-linux/, silently
+    # overwriting a good committed binary with one for the wrong architecture.
+    # Deriving it is only safe for a native build, so that stays the default and
+    # anything else says what it is building.
+    if [ $# -ge 2 ]; then
+      platform_id="$2"
+      case "$platform_id" in
+        *-mac|universal-mac) ext=dylib ;;
+        *-win32)             ext=dll ;;
+        *)                   ext=so ;;
+      esac
+    else
+      ext=so
+      plat=linux
+      case "$(uname -s 2>/dev/null || echo unknown)" in
+        Darwin*)              ext=dylib; plat=mac ;;
+        MINGW*|MSYS*|CYGWIN*) ext=dll;   plat=win32 ;;
+      esac
+      case "$(uname -m 2>/dev/null || echo unknown)" in
+        x86_64|amd64)  arch=x86_64 ;;
+        i?86)          arch=x86 ;;
+        arm64|aarch64) arch=arm64 ;;
+        *)             arch=$(uname -m) ;;
+      esac
+      # macOS ships one fat binary for both slices, under the engine's own name
+      # for it; there is no per-arch mac directory in this family.
+      if [ "$plat" = mac ]; then
+        platform_id=universal-mac
+      else
+        platform_id="$arch-$plat"
+      fi
+    fi
+    dir="$root/src/code/$platform_id"
+    out="$dir/coinxt.$ext"
+    # Build to a scratch dir and move the result into place only on success.
+    # Writing straight to $out would truncate a good committed binary the moment
+    # a build failed, and `mkdir -p` up front would leave an empty platform
+    # directory behind that reads as "this platform is supported" when it is not.
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    staged="$stage/coinxt.$ext"
+
+    # ---- the export surface, per object format ------------------------------
+    # Same goal on every platform: ship the cnx_* entry points and NOTHING
+    # else (see src/coinxt.map for why a wide surface is unacceptable here). The
+    # MECHANISM differs by object format, and picking the wrong one fails OPEN -
+    # you get a working library with 77 exports - so each is handled explicitly
+    # rather than left to a default:
+    #
+    #   ELF   a linker version script (src/coinxt.map). Filters at link time, so
+    #         it reaches the vendored units too.
+    #   PE    a .def file. MinGW AUTO-EXPORTS every global when no .def and no
+    #         __declspec(dllexport) is present - measured: 77 symbols - and a
+    #         version script is silently IGNORED for PE, which is exactly the
+    #         fail-open case. Supplying a .def turns auto-export off.
+    #   Mach-O  -exported_symbols_list. ld64 ignores a version script too.
+    #
+    # The .def and the symbols list are GENERATED from the compiled objects
+    # rather than committed, so they can never drift from the shim: whatever the
+    # objects define as a global cnx_* IS the export list, by construction.
+    NM_TOOL="${NM:-nm}"
+    STRIP_TOOL="${STRIP:-strip}"
+    CC_TOOL="${CC:-cc}"
+
+    # THE VENDORED UNITS ARE COMPILED HIDDEN; the shim is not. On ELF and PE the
+    # version script and the .def below narrow the surface at link time, and
+    # that used to be the whole mechanism. It is not enough for a Mach-O built
+    # OFF a Mac: the linker Zig ships for cross-building a dylib ignores
+    # -exported_symbols_list without a word (measured 2026-09-10, 257 vendored
+    # names shipped), and the freshness gate refuses the result. Hidden
+    # visibility on every vendored object makes the narrow surface a property
+    # of the objects, so it holds whichever linker assembles them; the shim's
+    # one non-cnx_ global, random_buffer, carries the attribute in the source.
+    # MinGW ignores -fvisibility on PE (its .def is what decides), so the flag
+    # is harmless there and the mechanism stays one line for every platform.
+    objs=""
+    obj="$stage/coinxt.o"
+    $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -c "$here/coinxt.c" -o "$obj"
+    objs="$objs $obj"
+    for src in $vendor_src; do
+      obj="$stage/$(basename "$src" .c).o"
+      $CC_TOOL -O2 $warn $secp_cppflags $inc -fPIC -fvisibility=hidden -c "$src" -o "$obj"
+      objs="$objs $obj"
+    done
+    # Upstream libsecp256k1, with its own warning scope and a secp_ object
+    # prefix - see compile_secp above for both reasons.
+    objs="$objs $(compile_secp "$stage" "$CC_TOOL" -fvisibility=hidden)"
+
+    # Every global cnx_* the objects actually define. `nm -g --defined-only`
+    # spells a defined global as a T/D/R/B code in column 2.
+    exports=$($NM_TOOL -g --defined-only $objs 2>/dev/null \
+              | awk '$2 ~ /^[TDRB]$/ {print $3}' \
+              | sed 's/^_//' | grep '^cnx_' | sort -u)
+    if [ -z "$exports" ]; then
+      echo "build.sh pack: could not read any cnx_* export from the objects" >&2
+      echo "  ($NM_TOOL did not report them; set NM= to the matching nm)" >&2
+      exit 1
+    fi
+
+    ldflags=""
+    case "$ext" in
+      so)
+        vscript="$root/src/coinxt.map"
+        if [ ! -f "$vscript" ]; then
+          echo "build.sh pack: src/coinxt.map is missing; refusing to ship a" >&2
+          echo "  wide-surface library. Restore it." >&2
+          exit 1
+        fi
+        # Two probes, not one, and the order matters. The obvious single probe -
+        # "does a link WITH the version script succeed?" - cannot tell a linker
+        # that refuses version scripts from a toolchain that cannot link at all,
+        # and reports the second as the first. That is the worst confusion here,
+        # because the "fix" it implies is to ship the wide surface. So: prove the
+        # toolchain links a trivial shared object FIRST; only then does a failure
+        # with the script added mean what the message says.
+        if $CC_TOOL -fPIC -shared -o /dev/null -xc /dev/null 2>/dev/null; then
+          if $CC_TOOL -fPIC -shared -Wl,--version-script="$vscript" -o /dev/null -xc /dev/null 2>/dev/null; then
+            ldflags="-Wl,--version-script=$vscript"
+          else
+            echo "build.sh pack: this linker will not take src/coinxt.map;" >&2
+            echo "  refusing to ship a wide-surface library." >&2
+            exit 1
+          fi
+        fi
+        ;;
+      dll)
+        printf 'EXPORTS\n' > "$stage/coinxt.def"
+        for sym in $exports; do printf '%s\n' "$sym" >> "$stage/coinxt.def"; done
+        ldflags="$stage/coinxt.def"
+        ;;
+      dylib)
+        # ld64 wants the C symbol name with its leading underscore.
+        : > "$stage/coinxt.exp"
+        for sym in $exports; do printf '_%s\n' "$sym" >> "$stage/coinxt.exp"; done
+        ldflags="-Wl,-exported_symbols_list,$stage/coinxt.exp"
+        ;;
+    esac
+
+    $CC_TOOL -shared $objs $ldflags -o "$staged" $(platform_libs "$ext")
+    # Debug info and local symbols are dead weight in a committed binary and
+    # make the artifact differ run to run; --strip-unneeded keeps exactly the
+    # dynamic symbols the engine needs to bind. macOS strip needs -x (a plain
+    # strip on a dylib removes symbols the dynamic linker still wants).
+    if command -v "$STRIP_TOOL" > /dev/null 2>&1; then
+      if [ "$ext" = dylib ]; then
+        "$STRIP_TOOL" -x "$staged" 2>/dev/null || true
+      else
+        "$STRIP_TOOL" --strip-unneeded "$staged" 2>/dev/null || "$STRIP_TOOL" "$staged" 2>/dev/null || true
+      fi
+    fi
+    mkdir -p "$dir"
+    mv "$staged" "$out"
+    echo "built $out"
+    echo "exported symbols (the shipped surface):"
+    printf '  %s\n' $exports
+    ;;
+  asan)
+    tmp=$(mktemp -d)
+    selftest_source > "$tmp/selftest.c"
     # Upstream's units are instrumented too: the point of this lane is that the
     # NEW code runs under ASan + UBSan, and half of it is upstream's.
     secp_objs=$(compile_secp "$tmp" cc -fsanitize=address,undefined)
@@ -728,8 +739,85 @@ EOF
     "$tmp/cnx_selftest"
     rm -rf "$tmp"
     ;;
+  web)
+    # The web build: wasm32-emscripten (2026-10-21). A browser loads no
+    # library, so for OXT-Beyond's web IDE the shim is linked INTO the engine,
+    # which keeps a table of the libraries compiled into it and finds
+    # "c:coinxt>cnx_..." there by name (OXT-Beyond's
+    # engine/src/em-xtalk-web.cpp). What ships is a static archive,
+    # src/code/wasm32-emscripten/coinxt.a, holding ONE relocatable object (the
+    # shim, trezor-crypto and libsecp256k1, linked with emcc -r) and a table of
+    # the symbols the binding names, which the engine registers:
+    #
+    #     const struct { const char *symbol; void *address; } *
+    #     coinxt_web_exports(void);        /* ends with { NULL, NULL } */
+    #
+    # The table is GENERATED from every `binds to "c:coinxt>NAME"` of
+    # src/coinxt.lcb, in one translation unit with coinxt.c (which it
+    # includes: the shim has no header), so a bind with no shim function is a
+    # compile error, never a missing symbol found in a browser. Declared with
+    # its real prototype, each address is the function itself: WebAssembly
+    # checks a call's type, and an address taken through a declaration of
+    # another type would be a stub that traps. Entropy is the browser's
+    # crypto.getRandomValues, through Emscripten's getrandom (coinxt.c).
+    #
+    # Then the self-test (the `asan` target's source) is linked against the
+    # ARCHIVE and run by node, so what is tested is the file that ships.
+    # Needs emcc and node on PATH (the Emscripten SDK's emsdk_env.sh). -g0 and
+    # the prefix map keep this folder's path out of the object, so the same
+    # source and Emscripten give the same archive anywhere.
+    command -v emcc > /dev/null 2>&1 || { echo "build.sh web: emcc is not on PATH (source emsdk_env.sh)" >&2; exit 1; }
+    command -v node > /dev/null 2>&1 || { echo "build.sh web: node is not on PATH" >&2; exit 1; }
+    dir="$root/src/code/wasm32-emscripten"
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    symbols=$(sed -n 's/.*binds to "c:coinxt>\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p' "$root/src/coinxt.lcb" | sort -u)
+    if [ -z "$symbols" ]; then
+      echo "build.sh web: src/coinxt.lcb binds no c:coinxt> symbol: is the pattern stale?" >&2
+      exit 1
+    fi
+    count=$(printf '%s\n' $symbols | wc -l | tr -d ' ')
+    {
+      printf '/* GENERATED by native/build.sh web from src/coinxt.lcb: the shim, and the\n'
+      printf ' * %s symbols the binding binds to, for OXT-Beyond'"'"'s web engine. */\n' "$count"
+      printf '#include "coinxt.c"\n\n'
+      printf 'struct cnx_web_export { const char *symbol; void *address; };\n\n'
+      printf 'static const struct cnx_web_export k_cnx_web_exports[] = {\n'
+      for sym in $symbols; do printf '\t{ "%s", (void *)%s },\n' "$sym" "$sym"; done
+      printf '\t{ NULL, NULL },\n};\n\n'
+      printf '__attribute__((visibility("default"))) const struct cnx_web_export *coinxt_web_exports(void);\n'
+      printf '__attribute__((visibility("default"))) const struct cnx_web_export *coinxt_web_exports(void)\n'
+      printf '{\n\treturn k_cnx_web_exports;\n}\n'
+    } > "$stage/coinxt_web_exports.c"
+    web_flags="-Os -g0 -ffile-prefix-map=$root=coinxt -ffile-prefix-map=$stage=build"
+    objs=""
+    obj="$stage/coinxt_web_exports.o"
+    emcc $web_flags $warn -Werror=implicit-function-declaration $secp_cppflags $inc \
+         -I"$here" -c "$stage/coinxt_web_exports.c" -o "$obj"
+    objs="$objs $obj"
+    for src in $vendor_src; do
+      obj="$stage/$(basename "$src" .c).o"
+      emcc $web_flags $warn $secp_cppflags $inc -c "$src" -o "$obj"
+      objs="$objs $obj"
+    done
+    for src in $secp_src; do
+      obj="$stage/secp_$(basename "$src" .c).o"
+      emcc $web_flags $warn $secp_warn $secp_cppflags -c "$src" -o "$obj"
+      objs="$objs $obj"
+    done
+    emcc -r -o "$stage/coinxt-web.o" $objs
+    rm -f "$stage/coinxt.a"
+    emar rcsD "$stage/coinxt.a" "$stage/coinxt-web.o"
+    selftest_source > "$stage/selftest.c"
+    emcc -Os $warn "$stage/selftest.c" "$stage/coinxt.a" -sALLOW_MEMORY_GROWTH=1 \
+         -sENVIRONMENT=node -o "$stage/cnx_selftest.js"
+    node "$stage/cnx_selftest.js"
+    mkdir -p "$dir"
+    mv "$stage/coinxt.a" "$dir/coinxt.a"
+    echo "built $dir/coinxt.a ($count symbols in coinxt_web_exports)"
+    ;;
   *)
-    echo "usage: sh build.sh [lib|asan|pack]" >&2
+    echo "usage: sh build.sh [lib|asan|pack|web]" >&2
     exit 2
     ;;
 esac

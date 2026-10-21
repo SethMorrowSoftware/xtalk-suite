@@ -5571,6 +5571,11 @@ constant kNxrHandshakeTimeout = 20000     -- milliseconds
 -- The receive buffer cap: a peer that streams bytes without ever completing
 -- a frame must hit a wall, not exhaust memory (fail closed).
 constant kNxrMaxBuffer = 16777216
+-- The browser transport (2026-10-21): how often, in milliseconds, the
+-- events the page's WebSocket queued are drained, and how many one drain
+-- takes before it yields to the engine for a turn.
+constant kNxrWebPollMs = 40
+constant kNxrWebPollBatch = 64
 
 -- ==========================================================================
 -- Script-local state. Handle tables keyed by integer handle and by engine
@@ -5583,6 +5588,7 @@ local sNxrRelays             -- keyed by handle: socketID, state, url, host,
 local sNxrSockToRelay        -- socket id -> handle
 local sNxrNextHandle         -- monotonic; 0 never valid
 local sNxrOwner              -- long id the callbacks dispatch to
+local sNxrWebPolling         -- true while a browser-transport drain is pending
 
 -- ==========================================================================
 -- Wiring.
@@ -5597,6 +5603,11 @@ sockets that speaks the NIP-01 relay protocol: it sends REQ, CLOSE,
 EVENT and AUTH, and receives EVENT, OK, EOSE, CLOSED, NOTICE and AUTH.
 It composes the NostrXT core library, so load that first; this library
 owns only the sockets, buffers and relay handles.
+
+In a web page (the platform is "HTML5": OXT-Beyond's web IDE or a web
+standalone), which has no engine sockets, each relay is the browser's own
+WebSocket instead, driven through JavaScript; the handles, commands and
+callbacks are the same.
 
 Each relay is an integer handle from <nxrConnect>. Commands report
 through the result: empty on success, or text starting
@@ -5775,6 +5786,11 @@ command nxrConnect pUrl
    -- The Sec-WebSocket-Key: 16 random bytes, base64.
    put nxrRandomHex(16) into tKeyHex
    put nxB64Encode(nxHexDecode(tKeyHex)) into sNxrRelays[tHandle]["wsKey"]
+   if nxrIsBrowser() then
+      -- No engine sockets in a web page: the browser's WebSocket does the
+      -- TCP, the TLS and RFC 6455 itself (the browser transport, below).
+      return nxrWebConnect(tHandle, pUrl)
+   end if
    put tHandle into sNxrSockToRelay[tSocketID]
    set the socketTimeoutInterval to kNxrHandshakeTimeout
    if tParsed["secure"] is true then
@@ -6106,6 +6122,9 @@ private command nxrSendText pRelay, pText
    if sNxrRelays[pRelay]["state"] is not "open" then
       return "NostrXT relay: relay" && pRelay && "is not open (state:" && sNxrRelays[pRelay]["state"] & ")"
    end if
+   if sNxrRelays[pRelay]["web"] is not empty then
+      return nxrWebSend(pRelay, pText)
+   end if
    put nxWsFrameEncode(1, textEncode(pText, "UTF-8"), nxrRandomHex(4)) into tFrame
    if tFrame is empty then
       return "NostrXT relay: " & nxLastError()
@@ -6351,6 +6370,11 @@ command nxrPing pRelay
    if sNxrRelays[pRelay]["state"] is not "open" then
       return "NostrXT relay: relay" && pRelay && "is not open"
    end if
+   if sNxrRelays[pRelay]["web"] is not empty then
+      -- A page cannot send a ping: the browser answers the relay's pings
+      -- and keeps the connection alive itself.
+      return empty
+   end if
    put nxWsFrameEncode(9, textEncode("nxr", "UTF-8"), nxrRandomHex(4)) into tFrame
    write tFrame to socket sNxrRelays[pRelay]["socketID"]
    return empty
@@ -6458,6 +6482,209 @@ function nxrOpenRelays
 end nxrOpenRelays
 
 -- ==========================================================================
+-- The browser transport (2026-10-21). A web page has no engine sockets
+-- (OXT-Beyond's web engine opens none), but the browser has WebSocket, which
+-- does the TCP, the TLS and RFC 6455 itself. So in a page each relay is a
+-- browser WebSocket, driven with `do ... as "javascript"`, and everything
+-- above the transport (the handles, nxrHandleMessage, verification, the
+-- callbacks, teardown) is the same code as over engine sockets.
+--
+-- The page's WebSocket events are QUEUED in JavaScript and DRAINED by a
+-- script timer (nxrWebPoll), never delivered by calling a handler from
+-- JavaScript: the family's poll-drain rule (suite rule 1), and it keeps
+-- every callback on the engine's own message loop, in order. Text crosses
+-- the boundary as base64 of its UTF-8 bytes in both directions, so no
+-- escaping is involved and a quote, a backslash or a line break in an
+-- event cannot change the JavaScript that carries it.
+--
+-- The relay's "socketID" is "nxrweb:<n>", <n> the page's id for the
+-- WebSocket: never an engine socket name, so the engine's socket messages
+-- and nxrSocketError/Closed/Timeout never match it.
+--
+-- STATUS: verified statically; needs a browser pass.
+-- ==========================================================================
+
+private function nxrIsBrowser
+   return the platform is "HTML5"
+end nxrIsBrowser
+
+private function nxrWebScript
+   -- The page-side helper, installed on window.oxtNxrWeb once per page (a
+   -- second install keeps the first: its sockets stay reachable).
+   local tJs
+   put "(function(){if(window.oxtNxrWeb)return 'ok';" & \
+         "var R={n:0,s:{}};" & \
+         "R.b64=function(t){var b=new TextEncoder().encode(t),r='';" & \
+         "for(var i=0;i<b.length;i+=8192){r+=String.fromCharCode.apply(null,b.subarray(i,i+8192));}" & \
+         "return btoa(r);};" & \
+         "R.text=function(x){var a=atob(x),b=new Uint8Array(a.length);" & \
+         "for(var i=0;i<a.length;i++){b[i]=a.charCodeAt(i);}" & \
+         "return new TextDecoder().decode(b);};" & \
+         "R.open=function(u){var id=++R.n,q=[],w;" & \
+         "try{w=new WebSocket(u);}catch(e){return 'error:'+R.b64(String(e&&e.message||e));}" & \
+         "R.s[id]={w:w,q:q};" & \
+         "w.onopen=function(){q.push('open:');};" & \
+         "w.onmessage=function(e){q.push('message:'+R.b64(typeof e.data==='string'?e.data:''));};" & \
+         "w.onerror=function(){q.push('error:'+R.b64('the WebSocket failed'));};" & \
+         "w.onclose=function(e){q.push('close:'+R.b64(e.code+' '+(e.reason||'')));};" & \
+         "return 'id:'+id;};" & \
+         "R.send=function(id,x){var s=R.s[id];if(!s)return 'gone';" & \
+         "try{s.w.send(R.text(x));return 'ok';}catch(e){return 'error:'+R.b64(String(e&&e.message||e));}};" & \
+         "R.next=function(id){var s=R.s[id];if(!s)return 'gone:';" & \
+         "return s.q.length?s.q.shift():'';};" & \
+         "R.close=function(id){var s=R.s[id];if(!s)return 'gone';delete R.s[id];" & \
+         "s.w.onopen=s.w.onmessage=s.w.onerror=s.w.onclose=null;" & \
+         "try{s.w.close(1000);}catch(e){}return 'ok';};" & \
+         "window.oxtNxrWeb=R;return 'ok';})()" into tJs
+   return tJs
+end nxrWebScript
+
+private function nxrWebEval pJs
+   -- Run one piece of JavaScript in the page and return its value as text,
+   -- or "error:" and the reason when it threw (the engine's result is then
+   -- "execution error").
+   local tError
+   try
+      do nxrWebScript() as "javascript"
+      if the result is not "ok" then
+         return "error:" & base64Encode(textEncode("could not install the page's WebSocket helper:" && the result, "UTF-8"))
+      end if
+      do pJs as "javascript"
+      return the result
+   catch tError
+      return "error:" & base64Encode(textEncode("JavaScript is not available:" && tError, "UTF-8"))
+   end try
+end nxrWebEval
+
+private function nxrWebDecode pBase64
+   -- The text a base64 payload from the page carries (UTF-8 inside).
+   return textDecode(base64Decode(pBase64), "UTF-8")
+end nxrWebDecode
+
+private function nxrWebConnect pRelay, pUrl
+   local tReply, tSocketID
+   put nxrWebEval("window.oxtNxrWeb.open(window.oxtNxrWeb.text('" & nxB64Encode(textEncode(pUrl, "UTF-8")) & "'))") into tReply
+   if tReply begins with "error:" then
+      delete variable sNxrRelays[pRelay]
+      return "NostrXT relay: the browser could not open the WebSocket:" && nxrWebDecode(char 7 to -1 of tReply)
+   end if
+   if not (tReply begins with "id:") then
+      delete variable sNxrRelays[pRelay]
+      return "NostrXT relay: the browser could not open the WebSocket (" & tReply & ")"
+   end if
+   put "nxrweb:" & char 4 to -1 of tReply into tSocketID
+   put tSocketID into sNxrRelays[pRelay]["socketID"]
+   put char 4 to -1 of tReply into sNxrRelays[pRelay]["web"]
+   put "handshake" into sNxrRelays[pRelay]["state"]
+   put pRelay into sNxrSockToRelay[tSocketID]
+   send ("nxrDeadline " & pRelay) to me in kNxrHandshakeTimeout milliseconds
+   nxrWebArm
+   return pRelay
+end nxrWebConnect
+
+private command nxrWebArm
+   -- One drain timer for every browser relay; a second arm is a no-op.
+   if sNxrWebPolling is true then
+      exit nxrWebArm
+   end if
+   put true into sNxrWebPolling
+   send "nxrWebPoll" to me in kNxrWebPollMs milliseconds
+end nxrWebArm
+
+private function nxrWebSend pRelay, pText
+   local tReply
+   put nxrWebEval("window.oxtNxrWeb.send(" & sNxrRelays[pRelay]["web"] & ",'" & nxB64Encode(textEncode(pText, "UTF-8")) & "')") into tReply
+   if tReply is "ok" then
+      return empty
+   end if
+   if tReply begins with "error:" then
+      return "NostrXT relay: the browser could not send:" && nxrWebDecode(char 7 to -1 of tReply)
+   end if
+   return "NostrXT relay: the browser's WebSocket for relay" && pRelay && "is gone"
+end nxrWebSend
+
+private command nxrWebClose pSocketID
+   -- Idempotent: the page forgets the id on the first close.
+   local tReply
+   put nxrWebEval("window.oxtNxrWeb.close(" & char 8 to -1 of pSocketID & ")") into tReply
+end nxrWebClose
+
+/**
+Summary: Delivers the events a web page's relay WebSockets have queued.
+
+Example:
+send "nxrWebPoll" to stack "nostr-relay" in 40 milliseconds
+
+Description:
+Used only in a web page, where each relay is the browser's WebSocket:
+<nxrConnect> starts it, and it sends itself again while any browser relay
+is live. It is public only so that the engine can send it; a script has
+no reason to call it.
+
+References: nxrConnect (handler)
+*/
+command nxrWebPoll
+   -- Drain each browser relay's queue (up to kNxrWebPollBatch events a
+   -- relay a pass), then re-arm while any browser relay is live. Every
+   -- event re-reads the tables: a callback may have torn the relay down.
+   local tSavedLineDelim, tKeys, tRelay, tCount, tEvent, tKind, tPayload, tColon, tLive
+   put false into sNxrWebPolling
+   put the lineDelimiter into tSavedLineDelim
+   set the lineDelimiter to return
+   put the keys of sNxrRelays into tKeys
+   set the lineDelimiter to tSavedLineDelim
+   put false into tLive
+   repeat for each line tRelay in tKeys
+      repeat with tCount = 1 to kNxrWebPollBatch
+         if sNxrRelays[tRelay]["web"] is empty then
+            exit repeat
+         end if
+         put nxrWebEval("window.oxtNxrWeb.next(" & sNxrRelays[tRelay]["web"] & ")") into tEvent
+         if tEvent is empty then
+            exit repeat
+         end if
+         put offset(":", tEvent) into tColon
+         if tColon is 0 then
+            nxrFail tRelay, "the page's WebSocket helper answered" && tEvent
+            exit repeat
+         end if
+         put char 1 to (tColon - 1) of tEvent into tKind
+         put char (tColon + 1) to -1 of tEvent into tPayload
+         nxrWebEvent tRelay, tKind, tPayload
+      end repeat
+      if sNxrRelays[tRelay]["web"] is not empty then
+         put true into tLive
+      end if
+   end repeat
+   if tLive then
+      nxrWebArm
+   end if
+end nxrWebPoll
+
+private command nxrWebEvent pRelay, pKind, pPayload
+   local tMessage
+   if pKind is "open" then
+      if sNxrRelays[pRelay]["state"] is "handshake" then
+         put "open" into sNxrRelays[pRelay]["state"]
+         nxrDispatch pRelay, "open", empty, empty
+      end if
+   else if pKind is "message" then
+      put base64Decode(pPayload) into tMessage
+      if the number of bytes of tMessage > kNxrMaxBuffer then
+         nxrFail pRelay, "a message exceeded" && kNxrMaxBuffer && "bytes"
+         exit nxrWebEvent
+      end if
+      nxrHandleMessage pRelay, tMessage
+   else if pKind is "error" then
+      nxrFail pRelay, nxrWebDecode(pPayload)
+   else if pKind is "close" then
+      nxrTeardown pRelay, "the connection closed (" & nxrWebDecode(pPayload) & ")"
+   else if pKind is "gone" then
+      nxrTeardown pRelay, "the page's WebSocket is gone"
+   end if
+end nxrWebEvent
+
+-- ==========================================================================
 -- Teardown: idempotent, fail closed, own the lifecycle.
 -- ==========================================================================
 
@@ -6465,6 +6692,10 @@ private command nxrSafeCloseSocket pSocketID
    -- Close only a socket the engine still lists (the onionxt idempotent-
    -- close shape; delimiter-guarded read of the openSockets).
    local tSavedLineDelim, tIsOpen
+   if pSocketID begins with "nxrweb:" then
+      nxrWebClose pSocketID
+      exit nxrSafeCloseSocket
+   end if
    put the lineDelimiter into tSavedLineDelim
    set the lineDelimiter to return
    put (pSocketID is among the lines of the openSockets) into tIsOpen
@@ -6547,10 +6778,12 @@ command nxrDisconnect pRelay
    if sNxrRelays[pRelay]["socketID"] is empty then
       exit nxrDisconnect
    end if
-   if sNxrRelays[pRelay]["state"] is "open" then
+   if sNxrRelays[pRelay]["state"] is "open" and sNxrRelays[pRelay]["web"] is empty then
       put nxrRandomHex(4) into tMask
       write nxWsFrameEncode(8, numToByte(3) & numToByte(232), tMask) to socket sNxrRelays[pRelay]["socketID"]
    end if
+   -- (A browser WebSocket sends its own close frame: nxrSafeCloseSocket
+   -- closes it with code 1000.)
    nxrTeardown pRelay, "disconnected by the app"
 end nxrDisconnect
 

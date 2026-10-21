@@ -50927,4 +50927,10 @@ private command nx1nxtTestRelayLayerOffline
    nxrShutdown
    nx1nxtCheck true, "nxrShutdown twice is safe"
    nx1nxtCheck nxrOpenRelays() is empty, "no relays remain after shutdown"
+   -- the web transport's drain (2026-10-21), sent by the engine in a web
+   -- page: with no relay left it drains nothing and re-arms nothing, on
+   -- any platform. Its browser legs ride OXT-Beyond's web IDE check.
+   nxrWebPoll
+   nx1nxtCheck the result is empty, "nxrWebPoll with no browser relay is a clean no-op"
+   nx1nxtCheck nxrOpenRelays() is empty, "and leaves no relay behind"
 end nx1nxtTestRelayLayerOffline
