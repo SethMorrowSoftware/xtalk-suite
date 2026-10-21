@@ -1,0 +1,272 @@
+# lce-packages.yml - the suite's extensions as finished .lce packages, the
+# files an end user installs with Tools > Extension Manager > + in any IDE
+# built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,
+# HyperXTalk, OXT-Beyond). One package per extension: the six LiveCode
+# Builder libraries with their native code for every committed platform,
+# and the nine script libraries. tools/build-lce-packages.py says what a
+# package holds and why; tools/lce-engine-check.lc is the engine's half.
+#
+# WHAT A RUN DOES, in about five minutes on one Linux runner (plus a minute
+# on Windows for the Visual C++ runtime):
+#   1. vc-runtime (windows-2022): the Visual C++ runtime DLLs that enetxt's
+#      and box2dxt's Windows libraries import, from the image's Visual
+#      Studio redistributable, so that those two packages load on a PC
+#      without the Visual C++ Redistributable. The packager checks them
+#      against the pins OXT-Beyond's own build uses.
+#   2. packages (ubuntu-24.04): OXT-Beyond's lc-compile and server engine
+#      from a pinned OXT-Beyond release (OXT_BEYOND_TAG, its -binaries
+#      archive checked against OXT_BEYOND_BINARIES_SHA256), then
+#        build-lce-packages.py stage   compile and assemble every package
+#        lce-engine-check.lc docs      api.lcdoc for the Dictionary, by
+#                                      Beyond's docs parser
+#        build-lce-packages.py pack    the .lce files and SHA256SUMS
+#        lce-engine-check.lc verify    every package validated by the
+#                                      Extension Manager's own code,
+#                                      extracted, loaded and probed on the
+#                                      engine, as the IDE installs it
+#      and uploads the packages as the artifact xtalk-suite-lce.
+#   3. release, only on a dispatch that names a release_tag: the same files
+#      attached to that GitHub release, which is created as a draft
+#      pre-release when it does not exist yet. Pressing Run with a tag is
+#      the human decision; nothing here publishes on its own.
+#
+# The engine check runs on Linux x86-64 only: the Windows, macOS, arm64 and
+# 32-bit libraries in the packages are the committed ones that
+# release-binaries.yml built and the native lanes test, and a package only
+# carries them (verified statically for those platforms; needs an IDE pass).
+name: lce packages
+
+on:
+  push:
+    branches: [main]
+    paths: &lce-paths
+      - '.github/workflows/lce-packages.yml'
+      - 'tools/build-lce-packages.py'
+      - 'tools/test-build-lce-packages.py'
+      - 'tools/lce-engine-check.lc'
+      - 'sodiumxt/src/**'
+      - 'torrentxt/src/**'
+      - 'enetxt/src/**'
+      - 'datachannelxt/src/**'
+      - 'box2dxt/src/**'
+      - 'coinxt/src/**'
+      - 'coinxt/native/vendor/**'
+      - 'onionxt/src/**'
+      - 'nostrxt/src/**'
+      - '*/examples/*-helpers.livecodescript'
+      - '*/LICENSE'
+      - '*/THIRD-PARTY-LICENSES.md'
+  pull_request:
+    paths: *lce-paths
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Attach the packages to this GitHub release (created as a draft pre-release if it does not exist); empty = artifact only'
+        required: false
+        default: ''
+
+concurrency:
+  group: lce-packages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The OXT-Beyond release whose lc-compile builds the modules and whose
+  # server engine, docs parser and extension-utils check them. Its
+  # bytecode is LiveCode 9's (kMCScriptModuleVersion_9_0_0_DP_4, the same
+  # header LiveCode Community 9.6.3 reads), and an IDE that cannot load
+  # module.lcm recompiles it from the .lcb in the package.
+  OXT_BEYOND_REPO: SethMorrowSoftware/OpenXTalk-Beyond
+  OXT_BEYOND_TAG: v0.2.7-rc.6
+  OXT_BEYOND_BINARIES: OXT-Beyond-0.2.7-rc.6-linux-x86_64-binaries.tar.xz
+  OXT_BEYOND_BINARIES_SHA256: 12504ee02cbf26c59f218263724790853b50993ebdda02546df66bcf6525add8
+  DOCS_PARSER_SHA256: 539f8052a9fca16302cd206b6826a06b091a16c03a66a1f95d70faf644555a19
+  EXTENSION_UTILS_SHA256: 68d1e6957201eeb0ed82937f48ab763eb2771bedd82145d6ad9f055bd1f57790
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vc-runtime:
+    name: Visual C++ runtime
+    # windows-2022: its Visual Studio 2022 redistributable (14.44.35112) is
+    # the one VC_RUNTIME_PINS in tools/build-lce-packages.py pins
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Copy the runtime DLLs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $redist = Get-ChildItem "$vs\VC\Redist\MSVC" -Directory | Where-Object { $_.Name -match '^[0-9.]+$' } | Sort-Object { [version]$_.Name } | Select-Object -Last 1
+          if (-not $redist) { throw "no VC\Redist\MSVC\<version> under $vs" }
+          Write-Host "redistributable $($redist.FullName)"
+          foreach ($arch in 'x64', 'x86') {
+            $crt = Get-ChildItem "$($redist.FullName)\$arch" -Directory | Where-Object { $_.Name -match '^Microsoft\.VC1[0-9]+\.CRT$' } | Sort-Object Name | Select-Object -Last 1
+            if (-not $crt) { throw "no $arch\Microsoft.VC14x.CRT in $($redist.FullName)" }
+            New-Item -ItemType Directory -Force -Path "vc-runtime\$arch" | Out-Null
+            Copy-Item "$($crt.FullName)\*.dll" "vc-runtime\$arch\"
+          }
+          Set-Content -Path vc-runtime\REDIST.txt -Value $redist.Name
+          Get-ChildItem -Recurse vc-runtime | Format-Table -AutoSize FullName, Length
+
+      - name: Upload the runtime DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: vc-runtime
+          path: vc-runtime
+          if-no-files-found: error
+          retention-days: 1
+
+  packages:
+    name: Build and check the packages
+    needs: vc-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The packager's fixtures and table
+        run: |
+          python3 tools/test-build-lce-packages.py
+          python3 tools/build-lce-packages.py table
+
+      - name: Cache OXT-Beyond's tools
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/oxt
+          key: oxt-beyond-lce-${{ env.OXT_BEYOND_TAG }}-${{ env.OXT_BEYOND_BINARIES_SHA256 }}-${{ env.DOCS_PARSER_SHA256 }}-${{ env.EXTENSION_UTILS_SHA256 }}
+
+      # lc-compile, modules/lci, the server engine and its revZip/revXML
+      # externals from the release's binaries archive (the folder is renamed
+      # from linux-x86_64-bin: a folder of that name in the engine's path
+      # makes the engine look for a source checkout), and the docs parser and
+      # extension-utils from the same tag, each checked against its pin
+      - name: Fetch OXT-Beyond's tools
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          oxt="$RUNNER_TEMP/oxt"
+          mkdir -p "$oxt"
+          base="https://github.com/$OXT_BEYOND_REPO/releases/download/$OXT_BEYOND_TAG"
+          curl -sSfL --retry 4 -o "$RUNNER_TEMP/bin.tar.xz" "$base/$OXT_BEYOND_BINARIES"
+          echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
+            'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
+            'linux-x86_64-bin/modules/lci/*'
+          mv "$oxt/linux-x86_64-bin" "$oxt/engine"
+          rm "$RUNNER_TEMP/bin.tar.xz"
+          raw="https://raw.githubusercontent.com/$OXT_BEYOND_REPO/$OXT_BEYOND_TAG"
+          curl -sSfL --retry 4 -o "$oxt/revdocsparser.livecodescript" "$raw/ide-support/revdocsparser.livecodescript"
+          curl -sSfL --retry 4 -o "$oxt/extension-utils.livecodescript" \
+            "$raw/extensions/script-libraries/extension-utils/extension-utils.livecodescript"
+          echo "$DOCS_PARSER_SHA256  $oxt/revdocsparser.livecodescript" | sha256sum -c -
+          echo "$EXTENSION_UTILS_SHA256  $oxt/extension-utils.livecodescript" | sha256sum -c -
+          curl -sSfL --retry 4 -o "$oxt/OpenSSL-LICENSE.txt" \
+            https://raw.githubusercontent.com/openssl/openssl/d3c1b1169b3569ff3069e5b399f47b2b28e03d79/LICENSE.txt
+
+      - name: Download the runtime DLLs
+        uses: actions/download-artifact@v4
+        with:
+          name: vc-runtime
+          path: ${{ runner.temp }}/vc-runtime
+
+      - name: Stage the packages
+        env:
+          RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && '--release' || '' }}
+        run: |
+          echo "Visual C++ redistributable on the runner: $(cat "$RUNNER_TEMP/vc-runtime/REDIST.txt")"
+          python3 tools/build-lce-packages.py stage --bin "$RUNNER_TEMP/oxt/engine" \
+            --out "$RUNNER_TEMP/stage" --vc-runtime "$RUNNER_TEMP/vc-runtime" \
+            --openssl-licence "$RUNNER_TEMP/oxt/OpenSSL-LICENSE.txt" $RELEASE
+
+      - name: Write the Dictionary docs
+        run: |
+          set +e
+          "$RUNNER_TEMP/oxt/engine/server-community" tools/lce-engine-check.lc docs \
+            "$RUNNER_TEMP/stage" "$RUNNER_TEMP/oxt/revdocsparser.livecodescript" | tee "$RUNNER_TEMP/docs.log"
+          status="${PIPESTATUS[0]}"
+          grep -q '^SUMMARY ' "$RUNNER_TEMP/docs.log" || { echo "::error::the docs step did not finish"; exit 1; }
+          exit "$status"
+
+      - name: Pack
+        run: python3 tools/build-lce-packages.py pack "$RUNNER_TEMP/stage" --out "$RUNNER_TEMP/lce" --release
+
+      - name: Install, load and probe every package on the engine
+        run: |
+          set +e
+          "$RUNNER_TEMP/oxt/engine/server-community" tools/lce-engine-check.lc verify \
+            "$RUNNER_TEMP/lce" "$RUNNER_TEMP/oxt/extension-utils.livecodescript" "$RUNNER_TEMP/installed" \
+            | tee "$RUNNER_TEMP/verify.log"
+          status="${PIPESTATUS[0]}"
+          grep -q '^SUMMARY ' "$RUNNER_TEMP/verify.log" || { echo "::error::the engine check did not finish"; exit 1; }
+          {
+            echo "### lce packages"
+            echo
+            echo "| Package | Bytes | SHA-256 |"
+            echo "| --- | --- | --- |"
+            while read -r sum name; do
+              echo "| \`$name\` | $(stat -c %s "$RUNNER_TEMP/lce/$name") | \`${sum:0:16}...\` |"
+            done < "$RUNNER_TEMP/lce/SHA256SUMS"
+            echo
+            echo "Engine check: $(grep '^SUMMARY ' "$RUNNER_TEMP/verify.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtalk-suite-lce
+          path: |
+            ${{ runner.temp }}/lce/*.lce
+            ${{ runner.temp }}/lce/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to the release
+    needs: packages
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xtalk-suite-lce
+          path: lce
+
+      - name: Upload the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::release_tag '$TAG' is not a tag name"
+            exit 1
+          fi
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            {
+              echo "The xTalk Suite extensions as .lce packages, built from $GITHUB_SHA by run $GITHUB_RUN_ID."
+              echo
+              echo "Install one in any IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,"
+              echo "HyperXTalk, OXT-Beyond): Tools > Extension Manager > + , then choose the .lce file."
+              echo "Install a library before its helpers or script layer (for example torrentxt before"
+              echo "torrentxt-helpers). SHA256SUMS lists every file's SHA-256."
+            } > notes.md
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --draft --prerelease --title "xTalk Suite extensions $TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber lce/*.lce lce/SHA256SUMS

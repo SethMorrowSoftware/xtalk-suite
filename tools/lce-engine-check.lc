@@ -1,0 +1,271 @@
+<?lc
+-- lce-engine-check.lc - the engine's half of tools/build-lce-packages.py.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the
+-- <platform>-bin folder of a release's -binaries archive), in
+-- .github/workflows/lce-packages.yml:
+--
+--   server-community tools/lce-engine-check.lc docs STAGE PARSER
+--      writes api.lcdoc into every package folder of STAGE, made from the
+--      folder's .lcb or .livecodescript by Beyond's docs parser
+--      (ide-support/revdocsparser.livecodescript, PARSER), as the IDE's
+--      revIDEExtensionUpdateAPI does. An INSTALLED IDE never makes it
+--      (revEnvironmentIsInstalled), and without it the Dictionary has no
+--      entry for the extension.
+--
+--   server-community tools/lce-engine-check.lc verify PACKAGES UTILS SCRATCH
+--      installs and loads every package listed in PACKAGES/packages.tsv,
+--      in its order, the way the Extension Manager does
+--      (revideextensionlibrary): extensionValidateLCEPackage of
+--      extension-utils (UTILS, the IDE's own library); every zip item
+--      extracted with revZip into SCRATCH/<id>.<version>
+--      (__extensionPackageExtract); for an LCB package, the libraries of
+--      the code folders for this platform and processor mapped into
+--      revLibraryMapping (__MapCodeLibraryForIDE) and module.lcm loaded
+--      (__LoadExtension); for a script library, start using, then
+--      extensionInitialize must put it into the back scripts and
+--      extensionFinalize take it out again. Then the package's probe, an
+--      expression whose value must match its regular expression.
+--
+-- Every check prints PASS or FAIL and a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- Lines with ::error:: are GitHub Actions annotations.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=lce packages::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   replace numToCodepoint(13) with " " in pText
+   return pText
+end oneLine
+
+-- The package folder's main source: its .lcb, else its .livecodescript
+function mainSource pFolder
+   local tFiles, tMain
+   put files(pFolder) into tFiles
+   filter tFiles with "*.lcb" into tMain
+   if tMain is empty then
+      filter tFiles with "*.livecodescript" into tMain
+   end if
+   return line 1 of tMain
+end mainSource
+
+command writeDocs pStage, pParser
+   local tFolder, tSource, tText, tApi
+   start using stack pParser
+   repeat for each line tFolder in folders(pStage)
+      if tFolder begins with "." then next repeat
+      put mainSource(pStage & "/" & tFolder) into tSource
+      if tSource is empty then
+         check tFolder & " api.lcdoc", false, "no .lcb or .livecodescript"
+         next repeat
+      end if
+      try
+         -- As revIDEExtensionUpdateAPI: a script library goes to the parser
+         -- as its stack's long id and script, because the parser names the
+         -- library after the short name of the stack it is given
+         put pStage & "/" & tFolder & "/" & tSource into tSource
+         if tSource ends with ".livecodescript" then
+            put the long id of stack tSource into tSource
+            put the script of tSource into tText
+         else
+            put textDecode(url("binfile:" & tSource), "utf-8") into tText
+         end if
+         dispatch function "revDocsGenerateDocsFileFromText" to stack "revDocsParser" with tText, tSource
+         put the result into tApi
+         -- A library entry and at least one documented handler, or the
+         -- Dictionary would show an empty page
+         if tApi begins with "Library:" and tApi contains (return & "Name:") then
+            put textEncode(tApi, "utf-8") into url("binfile:" & pStage & "/" & tFolder & "/api.lcdoc")
+            check tFolder & " api.lcdoc", true
+         else
+            check tFolder & " api.lcdoc", false, "the parser returned no library with entries: " & \
+                  oneLine(char 1 to 200 of tApi)
+         end if
+      catch tError
+         check tFolder & " api.lcdoc", false, oneLine(tError)
+      end try
+   end repeat
+end writeDocs
+
+-- revideextensionlibrary __MapCodeLibraryForIDE: the code folders for
+-- this platform, then those for this processor
+command mapCode pFolder, @rMapped
+   local tFolders, tMine, tLibraries, tLibrary
+   put 0 into rMapped
+   put folders(pFolder) into tFolders
+   switch the platform
+      case "MacOS"
+         filter tFolders with "*-mac*"
+         break
+      case "Win32"
+         filter tFolders with "*-win32*"
+         break
+      default
+         filter tFolders with "*-" & toLower(the platform) & "*"
+         break
+   end switch
+   filter tFolders with the processor & "-*" into tMine
+   if the platform is "MacOS" then
+      local tUniversal
+      filter tFolders with "universal-*" into tUniversal
+      if tUniversal is not empty then
+         put return & tUniversal after tMine
+      end if
+   end if
+   repeat for each line tFolder in tMine
+      if tFolder is empty then next repeat
+      put files(pFolder & "/" & tFolder) into tLibraries
+      filter tLibraries without ".*"
+      set the itemDelimiter to "."
+      repeat for each line tLibrary in tLibraries
+         delete the last item of tLibrary
+         if tLibrary is not empty then
+            set the revLibraryMapping[tLibrary] to pFolder & "/" & tFolder & "/" & tLibrary
+            add 1 to rMapped
+         end if
+      end repeat
+      set the itemDelimiter to comma
+   end repeat
+end mapCode
+
+command extractPackage pPackage, pTarget
+   local tItems, tDir
+   revZipOpenArchive pPackage, "read"
+   put revZipEnumerateItems(pPackage) into tItems
+   set the itemDelimiter to slash
+   repeat for each line tFile in tItems
+      put pTarget & "/" & item 1 to -2 of tFile into tDir
+      ensureFolder tDir
+      revZipExtractItemToFile pPackage, tFile, pTarget & "/" & tFile
+   end repeat
+   set the itemDelimiter to comma
+   revZipCloseArchive pPackage
+end extractPackage
+
+command ensureFolder pPath
+   local tSoFar
+   set the itemDelimiter to slash
+   repeat with i = 2 to the number of items of pPath
+      put item 1 to i of pPath into tSoFar
+      if there is not a folder tSoFar then
+         create folder tSoFar
+      end if
+   end repeat
+   set the itemDelimiter to comma
+end ensureFolder
+
+command probe pName, pProbe, pExpect
+   local tValue
+   try
+      put value(pProbe) into tValue
+      check pName & " " & pProbe, matchText(tValue, pExpect), "got '" & oneLine(tValue) & "'"
+   catch tError
+      check pName & " " & pProbe, false, "script error: " & oneLine(tError)
+   end try
+end probe
+
+-- The IDE has revZip and revXML loaded when the Extension Manager runs;
+-- the server engine loads its server-* builds of them from beside itself
+command loadExternal pName
+   local tFile
+   put specialFolderPath("engine") & "/server-" & pName & ".so" into tFile
+   if the platform is "Win32" then
+      put specialFolderPath("engine") & "/server-" & pName & ".dll" into tFile
+   else if the platform is "MacOS" then
+      put specialFolderPath("engine") & "/server-" & pName & ".dylib" into tFile
+   end if
+   set the externals of the templateStack to tFile
+   create stack pName && "External"
+   start using it
+   check "external " & pName, the externalCommands of it is not empty, "cannot load " & tFile
+end loadExternal
+
+command verifyPackages pDir, pUtils, pScratch
+   local tList, tFields, tPackage, tManifest, tTarget, tResult, tMapped, tName
+   loadExternal "revzip"
+   loadExternal "revxml"
+   start using stack pUtils
+   put textDecode(url("binfile:" & pDir & "/packages.tsv"), "utf-8") into tList
+   replace numToCodepoint(13) with empty in tList
+   ensureFolder pScratch
+   repeat for each line tLine in tList
+      if tLine is empty then next repeat
+      put tLine into tFields
+      split tFields by tab
+      put pDir & "/" & tFields[2] into tPackage
+      put tFields[2] into tName
+      try
+         extensionValidateLCEPackage tPackage, tManifest
+         put the result into tResult
+         check tName & " validates", tResult is empty, tResult
+         if tResult is not empty then next repeat
+         check tName & " manifest name", tManifest["name"] is tFields[3], \
+               "the manifest says " & tManifest["name"]
+         put pScratch & "/" & tManifest["name"] & "." & tManifest["version"] into tTarget
+         extractPackage tPackage, tTarget
+         if tFields[1] is "lcb" then
+            if there is a folder (tTarget & "/code") then
+               mapCode tTarget & "/code", tMapped
+            else
+               put 0 into tMapped
+            end if
+            check tName & " code for " & the platform && the processor, tMapped > 0, \
+                  "no library in code/ for this platform"
+            if there is a folder (tTarget & "/resources") then
+               load extension from file (tTarget & "/module.lcm") with resource path (tTarget & "/resources")
+            else
+               load extension from file (tTarget & "/module.lcm")
+            end if
+            put the result into tResult
+            check tName & " loads", tResult is empty and tFields[3] is among the lines of the loadedExtensions, \
+                  "result '" & oneLine(tResult) & "'"
+            if tResult is not empty then next repeat
+            probe tName, tFields[4], tFields[5]
+         else
+            local tStack, tInBack, tOutOfBack
+            put the short name of stack (tTarget & "/" & tFields[3] & ".livecodescript") into tStack
+            start using stack tStack
+            check tName & " start using", tStack is tFields[3] and tStack is among the lines of the stacksInUse, \
+                  "stack '" & tStack & "'"
+            probe tName, tFields[4], tFields[5]
+            send "extensionInitialize" to stack tStack
+            put the long id of stack tStack is among the lines of the backScripts into tInBack
+            send "extensionFinalize" to stack tStack
+            put the long id of stack tStack is not among the lines of the backScripts into tOutOfBack
+            check tName & " extensionInitialize/extensionFinalize", tInBack and tOutOfBack, \
+                  "in the back scripts after extensionInitialize: " & tInBack & ", out after extensionFinalize: " & tOutOfBack
+         end if
+      catch tError
+         check tName & " installs", false, oneLine(tError)
+      end try
+   end repeat
+end verifyPackages
+
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+switch $0
+   case "docs"
+      writeDocs $1, $2
+      break
+   case "verify"
+      verifyPackages $1, $2, $3
+      break
+   default
+      check "usage", false, "lce-engine-check.lc docs STAGE PARSER | verify PACKAGES UTILS SCRATCH"
+end switch
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

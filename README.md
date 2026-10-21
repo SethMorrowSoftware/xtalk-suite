@@ -167,11 +167,24 @@ macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
 ## Install
 
-Each native member is a standard OXT extension: an LCB module plus the per-platform library
-bundled under `src/code/<arch>-<platform>/`. Install it with the **Extension Manager** like any
-extension; the engine finds the library itself (no `sudo`, no `LD_LIBRARY_PATH`). **OnionXT and
-NostrXT are pure LiveCodeScript** with no packaged extension: `start using` their
-`src/*.livecodescript` libraries, or open a demo that carries them
+**The finished packages.** Every extension is built as an installable `.lce` package by
+`.github/workflows/lce-packages.yml`: the six LCB libraries with their native code for every
+committed platform (and, for enetxt and box2dxt, the Visual C++ runtime their Windows DLLs need),
+and the nine script libraries (the torrentxt, enetxt and datachannelxt helpers, the b2k Kit,
+coinxt's script layer, OnionXT and its HTTP server, NostrXT and its relay client). Take them from
+a GitHub release of this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
+IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk, HyperXTalk, OXT-Beyond)
+choose **Tools > Extension Manager > +** and pick the `.lce`. Install a library before its
+helpers or script layer (`torrentxt` before `torrentxt-helpers`, `onionxt` before
+`onionxt-httpd`). OXT-Beyond already has every one of them built in; an installed package
+replaces the built-in copy. `tools/build-lce-packages.py` says what a package holds; each run
+loads and probes every package on OXT-Beyond's engine (Linux x86-64), and the other platforms'
+libraries in a package are the committed ones (verified statically; needs an IDE pass on each).
+
+**From the tree.** Each native member is a standard OXT extension: an LCB module plus the
+per-platform library bundled under `src/code/<arch>-<platform>/`, which the engine finds itself
+(no `sudo`, no `LD_LIBRARY_PATH`). OnionXT and NostrXT are pure LiveCodeScript: `start using`
+their `src/*.livecodescript` libraries, or open a demo that carries them
 (`onionxt/examples/onionxt-demo.livecodescript`, `nostrxt/examples/nostrxt-demo.livecodescript`).
 Install only what you need. Each member answers a load check in the message box:
 
