@@ -1,7 +1,8 @@
 # The suite's root CI. In a monorepo, GitHub Actions runs ONLY the workflows in
 # the repository-root .github/workflows/ - each member's own .github/ is inert
 # here. This workflow runs the fast, deterministic gates that guard every member
-# on every push: the LiveCodeScript static checker, the docs house-style gates,
+# on every pull request and every push to main: the LiveCodeScript static
+# checker, the docs house-style gates,
 # every golden-vector suite (wire formats, BEP44, the file server), the
 # record-schema registry checks, the known-answer harnesses (onionxt pure
 # python; coinxt compiles its small shim in a temp dir), the carried-copy
@@ -32,22 +33,54 @@
 # so it stays quick.
 name: suite gates
 
+# WHICH EVENTS (2026-10-20). Until this date `push:` had no branch filter, so
+# every commit to a pull request's branch ran this whole workflow TWICE, once
+# for the push and once for the pull request, each about three hours of
+# runner. Now a branch is checked through its pull request, and a push runs
+# only on main, where publish-members.yml waits for it (it publishes only
+# after a green `push` or `workflow_dispatch` run on main). A branch with no
+# pull request yet can still be checked with Run workflow.
 on:
   push:
+    branches: [main]
   pull_request:
   # So the heavy cross-member job below can be forced without pushing a commit
-  # that touches one of its scoped paths. It also fires the fast gates job,
-  # which is harmless.
+  # that touches one of its scoped paths, and so a branch can be checked
+  # before it has a pull request. A dispatch runs every member's gates.
   workflow_dispatch:
 
-# Nothing here writes: both jobs read the tree, run gates, and upload
+# A newer commit to a pull request cancels the run of the older one, which no
+# one will read (2026-10-20). main and a dispatch are never cancelled: each
+# run gets a group of its own (its run id), because the publisher reads every
+# run on main, and a cancelled run there would be a commit nobody checked.
+concurrency:
+  group: suite-gates-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: true
+
+# Nothing here writes: the jobs read the tree, run gates, and upload
 # artifacts. Same reasoning as the native-<member>.yml lanes beside this file.
 permissions:
   contents: read
 
 jobs:
+  # WHAT RUNS WHERE (2026-10-20). coinxt's three wallet gates take about two
+  # and a half hours (run 38878526543 on main, 2026-10-16: 09:18 to 11:49
+  # UTC, check-wallet-boot.py the longest), and every other member's gates
+  # took about 45 minutes AFTER them, in the same job, for a job of 3h20m. So
+  # coinxt's gates run in a job of their own beside this one, and the rest
+  # report in under an hour instead of waiting behind them. coinxt's job runs
+  # the member's own tools/run-gates.sh, which is exactly what build-all.sh
+  # runs for it (the member owns its list; the walker only delegates), so no
+  # gate list is copied here. Every other gate still comes from build-all.sh
+  # --gates, with coinxt left out of its member walk.
+  #
+  # On a pull request, the `scope` job below also leaves out the members
+  # whose gates the change cannot reach (tools/member-registry.py
+  # --affected: a member's gates read its own tree and its listed siblings,
+  # nothing else). main and a dispatch run every member.
   gates:
     name: static gates + golden vectors (all members)
+    needs: scope
     runs-on: ubuntu-latest
     # A CEILING WE CHOSE, not GitHub's six-hour default (added 2026-09-24).
     # On 2026-09-11 a run of this job was cancelled at exactly 6h00m, and
@@ -63,7 +96,10 @@ jobs:
     # 2h27m to 2h59m for the workflow, seven of the eight over 2h51m, and
     # the gates step took 2h53m40s in run 849, so 240 had become 1.34x the
     # worst; 270 is 1.5x again. The next batch's first runs re-measure it.
-    timeout-minutes: 270
+    # Re-set 2026-10-20, when coinxt's gates moved to the job below: the rest
+    # took 47m in run 38878526543 (3m before coinxt's, 41m after, about 3m of
+    # suite gates between), so 90 is about 1.9x; coinxt's job keeps the 270.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -83,9 +119,14 @@ jobs:
       - name: Install the independent crypto implementation coinxt checks against
         run: pip install ecdsa
 
-      - name: Run every member's static gates, golden tests, KATs, and manifests
+      # SUITE_ONLY_MEMBERS from the scope job: every member but coinxt (whose
+      # gates run in the job below), or on a pull request the ones its change
+      # can reach - `none` when it reaches none, which skips the member walk
+      # and still runs every suite gate.
+      - name: Run the static gates, golden tests, KATs, and manifests (coinxt's in the next job)
         env:
           COINXT_REQUIRE_CROSSCHECK: "1"
+          SUITE_ONLY_MEMBERS: ${{ needs.scope.outputs.members }}
         run: bash tools/build-all.sh --gates
 
       # The pasteable harness, as a download.
@@ -117,6 +158,37 @@ jobs:
             docs/OXT-PASS-RUNBOOK.md
           if-no-files-found: error
 
+  coinxt-gates:
+    name: coinxt's gates (the wallet gates, beside the rest)
+    needs: scope
+    if: needs.scope.outputs.coinxt == 'true'
+    runs-on: ubuntu-latest
+    # The ceiling the gates job above carried while coinxt's gates were in
+    # it, for the same reason: coinxt's gates were all but about 45 minutes
+    # of that job, so a ceiling picked for the whole stays a ceiling here.
+    timeout-minutes: 270
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # The independent curve implementation, and the knob that makes its
+      # absence a failure: the same two lines as the gates job above.
+      - name: Install the independent crypto implementation coinxt checks against
+        run: pip install ecdsa
+
+      # Its siblings (riptide, nostrxt) are beside it in this checkout, as
+      # they are for build-all.sh's walk.
+      - name: Run coinxt's own gate list
+        env:
+          COINXT_REQUIRE_CROSSCHECK: "1"
+        run: |
+          echo "== coinxt: tools/run-gates.sh =="
+          cd coinxt && bash tools/run-gates.sh
+
   # --- the cross-member invariants, actually executed ------------------------
   #
   # WHY A SECOND JOB. tests/cross-member-test.py settles the suite's four
@@ -147,11 +219,16 @@ jobs:
   # invariants, and this job runs only when it can. Per-member build coverage
   # is NOT this lane's job and is not what the scope list is for - each member
   # has its own paths-scoped native-<member>.yml for that.
+  #
+  # The same job decides, since 2026-10-20, which members' gates the two gate
+  # jobs above run (outputs `members` and `coinxt`), from the same diff.
   scope:
-    name: does this change touch the cross-member invariants?
+    name: what does this change reach?
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      members: ${{ steps.members.outputs.members }}
+      coinxt: ${{ steps.members.outputs.coinxt }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -189,6 +266,33 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # Which members' gates run. Every member on main and on a dispatch;
+      # on a pull request, the ones tools/member-registry.py --affected says
+      # its diff can reach - failing OPEN, like the step above, to every
+      # member when the base cannot be read. --no-renames lists a moved
+      # file under both names, so the member it left counts too.
+      - id: members
+        name: Decide which members' gates run
+        run: |
+          all="$(python3 tools/member-registry.py --names)"
+          reach=all
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -n "$base" ] \
+             && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            reach="$(git diff --name-only --no-renames "$base" "${{ github.sha }}" \
+                     | python3 tools/member-registry.py --affected)"
+          fi
+          [ "$reach" = all ] && reach="$all"
+          echo "members whose gates this run reaches: $reach"
+          coinxt=false
+          rest=""
+          for m in $reach; do
+            if [ "$m" = coinxt ]; then coinxt=true; else rest="$rest $m"; fi
+          done
+          rest="${rest# }"
+          echo "members=${rest:-none}" >> "$GITHUB_OUTPUT"
+          echo "coinxt=$coinxt" >> "$GITHUB_OUTPUT"
 
   cross-member:
     name: the cross-member invariants (sodiumxt + torrentxt, native)

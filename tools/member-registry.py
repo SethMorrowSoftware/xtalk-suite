@@ -28,6 +28,9 @@ two cannot drift apart silently - the archivext lesson, one level up.
 
     python3 tools/member-registry.py          # prints the table
     python3 tools/member-registry.py --names  # just the names, for a shell
+    git diff --name-only --no-renames A B | \
+        python3 tools/member-registry.py --affected   # whose gates to run
+    python3 tools/member-registry.py --selftest   # the --affected rule's fixtures
 
 Import it the way the rest of tools/ imports its neighbours (exec-load by
 path; there is no package here).
@@ -172,6 +175,97 @@ def siblings_of(name):
     return [s for s in BY_NAME[name].siblings if s != name]
 
 
+# What a change can reach, for suite-gates.yml's pull-request runs
+# (2026-10-20). A member's gates read its own tree and the siblings listed
+# above, and nothing else: tools/check-member-standalone.py refuses a member
+# tool that climbs out of the member except through sibling(), and its
+# published repository runs the same tools/run-gates.sh with only those
+# siblings beside it. So a change to member X can fail the gates of X and of
+# every member that lists X as a sibling, and a change outside every member
+# (the suite's docs/, tests/, tools/, root files) can fail only the suite's
+# own gates, which run on every event. Before this, every pull request ran
+# every member's gates, coinxt's wallet gates included (two and a half hours
+# of the job), whatever it touched.
+#
+# Two kinds of path run every member: the walker and the job that runs it
+# (WHOLE_WALK - a change there changes how every gate runs), and this table
+# itself, whose sibling lists are the rule. An unknown top-level directory
+# runs every member too: it is a member being added, or something this rule
+# has never seen, and the two mistakes are not symmetric - a redundant run
+# costs runner minutes, a missed one lets a red gate merge. main, a manual
+# dispatch and a pull request whose base cannot be read run everything
+# regardless (suite-gates.yml), so this rule decides only what a pull
+# request is told before it merges, never what main publishes.
+ROOT_DIRS = (".github", "docs", "tests", "tools")
+WHOLE_WALK = ("tools/build-all.sh", ".github/workflows/suite-gates.yml",
+              "tools/member-registry.py")
+
+
+def affected(paths):
+    """The members whose gates a change to `paths` can fail, in table order,
+    or None for every member."""
+    touched = set()
+    for p in paths:
+        p = p.strip().replace("\\", "/")
+        if not p:
+            continue
+        if p in WHOLE_WALK:
+            return None
+        if "/" not in p:
+            continue                      # a root file: README.md, LICENSE, ...
+        top = p.split("/", 1)[0]
+        if top in BY_NAME:
+            touched.add(top)
+        elif top not in ROOT_DIRS:
+            return None
+    return [m.name for m in MEMBERS
+            if m.name in touched or touched.intersection(siblings_of(m.name))]
+
+
+def selftest():
+    """The rule on made-up changes. Exits non-zero on the first wrong answer."""
+    cases = [
+        (["holde-em/src/x.livecodescript"], ["holde-em"]),
+        # coinxt's gates load riptide's runner: a riptide change reaches them
+        (["riptide/tools/check-demo-boot.py"],
+         [m.name for m in MEMBERS
+          if m.name == "riptide" or "riptide" in siblings_of(m.name)]),
+        (["sodiumxt/README.md"],
+         [m.name for m in MEMBERS
+          if m.name == "sodiumxt" or "sodiumxt" in siblings_of(m.name)]),
+        (["docs/WORK-PLAN.md", "tools/check-doc-anchors.py", "README.md",
+          "tests/cross-member-test.py", ".github/workflows/native-coinxt.yml"], []),
+        ([], []),
+        (["tools/build-all.sh"], None),
+        ([".github/workflows/suite-gates.yml", "docs/x.md"], None),
+        (["tools/member-registry.py"], None),
+        (["newmember/tools/run-gates.sh"], None),
+    ]
+    bad = 0
+    for paths, want in cases:
+        got = affected(paths)
+        if got != want:
+            print("member-registry --selftest: %r gave %r, wanted %r"
+                  % (paths, got, want))
+            bad += 1
+    # and by name, the one edge the split exists for
+    if "coinxt" not in (affected(["nostrxt/tools/lcs-interp.py"]) or []):
+        print("member-registry --selftest: a nostrxt change must reach "
+              "coinxt's wallet gates (riptide's runner loads its interpreter)")
+        bad += 1
+    # the rule's premise: nothing in the table names a member that is not one
+    for m in MEMBERS:
+        for s in m.siblings:
+            if s not in BY_NAME:
+                print("member-registry --selftest: %s lists sibling %r, which "
+                      "is not a member" % (m.name, s))
+                bad += 1
+    if bad:
+        return 1
+    print("member-registry --selftest: OK (%d cases)" % len(cases))
+    return 0
+
+
 def main(argv=()):
     # `--names`: the member names alone, space-separated, for a shell that
     # needs the list (.github/workflows/publish-members.yml) without parsing
@@ -179,6 +273,14 @@ def main(argv=()):
     if "--names" in argv:
         print(" ".join(m.name for m in MEMBERS))
         return 0
+    # `--affected`: changed paths on stdin, one per line; prints the members
+    # whose gates they can reach, space-separated, `all`, or `none`.
+    if "--affected" in argv:
+        got = affected(sys.stdin.read().splitlines())
+        print("all" if got is None else (" ".join(got) or "none"))
+        return 0
+    if "--selftest" in argv:
+        return selftest()
     print("%-14s %-10s %-32s %-6s %s" % ("member", "kind", "repository",
                                           "native", "gate siblings"))
     for m in MEMBERS:
