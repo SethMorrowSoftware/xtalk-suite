@@ -17,6 +17,7 @@ Cases:
      handler before a second block opens          -> check 1
   7. a link to a handler nobody documents         -> check 5
   8. a doc block added above an exempt handler    -> stale exemption (4)
+  8b. an exempt handler declared `command`         -> check 4
   9. `end if` on a line inside a script block      -> check 6
  10. a description line led by an unknown word and
      a colon ("automatic: ...")                      -> check 7
@@ -175,6 +176,10 @@ def main():
             once(r"^((?:on|command|function) " + re.escape(name) + r"\b)",
                  "/**\nSummary: x\n*/\n\\1", re.M | re.I),
             f"stale exemption {name} (it is documented)"))
+        results.append(mutate_case(
+            f"an exempt handler ({name}) declared `command` fails", host,
+            once(r"^on (" + re.escape(name) + r")\b", "command \\1", re.M | re.I),
+            f"exempt handler {name} is declared `command`"))
 
     if all(results):
         print(f"test-dictionary-docs: OK ({len(results) + 1} case(s), each caught; tree restored byte for byte)")

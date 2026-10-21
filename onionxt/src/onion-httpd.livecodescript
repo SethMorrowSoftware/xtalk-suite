@@ -255,13 +255,13 @@ end oxhReply
 -- already enforced loopback before oxhPeer fires.
 -- ==========================================================================
 
-command oxhPeer pStream, pService, pPeerAddr
+on oxhPeer pStream, pService, pPeerAddr
    oxSetStreamCallback pStream, "oxhStream"
    put empty into sOxhReq[pStream]
    put false into sOxhServed[pStream]
 end oxhPeer
 
-command oxhStream pStream, pEvent, pData
+on oxhStream pStream, pEvent, pData
    if pEvent is "data" then
       if sOxhServed[pStream] is true then
          exit oxhStream           -- already answered; ignore the rest of the request
@@ -517,7 +517,7 @@ private command oxhSendBytes pStream, pCode, pBodyBytes, pHeaders
    send ("oxhClose " & pStream) to me in kOxhCloseDelay milliseconds
 end oxhSendBytes
 
-command oxhClose pStream
+on oxhClose pStream
    -- Deferred, idempotent close of a served connection (public: reached via send).
    -- Clear BOTH per-stream tables here as the catch-all: oxCloseStream removes the
    -- OnionXT stream, so no later socketClosed/"closed" event will arrive to clean

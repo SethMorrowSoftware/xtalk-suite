@@ -29,7 +29,14 @@ WHAT IT CHECKS, per CORPUS file
     4. COVERAGE: every public handler is documented, bar the script
        handlers in EXEMPT with a reason (send targets and engine messages
        the library needs in the message path but nobody calls). A stale
-       exemption (the handler is gone, documented, or private) fails.
+       exemption (the handler is gone, documented, or private) fails. An
+       exempt handler is declared `on`: the parser asks a doc block of
+       every `command` and `function` of a script library and logs
+       "Required documentation not found" for one without (at every
+       dictionary build, and at every start of the web IDE before
+       2026-10-20), while it takes an `on` handler for a message. The
+       engine reads `command` as `on` (both are HT_MESSAGE), so the
+       keyword changes nothing else.
     5. LINKS: every `<name>` in a block names a handler documented
        somewhere in the CORPUS, or the dictionary renders a dead link.
     6. SCRIPT BLOCKS HOLD NO CODE SHAPES: inside a .livecodescript block no
@@ -268,6 +275,7 @@ def check_file(path, text, exempt, problems, documented_names, links):
     blocks_seen = 0
     handlers_seen = 0
     public = {}
+    keyword = {}
     documented = set()
     private = set()
     for kind, lineno, item in scan(path, text):
@@ -324,6 +332,7 @@ def check_file(path, text, exempt, problems, documented_names, links):
                     handlers_seen += 1
                     name = m.group(2)
                     public[name] = lineno
+                    keyword[name] = m.group(1).lower()
                     if pending is not None:
                         check_block(path, pending[0], pending[1], name, lcs_params(m.group(3)), problems)
                         documented.add(name)
@@ -347,6 +356,10 @@ def check_file(path, text, exempt, problems, documented_names, links):
             problems.append(f"{path}: stale exemption {name} (no such public handler)")
         elif name in documented:
             problems.append(f"{path}: stale exemption {name} (it is documented)")
+        elif keyword.get(name, "on") != "on":
+            problems.append(f"{path}:{public[name]}: exempt handler {name} is declared "
+                            f"`{keyword[name]}`; declare it `on`, or Beyond's docs parser "
+                            f"logs 'Required documentation not found' for it")
     documented_names.update(documented)
     return len(documented)
 

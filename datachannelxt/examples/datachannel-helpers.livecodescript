@@ -166,7 +166,7 @@ end dcStopPolling
 -- every later drain still run. The note is READ, not printed, because printing
 -- from a library into an app it knows nothing about is how a diagnostic
 -- becomes a nuisance: see dcPollLastError.
-command dcChannelPollOnce
+on dcChannelPollOnce
    local tEvents, tEvent, tName, tErr, tTarget, tProbe
    if sDcPolling is not "true" then
       exit dcChannelPollOnce

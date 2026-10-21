@@ -5702,7 +5702,7 @@ command nxrConnect pUrl
    return tHandle
 end nxrConnect
 
-command nxrWsOpened pSocketID
+on nxrWsOpened pSocketID
    -- ENGINE-ARMED: TCP (or TLS) is up; send the upgrade request and start
    -- the one persistent read. A stale id is a clean no-op.
    local tHandle, tRequest
@@ -5720,7 +5720,7 @@ command nxrWsOpened pSocketID
    read from socket pSocketID with message "nxrWsData"
 end nxrWsOpened
 
-command nxrWsData pSocketID, pData
+on nxrWsData pSocketID, pData
    -- ENGINE-ARMED: the persistent read delivers whatever bytes arrived;
    -- append to the relay's buffer, run the state machine, and re-arm ONLY
    -- if the relay still exists (the callback may have torn it down - the
@@ -5741,7 +5741,7 @@ command nxrWsData pSocketID, pData
    end if
 end nxrWsData
 
-command nxrDeadline pRelay
+on nxrDeadline pRelay
    -- Self-sent watchdog: a handshake that has not reached "open" by the
    -- deadline fails closed (a bootstrapping or stalled peer accepts TCP and
    -- then hangs; rule: timeouts are mandatory).
