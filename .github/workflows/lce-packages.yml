@@ -268,5 +268,22 @@ jobs:
             } > notes.md
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --draft --prerelease --title "xTalk Suite extensions $TAG" --notes-file notes.md
+          else
+            # An existing release keeps its version only if these packages
+            # were built from the commit it names: a dispatch from another
+            # ref would otherwise replace its assets with packages of
+            # unrelated source and checksums that still agree with them.
+            # The tag's commit when the tag exists; a draft's tag may not
+            # exist yet, so then the release's target (a branch or a SHA).
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+              ref="$TAG"
+            else
+              ref=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)
+            fi
+            target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$ref" --jq .sha)
+            if [ "$target" != "$GITHUB_SHA" ]; then
+              echo "::error::release $TAG names $ref ($target), but these packages were built from $GITHUB_SHA; run the workflow from that commit's tag or branch"
+              exit 1
+            fi
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber lce/*.lce lce/SHA256SUMS
