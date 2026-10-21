@@ -179,7 +179,7 @@ helpers or script layer (`torrentxt` before `torrentxt-helpers`, `onionxt` befor
 `onionxt-httpd`). OXT-Beyond already has every one of them built in; an installed package
 replaces the built-in copy. `tools/build-lce-packages.py` says what a package holds; each run
 loads and probes every package on OXT-Beyond's engine (Linux x86-64), and the other platforms'
-libraries in a package are the committed ones (verified statically; needs an IDE pass on each).
+libraries in a package are the committed ones (verified statically; needs an IDE pass on each, bar one: the sodiumxt package installed through OXT-Beyond's Extension Manager on Windows x86-64 and answered `sxVersion()` on 2026-10-21, work plan 1.2 #29).
 
 **From the tree.** Each native member is a standard OXT extension: an LCB module plus the
 per-platform library bundled under `src/code/<arch>-<platform>/`, which the engine finds itself
