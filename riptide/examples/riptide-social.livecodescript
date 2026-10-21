@@ -16120,6 +16120,7 @@ local sSyncDl          -- "h:"handle or "i:"target -> ms deadline (in flight)
 local sSyncChecked     -- handle -> ms its head was last asked for
 local sSyncCount       -- handle -> posts walked this round (kSyncWalkMax)
 local sSyncQueue       -- handles due a head lookup, one per line
+local sSyncMissSaid    -- handle -> "1" once "nothing found" was logged
 local sSyncRoundAt     -- ms of the next round check
 local sSocialDirty     -- "true" when the social cache needs a save
 local sSocialSaveAt    -- ms deadline for the debounced save
@@ -16764,6 +16765,9 @@ command raBtn pName, pLabel, pRect, pKind
    set the style of button pName to "roundRect"
    set the opaque of button pName to true
    set the showBorder of button pName to false
+   -- a roundRect button still draws a 2-pixel outline at showBorder false;
+   -- only a zero borderWidth makes it flat (seen on OXT-Beyond, 2026-10-21)
+   set the borderWidth of button pName to 0
    set the threeD of button pName to false
    set the textSize of button pName to 12
    set the uRaKind of button pName to pKind
@@ -16839,8 +16843,7 @@ command raInput pName, pRect, pMono, pMulti
    end if
    if pMulti is true then
       set the dontWrap of field pName to false
-      set the vScrollbar of field pName to true
-      set the scrollbarWidth of field pName to 8
+      set the vScrollbar of field pName to false
    else
       set the dontWrap of field pName to true
    end if
@@ -16857,7 +16860,7 @@ command raView pName, pRect, pBg
    set the textFont of field pName to empty
    set the textSize of field pName to 13
    set the foregroundColor of field pName to kRaInk
-   set the margins of field pName to "2,2,2,2"
+   set the margins of field pName to "10,4,10,4"
    set the scrollbarWidth of field pName to 8
    set the dontWrap of field pName to false
 end raView
@@ -17013,7 +17016,7 @@ command raHeader pTitle, pSub
    uiLabel "raHdTitle", pTitle, (kRaSideW + 24) & ",14," & (kRaSideW + 600) & ",44", 22
    set the textStyle of field "raHdTitle" to "bold"
    set the foregroundColor of field "raHdTitle" to kRaInk
-   uiLabel "raHdSub", pSub, (kRaSideW + 24) & ",46," & (kRaSideW + 640) & ",66", 12
+   uiLabel "raHdSub", pSub, (kRaSideW + 24) & ",46," & (kRaW - 160) & ",66", 12
    set the foregroundColor of field "raHdSub" to kRaMuted
 end raHeader
 
@@ -17073,6 +17076,7 @@ command raNavItem pName, pLabel, pTop
    uiButton pName, pLabel, "12," & pTop & ",204," & (pTop + 34)
    set the style of button pName to "roundRect"
    set the showBorder of button pName to false
+   set the borderWidth of button pName to 0
    set the threeD of button pName to false
    set the autoHilite of button pName to false
    set the textAlign of button pName to "left"
@@ -17108,6 +17112,10 @@ command raNavMark pCurrent
          set the visible of graphic "raNavAccent" to false
       end if
    end if
+   -- the sidebar avatar's initials are centred by MEASURED height, and a
+   -- field on a card that is not open measures nothing: repaint it here,
+   -- on the card that has just come to the front
+   raAvatarPaint "raSbAvatar", the number of this card, sHandle
 end raNavMark
 
 -- Go to a sidebar destination. A locked app has one place to be, the
@@ -17743,7 +17751,9 @@ command raPaintIdentity
       if sHandle is empty then
          put "Unlock to see your handle." into field "raMyHandle" of card "raFollowing"
       else
-         put sHandle into field "raMyHandle" of card "raFollowing"
+         -- two lines of 32: a 64-character word does not wrap in a field
+         put char 1 to 32 of sHandle & return & char 33 to 64 of sHandle \
+               into field "raMyHandle" of card "raFollowing"
       end if
    end if
 end raPaintIdentity
@@ -18974,7 +18984,12 @@ command raSyncExpire pNow
          put char 3 to -1 of tKey into tTarget
          if char 1 to 2 of tKey is "h:" then
             delete variable sSyncHead[tTarget]
-            raFeedNote empty, "no head arrived in time for" && raNameOf(tTarget) & "; will retry."
+            -- said once per unlock, not every round: an author who has not
+            -- posted yet (or whose records faded) is normal, not news
+            if sSyncMissSaid[tTarget] is empty then
+               put "1" into sSyncMissSaid[tTarget]
+               raFeedNote empty, "nothing found on the network yet for" && raNameOf(tTarget) & "; the app keeps asking."
+            end if
          else
             delete variable sSyncPost[tTarget]
             delete variable sSyncPostMode[tTarget]
@@ -19041,6 +19056,14 @@ end raSyncFillSlot
 -- walk from its newest post.
 command raSyncHeadArrived pEvent, pHandle
    local tHead, tFloor
+   -- AN EMPTY ANSWER IS "NOT FOUND", not a forgery: the DHT reports a
+   -- lookup that found no item as an event with no value (seen on
+   -- OXT-Beyond, 2026-10-21, where every one was logged as a REFUSED
+   -- truncated head). The slot stays until its deadline, so a later
+   -- answer to the same lookup is still taken; raSyncExpire says it once.
+   if pEvent["value"] is empty then
+      exit raSyncHeadArrived
+   end if
    delete variable sSyncHead[pHandle]
    delete variable sSyncDl["h:" & pHandle]
    put 0 into tFloor
@@ -20171,6 +20194,7 @@ command raSocialForget
    put empty into sSyncChecked
    put empty into sSyncCount
    put empty into sSyncQueue
+   put empty into sSyncMissSaid
    put 0 into sSyncRoundAt
    put empty into sSocialDirty
    put empty into sSocialSaveAt
