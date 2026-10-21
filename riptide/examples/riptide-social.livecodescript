@@ -19000,6 +19000,14 @@ command raSyncExpire pNow
    end repeat
 end raSyncExpire
 
+-- False for the DHT's "found nothing" answer: a signature of zeros.
+function raSignedEvent pEvent
+   local tSig
+   put pEvent["signature"] into tSig
+   replace "0" with empty in tSig
+   return tSig is not empty
+end raSignedEvent
+
 command raSyncRequestHead pHandle
    local tOk
    if sSession is not an integer or sSession <= 0 then
@@ -19056,12 +19064,13 @@ end raSyncFillSlot
 -- walk from its newest post.
 command raSyncHeadArrived pEvent, pHandle
    local tHead, tFloor
-   -- AN EMPTY ANSWER IS "NOT FOUND", not a forgery: the DHT reports a
-   -- lookup that found no item as an event with no value (seen on
-   -- OXT-Beyond, 2026-10-21, where every one was logged as a REFUSED
-   -- truncated head). The slot stays until its deadline, so a later
-   -- answer to the same lookup is still taken; raSyncExpire says it once.
-   if pEvent["value"] is empty then
+   -- AN UNSIGNED ANSWER IS "NOT FOUND", not a forgery: libtorrent reports
+   -- a lookup that found no item as an event with an all-zero signature
+   -- and an empty value (seen on OXT-Beyond, 2026-10-21, where every one
+   -- was logged as a REFUSED truncated head). No real head carries a zero
+   -- signature. The slot stays until its deadline, so a later answer to
+   -- the same lookup is still taken; raSyncExpire says it once.
+   if not raSignedEvent(pEvent) then
       exit raSyncHeadArrived
    end if
    delete variable sSyncHead[pHandle]
