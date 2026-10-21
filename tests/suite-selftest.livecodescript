@@ -26393,7 +26393,7 @@ command en1enStopPolling pHost
    end if
 end en1enStopPolling
 
-command en1enetPollOnce
+on en1enetPollOnce
    local en1tHost, en1tEvents, en1tEvent, en1tName, en1tSavedDelim, en1tErr
    if en1sEnPolling is not "true" then
       exit en1enetPollOnce
@@ -26976,7 +26976,7 @@ command dc1dcStopPolling
    put "false" into dc1sDcPolling
 end dc1dcStopPolling
 
-command dc1dcChannelPollOnce
+on dc1dcChannelPollOnce
    local dc1tEvents, dc1tEvent, dc1tName, dc1tErr, dc1tTarget, dc1tProbe
    if dc1sDcPolling is not "true" then
       exit dc1dcChannelPollOnce
