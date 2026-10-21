@@ -176,7 +176,7 @@ end enStopPolling
 
 -- One pump pass: enPoll each registered host, dispatch each event by name,
 -- then reschedule.
-command enetPollOnce
+on enetPollOnce
    local tHost, tEvents, tEvent, tName, tSavedDelim, tErr
    if sEnPolling is not "true" then
       exit enetPollOnce

@@ -5796,7 +5796,7 @@ command nxrConnect pUrl
    return tHandle
 end nxrConnect
 
-command nxrWsOpened pSocketID
+on nxrWsOpened pSocketID
    -- ENGINE-ARMED: TCP (or TLS) is up; send the upgrade request and start
    -- the one persistent read. A stale id is a clean no-op.
    local tHandle, tRequest
@@ -5814,7 +5814,7 @@ command nxrWsOpened pSocketID
    read from socket pSocketID with message "nxrWsData"
 end nxrWsOpened
 
-command nxrWsData pSocketID, pData
+on nxrWsData pSocketID, pData
    -- ENGINE-ARMED: the persistent read delivers whatever bytes arrived;
    -- append to the relay's buffer, run the state machine, and re-arm ONLY
    -- if the relay still exists (the callback may have torn it down - the
@@ -5835,7 +5835,7 @@ command nxrWsData pSocketID, pData
    end if
 end nxrWsData
 
-command nxrDeadline pRelay
+on nxrDeadline pRelay
    -- Self-sent watchdog: a handshake that has not reached "open" by the
    -- deadline fails closed (a bootstrapping or stalled peer accepts TCP and
    -- then hangs; rule: timeouts are mandatory).
@@ -12386,7 +12386,7 @@ function oxIsReady
    return (sBootstrap is 100) and (sControlState is "authenticated")
 end oxIsReady
 
-command oxCtlOpened pSocketID
+on oxCtlOpened pSocketID
    -- The control TCP connection is up. Start the single persistent line reader
    -- and kick the auth dance with PROTOCOLINFO (allowed pre-auth).
    if pSocketID is not sControlSocket then
@@ -12434,7 +12434,7 @@ private command oxCtlDrainQueue
    oxCtlSend tCommand, tLabel
 end oxCtlDrainQueue
 
-command oxCtlLine pSocketID, pData
+on oxCtlLine pSocketID, pData
    -- The persistent control-port line reader. Demultiplexes unsolicited 650
    -- events from command replies, reassembles multi-line replies, and honours
    -- the 250-/250+/'.'/250 space framing (docs/03).
@@ -12683,7 +12683,7 @@ private command oxParseBootstrapPhase pReply
    end repeat
 end oxParseBootstrapPhase
 
-command oxCtlDeadline pSocketID
+on oxCtlDeadline pSocketID
    -- Handshake watchdog: if this control socket never reached authenticated,
    -- tear it down with a clean error (docs/07: a stalled bootstrap must not hang).
    if pSocketID is not sControlSocket then
@@ -12953,7 +12953,7 @@ function oxStreamState pStream
    return sStreams[pStream]["state"]
 end oxStreamState
 
-command oxSocksOpened pSocketID
+on oxSocksOpened pSocketID
    -- TCP up: send the method-negotiation greeting 05 01 00 (VER=5, 1 method,
    -- method 00 = no auth) and read the 2-byte method selection (docs/02 step 1).
    local tHandle
@@ -12966,7 +12966,7 @@ command oxSocksOpened pSocketID
    read from socket pSocketID for 2 with message "oxSocksMethod"
 end oxSocksOpened
 
-command oxSocksMethod pSocketID, pData
+on oxSocksMethod pSocketID, pData
    local tHandle
    put sSockToStream[pSocketID] into tHandle
    if tHandle is empty then
@@ -13015,7 +13015,7 @@ command oxSocksMethod pSocketID, pData
    read from socket pSocketID for 4 with message "oxSocksReplyHead"
 end oxSocksMethod
 
-command oxSocksReplyHead pSocketID, pData
+on oxSocksReplyHead pSocketID, pData
    local tHandle
    put sSockToStream[pSocketID] into tHandle
    if tHandle is empty then
@@ -13053,7 +13053,7 @@ command oxSocksReplyHead pSocketID, pData
    end if
 end oxSocksReplyHead
 
-command oxSocksReplyLen pSocketID, pData
+on oxSocksReplyLen pSocketID, pData
    -- ATYP=3 domain BND.ADDR: one length byte, then that many, then 2 port bytes.
    local tHandle
    put sSockToStream[pSocketID] into tHandle
@@ -13070,7 +13070,7 @@ command oxSocksReplyLen pSocketID, pData
    read from socket pSocketID for tLen with message "oxSocksReplyDone"
 end oxSocksReplyLen
 
-command oxSocksReplyDone pSocketID, pData
+on oxSocksReplyDone pSocketID, pData
    -- The SOCKS reply is fully consumed and REP was 0: the socket is now a
    -- transparent tunnel. Hand it up and start the streaming inbound reader.
    local tHandle
@@ -13087,7 +13087,7 @@ command oxSocksReplyDone pSocketID, pData
    read from socket pSocketID with message "oxStreamData"
 end oxSocksReplyDone
 
-command oxStreamData pSocketID, pData
+on oxStreamData pSocketID, pData
    -- Inbound bytes on a live stream (dialed OR inbound-accepted; both are unified
    -- through the stream tables). Deliver the chunk and re-arm the read.
    local tHandle
@@ -13104,7 +13104,7 @@ command oxStreamData pSocketID, pData
    end if
 end oxStreamData
 
-command oxStreamDeadline pStream
+on oxStreamDeadline pStream
    -- Handshake watchdog for a dialed stream: if it never reached "connected",
    -- tear it down (docs/02: a silent stall is the worst failure).
    if sStreams[pStream]["socketID"] is empty then
@@ -13530,7 +13530,7 @@ function oxServiceIsReady pService
    return (sServices[pService]["ready"] is true)
 end oxServiceIsReady
 
-command oxPeerAccepted pSocketID
+on oxPeerAccepted pSocketID
    -- Tor forwarded an inbound onion connection to our loopback listener. Enforce
    -- loopback (security-critical: reject any non-loopback peer before reading a
    -- byte), wrap the accepted socket as an inbound stream, and hand it to the app.
@@ -15079,13 +15079,13 @@ end oxhReply
 -- already enforced loopback before oxhPeer fires.
 -- ==========================================================================
 
-command oxhPeer pStream, pService, pPeerAddr
+on oxhPeer pStream, pService, pPeerAddr
    oxSetStreamCallback pStream, "oxhStream"
    put empty into sOxhReq[pStream]
    put false into sOxhServed[pStream]
 end oxhPeer
 
-command oxhStream pStream, pEvent, pData
+on oxhStream pStream, pEvent, pData
    if pEvent is "data" then
       if sOxhServed[pStream] is true then
          exit oxhStream           -- already answered; ignore the rest of the request
@@ -15341,7 +15341,7 @@ private command oxhSendBytes pStream, pCode, pBodyBytes, pHeaders
    send ("oxhClose " & pStream) to me in kOxhCloseDelay milliseconds
 end oxhSendBytes
 
-command oxhClose pStream
+on oxhClose pStream
    -- Deferred, idempotent close of a served connection (public: reached via send).
    -- Clear BOTH per-stream tables here as the catch-all: oxCloseStream removes the
    -- OnionXT stream, so no later socketClosed/"closed" event will arrive to clean
