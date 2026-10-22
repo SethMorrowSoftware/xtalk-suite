@@ -664,6 +664,15 @@ def selftest():
             pdir = os.path.join(code, platform_id)
             if not os.path.isdir(pdir):
                 continue
+            # The web archive (wasm32-emscripten, EXPERIMENTAL, 2026-10-21) is
+            # built outside release-binaries.yml and never reaches this
+            # installer, which refuses its platform id like any other it does
+            # not know; the refresh below keeps its MANIFEST line, since it
+            # hashes every committed file
+            if platform_kind(platform_id) is None:
+                print(f"  note: box2dxt/{platform_id}/ is not a platform this "
+                      f"installer installs; held out of the accept bundle")
+                continue
             for fn in sorted(f for f in os.listdir(pdir) if not f.endswith(".md")):
                 if platform_kind(platform_id) == "mac" and \
                         mac_floor_problem(os.path.join(pdir, fn)):

@@ -334,13 +334,13 @@ A worked example with every branch is in `09-usage-guide.md`.
 
 ## Handlers the ENGINE calls
 
-The relay layer defines six handlers that appear in none of the tables above and
+The relay layer defines seven handlers that appear in none of the tables above and
 that an app must never call by hand. They are documented because "absent from the
 API reference" is, in practice, indistinguishable from "does not exist" - and the
 last three carry the one integration hazard in this member whose symptom is a hang
 rather than an error.
 
-**Three `nxr*` handlers the layer arms and the engine (or a watchdog) calls back.**
+**Four `nxr*` handlers the layer arms and the engine (or a watchdog) calls back.**
 Each opens by testing its argument against the live tables and exits on a miss, so a
 stale id is a clean no-op. Note `nxrDeadline`'s argument is a RELAY HANDLE, not a
 socket id - it is self-sent, not engine-sent:
@@ -350,6 +350,20 @@ socket id - it is self-sent, not engine-sent:
 | `nxrWsOpened pSocketID` | `open socket` / `open secure socket ... with message` | TCP (or TLS) is up; sends the upgrade request and starts the one persistent read. |
 | `nxrWsData pSocketID, pData` | `read from socket ... with message` (no quantifier) | a chunk arrived; appends to the relay's buffer, runs the state machine, re-arms only if the relay still exists. |
 | `nxrDeadline pRelay` | `send ... to me in` (watchdog; takes a RELAY HANDLE) | the handshake watchdog expires; a connection not yet `"open"` fails closed. |
+| `nxrWebPoll` | `send ... to me in` (in a web page only; no argument) | drains the events the page's WebSockets queued (see "In a web page" below), then re-arms while any browser relay is live. |
+
+**In a web page (2026-10-21).** A page has no engine sockets: OXT-Beyond's web
+engine opens none. So when `the platform` is `"HTML5"` (OXT-Beyond's web IDE, or a
+web standalone), `nxrConnect` opens the browser's own WebSocket instead, through
+`do ... as "javascript"`, and the browser does the TCP, the TLS and RFC 6455. The
+handles, the commands, the callbacks and the event verification are the same code;
+only the transport differs. The page QUEUES its WebSocket events and `nxrWebPoll`
+drains them on a timer (every 40 ms), so no handler is ever called from JavaScript
+(the family's poll-drain rule). Text crosses as base64 of its UTF-8 bytes both
+ways, so nothing needs escaping. The relay's socket id is `nxrweb:<n>`, never an
+engine socket name, so the three socket messages below never match it. `nxrPing`
+does nothing there (the browser answers the relay's pings itself). Verified
+statically; needs a browser pass.
 
 **Three engine socket MESSAGES, whose names are the engine's and so carry no `nxr`
 prefix - each now a thin wrapper over a NAMED function (2026-08-24).** The wrapper

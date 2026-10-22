@@ -81,6 +81,12 @@
 #include <windows.h>
 /* bcrypt.h must follow windows.h; BCryptGenRandom needs -lbcrypt (build.sh). */
 #include <bcrypt.h>
+#elif defined(__EMSCRIPTEN__)
+/* The wasm32-emscripten archive linked into OXT-Beyond's web engine: its
+ * libc's getentropy() draws from the browser's crypto.getRandomValues, the
+ * browser's CSPRNG (Emscripten's libc declares getrandom but does not
+ * define it). */
+#include <unistd.h>
 #elif defined(__linux__)
 #include <errno.h>
 #include <sys/random.h> /* getrandom(2); glibc 2.25+, our documented floor */
@@ -361,6 +367,16 @@ static int cnx_entropy_fill(unsigned char *buf, size_t len) {
    * the documented modern replacement for CryptGenRandom. */
   return BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len,
                          BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#elif defined(__EMSCRIPTEN__)
+  /* getentropy() takes at most 256 bytes a call, and fails rather than
+   * returning a short read. */
+  size_t off = 0;
+  while (off < len) {
+    size_t n = len - off < 256 ? len - off : 256;
+    if (getentropy(buf + off, n) != 0) return 0;
+    off += n;
+  }
+  return 1;
 #elif defined(__linux__)
   /* getrandom() can return a SHORT read when interrupted, so loop rather than
    * assume; EINTR before the pool is initialised is the one retryable error. */

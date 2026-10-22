@@ -53,6 +53,12 @@ BINDINGS = [
     ("datachannelxt", "datachannelxt/src/datachannel.lcb",
      ["datachannelxt/src/datachannel_shim.cpp"],
      "datachannelxt", "dcx_", "DCX_API"),
+    # The web shim (EXPERIMENTAL, 2026-10-21): the same binds, implemented
+    # over the browser's WebRTC for OXT-Beyond's web IDE, so it answers to the
+    # same .lcb on its own row
+    ("datachannelxt (web)", "datachannelxt/src/datachannel.lcb",
+     ["datachannelxt/src/datachannel_web.cpp"],
+     "datachannelxt", "dcx_", "DCX_API"),
     ("coinxt", "coinxt/src/coinxt.lcb", ["coinxt/native/coinxt.c"],
      "coinxt", "cnx_", None),
 ]

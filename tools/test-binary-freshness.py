@@ -73,6 +73,11 @@ WHAT IT PROVES, in five legs:
      not executed here: that would need a 32-bit code segment and FS:[0], so
      objdump is their only independent reader.)
 
+  6. THE WEB ARCHIVES (wasm32-emscripten, 2026-10-21): the wasm constant
+     decoder on synthesized bodies, each committed archive green through the
+     gate and red when its table misses a bind, its ABI moved or its table
+     function is gone, and the ar container refusals.
+
 None of this is an engine result: it settles what the committed bytes do on a
 CPU, which is what the gate claims, and nothing about an OXT engine.
 
@@ -89,6 +94,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -512,14 +518,16 @@ def sweep(mem, fn_va, fn_blob, check_va, check_blob, value, label):
 # --------------------------------------------------------------------------
 
 def committed_libraries():
-    """(member, platform, fmt, path) for every committed ELF and PE."""
+    """(member, platform, fmt, path) for every committed ELF and PE.
+
+    The fat dylibs and the web archives have their own legs (main, leg 6)."""
     out = []
     for member in GATE.MEMBERS:
         for plat, (suffix, fmt) in sorted(GATE.PLATFORMS.items()):
             path = os.path.join(ROOT, member["name"], "src", "code", plat,
                                 f"{member['lib']}.{suffix}")
             # The fat dylibs are per-slice pairs, walked separately in main.
-            if fmt != "macho" and os.path.isfile(path):
+            if fmt not in ("macho", "wasm") and os.path.isfile(path):
                 out.append((member, plat, fmt, path))
     return out
 
@@ -667,6 +675,110 @@ def exec_host_reason():
 
 # --------------------------------------------------------------------------
 
+def ar_archive(members):
+    """A GNU ar image of (name, bytes) members, for leg 6's refusals."""
+    out = bytearray(b"!<arch>\n")
+    for name, body in members:
+        header = (f"{name}/".ljust(16) + "0".ljust(12) + "0".ljust(6)
+                  + "0".ljust(6) + "644".ljust(8) + str(len(body)).ljust(10)
+                  + "`\n").encode("ascii")
+        out += header + body + (b"\n" if len(body) & 1 else b"")
+    return bytes(out)
+
+
+def leg6():
+    """The web archives (wasm32-emscripten, 2026-10-21).
+
+    The constant decoder on synthesized bodies; each committed archive's
+    legs through the gate's own check_wasm_archive, green as committed and
+    red for a table that misses a bind, an ABI that moved, and a missing
+    table function; the reader's data strings shown to be the DATA, not the
+    symbol table; and the archive container refusals."""
+    counted = 0
+    for label, body, value in (
+            ("i32.const 11", b"\x00\x41\x0b\x0b", 11),
+            ("i32.const 300 (two LEB bytes)", b"\x00\x41\xac\x02\x0b", 300),
+            ("i32.const -1", b"\x00\x41\x7f\x0b", -1),
+            ("a local declared", b"\x01\x01\x7f\x41\x0b\x0b", None),
+            ("a second instruction", b"\x00\x41\x0b\x1a\x41\x0b\x0b", None),
+            ("i64.const", b"\x00\x42\x0b\x0b", None),
+            ("no end", b"\x00\x41\x0b", None),
+            ("empty", b"", None)):
+        got = GATE.decode_wasm_constant(body)
+        check(got == value, f"wasm constant {label}: decodes to {got}, not "
+              f"{value}")
+    for member in GATE.MEMBERS:
+        if "wasm32-emscripten" not in member["ships"]:
+            continue
+        path = os.path.join(ROOT, member["name"], "src", "code",
+                            "wasm32-emscripten", member["lib"] + ".a")
+        if not check(os.path.isfile(path), f"{path}: declared, not there"):
+            continue
+        binds, _ = GATE.binds_from_lcb(member["lcb"], member["lib"])
+        defs = GATE.shim_definitions(member["shim"], member["prefix"])
+        want = GATE.shim_abi(member["abi_header"], member["abi_define"])
+        where = f"{member['name']} wasm32-emscripten"
+
+        def run(binds_=binds, want_=want, reader=None):
+            problems, skips = [], []
+            stats = {"libs": 0, "binds": 0, "abi": 0, "wasm": 0}
+            saved = GATE.read_wasm_archive
+            if reader:
+                GATE.read_wasm_archive = reader
+            try:
+                GATE.check_wasm_archive(member, path, where, binds_, defs,
+                                        want_, problems, skips, stats)
+            finally:
+                GATE.read_wasm_archive = saved
+            return problems, skips, stats
+
+        problems, skips, stats = run()
+        check(not problems and stats["abi"] == 1,
+              f"{where}: as committed, {problems[:2]}, {stats['abi']} ABI")
+        exports, strings, body_of = GATE.read_wasm_archive(path)
+        table = member["lib"] + "_web_exports"
+        check(table in exports and table not in strings,
+              f"{where}: the table function should be a symbol and not a "
+              f"data string (the strings are read from the symbol table?)")
+        check(binds <= strings, f"{where}: binds missing from the table")
+        problems, _, _ = run(binds_=binds | {"zz_not_in_the_table"})
+        check(any("_web_exports()'s table does not name" in p
+                  for p in problems), f"{where}: a bind missing from the "
+              f"table was not refused: {problems[:2]}")
+        problems, _, _ = run(want_=want + 1)
+        check(any("predates an ABI change" in p for p in problems),
+              f"{where}: an ABI that moved was not refused")
+        problems, _, _ = run(reader=lambda p_: (exports - {table}, strings,
+                                                 body_of))
+        check(any(f"defines no global {table}()" in p for p in problems),
+              f"{where}: a missing table function was not refused")
+        counted += 1
+    obj = GATE.ar_objects(open(path, "rb").read())[0]
+    for label, image, reason in (
+            ("two objects", ar_archive([obj, ("b.o", obj[1])]),
+             "2 WebAssembly objects"),
+            ("no object", ar_archive([("x.o", b"\x7fELF" + b"\0" * 12)]),
+             "0 WebAssembly objects"),
+            ("cut short", ar_archive([obj])[:-100], "past the end")):
+        fd, tmp = tempfile.mkstemp(suffix=".a")
+        os.close(fd)
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(image)
+            try:
+                GATE.read_wasm_archive(tmp)
+                check(False, f"web archive with {label}: accepted")
+            except GATE.ReadError as exc:
+                check(reason in str(exc), f"web archive with {label}: "
+                      f"refused for {exc}, not {reason!r}")
+        finally:
+            os.remove(tmp)
+    print(f"{TAG}: leg 6 - {counted} committed web archives pass the gate's "
+          f"legs and are refused with a table missing a bind, a moved ABI "
+          f"or no table function; the constant decoder and the container "
+          f"refusals hold")
+
+
 def main():
     # Leg 1 + the leaf classes.
     for vec in VECTORS:
@@ -794,6 +906,21 @@ def main():
             decoded_files[f"{path}:{arch}"] = value
             check(value == want, f"{member['name']} mac {arch}: decodes "
                   f"{value} but {member['abi_define']} is {want}")
+
+    # The web archives (leg 6 holds their legs; here only their count, so the
+    # wiring check below compares like with like).
+    for member in GATE.MEMBERS:
+        path = os.path.join(ROOT, member["name"], "src", "code",
+                            "wasm32-emscripten", member["lib"] + ".a")
+        if not os.path.isfile(path):
+            continue
+        want = GATE.shim_abi(member["abi_header"], member["abi_define"])
+        _e, _s, body_of = GATE.read_wasm_archive(path)
+        value = GATE.decode_wasm_constant(body_of(member["abi_symbol"]) or b"")
+        if value is not None:
+            decoded_files[f"{path}:wasm"] = value
+            check(value == want, f"{member['name']} wasm32-emscripten: "
+                  f"decodes {value} but {member['abi_define']} is {want}")
 
     # The gate's wiring: check_member must skip exactly what does not decode
     # and count exactly what does. (The mac leg has its own stale-record
@@ -1134,6 +1261,8 @@ def main():
           f"decoded value, and their `eb 00` mutants the catch value"
           + ("; an int3 at an entry is caught as a crash inside the "
              "function, not a SKIP" if int3_caught else ""))
+
+    leg6()
 
     for skip in SKIPS:
         print(f"{TAG}: SKIP {skip}")

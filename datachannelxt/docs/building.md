@@ -125,3 +125,35 @@ lookup, so CMake generates `datachannelxt.def` listing the exact undecorated
 `dcx_*` names (harmless on x64, required on x86). The list lives in
 CMakeLists.txt and must gain a line whenever `dcx_abi.h` gains a symbol; the
 ABI bump discipline covers it.
+
+## The web build (experimental, 2026-10-21)
+
+OXT-Beyond's web IDE runs in a browser, which loads no library and has no
+sockets for libdatachannel. It has WebRTC itself, so the web build is not
+libdatachannel at all: `src/datachannel_web.cpp` implements the same frozen
+`dcx_*` contract (`dcx_abi.h`, the `dcx_record.h` registries and the drain
+framing) over the browser's `RTCPeerConnection` and `RTCDataChannel`, and
+the binding is unchanged. Its header comment lists where a browser behaves
+differently.
+
+```sh
+emcmake cmake -S . -B build-web -DDATACHANNELXT_BUILD_TESTS=ON
+cmake --build build-web && (cd build-web && ctest --output-on-failure)
+```
+
+That writes `src/code/wasm32-emscripten/datachannelxt.a` (one object and the
+generated `datachannelxt_web_exports` table, which the web engine links in)
+and runs `tests/datachannel_web_smoke_test.cpp` under node against the
+archive. Node has no WebRTC, so the smoke test pins the no-WebRTC refusals
+and the stale-handle surface. The live loopback runs in a browser, in
+OXT-Beyond's web IDE check, which runs `tests/datachannel-selftest.livecodescript`
+inside the IDE. Status: on 2026-10-22 that harness ran green in headless
+Chromium in the web IDE (75 passed, 0 failed, 0 skipped, its loopback
+section included), and the same day in OXT-Beyond's CI job in Firefox
+(75 passed, 0 failed, 0 skipped) and WebKit. A later run failed one
+assertion in both, "selected pair has localCandidate": the shim then sent
+a channel's open event before its getStats() snapshot of the pair had
+settled. Since then the open event waits for that snapshot (see the
+shim's header); the build with that change is verified in a browser only
+where a later dated record says so. A browser engine is not the OXT
+desktop engine: this says nothing about the native builds.

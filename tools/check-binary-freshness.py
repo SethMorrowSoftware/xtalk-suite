@@ -204,6 +204,14 @@ class ReadError(Exception):
 # the drift checker new work for no benefit.
 # --------------------------------------------------------------------------
 
+# The closure decision for every web archive (see PLATFORMS: wasm32-emscripten).
+WASM_CLOSURE_REASON = (
+    "a static archive's object keeps every vendored symbol global until the "
+    "link, and OXT-Beyond's web link makes all of them but "
+    "<lib>_web_exports local (its tools/web-ide/xtalk_web_libraries.py), so "
+    "the archive's global set is not what reaches the engine; leg W (the "
+    "table) checks what does")
+
 MEMBERS = [
     {
         "name": "sodiumxt",
@@ -215,7 +223,8 @@ MEMBERS = [
         "lib": "sodiumxt",
         "lcb": ["sodiumxt/src/sodium.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         "shim": "sodiumxt/src/sodium_shim.c",
         "prefix": "sxt_",
         "abi_header": "sodiumxt/src/sodium_shim.h",
@@ -227,7 +236,8 @@ MEMBERS = [
         # dylib's 105 exports (both slices) are all shim definitions too -
         # FEWER than today's source defines, which is its recorded staleness,
         # but nothing beyond the source. The mac linker adds no _init/_fini.
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "torrentxt",
@@ -287,7 +297,8 @@ MEMBERS = [
         "lib": "datachannelxt",
         "lcb": ["datachannelxt/src/datachannel.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         "shim": "datachannelxt/src/datachannel_shim.cpp",
         "prefix": "dcx_",
         "abi_header": "datachannelxt/src/dcx_abi.h",
@@ -309,6 +320,12 @@ MEMBERS = [
             # reader strips Mach-O's one leading underscore, so the ELF pattern
             # is the right one here rather than a doubled-underscore variant.
             "macho": [r"^_ZN3dcx4test"],
+            # wasm: the web archive is NOT libdatachannel but
+            # src/datachannel_web.cpp, the same dcx_* contract over the
+            # browser's WebRTC, with nothing vendored, so its closure is
+            # checked rather than skipped: the dcx_* names and the table
+            # (datachannelxt_web_exports), and nothing else.
+            "wasm": [r"^datachannelxt_web_exports$"],
         },
     },
     {
@@ -316,7 +333,8 @@ MEMBERS = [
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         "shim": "box2dxt/src/box2d_lc.c",
         "prefix": "b2lc_",
         # box2dxt keeps its ABI define in the shim itself, not a separate
@@ -337,6 +355,7 @@ MEMBERS = [
             # 370 definitions on both slices, nothing else - the mac linker
             # adds no _init/_fini, so the tolerance list is empty.
             "macho": [],
+            "wasm": WASM_CLOSURE_REASON,
         },
     },
     {
@@ -344,7 +363,8 @@ MEMBERS = [
         "lib": "coinxt",
         "lcb": ["coinxt/src/coinxt.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         # coinxt is the one member whose shim lives under native/, not src/.
         "shim": "coinxt/native/coinxt.c",
         "prefix": "cnx_",
@@ -354,7 +374,8 @@ MEMBERS = [
         # src/coinxt.map keeps this at exactly the 43 shim exports; without it
         # the library would leak ~61 vendored trezor-crypto symbols, which is
         # the case coinxt's own copy of this gate was written to catch.
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
 ]
 
@@ -370,6 +391,14 @@ PLATFORMS = {
     "x86-win32": ("dll", "pe"),
     "x86_64-win32": ("dll", "pe"),
     "universal-mac": ("dylib", "macho"),
+    # The web IDE's engine (OXT-Beyond, EXPERIMENTAL since 2026-10-21) cannot
+    # open a library, so it LINKS each one in: the member ships a static
+    # archive holding one relocatable WebAssembly object (`emcc -r`) and a
+    # `<lib>_web_exports()` table of every symbol its .lcb binds. Nothing on a
+    # desktop reads this folder (the IDE's code-folder matcher wants a desktop
+    # platform id, and the HTML5 builder's is "js"). Read by read_wasm_archive
+    # and checked by check_wasm_archive below.
+    "wasm32-emscripten": ("a", "wasm"),
 }
 
 # RETIRED 2026-08-23, kept as the dated record - nothing skips on this text
@@ -554,6 +583,10 @@ def detect_format(path):
         return "elf"
     if magic[:2] == b"MZ":
         return "pe"
+    if magic == b"!<ar":
+        # An ar archive; only wasm32-emscripten commits one, and
+        # read_wasm_archive refuses one that does not hold a wasm object.
+        return "wasm"
     if magic in (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf",
                  b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe",
                  b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"):
@@ -1138,6 +1171,308 @@ def read_macho_fat(path):
         exports, code_at = read_macho_slice(slices[arch], arch)
         out.append((arch, exports, code_at))
     return out
+
+
+
+# --------------------------------------------------------------------------
+# The web archive (wasm32-emscripten), new 2026-10-21.
+#
+# A static archive is not a loaded library: nothing is "exported" until the
+# web IDE's engine links it. So the legs read what the LINK will see: the
+# object's symbol table (the defined, non-local functions are what a bind can
+# reach), the data section (the `<lib>_web_exports` table's names are its
+# NUL-terminated strings: the engine looks a bind up by them, so a bind whose
+# name is not there fails in the browser even when the function is linked),
+# and the code section (the ABI constant). The formats are the ar header
+# (System V / GNU) and WebAssembly's object-file conventions
+# (github.com/WebAssembly/tool-conventions, Linking.md: the `linking` custom
+# section, version 2, and its WASM_SYMBOL_TABLE subsection). Reimplemented
+# here, not imported, for the reason read_macho_fat gives.
+# --------------------------------------------------------------------------
+
+WASM_MAGIC = b"\0asm\x01\0\0\0"
+WASM_SYMTAB = 8
+WASM_FLAG_LOCAL, WASM_FLAG_UNDEFINED, WASM_FLAG_EXPLICIT_NAME = 0x2, 0x10, 0x40
+
+
+def _uleb(data, pos):
+    result = shift = 0
+    while True:
+        if pos >= len(data):
+            raise ReadError("a LEB128 number runs off the end")
+        byte = data[pos]
+        pos += 1
+        result |= (byte & 0x7f) << shift
+        if not byte & 0x80:
+            return result, pos
+        shift += 7
+
+
+def _sleb(data, pos):
+    result = shift = 0
+    while True:
+        if pos >= len(data):
+            raise ReadError("a LEB128 number runs off the end")
+        byte = data[pos]
+        pos += 1
+        result |= (byte & 0x7f) << shift
+        shift += 7
+        if not byte & 0x80:
+            if byte & 0x40:
+                result -= 1 << shift
+            return result, pos
+
+
+def ar_objects(image):
+    """The (name, bytes) members of an ar archive, its index and long-name
+    table left out."""
+    if not image.startswith(b"!<arch>\n"):
+        raise ReadError("not an ar archive")
+    members, names, pos = [], b"", 8
+    while pos < len(image):
+        header = image[pos:pos + 60]
+        if len(header) < 60 or header[58:60] != b"`\n":
+            raise ReadError("an ar member header is cut short or malformed")
+        name = header[0:16].rstrip(b" ")
+        size = int(header[48:58].strip())
+        body = image[pos + 60:pos + 60 + size]
+        if len(body) != size:
+            raise ReadError("an ar member runs past the end of the file")
+        pos += 60 + size + (size & 1)
+        if name in (b"/", b"/SYM64/", b"__.SYMDEF", b"__.SYMDEF SORTED"):
+            continue
+        if name == b"//":
+            names = body
+            continue
+        if name.startswith(b"/") and name[1:].isdigit():
+            start = int(name[1:])
+            name = names[start:names.index(b"/\n", start)]
+        elif name.endswith(b"/"):
+            name = name[:-1]
+        members.append((name.decode("utf-8", "replace"), body))
+    return members
+
+
+def read_wasm_object(obj):
+    """Functions, data strings and function bodies of one wasm object.
+
+    Returns (exports, strings, body_of): the names of the defined, non-local
+    function symbols; every NUL-terminated printable string in the data
+    segments; and body_of(name) -> that function's code bytes or None.
+    """
+    if not obj.startswith(WASM_MAGIC):
+        raise ReadError("the archive member is not a WebAssembly object")
+    pos, imported, bodies, data, symtab = 8, 0, None, b"", None
+    while pos < len(obj):
+        section_id = obj[pos]
+        size, start = _uleb(obj, pos + 1)
+        body = obj[start:start + size]
+        if len(body) != size:
+            raise ReadError("section %d runs past the end" % section_id)
+        pos = start + size
+        if section_id == 2:                      # imports
+            count, p = _uleb(body, 0)
+            for _ in range(count):
+                for _field in range(2):
+                    n, p = _uleb(body, p)
+                    p += n
+                kind = body[p]
+                p += 1
+                if kind == 0:                    # function: a type index
+                    imported += 1
+                    _, p = _uleb(body, p)
+                elif kind == 1:                  # table: reftype + limits
+                    p += 1
+                    flags, p = _uleb(body, p)
+                    _, p = _uleb(body, p)
+                    if flags & 1:
+                        _, p = _uleb(body, p)
+                elif kind == 2:                  # memory: limits
+                    flags, p = _uleb(body, p)
+                    _, p = _uleb(body, p)
+                    if flags & 1:
+                        _, p = _uleb(body, p)
+                elif kind == 3:                  # global: valtype + mut
+                    p += 2
+                elif kind == 4:                  # tag: attribute + type
+                    p += 1
+                    _, p = _uleb(body, p)
+                else:
+                    raise ReadError("import kind %d is not one this reader "
+                                    "knows" % kind)
+        elif section_id == 10:                   # code
+            count, p = _uleb(body, 0)
+            bodies = []
+            for _ in range(count):
+                n, p = _uleb(body, p)
+                bodies.append(body[p:p + n])
+                p += n
+        elif section_id == 11:                   # data
+            count, p = _uleb(body, 0)
+            chunks = []
+            for _ in range(count):
+                mode, p = _uleb(body, p)
+                if mode in (0, 2):
+                    if mode == 2:
+                        _, p = _uleb(body, p)
+                    # The offset expression: one constant instruction, `end`.
+                    p += 1
+                    _, p = _sleb(body, p)
+                    p += 1
+                n, p = _uleb(body, p)
+                chunks.append(body[p:p + n])
+                p += n
+            data = b"\0".join(chunks)
+        elif section_id == 0:
+            n, p = _uleb(body, 0)
+            if body[p:p + n] == b"linking":
+                symtab = _wasm_symtab(body, p + n)
+    if symtab is None:
+        raise ReadError("no linking section with a symbol table - not a "
+                        "relocatable object (emcc -r)")
+    if bodies is None:
+        raise ReadError("no code section")
+    exports, index_of = set(), {}
+    for kind, flags, index, name in symtab:
+        if kind != 0 or flags & WASM_FLAG_UNDEFINED or name is None:
+            continue
+        index_of.setdefault(name, index)
+        if not flags & WASM_FLAG_LOCAL:
+            exports.add(name)
+    strings = {s.decode("ascii") for s in data.split(b"\0")
+               if s and all(32 < c < 127 for c in s)}
+
+    def body_of(name):
+        index = index_of.get(name)
+        if index is None or not imported <= index < imported + len(bodies):
+            return None
+        return bodies[index - imported]
+
+    return exports, strings, body_of
+
+
+def _wasm_symtab(body, p):
+    version, p = _uleb(body, p)
+    if version != 2:
+        raise ReadError("linking section version %d, not 2" % version)
+    while p < len(body):
+        sub_type = body[p]
+        sub_len, q = _uleb(body, p + 1)
+        p = q + sub_len
+        if sub_type != WASM_SYMTAB:
+            continue
+        payload, symbols = body[q:p], []
+        count, r = _uleb(payload, 0)
+        for _ in range(count):
+            kind = payload[r]
+            flags, r = _uleb(payload, r + 1)
+            index = name = None
+            if kind in (0, 2, 4, 5):             # function, global, tag, table
+                index, r = _uleb(payload, r)
+                if not flags & WASM_FLAG_UNDEFINED or flags & WASM_FLAG_EXPLICIT_NAME:
+                    n, r = _uleb(payload, r)
+                    name = payload[r:r + n].decode("utf-8")
+                    r += n
+            elif kind == 1:                      # data
+                n, r = _uleb(payload, r)
+                name = payload[r:r + n].decode("utf-8")
+                r += n
+                if not flags & WASM_FLAG_UNDEFINED:
+                    for _field in range(3):
+                        _, r = _uleb(payload, r)
+            elif kind == 3:                      # section
+                _, r = _uleb(payload, r)
+            else:
+                raise ReadError("symbol kind %d is not one this reader "
+                                "knows" % kind)
+            symbols.append((kind, flags, index, name))
+        return symbols
+    raise ReadError("the linking section has no symbol table")
+
+
+def read_wasm_archive(path):
+    """The one wasm object of a web archive, read (read_wasm_object)."""
+    with open(path, "rb") as fh:
+        image = fh.read()
+    objects = [m for m in ar_objects(image) if m[1].startswith(b"\0asm")]
+    if len(objects) != 1:
+        # The contract is ONE object (`emcc -r` over the shim and its
+        # library): OXT-Beyond localises every symbol but the table's in it,
+        # which it can only do for the object it links whole.
+        raise ReadError("%d WebAssembly objects in the archive, where the "
+                        "web contract is exactly one (`emcc -r`)"
+                        % len(objects))
+    return read_wasm_object(objects[0][1])
+
+
+def decode_wasm_constant(code):
+    """`i32.const N ; end` with no locals -> N, else None.
+
+    The whole body of a constant function at -Os: a zero local-declaration
+    count, the constant, and the function's `end`. Nothing else reads, for the
+    reason decode_return_constant gives.
+    """
+    if not code or code[0] != 0:
+        return None
+    if len(code) < 3 or code[1] != 0x41:
+        return None
+    try:
+        value, p = _sleb(code, 2)
+    except ReadError:
+        return None
+    if code[p:] != b"\x0b":
+        return None
+    return value
+
+
+def check_wasm_archive(member, path, where, binds, defs, want_abi,
+                       problems, skips, stats):
+    """Every leg for one web archive. Returns 1 when it was read, else 0."""
+    try:
+        exports, strings, body_of = read_wasm_archive(path)
+    except ReadError as exc:
+        problems.append(f"{where}: a web archive whose symbols could not be "
+                        f"read ({exc}) - a library whose exports cannot be "
+                        f"established is what this gate exists to stop")
+        return 0
+    stats["libs"] += 1
+    stats["wasm"] = stats.get("wasm", 0) + 1
+
+    # Legs 1-3, as every other container.
+    check_export_legs(member, where, "wasm", binds, defs, exports,
+                      problems, skips, stats)
+
+    # Leg W: the table the engine looks binds up in. Its function must be
+    # there, and so must every bound name, or the bind fails in the browser
+    # with the function linked in and unreachable.
+    table = f"{member['lib']}_web_exports"
+    if table not in exports:
+        problems.append(f"{where}: defines no global {table}() - the web "
+                        f"IDE's engine registers the library through it, so "
+                        f"without it no bind of this member resolves on the "
+                        f"web")
+    unlisted = sorted(binds - strings)
+    if unlisted:
+        problems.append(f"{where}: {table}()'s table does not name "
+                        f"{len(unlisted)} symbol(s) the .lcb binds, e.g. "
+                        f"{unlisted[:6]} - the archive was built from an "
+                        f"older .lcb; rebuild it (the table is generated from "
+                        f"the .lcb)")
+
+    # Leg 4: the ABI pin.
+    decoded = decode_wasm_constant(body_of(member["abi_symbol"]) or b"")
+    if decoded is None:
+        skips.append(f"{where} ABI pin - {member['abi_symbol']}'s body is not "
+                     f"`i32.const N ; end`, and anything looser would be a "
+                     f"guess")
+    else:
+        stats["abi"] += 1
+        if decoded != want_abi:
+            problems.append(
+                f"{where}: {member['abi_symbol']}() returns {decoded} but "
+                f"{member['abi_header']} defines {member['abi_define']} "
+                f"{want_abi} - the committed archive predates an ABI change")
+    return 1
 
 
 def read_container(path, fmt):
@@ -2020,6 +2355,11 @@ def check_member(member, problems, skips, notes, stats):
                     member, path, f"{name}/src/code/{platform}/{fn}",
                     binds, defs, want_abi, problems, skips, stats)
                 continue
+            if fmt == "wasm":
+                checked_here += check_wasm_archive(
+                    member, path, f"{name}/src/code/{platform}/{fn}",
+                    binds, defs, want_abi, problems, skips, stats)
+                continue
             try:
                 exports, code_at = read_container(path, fmt)
             except ReadError as exc:
@@ -2149,7 +2489,7 @@ def main(argv=()):
 
     problems, skips, notes = [], [], []
     stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0,
-             "mac": 0, "guarded": 0}
+             "mac": 0, "guarded": 0, "wasm": 0}
 
     assert_table_covers_tree(problems)
     for member in MEMBERS:
@@ -2181,7 +2521,8 @@ def main(argv=()):
     # and how many of those resolutions each library was held to.
     print(f"{TAG}: OK - {stats['libs']} committed libraries across "
           f"{len(MEMBERS)} members ({stats['mac']} of them universal mac "
-          f"dylibs, both slices read). {stats['distinct']} distinct .lcb "
+          f"dylibs, both slices read; {stats['wasm']} web archives). "
+          f"{stats['distinct']} distinct .lcb "
           f"binds, {stats['binds']} bind-vs-export resolutions; every "
           f"non-static shim definition exported, outside any recorded-stale "
           f"mac state printed above; {stats['abi']} ABI constants decoded "
