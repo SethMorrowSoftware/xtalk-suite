@@ -2745,6 +2745,18 @@ def drive_social(c, ip, world, profile):
              % profile, LCS._arr_has(ip.globals.get("sfollows", ""), other)
              and isinstance(posts, dict) and LCS._arr_has(posts, t1)
              and LCS._arr_has(posts, t2), "")
+        # a refused write keeps the cache dirty, so a later tick saves it
+        # (the 2026-10-22 review: clearing first lost follows on Lock)
+        path = os.path.abspath(str(LCS._disp(ip.call("raSocialPath", []))))
+        world.url_write_refuse[path] = "can't open file"
+        ip.call("raSocialMark", [])
+        ip.call("raSocialSave", [])
+        dirty = str(LCS._disp(ip.globals.get("ssocialdirty", "")))
+        del world.url_write_refuse[path]
+        ip.call("raSocialSave", [])
+        after = str(LCS._disp(ip.globals.get("ssocialdirty", "")))
+        c.ck("[%s] social: a refused cache write stays dirty until a save lands"
+             % profile, dirty == "true" and after == "", "%r then %r" % (dirty, after))
         ip.call("linkClicked", ["u:" + other])
         c.ck("[%s] social: Unfollow from a link removes the follow" % profile,
              not LCS._arr_has(ip.globals.get("sfollows", "") or LCS.LcsArray({}), other), "")

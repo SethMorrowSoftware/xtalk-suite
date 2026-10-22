@@ -16115,6 +16115,7 @@ local sSyncHead        -- handle -> "1" while its head lookup is in flight
 local sSyncPost        -- target -> the author whose post we are fetching
 local sSyncPostMode    -- target -> "walk" (keep walking) or "one" (a quoted post)
 local sSyncChunk       -- chunk target -> the post it belongs to
+local sSyncChunkAt     -- post target -> ms its missing chunks were last asked for
 local sSyncName        -- profile target -> the handle it names
 local sSyncDl          -- "h:"handle or "i:"target -> ms deadline (in flight)
 local sSyncChecked     -- handle -> ms its head was last asked for
@@ -16248,6 +16249,7 @@ local sAnonServing     -- "true" once the oxh* routes are registered
 -- channel is direct peer-to-peer.
 local sDcInit          -- "true" once dcInit succeeded (teardown guard)
 local sDcPeer          -- the dc peer handle while a call exists, or empty
+local sDcRpPeer        -- the rp1 peer the call's signalling rides, or empty
 local sDcChannel       -- the call's data-channel handle once known
 local sDcAwaitLocal    -- "O"/"A" while waiting to ship our local SDP
 -- the phase-5 typing lane (spec 6.2): a second, lossy dc channel
@@ -18661,7 +18663,7 @@ end raProfileName
 -- ---- 2. posting ---------------------------------------------------------------
 command raPost
    local tText, tPost, tTarget, tMediaHash, tNow, tPrev, tKind
-   local tMediaCount, tCapacity, tKindNote
+   local tMediaCount, tCapacity, tKindNote, tChunkList
    if sIdSeed is empty then
       raSay "Unlock (or create) your identity before posting.", "warn"
       exit raPost
@@ -18744,9 +18746,24 @@ command raPost
    put tTarget into sMyLatest
    -- into the cache NOW, so the post is on the timeline without waiting for
    -- the DHT round trip; the sync walk then stops at it (it is held). The
-   -- direct post's bytes are kept for the keep-alive; a chunked post's are
-   -- the library's, so the keep-alive refreshes the head that names it
+   -- signed post bytes are kept for the keep-alive
    put toLower(tTarget) into tTarget
+   -- a chunked post's record is rebuilt here from the same inputs (signing
+   -- is deterministic) and kept only when it hashes to the target the
+   -- library published, so the keep-alive refreshes it like a direct one;
+   -- its chunks are re-split from the text at republish (raRepublishChunks)
+   if tKind is "C" then
+      put raChunkTargetsFor(tText) into tChunkList
+      if tChunkList is not empty then
+         put rsBuildPostChunked(tNow, tPrev, tChunkList, tMediaHash, sIdSeed) \
+               into tPost
+         if tPost is not empty and \
+               ("t" & toLower(rsImmutableTarget(tPost))) is not ("t" & tTarget) then
+            put empty into tPost
+         end if
+         put tChunkList into sPosts[tTarget]["c"]
+      end if
+   end if
    put sHandle into sPosts[tTarget]["a"]
    put tNow into sPosts[tTarget]["t"]
    put toLower(tPrev) into sPosts[tTarget]["p"]
@@ -18934,6 +18951,7 @@ command raSyncTick
             add 1 to tInFlight
          end if
       end repeat
+      raSyncRetryChunks tInFlight
       -- the keep-alive: DHT items expire unless someone puts them again
       if sRepublishAt is an integer and tNow >= sRepublishAt then
          put tNow + kRepublishMs into sRepublishAt
@@ -19186,6 +19204,37 @@ command raSyncPostArrived pEvent, pTarget
    end if
 end raSyncPostArrived
 
+-- A long post whose text never assembled (a chunk lookup timed out, or the
+-- app restarted mid-fetch: the cache keeps the post, never the parts) asks
+-- again for every part it lacks, within the in-flight budget left, at most
+-- once per kSyncEveryMs a post (parts that are gone for good are asked for
+-- at the head cadence, never every tick).
+command raSyncRetryChunks pInFlight
+   local tT, tItem, tNow
+   put the milliseconds into tNow
+   repeat for each key tT in sPosts
+      if pInFlight >= kSyncMaxInFlight then
+         exit repeat
+      end if
+      if sPosts[tT]["k"] is "C" and sPosts[tT]["x"] is empty and \
+            (sSyncChunkAt[tT] is not an integer or tNow - sSyncChunkAt[tT] >= kSyncEveryMs) then
+         put tNow into sSyncChunkAt[tT]
+         set the itemDelimiter to comma
+         repeat for each item tItem in sPosts[tT]["c"]
+            if pInFlight >= kSyncMaxInFlight then
+               exit repeat
+            end if
+            if tItem is not empty and sChunkBytes[tT][tItem] is empty and \
+                  sSyncDl["i:" & tItem] is empty then
+               raSyncRequestTarget tItem, "chunk", tT
+               add 1 to pInFlight
+            end if
+         end repeat
+      end if
+   end repeat
+   set the itemDelimiter to comma
+end raSyncRetryChunks
+
 -- pRef is "<handle>/<target>" (raReplyRef). One post, no walk.
 command raSyncFetchParent pRef
    local tH, tT, tSaved
@@ -19325,6 +19374,10 @@ command raRepublish
          if rsPublishImmutable(sSession, sMyPostBytes[item 2 of tT]) is not empty then
             add 1 to tN
          end if
+         if sPosts[item 2 of tT]["k"] is "C" then
+            add raRepublishChunks(item 2 of tT) to tN
+            set the itemDelimiter to tab
+         end if
       end if
    end repeat
    set the itemDelimiter to comma
@@ -19341,6 +19394,47 @@ command raRepublish
    end if
    raFeedNote empty, "keep-alive: republished" && tN && "record(s) so followers can still reach you."
 end raRepublish
+
+-- The chunk targets the library's split gives pText, comma-separated, or
+-- empty when it refuses (empty text, over the kind-C cap).
+function raChunkTargetsFor pText
+   local tParts, tI, tOut
+   put rsChunkPostText(pText) into tParts
+   if tParts is empty then
+      return empty
+   end if
+   repeat with tI = 1 to the number of elements in tParts
+      if tOut is not empty then
+         put comma after tOut
+      end if
+      put toLower(rsImmutableTarget(tParts[tI])) after tOut
+   end repeat
+   return tOut
+end raChunkTargetsFor
+
+-- Re-put the chunks of one of my kind-C posts. The parts are re-split from
+-- the held text and put only when they hash to the targets the post names
+-- (a post written on another device by a build that split differently is
+-- left to the head alone). Returns how many were put.
+function raRepublishChunks pTarget
+   local tParts, tI, tN
+   put 0 into tN
+   if sPosts[pTarget]["x"] is empty or sPosts[pTarget]["c"] is empty then
+      return 0
+   end if
+   if ("c" & raChunkTargetsFor(sPosts[pTarget]["x"])) is not \
+         ("c" & toLower(sPosts[pTarget]["c"])) then
+      return 0
+   end if
+   put rsChunkPostText(sPosts[pTarget]["x"]) into tParts
+   repeat with tI = 1 to the number of elements in tParts
+      if rsPublishImmutable(sSession, tParts[tI]) is not empty then
+         add 1 to tN
+      end if
+   end repeat
+   set the itemDelimiter to comma
+   return tN
+end raRepublishChunks
 
 -- ---- following ----------------------------------------------------------------
 
@@ -20077,13 +20171,17 @@ function raUnB64 pText
    return textDecode(base64Decode(pText), "UTF-8")
 end raUnB64
 
+-- The dirty flag clears only once the sealed file is written: a refusal
+-- (no folder, a seal error, a write that throws) leaves it set with a fresh
+-- deadline, so a later tick tries again instead of dropping the follows.
 command raSocialSave
    local tOut, tH, tT, tPath, tSealed, tErr, tB
-   put empty into sSocialDirty
-   put empty into sSocialSaveAt
    if sMasterSeed is empty then
+      put empty into sSocialDirty
+      put empty into sSocialSaveAt
       exit raSocialSave
    end if
+   put the milliseconds + kSocialSaveMs into sSocialSaveAt
    put raSocialPath() into tPath
    if tPath is empty then
       exit raSocialSave
@@ -20123,7 +20221,14 @@ command raSocialSave
       put tSealed into url ("binfile:" & tPath)
    catch tErr
       raFeedNote empty, "could not write the social cache:" && tErr
+      exit raSocialSave
    end try
+   if the result is not empty then
+      raFeedNote empty, "could not write the social cache:" && the result
+      exit raSocialSave
+   end if
+   put empty into sSocialDirty
+   put empty into sSocialSaveAt
 end raSocialSave
 
 command raSocialLoad
@@ -20204,6 +20309,7 @@ command raSocialForget
    put empty into sSyncPost
    put empty into sSyncPostMode
    put empty into sSyncChunk
+   put empty into sSyncChunkAt
    put empty into sSyncName
    put empty into sSyncDl
    put empty into sSyncChecked
@@ -20480,9 +20586,12 @@ command raHandleRp1 pEvent
                if tParsed["kind"] is "T" then
                   raChatAdd sDmTheirHandle[tPeer], "them", tParsed["text"]
                else if tParsed["kind"] is "O" then
-                  raDmCallIncoming tParsed["text"]
+                  raDmCallIncoming tParsed["text"], tPeer
                else if tParsed["kind"] is "A" then
-                  raDmCallAnswered tParsed["text"]
+                  -- only the peer we called may answer it
+                  if ("p" & tPeer) is ("p" & sDcRpPeer) then
+                     raDmCallAnswered tParsed["text"]
+                  end if
                end if
                break
          end switch
@@ -20621,10 +20730,15 @@ end raDmSend
 -- authenticated encrypted rail (the whole point of the kinds existing).
 -- Returns true/false. rsSetError is PRIVATE to the library, so a failure
 -- here that is not a library refusal logs its reason to the chat directly
--- (callers guard the no-conversation case before calling).
-private function raDmSendMessage pKind, pBody
+-- (callers guard the no-conversation case before calling). pPeer names the
+-- rp1 peer when the message belongs to one (a call's signalling); empty is
+-- the active conversation.
+private function raDmSendMessage pKind, pBody, pPeer
    local tMsg, tCipher, tFrame, tOk, tErr
-   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
+   if pPeer is empty then
+      put sDmActivePeer into pPeer
+   end if
+   if pPeer is empty or sDmPush[pPeer] is empty then
       return false
    end if
    put rsDmMessageBody(pKind, the seconds, pBody) into tMsg
@@ -20635,7 +20749,7 @@ private function raDmSendMessage pKind, pBody
    -- ends the stream for good, so it belongs to exactly one caller
    -- (raDmPushClose, at teardown) and nothing else may spend it
    try
-      put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
+      put sxSecretStreamPush(sDmPush[pPeer], tMsg, empty, false) \
             into tCipher
    catch tErr
       raDmChatLine "-- send failed: stream push:" && tErr && "--"
@@ -20645,7 +20759,7 @@ private function raDmSendMessage pKind, pBody
    if tFrame is empty then
       return false
    end if
-   put rsDmSend(sSession, sDmActivePeer, tFrame) into tOk
+   put rsDmSend(sSession, pPeer, tFrame) into tOk
    return tOk is true
 end raDmSendMessage
 
@@ -20891,7 +21005,7 @@ command raDmCall
    local tChan
    if sDcPeer is not empty then
       raDmChatLine "-- you hung up --"
-      get raDmSendMessage("T", "(hung up)")
+      get raDmSendMessage("T", "(hung up)", sDcRpPeer)
       raDcTeardown
       exit raDmCall
    end if
@@ -20913,6 +21027,8 @@ command raDmCall
       put empty into sDcPeer
       exit raDmCall
    end if
+   -- the call belongs to this conversation even if the screen moves on
+   put sDmActivePeer into sDcRpPeer
    raDcTypingReset
    -- the first channel triggers the offer (auto-negotiation)
    put dcCreateChannel(sDcPeer, "riptide-call") into tChan
@@ -20939,7 +21055,7 @@ command raDmCall
 end raDmCall
 
 -- An SDP offer arrived inside the secretstream (the far side pressed Call).
-command raDmCallIncoming pSdp
+command raDmCallIncoming pSdp, pRpPeer
    local tR
    if sDcPeer is not empty then
       raDmChatLine "-- incoming call ignored: already in one --"
@@ -20954,6 +21070,9 @@ command raDmCallIncoming pSdp
       put empty into sDcPeer
       exit raDmCallIncoming
    end if
+   -- the answer goes back to the peer that offered, whichever chat is on
+   -- screen
+   put pRpPeer into sDcRpPeer
    -- the caller opens BOTH channels (call + typing lane); they arrive
    -- here as dcChannelIncoming events, routed by label
    raDcTypingReset
@@ -20996,7 +21115,7 @@ command raDmCallShipLocal
    end if
    put sDcAwaitLocal into tKind
    put empty into sDcAwaitLocal
-   if raDmSendMessage(tKind, tSdp) is true then
+   if raDmSendMessage(tKind, tSdp, sDcRpPeer) is true then
       if tKind is "O" then
          raDmChatLine "-- offer sent over the encrypted DM channel --"
       else
@@ -21087,6 +21206,7 @@ command raDcTeardown
       end try
    end if
    put empty into sDcPeer
+   put empty into sDcRpPeer
    put empty into sDcChannel
    put empty into sDcAwaitLocal
    raDcTypingReset

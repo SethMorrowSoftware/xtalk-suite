@@ -57,7 +57,8 @@ Built on the protocol as it was: no wire format, library or kit change.
   post, still verified; this one draws "Replying to ..." with the quoted post.
 - **The keep-alive.** BEP44 items fade in about two hours unless someone puts them
   again, so every 30 minutes while unlocked the app republishes your head (same
-  seq, same bytes), your newest posts, your prekey and your name.
+  seq, same bytes), your newest posts (a long post with its chunks), your prekey
+  and your name.
 - **Profiles**: a display name rides your head (as before), and saving a new one
   republishes the head without a new post.
 - **Messages**: one conversation per person, kept in memory only and gone at Lock.
