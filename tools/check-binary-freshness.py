@@ -297,7 +297,8 @@ MEMBERS = [
         "lib": "datachannelxt",
         "lcb": ["datachannelxt/src/datachannel.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         "shim": "datachannelxt/src/datachannel_shim.cpp",
         "prefix": "dcx_",
         "abi_header": "datachannelxt/src/dcx_abi.h",
@@ -319,6 +320,12 @@ MEMBERS = [
             # reader strips Mach-O's one leading underscore, so the ELF pattern
             # is the right one here rather than a doubled-underscore variant.
             "macho": [r"^_ZN3dcx4test"],
+            # wasm: the web archive is NOT libdatachannel but
+            # src/datachannel_web.cpp, the same dcx_* contract over the
+            # browser's WebRTC, with nothing vendored, so its closure is
+            # checked rather than skipped: the dcx_* names and the table
+            # (datachannelxt_web_exports), and nothing else.
+            "wasm": [r"^datachannelxt_web_exports$"],
         },
     },
     {
