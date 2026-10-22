@@ -50,6 +50,11 @@ buttons). Written for OXT-Beyond, which ships this stack prebuilt in Learn.
     mid-hand showed its cards over the table for good. heKitTryInit now
     sweeps every "b2kspr_" button on the table card first
     (heKitSweepStaleSprites).
+  * A REOPEN IN THE SAME SESSION DREW BLANK BACKS (found the evening of
+    2026-10-21, after the first merge). The Kit keys a sprite's shown icon by
+    its long id, and a reopened stack's pool buttons get the ids the last
+    instance's had, so the Kit skipped setting the back's icon. Each pooled
+    sprite is now shown another frame and then its own (heKitSpriteResync).
   * A SECOND KIT INIT DREW CARDS AT FULL SIZE. heKitTryInit sized the sheet
     from b2kSheetFrameSize, which answers at the sheet's current scale; the
     sheets persist for the session, so a re-init (a chrome rebuild, as this
@@ -16897,6 +16902,30 @@ command heKitSweepStaleSprites
    end repeat
 end heKitSweepStaleSprites
 
+command heKitSpriteResync pSpr, pSheet, pFrame
+   -- v0.25.7: the Kit remembers each sprite's icon by the sprite's LONG ID and
+   -- skips setting an icon it believes is already there. A stack reopened in
+   -- the same session (closed, deleted from memory, opened again) creates its
+   -- pool buttons with the SAME ids as last time, so the Kit, still holding
+   -- the last instance's record, skipped the icon: every face-down card drew
+   -- blank (seen on Windows, 2026-10-21) and a face could too. Showing
+   -- another frame and then the wanted one makes the Kit set the icon for
+   -- real, whatever it remembered. The other frame is the sheet's first one
+   -- (its second when pFrame is the first); a one-frame sheet skips it.
+   local tOther
+   if pSpr is empty then
+      exit heKitSpriteResync
+   end if
+   put line 1 of b2kSheetFrameNames(pSheet) into tOther
+   if tOther is pFrame then
+      put line 2 of b2kSheetFrameNames(pSheet) into tOther
+   end if
+   if tOther is not empty then
+      b2kSpriteSetFrame pSpr, tOther
+   end if
+   b2kSpriteSetFrame pSpr, pFrame
+end heKitSpriteResync
+
 function heKitSourceWidth pSheet, pFrame
    -- a frame's width in SOURCE pixels, from the sheet's own regions (v0.25.7).
    -- b2kSheetFrameSize answers at the sheet's CURRENT scale, and sheets persist
@@ -17048,6 +17077,7 @@ command heKitTryInit
          put gSlotCenter[tSlot] into tCtr
          b2kSpriteNew "heCards", heKenneyFrame(1) & gKitSuffix, item 1 of tCtr, item 2 of tCtr
          put the result into tSpr
+         heKitSpriteResync tSpr, "heCards", heKenneyFrame(1) & gKitSuffix
          b2kSpriteMoveTo tSpr, item 1 of tCtr, item 2 of tCtr
          set the visible of tSpr to false
          put tSpr into gCardSpr[tSlot]
@@ -17086,6 +17116,7 @@ command heKitTryInit
                         item 1 of tCtr, item 2 of tCtr
                   put the result into tSpr
                   if tSpr is not empty then
+                     heKitSpriteResync tSpr, "heCardBacks", kHeCardBackFrame & gKitBackSuffix
                      b2kSpriteMoveTo tSpr, item 1 of tCtr, item 2 of tCtr
                      set the visible of tSpr to false
                      put tSpr into gBackSpr[tSlot]
