@@ -651,6 +651,23 @@ class DemoExpr(LCS._Expr):
                 exists = world.resolve(kind, name, cardspec) is not None
             return (not exists) if want_missing else exists
 
+        # `the number of controls of this card` and `the short name of
+        # control N of this card`: raBuildResetCard's walk by index (the
+        # social UI, 2026-10-21, sheds an older version's controls by name
+        # prefix rather than from a list)
+        m = _rxi(r'the\s+number\s+of\s+controls\s+of\s+this\s+card\b').match(rest)
+        if m:
+            self.i += m.end()
+            return len(world.current().controls)
+        m = _rxi(r'the\s+short\s+name\s+of\s+control\s+(\w+)\s+of\s+this\s+card\b').match(rest)
+        if m:
+            self.i += m.end()
+            n = int(LCS._n(self.ip.eval_expr(m.group(1), self.env)))
+            ctls = world.current().controls
+            if not 1 <= n <= len(ctls):
+                raise Thrown("Chunk: no such object (control %d)" % n)
+            return ctls[n - 1].name
+
         # `the <adjective>? <prop> of <object>`
         m = _rxi(r'the\s+(?:(short|long|abbreviated)\s+)?(\w+)\s+of\s+'
                      + _OBJ_RE).match(rest)
@@ -666,12 +683,16 @@ class DemoExpr(LCS._Expr):
 
         # bare engine `the` constants the demo reads
         m = _rxi(r'the\s+(platform|milliseconds|millisecs|seconds|result|'
-                     r'target)\b').match(rest)
+                     r'target|fontNames)\b').match(rest)
         if m:
             word = m.group(1).lower()
             self.i += m.end()
             if word == "platform":
                 return "Win32"
+            if word == "fontnames":
+                # a short list the way an engine answers it (one per line);
+                # riptide's raUiFont picks the first of its wishes present
+                return "Arial\nSegoe UI\nTahoma"
             if word in ("milliseconds", "millisecs"):
                 return world.ms
             if word == "seconds":
@@ -846,6 +867,9 @@ class DemoInterp(LCS.Interp):
         if kind == "card":
             if prop == "name":
                 return obj.name
+            if prop == "number":
+                # its position in the stack (riptide's raScRun and sync pill)
+                return world.cards.index(obj) + 1
             return ""
         # control
         if prop == "name":
@@ -1265,6 +1289,21 @@ class DemoInterp(LCS.Interp):
             elif unit == "ticks":
                 delay *= 1000 / 60.0
             world.sends.append((msg, delay))
+            return i + 1
+
+        # ---- focus on <control>: keyboard focus, nothing a headless world
+        # can see (riptide's reply and chat open the compose box with it)
+        if _rxi(r'focus\s+on\s+.+$').match(line):
+            return i + 1
+
+        # ---- delete control N of this card (raBuildResetCard's walk)
+        m = _rxi(r'delete\s+control\s+(\w+)\s+of\s+this\s+card$').match(line)
+        if m:
+            n = int(LCS._n(self.eval_expr(m.group(1), env)))
+            ctls = world.current().controls
+            if not 1 <= n <= len(ctls):
+                raise Thrown("Chunk: no such object (control %d)" % n)
+            del ctls[n - 1]
             return i + 1
 
         # ---- delete a control (the upgrade path's raBuildResetCard)
@@ -1787,7 +1826,12 @@ def boot(c, path, profile, drive=True):
         c.ck("[%s] every named card was built (%s)"
              % (profile, ",".join(cards)), have == cards,
              "built: %s" % ",".join(have))
-        c.ck("[%s] the boot returns to card 1" % profile, world.cur == 0)
+        # since the social UI (2026-10-21) a locked boot lands on the
+        # welcome card: create or unlock is the only thing a locked app does
+        welcome = world.card_named("raWelcome")
+        c.ck("[%s] the boot lands on the welcome card" % profile,
+             welcome is not None and world.cur == world.cards.index(welcome),
+             "on %s" % world.current().name)
         c.ck("[%s] the screen lock is balanced" % profile,
              world.locked == 0, "depth %d" % world.locked)
 
@@ -1904,6 +1948,7 @@ def boot(c, path, profile, drive=True):
             drive_draft_change(c, ip, world, profile)
             drive_inbox_match(c, ip, world, profile)
             drive_profile_line(c, ip, world, profile)
+            drive_social(c, ip, world, profile)
             try:
                 ip.call("raLock", [])
                 c.ck("[%s] raLock tears down cleanly" % profile, True)
@@ -2629,6 +2674,95 @@ def drive_inbox_match(c, ip, world, profile):
             ip.__dict__.pop("call", None)
         for k, v in saved.items():
             ip.globals[k] = v
+
+
+def drive_social(c, ip, world, profile):
+    """The social layer (ra-ui-social-12, 2026-10-21) driven offline: no
+    session exists in the boot, so these are the parts that never touch the
+    network - following, the cache, the rendered timeline, the reply
+    convention, the profile, the conversations list, and the sealed social
+    cache's round trip. The sync's network half (raSyncTick's lookups) stays
+    inert here; it is verified statically; needs an OXT pass."""
+    other = "b" * 64
+    me = str(LCS._disp(ip.globals.get("shandle", "")))
+    if len(me) != 64:
+        c.ck("[%s] social: an identity is unlocked to drive" % profile, False,
+             "handle %r" % me)
+        return
+
+    def html(card, name):
+        cd = world.card_named(card)
+        ctl = cd.find("field", name) if cd else None
+        return "" if ctl is None else str(LCS._disp(ctl.props.get("urahtml", "")))
+
+    def post(target, author, ts, text, prev="0" * 40):
+        rec = LCS.LcsArray({"timestamp": ts, "prevPostTarget": prev,
+                            "kind": "D", "text": text, "chunkTargets": "",
+                            "mediaTargets": ""})
+        ip.call("raStorePost", [target, author, rec])
+
+    try:
+        got = str(LCS._disp(ip.call("raFollowHandle", ["riptide:" + other.upper(), "raFollowing"])))
+        c.ck("[%s] social: a pasted riptide: handle (any case) becomes a follow"
+             % profile, got == "true" and LCS._arr_has(ip.globals["sfollows"], other),
+             got)
+        got = str(LCS._disp(ip.call("raFollowHandle", [me, "raFollowing"])))
+        c.ck("[%s] social: following yourself is refused" % profile,
+             got == "false", got)
+        now = world.ms // 1000
+        t1, t2 = "1" * 40, "2" * 40
+        post(t1, other, now - 120, "hello <b>world</b> & co")
+        post(t2, me, now - 30, "re: riptide:%s/%s\nyes indeed" % (other, t1))
+        ip.call("raPaintAll", [])
+        tl = html("1", "raTimeline")
+        c.ck("[%s] social: the timeline draws both authors, newest first"
+             % profile, 0 <= tl.find("r:" + t2) < tl.find("r:" + t1),
+             tl[:160])
+        c.ck("[%s] social: post text is escaped, never read as markup"
+             % profile, "hello &lt;b&gt;world&lt;/b&gt; &amp; co" in tl
+             and "<b>world</b>" not in tl, tl[:200])
+        c.ck("[%s] social: a reply is drawn as a reply with its quote"
+             % profile, "Replying to" in tl and "re: riptide:" not in tl, tl[:200])
+        fl = html("raFollowing", "raFollowList")
+        c.ck("[%s] social: the Following list names who you follow" % profile,
+             ("p:" + other) in fl and ("u:" + other) in fl, fl[:160])
+        ip.call("raShowProfile", [other])
+        pf = html("raProfile", "raPfFeed")
+        c.ck("[%s] social: a profile shows only its author's posts" % profile,
+             "hello" in pf and "yes indeed" not in pf, pf[:160])
+        ip.call("raOpenChat", [other])
+        ip.call("raChatAdd", [other, "them", "hi there"])
+        ip.call("raChatAdd", [other, "me", "hey"])
+        ch = html("raMessages", "raDmChat")
+        c.ck("[%s] social: a conversation draws both sides" % profile,
+             "hi there" in ch and "hey" in ch, ch[:160])
+        # the sealed social cache: save, forget, load
+        ip.call("raSocialSave", [])
+        ip.call("raSocialForget", [])
+        ip.call("raSocialLoad", [])
+        posts = ip.globals.get("sposts", "")
+        c.ck("[%s] social: follows and posts survive the sealed cache round trip"
+             % profile, LCS._arr_has(ip.globals.get("sfollows", ""), other)
+             and isinstance(posts, dict) and LCS._arr_has(posts, t1)
+             and LCS._arr_has(posts, t2), "")
+        # a refused write keeps the cache dirty, so a later tick saves it
+        # (the 2026-10-22 review: clearing first lost follows on Lock)
+        path = os.path.abspath(str(LCS._disp(ip.call("raSocialPath", []))))
+        world.url_write_refuse[path] = "can't open file"
+        ip.call("raSocialMark", [])
+        ip.call("raSocialSave", [])
+        dirty = str(LCS._disp(ip.globals.get("ssocialdirty", "")))
+        del world.url_write_refuse[path]
+        ip.call("raSocialSave", [])
+        after = str(LCS._disp(ip.globals.get("ssocialdirty", "")))
+        c.ck("[%s] social: a refused cache write stays dirty until a save lands"
+             % profile, dirty == "true" and after == "", "%r then %r" % (dirty, after))
+        ip.call("linkClicked", ["u:" + other])
+        c.ck("[%s] social: Unfollow from a link removes the follow" % profile,
+             not LCS._arr_has(ip.globals.get("sfollows", "") or LCS.LcsArray({}), other), "")
+    except Exception as exc:                                # noqa: BLE001
+        c.ck("[%s] social: the offline drive ran" % profile, False,
+             "%s: %s" % (type(exc).__name__, exc))
 
 
 def drive_profile_line(c, ip, world, profile):

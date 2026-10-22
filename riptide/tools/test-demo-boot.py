@@ -101,12 +101,19 @@ def main():
          "   raBuild\n   raProbe\n",
          '   raBuild\n   put "x" into field "raNoSuchControl"\n   raProbe\n'),
         ("a control that is registered but never built is caught",
-         'uiButton "raNxCopyNpub", "Copy", "476,78,592,102"\n',
+         '   raView "raTimeline", "232,248,792,606", kRaPage\n',
          "\n"),
         ("LAN state keyed by the raw device name folds case-variants "
          "together",
          "   return tHex\nend raLanDevKey\n",
          "   return pName\nend raLanDevKey\n"),
+        ("a post's text read as markup is caught (the timeline escapes it)",
+         '   replace "<" with "&lt;" in tOut\n   replace ">" with "&gt;" in tOut\n'
+         '   replace quote with "&quot;" in tOut\n   replace return with "&#11;" in tOut\n',
+         '   replace quote with "&quot;" in tOut\n   replace return with "&#11;" in tOut\n'),
+        ("a social cache that forgets the follow list is caught",
+         '               put "1" into sFollows[item 2 of tLine]\n',
+         "\n"),
     ]
 
     # Fixture 6: (shipped text, the spelling it replaced), and the drive's

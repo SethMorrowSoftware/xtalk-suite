@@ -835,6 +835,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   session sections green on the second there too; the fourth probe line
   identical to Linux's); phase 8's v11 boot 9/1 on
   2026-08-29 (the FAIL was the self-check's own defect, since fixed).
+- The social UI and layer (ra-ui-social-12, 2026-10-21): a welcome card and a sidebar in
+  the IDE's look; a follow list, a multi-author timeline synced from the DHT, a sealed
+  per-identity post cache (`RIPTSOCIAL1`), replies as a first-line text convention,
+  profiles, a 30-minute keep-alive (coding #4) and one conversation per person. No wire
+  or library change. On OXT-Beyond on Windows the same day (riptide/CLAUDE.md's ledger):
+  the boot self-check 12/0/0, every card looked at, a version-bump rebuild, the cache
+  across lock and unlock, and a second identity in the same process finding the first's
+  post on the DHT; the two-machine social leg is engine #10.
 - Phase 5 has never run on two machines. The 2026-09-09 prefix-free LAN tags supersede
   the engine-green admission bytes; the harness sections added after 2026-08-24 have
   run in the suite paste since 2026-09-24 (above), while the demo's changes since its
@@ -846,7 +854,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | **A bridge reader in the app:** `rsRequestBridge`, `rsIngestBridge` and `rsNostrBridgeFromEvent` have no app caller. Persist its `pMinSeq` watermark in RIPTAPP1 as `sHeadSeen` is | Phase 8's done-criterion needs the bridge resolved in BOTH directions; the runbook's phase-8 step 6 is blocked until it exists | M | owner (scope) |
 | 2 | **Decide RSL1's magic** after the 2026-09-09 tag change: rule 3 says a framing change mints a new magic, and the preimage changed without one, so pre- and post-2026-09-09 devices silently fail admission with each other | Protocol hygiene; it dictates the phase-6 setup | S | owner |
-| 4 | Own-head refresh while online: the demo re-puts its BEP44 head only on post, BEP44 items expire, and D-06 rules out follower republish, so the author's own re-put is the only retention | Feeds go dark | S-M | owner (cadence) |
+| 4 | Own-head refresh while online: the demo re-puts its BEP44 head only on post, BEP44 items expire, and D-06 rules out follower republish, so the author's own re-put is the only retention. BUILT 2026-10-21 with the social layer (`raRepublish`: every 30 minutes while unlocked, the head with the same seq and bytes, the newest 12 own posts, the prekey and the name blob); the cadence (`kRepublishMs`, `kRepublishPosts`) is still the owner's to confirm, and the firing has not run on an engine | Feeds go dark | S | owner (cadence) |
 | 6 | Scope calls: the pairwise room (`rsRoomId`, spec 5.2) is library-only, so wire it or record that for good; an anon file transfer over the onion (`rsBtxo*`, spec 8.3) has no app caller (M to build); followers-only sealed media (spec 4.4) is deferred and would need its own spec and record format (L) | Library surface the app does not use | S-L | owner (scope) |
 | 8 | One app-state file per machine, not per identity: `raAppSave` seals the current identity's state over the one `RIPTAPP1` file (`riptide/examples/riptide-social.livecodescript`, the app-state path near 17312), and recovering your own head marks the state dirty, so unlocking a SECOND identity with a published head can overwrite the first identity's follows and watermarks. Key the file by identity, or refuse to save over another identity's file. Found statically 2026-09-24; the two-machine runbook's phase 8 step 8 now asks the tester to watch for it | Silent loss of a user's follow list | S-M | owner (file layout) |
 | 13 | **How far to widen the persona index cap.** 0.14.0 refuses an anon persona index of 2 or more (`kRsAnonIndexLimit`, protocol section 2), the smallest cap the tree uses: one persona ships (index 0), and the harness and golden test derive persona 1 to show two differ. The row it closed (#10) proposed 100, the widest that keeps subkeys 100+n and 200+n apart. Widening is compatible (no persona anyone holds is stranded; narrowing later would strand them) and edits the bound in protocol section 2, the oracle's `ANON_INDEX_LIMIT`, the constant and the refusal vectors. Decide how many personas the protocol allows | The bound is normative (protocol section 2), so its width is a spec call; the cap was picked, not decided, 2026-09-26 | S | owner |
@@ -863,6 +871,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | Phase 8 live, steps 0-9 (needs nostrxt's receive leg and coding #1) | NET | 41 | the npub resolves in a web client; `publish -> true`; a verified follow timeline; both bridge halves; the guard refuses `nostr` for anon |
 | 8 | The phase-3 faststart re-run | S3 item 7 | 41 | playback starts while visibly below 100% |
 | 9 | *(optional, low priority)* Diagnose the first phase-8 card's `Chunk: no target found` at `openStack` (2026-08-29), re-introducing the suspects one at a time: `repeat for each key` over the unset `sAppRelays` / `sNxRelayHandle`, and `nxrInit the long id of me` in `openStack` | S1 | - | the cause named (the re-landed `openStack` is byte-identical to the engine-proven body, so nothing waits on it) |
+| 10 | The social layer on two machines: riptide `docs/two-machine-runbook.md`, "The social layer, two machines" (follow, timeline, reply, rename, the cache across a restart, the keep-alive after two idle hours, a conversation with unread counts) | two machines | - | each step's "Done when" in the runbook |
 
 ### 3.2 nocloud
 

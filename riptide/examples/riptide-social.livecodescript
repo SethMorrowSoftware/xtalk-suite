@@ -15499,7 +15499,6 @@ constant kPollMs = 250
 constant kPollLiveMs = 33
 constant kPaintMs = 250
 constant kDhtWaitMs = 25000
-constant kWalkMax = 12
 constant kNameMax = 64
 -- phase 6 (LAN): the device-mesh port and a u32 protocol tag the enConnect
 -- rider carries, so a mismatched app is refused before the crypto handshake
@@ -15569,18 +15568,74 @@ constant kAppStateVersion = "RIPTSTATE1"
 -- version adds (the column panels) would be created last and sit ON TOP
 -- of every existing control, and controls the newer version no longer
 -- builds would linger, clickable and dead.
-constant kRaUiVersion = "ra-ui-720p-11"
+constant kRaUiVersion = "ra-ui-social-12"
+-- the look (ra-ui-social-12): the slate and indigo of the IDE's own new
+-- stacks (Home, Academy, E2NB), as RGB for properties and hex for htmlText
+constant kRaWhite = "255,255,255"
+constant kRaPage = "241,245,249"
+constant kRaLine = "226,232,240"
+constant kRaLineHex = "#E2E8F0"
+constant kRaFieldLine = "203,213,225"
+constant kRaInk = "15,23,42"
+constant kRaInkHex = "#0F172A"
+constant kRaInk2 = "71,85,105"
+constant kRaInk2Hex = "#475569"
+constant kRaMuted = "100,116,139"
+constant kRaMutedHex = "#64748B"
+constant kRaPrimary = "79,70,229"
+constant kRaPrimaryHover = "67,56,202"
+constant kRaGhost = "241,245,249"
+constant kRaGhostHover = "226,232,240"
+constant kRaDanger = "220,38,38"
+constant kRaDangerHover = "185,28,28"
+constant kRaDangerSoft = "254,226,226"
+constant kRaOk = "22,163,74"
+constant kRaDisabledBg = "226,232,240"
+constant kRaDisabledFg = "148,163,184"
+constant kRaSide = "15,23,42"
+constant kRaSideText = "148,163,184"
+constant kRaSideActive = "30,41,59"
+constant kRaSideHover = "30,41,59"
+constant kRaSideSection = "100,116,139"
+constant kRaAccentBar = "129,140,248"
+constant kRaLogBg = "15,23,42"
+constant kRaLogFg = "226,232,240"
+-- avatar colours, one per handle (raPaletteIndex): eight, ";"-separated
+constant kRaPaletteRgb = "79,70,229;14,165,233;16,185,129;245,158,11;239,68,68;168,85,247;236,72,153;20,184,166"
+constant kRaPaletteHex = "#4F46E5;#0EA5E9;#10B981;#F59E0B;#EF4444;#A855F7;#EC4899;#14B8A6"
+-- the window and the sidebar
+constant kRaW = 1200
+constant kRaH = 640
+constant kRaSideW = 216
+-- the sidebar's items, and every card the app builds besides Home (card 1)
+constant kRaNavItems = "raNavHome,raNavProfile,raNavFollowing,raNavMsgs,raNavDevs,raNavAnon,raNavNostr,raNavLog"
+constant kRaCards = "raWelcome,raProfile,raFollowing,raMessages,raDevices,raAnon,raNostr,raLog"
+-- the social sync (raSyncTick). A head is asked for again at most every
+-- kSyncEveryMs, a round looks for due work every kSyncRoundMs, at most
+-- kSyncMaxInFlight lookups are out at once, and at most kSyncWalkMax new
+-- posts are walked per author per round
+constant kSyncEveryMs = 120000
+constant kSyncRoundMs = 15000
+constant kSyncMaxInFlight = 6
+constant kSyncWalkMax = 40
+-- the post cache's bound (raSocialPrune) and the timeline's length
+constant kCacheMax = 2000
+constant kTimelineMax = 120
+-- the keep-alive: BEP44 items fade in about two hours unless put again
+constant kRepublishMs = 1800000
+constant kRepublishPosts = 12
+-- the social cache file (raSocialSave), debounced like the app state
+constant kSocialSaveMs = 2000
+constant kSocialVersion = "RIPTSOCIAL1"
+-- the reply convention (raReplyRef): the first line of a reply's text
+constant kRaReplyPrefix = "re: riptide:"
+
 
 -- Every control name this script names OR builds, derived from the source with
 -- comments cut and string literals kept. Declared HERE, above its first use
 -- (raBuildResetCard walks it; OXT resolves script-level names by lexical
 -- position), and read again by the boot self-check at the file's foot.
-constant kRaScControls = "raAnonEntries,raAnonEntriesL,raAnonGuard,raAnonOut,raAnonPublishBtn,raAnonReveal,raAnonSec1,raAnonSec2,raAnonStopBtn,raAttach,raCompose,raCreate,raDmCallBtn,raDmChat,raDmLog,raDmMine,raDmMsg,raDmSec1,raDmSec2,raDmSend,raDmStart,raDmTo,raDmToL,raDmTyping,raFetch,raHandle,raHandleL,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanHostBtn,raLanJoinBtn,raLanLeaveBtn,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanNameL,raLanSec1,raLanSec2,raLanSec3,raLanSec4,raLanSec5,raLanSendMedia,raLanTo,raLanToL,raLock,raMediaGet,raMediaHash,raMediaL,raMediaProg,raMyFeed,raName,raNameL,raNavAnon,raNavDevs,raNavFeed,raNavMsgs,raNavNostr,raNxBridgeBtn,raNxCompose,raNxComposeL,raNxConnect,raNxCopyNpub,raNxDisconnect,raNxExportBtn,raNxFollowBtn,raNxFollowTo,raNxFollows,raNxIdNote,raNxNpub,raNxNpubL,raNxPostBtn,raNxRelayLog,raNxRelays,raNxSec1,raNxSec2,raNxSec3,raNxSec4,raNxStatus,raNxTimeline,raPanL,raPanR,raPassphrase,raPost,raSec1,raSec2,raSec3,raTheirFeed,raUnlock,uiFooter,uiStatus,uiTitle"
-
--- Controls that older UI versions built and this one does not: the
--- hub-and-spoke raGo* navigation buttons v11's tab bar replaced. Only
--- raBuildResetCard reads this, so an upgraded-in-place stack sheds them.
-constant kRaScRetired = "raGoAnonFromFeed,raGoDm,raGoFeed,raGoFeedFromAnon,raGoFeedFromLan,raGoFeedFromNostr,raGoLanFromFeed,raGoNostrFromFeed"
+constant kRaScControls = "raAnonEntries,raAnonGuard,raAnonOut,raAttach,raCompose,raComposeHint,raComposeInfo,raCreate,raDmChat,raDmConnect,raDmContacts,raDmMine,raDmMsg,raDmState,raDmTo,raDmTyping,raDmWith,raFollowList,raHdBand,raHdLine,raHdSub,raHdTitle,raIdL1,raIdL2,raIdOut,raKeyFile,raLanDevices,raLanDraft,raLanDrafts,raLanLog,raLanMediaGet,raLanMediaOffer,raLanMediaProg,raLanName,raLanTo,raLock,raMeHandle,raMeName,raMeStats,raMediaGet,raMediaHash,raMediaProg,raMyHandle,raName,raNameL,raNavAccent,raNxCompose,raNxFollowTo,raNxFollows,raNxNpub,raNxRelayLog,raNxRelays,raNxStatus,raNxTimeline,raPassphrase,raPfFollow,raPfHandle,raPfMessage,raPfName,raPfStats,raReplyCancel,raSaveName,raSbBrand,raSbChip,raSbHandle,raSbLogo,raSbLogoTx,raSbMore,raSbName,raSbTag,raSideBg,raStBand,raSyncPill,raTimeline,raUnlock,raWcBrand,raWcChip,raWcChipBg,raWcHero,raWcMsg,raWcPreview,raWcPvAvatar,raWcPvLinks,raWcPvMeta,raWcPvName,raWcRule,raWcSub,raWcTitle,uiBand,uiStatus,uiTitle"
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -16040,26 +16095,52 @@ local sMyLatest        -- our latest post's 40-hex target, or empty
 local sPolling         -- "true" while the pump chain is armed
 local sPaintAt         -- ms of the last UI repaint tier (kPaintMs gate)
 local sAwaitOwn        -- "true" while our own head lookup is in flight
-local sFollowHandle    -- the author a fetch is walking
-local sAwaitHead       -- "true" while their head lookup is in flight
-local sWalkNext        -- the post target the walk is waiting on, or empty
-local sWalkCount       -- posts verified so far in this walk
-local sWaitUntil       -- ms deadline for the outstanding DHT request
+local sWaitUntil       -- ms deadline for the own-head or DM-head lookup
 local sPendingMediaPath -- file waiting to ride the NEXT post (phase 3)
 local sMediaWatch      -- torrent handle of the media item the strip watches
--- the kind-C reassembly walk (backlog A2, 2026-08-23): the demo holds
--- ONE reassembly at a time (the one-conversation precedent) and fetches
--- its parts through the same one-immutable-await discipline as the chain
--- walk; a second chunked post keeps its honest placeholder
-local sChunkTargets    -- the pending kind-C post's chunk list (comma)
-local sChunkNext       -- the chunk target currently awaited, or empty
-local sChunkParts      -- target -> verified chunk bytes (rsIngestBlob)
-local sChunkPostNum    -- the walk ordinal the reassembly reports under
 -- the spec-4.1 profileMeta READER (remaining-work A.9, 2026-08-23): a
 -- verified head names a display-name blob; fetch it, verify it by
 -- content address, and show the name - degrading honestly when absent
-local sProfileNext     -- the feed walk's awaited profile target, or empty
 local sDmProfileNext   -- the DM head's awaited profile target, or empty
+-- THE SOCIAL LAYER (ra-ui-social-12). Who you follow, the verified posts
+-- the sync has gathered, and the sync's own bookkeeping. Every key below
+-- that is a handle or a target is lowercase hex, so the engine's case fold
+-- on array keys (engine note 2.7) can never merge two of them.
+local sFollows         -- handle -> "1": who you follow
+local sNames           -- handle -> display name learned from a verified head
+local sNameTarget      -- handle -> the profileMeta target last asked for
+local sPosts           -- target -> [a]uthor [t]ime [p]rev [k]ind [m]edia [c]hunks te[x]t
+local sChunkBytes      -- post target -> chunk target -> verified chunk bytes
+local sSyncHead        -- handle -> "1" while its head lookup is in flight
+local sSyncPost        -- target -> the author whose post we are fetching
+local sSyncPostMode    -- target -> "walk" (keep walking) or "one" (a quoted post)
+local sSyncChunk       -- chunk target -> the post it belongs to
+local sSyncChunkAt     -- post target -> ms its missing chunks were last asked for
+local sSyncName        -- profile target -> the handle it names
+local sSyncDl          -- "h:"handle or "i:"target -> ms deadline (in flight)
+local sSyncChecked     -- handle -> ms its head was last asked for
+local sSyncCount       -- handle -> posts walked this round (kSyncWalkMax)
+local sSyncQueue       -- handles due a head lookup, one per line
+local sSyncMissSaid    -- handle -> "1" once "nothing found" was logged
+local sSyncRoundAt     -- ms of the next round check
+local sSocialDirty     -- "true" when the social cache needs a save
+local sSocialSaveAt    -- ms deadline for the debounced save
+local sTimelineDirty   -- "true" when the views need a repaint
+local sMyPostBytes     -- target -> my own signed post bytes (the keep-alive)
+local sMyHeadBytes     -- my newest signed head bytes (the keep-alive)
+local sMyProfileTarget -- my profile-name blob's target, or empty
+local sMyPrekeyBytes   -- my RSK1 prekey record bytes (the keep-alive)
+local sMyName          -- my display name
+local sMyNameSaved     -- "true" once the name was set here (the network's is ignored)
+local sReplyTo         -- "<handle>/<target>" the composer is replying to
+local sViewHandle      -- the handle the Profile card shows
+local sRepublishAt     -- ms of the next keep-alive
+local sJustCreated     -- true right after Create (the first-run hint)
+local sPassReal        -- the passphrase as typed (the field shows bullets)
+local sChat            -- handle -> conversation lines (memory only)
+local sChatUnread      -- handle -> unread count
+local sDmSel           -- the conversation on screen (a handle), or empty
+local sRaLog           -- the app's Activity lines (raLogLine), below the self-check
 -- phase 4 (DMs). The demo holds ONE conversation at a time, loudly: the
 -- library supports any number, but a first pass a maintainer can verify on
 -- two machines beats a chat manager nobody has run.
@@ -16168,6 +16249,7 @@ local sAnonServing     -- "true" once the oxh* routes are registered
 -- channel is direct peer-to-peer.
 local sDcInit          -- "true" once dcInit succeeded (teardown guard)
 local sDcPeer          -- the dc peer handle while a call exists, or empty
+local sDcRpPeer        -- the rp1 peer the call's signalling rides, or empty
 local sDcChannel       -- the call's data-channel handle once known
 local sDcAwaitLocal    -- "O"/"A" while waiting to ship our local SDP
 -- the phase-5 typing lane (spec 6.2): a second, lossy dc channel
@@ -16209,6 +16291,10 @@ end openStack
 on closeStack
    local tErr
    put empty into sPolling
+   -- the social cache flushes FIRST, while the master seed can still seal it
+   if sSocialDirty is "true" then
+      raSocialSave
+   end if
    raDmTeardown
    raLanLeave
    raAnonStop
@@ -16268,34 +16354,67 @@ on mouseUp
       case "raAttach"
          raAttach
          break
-      case "raFetch"
-         raFetch
+      case "raReplyCancel"
+         raReplyCancel
+         break
+      case "raRefresh"
+         raSyncNow
+         break
+      case "raFollowBtn"
+         raFollowFromField "raHandle", 1
+         break
+      case "raFollowAdd"
+         raFollowFromField "raFollowTo", "raFollowing"
+         break
+      case "raCopyHandle"
+      case "raCopyHandle2"
+      case "raPfCopy"
+         raCopyHandle the short name of the target
+         break
+      case "raEditProfile"
+         raShowProfile sHandle
+         break
+      case "raSaveName"
+         raSaveProfile
+         break
+      case "raPfFollow"
+         raProfileFollowToggle
+         break
+      case "raPfMessage"
+         raOpenChat sViewHandle
          break
       case "raMediaGet"
          raMediaGet
          break
-      -- the tab bar: the same five buttons on every card, so any card is
-      -- one click from any other. The mark call runs AFTER the go, so its
-      -- unqualified button writes land on the newly current card.
-      case "raNavFeed"
-         go to card 1
-         raNavMark "raNavFeed"
+      case "raLogCopy"
+         raLogCopy
+         break
+      -- the sidebar: the same buttons on every card, so any card is one
+      -- click from any other. The mark call runs AFTER the go, so its
+      -- unqualified writes land on the newly current card.
+      case "raNavHome"
+         raGo "raNavHome"
+         break
+      case "raNavProfile"
+         raShowProfile sHandle
+         break
+      case "raNavFollowing"
+         raGo "raNavFollowing"
          break
       case "raNavMsgs"
-         go to card "raMessages"
-         raNavMark "raNavMsgs"
+         raGo "raNavMsgs"
          break
       case "raNavDevs"
-         go to card "raDevices"
-         raNavMark "raNavDevs"
+         raGo "raNavDevs"
          break
       case "raNavAnon"
-         go to card "raAnon"
-         raNavMark "raNavAnon"
+         raGo "raNavAnon"
          break
       case "raNavNostr"
-         go to card "raNostr"
-         raNavMark "raNavNostr"
+         raGo "raNavNostr"
+         break
+      case "raNavLog"
+         raGo "raNavLog"
          break
       case "raLanHostBtn"
          raLanHost
@@ -16343,7 +16462,10 @@ on mouseUp
          raAnonStop
          break
       case "raDmStart"
-         raDmStart
+         raDmStartFromField
+         break
+      case "raDmConnect"
+         raDmConnectSelected
          break
       case "raDmSend"
          raDmSend
@@ -16364,16 +16486,22 @@ end mouseUp
 on returnInField
    switch the short name of the target
       case "raPassphrase"
-         raUnlock
+         raWelcomeEnter
          break
       case "raHandle"
-         raFetch
+         raFollowFromField "raHandle", 1
+         break
+      case "raFollowTo"
+         raFollowFromField "raFollowTo", "raFollowing"
+         break
+      case "raName"
+         raSaveProfile
          break
       case "raMediaHash"
          raMediaGet
          break
       case "raDmTo"
-         raDmStart
+         raDmStartFromField
          break
       case "raDmMsg"
          raDmSend
@@ -16389,14 +16517,689 @@ on returnInField
    end switch
 end returnInField
 
--- ---- self-building UI (idempotent; the kit owns the look) --------------------
--- FIVE CARDS (the spec's one-stack-rails-behind-tabs answer): card 1 is
--- the feed (phases 1-3), card "raMessages" the DM + call rail (phases
--- 4-5), card "raDevices" the LAN mesh (phase 6), card "raAnon" the
--- persona (phase 7), card "raNostr" the bridge (phase 8). Every card
--- carries the same five-tab bar (raNavBar), so any card is one click
--- from any other. The stack script owns every handler, so navigation is
--- just `go to card`; the pump keeps running wherever you are.
+on enterInField
+   if the short name of the target is "raPassphrase" then
+      raWelcomeEnter
+      exit enterInField
+   end if
+   pass enterInField
+end enterInField
+
+-- THE LINKS IN A RENDERED FEED. Posts, profiles, conversations and the
+-- follow list are one locked field each, drawn as htmlText (raPostHtml), and
+-- every action inside them is a link whose href names a verb and its object:
+-- p:<handle> opens a profile, r:<target> replies, m:<hash> fetches media,
+-- c:<handle> opens a conversation, u:<handle> unfollows, f:<handle> follows.
+-- One handler routes them all, and every verb re-validates its object,
+-- because link text is only as trustworthy as the field it sits in.
+on linkClicked pLink
+   local tVerb, tArg
+   put char 1 to 2 of pLink into tVerb
+   put char 3 to -1 of pLink into tArg
+   switch tVerb
+      case "p:"
+         raShowProfile tArg
+         break
+      case "r:"
+         raReplyStart tArg
+         break
+      case "m:"
+         raMediaFromLink tArg
+         break
+      case "c:"
+         raOpenChat tArg
+         break
+      case "u:"
+         raUnfollow tArg
+         break
+      case "f:"
+         get raFollowHandle(tArg, empty)
+         break
+      default
+         pass linkClicked
+   end switch
+end linkClicked
+
+-- Hover feedback for the app's flat buttons: the kind they were styled as
+-- (uRaKind) names their hover colour. Cosmetic only, and quiet: a control
+-- without a kind, or a disabled one, is left alone.
+on mouseEnter
+   local tKind
+   if word 1 of the name of the target is not "button" then
+      pass mouseEnter
+   end if
+   put the uRaKind of the target into tKind
+   if tKind is empty or the enabled of the target is false then
+      pass mouseEnter
+   end if
+   set the backgroundColor of the target to raBtnColor(tKind, "hover")
+   pass mouseEnter
+end mouseEnter
+
+on mouseLeave
+   local tKind
+   if word 1 of the name of the target is not "button" then
+      pass mouseLeave
+   end if
+   put the uRaKind of the target into tKind
+   if tKind is empty or the enabled of the target is false then
+      pass mouseLeave
+   end if
+   set the backgroundColor of the target to raBtnColor(tKind, "bg")
+   pass mouseLeave
+end mouseLeave
+
+-- ---- the passphrase field: masked -------------------------------------------
+-- The engine has no password field, so the passphrase is kept in a script
+-- local (sPassReal) and the field shows one bullet per character. Every edit
+-- a keyboard can make is handled here - typing, Backspace, Delete, paste -
+-- at the caret or over a selection, and copy and cut are refused so the
+-- bullets are all the clipboard can ever get. raPassValue reads it back, and
+-- falls back to the field's own text when that is not a run of bullets (a
+-- value put there by script, as the headless boot does).
+on keyDown pKey
+   if the short name of the target is not "raPassphrase" then
+      pass keyDown
+   end if
+   raPassEdit pKey, empty
+end keyDown
+
+on backspaceKey
+   if the short name of the target is not "raPassphrase" then
+      pass backspaceKey
+   end if
+   raPassEdit empty, "back"
+end backspaceKey
+
+on deleteKey
+   if the short name of the target is not "raPassphrase" then
+      pass deleteKey
+   end if
+   raPassEdit empty, "forward"
+end deleteKey
+
+on pasteKey
+   if the short name of the target is not "raPassphrase" then
+      pass pasteKey
+   end if
+   raPassEdit line 1 of the clipboardData["text"], empty
+end pasteKey
+
+on copyKey
+   if the short name of the target is "raPassphrase" then
+      exit copyKey
+   end if
+   pass copyKey
+end copyKey
+
+on cutKey
+   if the short name of the target is "raPassphrase" then
+      exit cutKey
+   end if
+   pass cutKey
+end cutKey
+
+command raPassEdit pText, pDelete
+   local tChunk, tFrom, tTo, tCaret, tShown
+   put the selectedChunk into tChunk
+   put word 2 of tChunk into tFrom
+   put word 4 of tChunk into tTo
+   if tFrom is not an integer or tTo is not an integer then
+      put the number of chars of sPassReal + 1 into tFrom
+      put tFrom - 1 into tTo
+   end if
+   -- a caret is "char N+1 to N": nothing selected
+   if tTo < tFrom then
+      if pDelete is "back" then
+         if tTo >= 1 then
+            delete char tTo of sPassReal
+         end if
+         put max(0, tTo - 1) into tCaret
+      else if pDelete is "forward" then
+         if tFrom <= the number of chars of sPassReal then
+            delete char tFrom of sPassReal
+         end if
+         put tFrom - 1 into tCaret
+      else
+         put raSpliceText(sPassReal, tTo, pText) into sPassReal
+         put tTo + the number of chars of pText into tCaret
+      end if
+   else
+      delete char tFrom to tTo of sPassReal
+      put tFrom - 1 into tCaret
+      if pDelete is empty then
+         put raSpliceText(sPassReal, tCaret, pText) into sPassReal
+         add the number of chars of pText to tCaret
+      end if
+   end if
+   put raPassBullets(the number of chars of sPassReal) into tShown
+   put tShown into field "raPassphrase"
+   if tCaret < 1 then
+      select before char 1 of field "raPassphrase"
+   else
+      select after char tCaret of field "raPassphrase"
+   end if
+end raPassEdit
+
+-- pText inserted after the first pAfter characters of pBase (0: at the
+-- front), without the `char 0` chunk a caret at the start would need.
+private function raSpliceText pBase, pAfter, pText
+   if pAfter < 1 then
+      return pText & pBase
+   end if
+   return (char 1 to pAfter of pBase) & pText & (char (pAfter + 1) to -1 of pBase)
+end raSpliceText
+
+private function raPassBullets pCount
+   local tOut, tI
+   repeat with tI = 1 to pCount
+      put numToCodepoint(8226) after tOut
+   end repeat
+   return tOut
+end raPassBullets
+
+function raPassValue
+   local tShown
+   put field "raPassphrase" of card "raWelcome" into tShown
+   if tShown is empty then
+      return empty
+   end if
+   if ("b" & tShown) is ("b" & raPassBullets(the number of chars of sPassReal)) then
+      return sPassReal
+   end if
+   return tShown
+end raPassValue
+
+command raPassClear
+   put empty into sPassReal
+   if there is a field "raPassphrase" of card "raWelcome" then
+      put empty into field "raPassphrase" of card "raWelcome"
+   end if
+end raPassClear
+
+-- ---- the look ----------------------------------------------------------------
+-- Riptide wears the IDE's new look (Home, the xTalk Academy, E2NB): a dark
+-- sidebar, a white header, soft rounded cards on a slate page, one indigo
+-- accent. The suite UI kit below is still CARRIED and still builds every
+-- control (the drift gate holds it byte-identical, and its builders are the
+-- create-if-missing discipline the boot gate models); these helpers restyle
+-- what the kit built, so the kit's own adopters are untouched.
+
+-- The UI font: the first face this machine has from a list that reads well
+-- on each platform, else the engine default. Asked once per build.
+function raUiFont
+   local tFonts, tF
+   put the fontNames into tFonts
+   repeat for each item tF in "Segoe UI,Inter,Noto Sans,Helvetica Neue,DejaVu Sans,Arial"
+      if tF is among the lines of tFonts then
+         return tF
+      end if
+   end repeat
+   return empty
+end raUiFont
+
+function raBtnColor pKind, pPart
+   switch pKind
+      case "primary"
+         if pPart is "fg" then return kRaWhite
+         if pPart is "hover" then return kRaPrimaryHover
+         return kRaPrimary
+      case "danger"
+         if pPart is "fg" then return kRaDanger
+         if pPart is "hover" then return "254,202,202"
+         return kRaDangerSoft
+      case "dark"
+         if pPart is "fg" then return kRaSideText
+         if pPart is "hover" then return kRaSideActive
+         return kRaSideHover
+      default
+         if pPart is "fg" then return kRaInk2
+         if pPart is "hover" then return "226,232,240"
+         return kRaGhost
+   end switch
+end raBtnColor
+
+-- A flat rounded button. pKind: primary, ghost, danger or dark (the
+-- sidebar's). The kind rides on the control so hover and the identity gate
+-- repaint it from one table (raBtnColor).
+command raBtn pName, pLabel, pRect, pKind
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "roundRect"
+   set the opaque of button pName to true
+   set the showBorder of button pName to false
+   -- a roundRect button still draws a 2-pixel outline at showBorder false;
+   -- only a zero borderWidth makes it flat (seen on OXT-Beyond, 2026-10-21)
+   set the borderWidth of button pName to 0
+   set the threeD of button pName to false
+   set the textSize of button pName to 12
+   set the uRaKind of button pName to pKind
+   if pKind is "primary" then
+      set the textStyle of button pName to "bold"
+   else
+      set the textStyle of button pName to empty
+   end if
+   raBtnPaint pName, true
+end raBtn
+
+-- Paint a raBtn for its enabled state. The engine's own disabled look
+-- (embossed grey text on the enabled colour) reads as broken on a flat
+-- button, so a disabled one is drawn quiet instead.
+command raBtnPaint pName, pOn
+   local tKind
+   put the uRaKind of button pName into tKind
+   if pOn then
+      set the backgroundColor of button pName to raBtnColor(tKind, "bg")
+      set the foregroundColor of button pName to raBtnColor(tKind, "fg")
+   else
+      set the backgroundColor of button pName to kRaDisabledBg
+      set the foregroundColor of button pName to kRaMuted
+   end if
+end raBtnPaint
+
+-- Enable or disable a raBtn on a named card, qualified and guarded: the
+-- identity gate runs from any card.
+command raBtnEnable pName, pCard, pOn
+   local tKind
+   if there is no button pName of card pCard then
+      exit raBtnEnable
+   end if
+   set the enabled of button pName of card pCard to pOn
+   put the uRaKind of button pName of card pCard into tKind
+   if pOn then
+      set the backgroundColor of button pName of card pCard to raBtnColor(tKind, "bg")
+      set the foregroundColor of button pName of card pCard to raBtnColor(tKind, "fg")
+   else
+      set the backgroundColor of button pName of card pCard to kRaDisabledBg
+      set the foregroundColor of button pName of card pCard to kRaMuted
+   end if
+end raBtnEnable
+
+-- A one-line or multi-line entry: a rounded white frame (a graphic, since a
+-- field cannot round its corners) with a borderless field inset on it.
+-- pMono for keys and addresses, pMulti for compose boxes.
+command raInput pName, pRect, pMono, pMulti
+   local tL, tT, tR, tB, tSaved
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 2 of pRect into tT
+   put item 3 of pRect into tR
+   put item 4 of pRect into tB
+   set the itemDelimiter to tSaved
+   uiGfx (pName & "Fr"), pRect
+   set the roundRadius of graphic (pName & "Fr") to 10
+   set the filled of graphic (pName & "Fr") to true
+   set the backgroundColor of graphic (pName & "Fr") to kRaWhite
+   set the lineSize of graphic (pName & "Fr") to 1
+   set the foregroundColor of graphic (pName & "Fr") to kRaFieldLine
+   uiInput pName, ((tL + 6) & comma & (tT + 2) & comma & (tR - 6) & comma & (tB - 2))
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the textSize of field pName to 13
+   set the foregroundColor of field pName to kRaInk
+   if pMono is true then
+      set the textFont of field pName to uiMonoFont()
+      set the textSize of field pName to 12
+   else
+      set the textFont of field pName to empty
+   end if
+   if pMulti is true then
+      set the dontWrap of field pName to false
+      set the vScrollbar of field pName to false
+   else
+      set the dontWrap of field pName to true
+   end if
+end raInput
+
+-- A read-only rendered surface: the feed, a profile, the follow list, a
+-- conversation. Painted with htmlText (raPostHtml), so it is borderless and
+-- takes the page or card colour behind it; the thin scrollbar is the
+-- E2NB/Academy one.
+command raView pName, pRect, pBg
+   uiArea pName, pRect
+   set the borderWidth of field pName to 0
+   set the backgroundColor of field pName to pBg
+   set the textFont of field pName to empty
+   set the textSize of field pName to 13
+   set the foregroundColor of field pName to kRaInk
+   set the margins of field pName to "10,4,10,4"
+   set the scrollbarWidth of field pName to 8
+   set the dontWrap of field pName to false
+end raView
+
+-- A dark log panel (E2NB's activity log): mono, light on slate.
+command raLogArea pName, pRect
+   local tL, tT, tR, tB, tSaved
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   put item 1 of pRect into tL
+   put item 2 of pRect into tT
+   put item 3 of pRect into tR
+   put item 4 of pRect into tB
+   set the itemDelimiter to tSaved
+   uiGfx (pName & "Fr"), pRect
+   set the roundRadius of graphic (pName & "Fr") to 12
+   set the filled of graphic (pName & "Fr") to true
+   set the backgroundColor of graphic (pName & "Fr") to kRaLogBg
+   set the lineSize of graphic (pName & "Fr") to 0
+   uiArea pName, ((tL + 8) & comma & (tT + 6) & comma & (tR - 4) & comma & (tB - 6))
+   set the borderWidth of field pName to 0
+   set the opaque of field pName to false
+   set the foregroundColor of field pName to kRaLogFg
+   set the textSize of field pName to 11
+   set the scrollbarWidth of field pName to 8
+end raLogArea
+
+-- A light, mono, read-only panel for tables the app prints (the guard
+-- matrix, the device list, drafts).
+command raTableArea pName, pRect
+   uiArea pName, pRect
+   set the borderColor of field pName to kRaLine
+   set the backgroundColor of field pName to kRaPage
+   set the foregroundColor of field pName to kRaInk2
+   set the textSize of field pName to 11
+   set the scrollbarWidth of field pName to 8
+end raTableArea
+
+-- A card panel: the kit's rounded, softly shadowed card, in this palette.
+command raCardPanel pName, pRect
+   uiPanel pName, pRect
+   set the roundRadius of graphic pName to 16
+   set the foregroundColor of graphic pName to kRaLine
+   set the borderColor of graphic pName to kRaLine
+end raCardPanel
+
+-- A panel's title and, optionally, its one-line explanation under it.
+command raTitle pName, pText, pRect
+   uiLabel pName, pText, pRect, 14
+   set the textStyle of field pName to "bold"
+   set the foregroundColor of field pName to kRaInk
+end raTitle
+
+command raSub pName, pText, pRect
+   uiWrap pName, pText, pRect, 12
+   set the foregroundColor of field pName to kRaMuted
+end raSub
+
+command raText pName, pText, pRect, pSize, pColor
+   uiLabel pName, pText, pRect, pSize
+   set the foregroundColor of field pName to pColor
+   set the dontWrap of field pName to false
+end raText
+
+-- An avatar: a coloured circle with the person's initials. The colour is a
+-- function of the handle, so one person is one colour everywhere.
+command raAvatar pName, pRect, pSize
+   uiGfx pName, pRect
+   set the style of graphic pName to "oval"
+   set the filled of graphic pName to true
+   set the lineSize of graphic pName to 0
+   set the backgroundColor of graphic pName to kRaPrimary
+   uiLabel (pName & "Tx"), empty, pRect, pSize
+   set the textAlign of field (pName & "Tx") to "center"
+   set the textStyle of field (pName & "Tx") to "bold"
+   set the foregroundColor of field (pName & "Tx") to kRaWhite
+end raAvatar
+
+-- Paint one avatar for a handle, on a named card, guarded (the identity
+-- painters run from the pump).
+command raAvatarPaint pName, pCard, pHandle
+   local tTop, tH, tFH, tRect, tSaved
+   if there is no graphic pName of card pCard then
+      exit raAvatarPaint
+   end if
+   if pHandle is empty then
+      set the backgroundColor of graphic pName of card pCard to kRaDisabledBg
+   else
+      set the backgroundColor of graphic pName of card pCard to raAvatarColor(pHandle)
+   end if
+   if there is a field (pName & "Tx") of card pCard then
+      put raInitials(pHandle) into field (pName & "Tx") of card pCard
+      -- centre the initials on the circle by MEASURED height (the kit's rule)
+      put the rect of graphic pName of card pCard into tRect
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to comma
+      put item 2 of tRect into tTop
+      put item 4 of tRect - item 2 of tRect into tH
+      set the itemDelimiter to tSaved
+      put the formattedHeight of field (pName & "Tx") of card pCard into tFH
+      if tFH > 0 and tFH < tH then
+         set the height of field (pName & "Tx") of card pCard to tFH
+         set the top of field (pName & "Tx") of card pCard to (tTop + ((tH - tFH) div 2))
+      end if
+   end if
+end raAvatarPaint
+
+-- The window shell every app card shares: the page colour, the dark
+-- sidebar with its navigation and identity chip, the white header band, and
+-- the status bar at the foot (the kit's uiStatus field, moved there).
+command raShell pTitle, pSub, pCurrent
+   local tFont
+   set the width of this stack to kRaW
+   set the height of this stack to kRaH
+   -- the chrome graphics FIRST, so every control sits on top of them
+   uiGfx "raSideBg", "0,0," & kRaSideW & comma & kRaH
+   set the style of graphic "raSideBg" to "rectangle"
+   set the filled of graphic "raSideBg" to true
+   set the lineSize of graphic "raSideBg" to 0
+   set the backgroundColor of graphic "raSideBg" to kRaSide
+   uiGfx "raHdBand", kRaSideW & ",0," & kRaW & ",78"
+   set the style of graphic "raHdBand" to "rectangle"
+   set the filled of graphic "raHdBand" to true
+   set the lineSize of graphic "raHdBand" to 0
+   set the backgroundColor of graphic "raHdBand" to kRaWhite
+   uiGfx "raHdLine", kRaSideW & ",78," & kRaW & ",79"
+   set the style of graphic "raHdLine" to "rectangle"
+   set the filled of graphic "raHdLine" to true
+   set the lineSize of graphic "raHdLine" to 0
+   set the backgroundColor of graphic "raHdLine" to kRaLine
+   uiGfx "raStBand", kRaSideW & ",614," & kRaW & comma & kRaH
+   set the style of graphic "raStBand" to "rectangle"
+   set the filled of graphic "raStBand" to true
+   set the lineSize of graphic "raStBand" to 0
+   set the backgroundColor of graphic "raStBand" to kRaWhite
+   -- the kit's chrome builds the title band and the status line; this look
+   -- keeps the status line (at the foot) and hides the band
+   uiChrome "Riptide", kRaW, kRaH
+   set the backgroundColor of this card to kRaPage
+   set the title of this stack to "Riptide"
+   set the visible of graphic "uiBand" to false
+   set the visible of field "uiTitle" to false
+   set the rect of field "uiStatus" to (kRaSideW + 16) & ",619," & (kRaW - 16) & ",637"
+   put raUiFont() into tFont
+   if tFont is not empty then
+      set the textFont of this stack to tFont
+   end if
+   raSidebar pCurrent
+   raHeader pTitle, pSub
+end raShell
+
+command raHeader pTitle, pSub
+   uiLabel "raHdTitle", pTitle, (kRaSideW + 24) & ",14," & (kRaSideW + 600) & ",44", 22
+   set the textStyle of field "raHdTitle" to "bold"
+   set the foregroundColor of field "raHdTitle" to kRaInk
+   uiLabel "raHdSub", pSub, (kRaSideW + 24) & ",46," & (kRaW - 160) & ",66", 12
+   set the foregroundColor of field "raHdSub" to kRaMuted
+end raHeader
+
+-- The sidebar: brand, the four places a person lives in, the four
+-- specialist rails under MORE, and the identity chip with Lock.
+command raSidebar pCurrent
+   uiGfx "raSbLogo", "20,20,56,56"
+   set the roundRadius of graphic "raSbLogo" to 12
+   set the filled of graphic "raSbLogo" to true
+   set the lineSize of graphic "raSbLogo" to 0
+   set the backgroundColor of graphic "raSbLogo" to kRaPrimary
+   raGradient "raSbLogo", "99,102,241", "236,72,153", "249,115,22"
+   uiLabel "raSbLogoTx", "R", "20,20,56,56", 20
+   set the textAlign of field "raSbLogoTx" to "center"
+   set the textStyle of field "raSbLogoTx" to "bold"
+   set the foregroundColor of field "raSbLogoTx" to kRaWhite
+   uiLabel "raSbBrand", "Riptide", "66,18,210,40", 18
+   set the textStyle of field "raSbBrand" to "bold"
+   set the foregroundColor of field "raSbBrand" to kRaWhite
+   uiLabel "raSbTag", "Social, with no server", "66,40,214,56", 11
+   set the foregroundColor of field "raSbTag" to kRaSideText
+
+   uiGfx "raNavAccent", "8,82,11,114"
+   set the style of graphic "raNavAccent" to "rectangle"
+   set the filled of graphic "raNavAccent" to true
+   set the lineSize of graphic "raNavAccent" to 0
+   set the backgroundColor of graphic "raNavAccent" to kRaAccentBar
+   raNavItem "raNavHome", "Home", 80
+   raNavItem "raNavProfile", "Profile", 118
+   raNavItem "raNavFollowing", "Following", 156
+   raNavItem "raNavMsgs", "Messages", 194
+   uiLabel "raSbMore", "MORE", "26,244,200,260", 10
+   set the textStyle of field "raSbMore" to "bold"
+   set the foregroundColor of field "raSbMore" to kRaSideSection
+   raNavItem "raNavDevs", "My devices", 264
+   raNavItem "raNavAnon", "Anonymous persona", 302
+   raNavItem "raNavNostr", "Nostr bridge", 340
+   raNavItem "raNavLog", "Activity", 378
+
+   uiGfx "raSbChip", "12,532,204,628"
+   set the roundRadius of graphic "raSbChip" to 14
+   set the filled of graphic "raSbChip" to true
+   set the lineSize of graphic "raSbChip" to 0
+   set the backgroundColor of graphic "raSbChip" to kRaSideHover
+   raAvatar "raSbAvatar", "22,542,58,578", 13
+   uiLabel "raSbName", "Locked", "66,543,200,561", 13
+   set the textStyle of field "raSbName" to "bold"
+   set the foregroundColor of field "raSbName" to kRaWhite
+   uiLabel "raSbHandle", empty, "66,561,200,577", 10
+   set the textFont of field "raSbHandle" to uiMonoFont()
+   set the foregroundColor of field "raSbHandle" to kRaSideText
+   raBtn "raLock", "Lock", "22,590,194,618", "dark"
+   raNavMark pCurrent
+end raSidebar
+
+command raNavItem pName, pLabel, pTop
+   uiButton pName, pLabel, "12," & pTop & ",204," & (pTop + 34)
+   set the style of button pName to "roundRect"
+   set the showBorder of button pName to false
+   set the borderWidth of button pName to 0
+   set the threeD of button pName to false
+   set the autoHilite of button pName to false
+   set the textAlign of button pName to "left"
+   set the margins of button pName to "14,4,4,4"
+   set the textSize of button pName to 13
+end raNavItem
+
+-- Mark the current card's sidebar item. Unqualified on purpose: the
+-- builders call this with their card current, and the clicks call it AFTER
+-- the go, so the writes always land on the card being looked at.
+command raNavMark pCurrent
+   local tItem, tTop
+   repeat for each item tItem in kRaNavItems
+      if there is a button tItem then
+         if ("n" & tItem) is ("n" & pCurrent) then
+            set the opaque of button tItem to true
+            set the backgroundColor of button tItem to kRaSideActive
+            set the foregroundColor of button tItem to kRaWhite
+            set the textStyle of button tItem to "bold"
+            put the top of button tItem into tTop
+         else
+            set the opaque of button tItem to false
+            set the foregroundColor of button tItem to kRaSideText
+            set the textStyle of button tItem to empty
+         end if
+      end if
+   end repeat
+   if there is a graphic "raNavAccent" then
+      if tTop is an integer then
+         set the visible of graphic "raNavAccent" to true
+         set the rect of graphic "raNavAccent" to "8," & (tTop + 8) & ",11," & (tTop + 26)
+      else
+         set the visible of graphic "raNavAccent" to false
+      end if
+   end if
+   -- the sidebar avatar's initials are centred by MEASURED height, and a
+   -- field on a card that is not open measures nothing: repaint it here,
+   -- on the card that has just come to the front
+   raAvatarPaint "raSbAvatar", the number of this card, sHandle
+end raNavMark
+
+-- Go to a sidebar destination. A locked app has one place to be, the
+-- welcome card, so every destination but the specialist rails' own logs
+-- sends a locked user there first.
+command raGo pNav
+   local tCard
+   put raNavCard(pNav) into tCard
+   if tCard is empty then
+      exit raGo
+   end if
+   go to card tCard
+   raNavMark pNav
+   switch pNav
+      case "raNavHome"
+         raPaintTimeline
+         break
+      case "raNavFollowing"
+         raPaintFollowing
+         break
+      case "raNavMsgs"
+         raDmPaintContacts
+         raDmPaintChat
+         break
+      case "raNavLog"
+         raLogRefresh
+         break
+   end switch
+end raGo
+
+function raNavCard pNav
+   switch pNav
+      case "raNavHome"
+         return "1"
+      case "raNavProfile"
+         return "raProfile"
+      case "raNavFollowing"
+         return "raFollowing"
+      case "raNavMsgs"
+         return "raMessages"
+      case "raNavDevs"
+         return "raDevices"
+      case "raNavAnon"
+         return "raAnon"
+      case "raNavNostr"
+         return "raNostr"
+      case "raNavLog"
+         return "raLog"
+   end switch
+   return empty
+end raNavCard
+
+-- A three-stop linear gradient across a graphic, top-left to bottom-right:
+-- the Home stack's hero. A PURE enhancement, like the kit's drop shadow: an
+-- engine that refuses the property keeps the flat fill set before it.
+command raGradient pName, pFrom, pVia, pTo
+   local tG, tRect, tSaved, tErr
+   put the rect of graphic pName into tRect
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to comma
+   try
+      put "linear" into tG["type"]
+      put "0.0," & pFrom & return & "0.55," & pVia & return & "1.0," & pTo into tG["ramp"]
+      put item 1 of tRect & comma & item 2 of tRect into tG["from"]
+      put item 3 of tRect & comma & item 4 of tRect into tG["to"]
+      put item 1 of tRect & comma & item 4 of tRect into tG["via"]
+      set the fillGradient of graphic pName to tG
+   catch tErr
+   end try
+   set the itemDelimiter to tSaved
+end raGradient
+
+-- ---- self-building UI (idempotent; the kit builds, the look restyles) ---------
+-- NINE CARDS. Card 1 is Home (the timeline; it stays card 1 because the
+-- media painters and every cross-card note address it by number), then the
+-- welcome card, Profile, Following, Messages, and the four specialist
+-- rails: My devices (phase 6), Anonymous persona (phase 7), Nostr bridge
+-- (phase 8) and Activity (the log every rail writes to, the boot self-check
+-- included). Every app card carries the same sidebar (raSidebar), so any
+-- card is one click from any other. The stack script owns every handler,
+-- so navigation is just `go to card`; the pump keeps running wherever you
+-- are.
 command raBuild
    if the uUiVersion of this stack is kRaUiVersion then
       exit raBuild
@@ -16407,86 +17210,275 @@ command raBuild
    if the uUiVersion of this stack is not empty then
       raBuildReset
    end if
-   raBuildFeedCard
+   set the underlineLinks of this stack to false
+   set the linkColor of this stack to kRaPrimary
+   set the linkHiliteColor of this stack to kRaPrimaryHover
+   set the linkVisitedColor of this stack to kRaPrimary
+   raBuildHomeCard
+   raBuildWelcomeCard
+   raBuildProfileCard
+   raBuildFollowingCard
    raBuildDmCard
    raBuildLanCard
    raBuildAnonCard
    raBuildNostrCard
+   raBuildLogCard
    go to card 1
    -- the identity gate's initial state: locked, so the buttons that need
    -- an unlocked seed start disabled instead of refusing on first click
    raGateIdentity
+   raPaintIdentity
    set the uUiVersion of this stack to kRaUiVersion
    unlock screen
 end raBuild
 
-command raBuildFeedCard
+-- Home: the composer, the timeline, and the right column (you, follow
+-- someone, media).
+command raBuildHomeCard
+   local tFieldHtml
    go to card 1
-   -- two columns inside the family's 720p budget (1200 x 640, the
-   -- check-stack-size.py cap): identity + my feed left, the reading pane right
-   uiChrome "Riptide Social - Feed", 1200, 640
-   -- the two column panels FIRST, so they sit behind their controls
-   uiPanel "raPanL", "8,54,598,568"
-   uiPanel "raPanR", "602,54,1192,568"
-   raNavBar "raNavFeed"
+   raShell "Home", "Posts from you and the people you follow, each one signature-verified before it is shown.", "raNavHome"
+   uiPill "raSyncPill", "offline", "868,26,1040,50", "wait"
+   raBtn "raRefresh", "Refresh", "1052,22,1176,54", "ghost"
 
-   -- 1. identity
-   uiSection "raSec1", "1. Identity: one sealed seed, two spellings of one key", "16,58,592,76"
-   uiLabel "raIdL1", "key file:", "16,80,90,98", 11
-   uiInput "raKeyFile", "94,80,440,100"
+   -- the composer
+   raCardPanel "raComposePanel", "232,92,792,236"
+   raAvatar "raCmpAvatar", "248,108,288,148", 14
+   raText "raComposeHint", "Share something with your followers", "300,104,780,122", 12, kRaMuted
+   raInput "raCompose", "300,126,780,192", false, true
+   raBtn "raAttach", "Attach media", "300,200,412,228", "ghost"
+   raText "raComposeInfo", empty, "420,205,620,223", 11, kRaMuted
+   raBtn "raReplyCancel", "Cancel reply", "590,200,692,228", "ghost"
+   set the visible of button "raReplyCancel" to false
+   raBtn "raPost", "Post", "700,200,780,228", "primary"
+
+   -- the timeline: one rendered field (raPaintTimeline)
+   raView "raTimeline", "232,248,792,606", kRaPage
+   put raEmptyHtml("Your timeline is empty", "Unlock to see your posts and the people you follow. Follow someone with their handle on the right.") into tFieldHtml
+   set the htmlText of field "raTimeline" to tFieldHtml
+
+   -- you
+   raCardPanel "raMePanel", "808,92,1184,236"
+   raAvatar "raMeAvatar", "824,108,872,156", 16
+   uiLabel "raMeName", "Locked", "884,110,1176,132", 15
+   set the textStyle of field "raMeName" to "bold"
+   set the foregroundColor of field "raMeName" to kRaInk
+   uiLabel "raMeHandle", empty, "884,134,1176,150", 11
+   set the textFont of field "raMeHandle" to uiMonoFont()
+   set the foregroundColor of field "raMeHandle" to kRaMuted
+   raText "raMeStats", empty, "824,166,1176,184", 12, kRaInk2
+   raBtn "raCopyHandle", "Copy my handle", "824,194,992,224", "ghost"
+   raBtn "raEditProfile", "Edit profile", "1000,194,1168,224", "ghost"
+
+   -- follow someone
+   raCardPanel "raFollowPanel", "808,248,1184,380"
+   raTitle "raFollowTitle", "Follow someone", "824,260,1168,280"
+   raSub "raFollowSub", "Paste their Riptide handle: 64 characters they can copy from their own Home.", "824,282,1168,314"
+   raInput "raHandle", "824,316,1072,344", true, false
+   raBtn "raFollowBtn", "Follow", "1080,316,1168,344", "primary"
+   raText "raFollowNote", empty, "824,350,1168,374", 11, kRaMuted
+
+   -- media
+   raCardPanel "raMediaPanel", "808,392,1184,606"
+   raTitle "raMediaTitle", "Media", "824,404,1168,424"
+   raSub "raMediaSub", "Click an attachment in a post, or paste its 40-character hash.", "824,426,1168,456"
+   raInput "raMediaHash", "824,458,1168,486", true, false
+   raBtn "raMediaGet", "Fetch + play", "824,494,992,522", "primary"
+   raText "raMediaProg", empty, "824,528,1168,562", 11, kRaInk2
+   raText "raMediaNote", "Media travels over BitTorrent, so swarm peers can see your IP address. Fetching also shares the file onward.", "824,564,1168,600", 10, kRaMuted
+end raBuildHomeCard
+
+-- The welcome card: what Riptide is, on the left; create or unlock, on the
+-- right. The only card a locked app shows.
+command raBuildWelcomeCard
+   local tFont
+   if there is no card "raWelcome" then
+      create card
+      set the name of this card to "raWelcome"
+   end if
+   go to card "raWelcome"
+   set the width of this stack to kRaW
+   set the height of this stack to kRaH
+   uiGfx "raWcHero", "24,24,600,616"
+   set the roundRadius of graphic "raWcHero" to 24
+   set the filled of graphic "raWcHero" to true
+   set the lineSize of graphic "raWcHero" to 0
+   set the backgroundColor of graphic "raWcHero" to kRaPrimary
+   raGradient "raWcHero", "79,70,229", "190,24,93", "249,115,22"
+   uiGfx "raWcChipBg", "60,64,330,92"
+   set the roundRadius of graphic "raWcChipBg" to 28
+   set the filled of graphic "raWcChipBg" to true
+   set the lineSize of graphic "raWcChipBg" to 0
+   set the backgroundColor of graphic "raWcChipBg" to "129,140,248"
+   set the blendLevel of graphic "raWcChipBg" to 40
+   uiLabel "raWcChip", "No server. No account. Just your key.", "60,68,330,88", 12
+   set the textAlign of field "raWcChip" to "center"
+   set the foregroundColor of field "raWcChip" to kRaWhite
+   uiLabel "raWcBrand", "Riptide", "56,104,560,168", 52
+   set the textStyle of field "raWcBrand" to "bold"
+   set the foregroundColor of field "raWcBrand" to kRaWhite
+   raText "raWcLead", "A social network that lives on the people in it. Post, follow, reply and message, peer to peer, with every post signed by its author.", "60,176,560,240", 16, kRaWhite
+   raText "raWcPoint1", "Your identity is a key that only you hold, sealed with your passphrase.", "60,262,560,284", 13, kRaWhite
+   raText "raWcPoint2", "Following someone is knowing their key. Their posts arrive verified.", "60,290,560,312", 13, kRaWhite
+   raText "raWcPoint3", "Messages are end-to-end encrypted, straight to the other person.", "60,318,560,340", 13, kRaWhite
+   -- a preview post, drawn: the Home stack's floating window, in this app's
+   -- own terms
+   uiGfx "raWcPreview", "60,372,560,560"
+   set the roundRadius of graphic "raWcPreview" to 18
+   set the filled of graphic "raWcPreview" to true
+   set the lineSize of graphic "raWcPreview" to 0
+   set the backgroundColor of graphic "raWcPreview" to kRaWhite
+   raAvatar "raWcPvAvatar", "84,396,124,436", 14
+   put "AL" into field ("raWcPvAvatar" & "Tx")
+   set the backgroundColor of graphic "raWcPvAvatar" to "236,72,153"
+   uiLabel "raWcPvName", "Alice", "136,398,320,418", 14
+   set the textStyle of field "raWcPvName" to "bold"
+   set the foregroundColor of field "raWcPvName" to kRaInk
+   uiLabel "raWcPvMeta", "verified - just now", "136,418,360,434", 11
+   set the foregroundColor of field "raWcPvMeta" to kRaMuted
+   raText "raWcPvText", "Just posted from my own machine. No server in the middle, and you can check that it is really me.", "84,446,540,500", 13, kRaInk
+   uiLabel "raWcPvLinks", "Reply      Profile      Message", "84,516,540,536", 12
+   set the foregroundColor of field "raWcPvLinks" to kRaPrimary
+
+   -- the form
+   raCardPanel "raWcForm", "632,24,1176,616"
+   uiLabel "raWcTitle", "Welcome", "672,72,1140,108", 26
+   set the textStyle of field "raWcTitle" to "bold"
+   set the foregroundColor of field "raWcTitle" to kRaInk
+   raSub "raWcSub", "Enter your passphrase to unlock your identity.", "672,112,1140,150"
+   raText "raIdL2", "Passphrase", "672,170,1140,188", 12, kRaInk2
+   set the textStyle of field "raIdL2" to "bold"
+   raInput "raPassphrase", "672,192,1140,232", false, false
+   raBtn "raUnlock", "Unlock", "672,248,1140,288", "primary"
+   set the textSize of button "raUnlock" to 14
+   raBtn "raCreate", "Create a new identity", "672,298,1140,338", "ghost"
+   set the textSize of button "raCreate" to 14
+   raText "raWcMsg", empty, "672,348,1140,410", 12, kRaInk2
+   uiGfx "raWcRule", "672,424,1140,425"
+   set the style of graphic "raWcRule" to "rectangle"
+   set the filled of graphic "raWcRule" to true
+   set the lineSize of graphic "raWcRule" to 0
+   set the backgroundColor of graphic "raWcRule" to kRaLine
+   raText "raIdL1", "Key file", "672,440,1140,458", 12, kRaInk2
+   set the textStyle of field "raIdL1" to "bold"
+   raInput "raKeyFile", "672,462,1140,492", true, false
    put raKeyPath() into field "raKeyFile"
-   uiButton "raCreate", "Create", "446,80,592,104"
-   uiLabel "raIdL2", "passphrase:", "16,104,90,122", 11
-   uiInput "raPassphrase", "94,104,440,124"
-   uiButton "raUnlock", "Unlock", "446,108,516,132"
-   uiButton "raLock", "Lock", "524,108,592,132"
-   uiArea "raIdOut", "16,130,592,240"
+   raText "raWcKeyNote", "Your key file is sealed with Argon2id. Keep a copy somewhere safe: without it, and its passphrase, the identity cannot be recovered. Nobody can reset it for you.", "672,500,1140,560", 11, kRaMuted
+   uiLabel "uiStatus", empty, "672,576,1140,596", 11
+   put raUiFont() into tFont
+   if tFont is not empty then
+      set the textFont of this stack to tFont
+   end if
+   set the backgroundColor of this card to kRaPage
+   raWelcomePaint
+end raBuildWelcomeCard
 
-   -- 2. my feed
-   uiSection "raSec2", "2. My feed: post, then the signed head republishes", "16,246,592,264"
-   uiLabel "raNameL", "display name:", "16,268,110,286", 11
-   uiInput "raName", "114,268,340,288"
-   put "riptide user" into field "raName"
-   uiInput "raCompose", "16,292,440,340"
-   uiButton "raPost", "Post", "446,292,592,316"
-   uiButton "raAttach", "Attach", "446,320,592,340"
-   uiArea "raMyFeed", "16,346,592,562"
-   -- newest posts go BEFORE this field's text, so the birth line below
-   -- stays at the bottom, oldest, and never needs clearing
-   put "your feed begins here - write above and Post." into field "raMyFeed"
+-- The welcome card's two moods: a key file that exists means "welcome
+-- back, unlock"; none means "create one". Both buttons stay, so a second
+-- identity is always one click away.
+command raWelcomePaint
+   local tPath, tHave
+   if there is no field "raKeyFile" of card "raWelcome" then
+      exit raWelcomePaint
+   end if
+   put field "raKeyFile" of card "raWelcome" into tPath
+   put (tPath is not empty and there is a file tPath) into tHave
+   if tHave then
+      put "Welcome back" into field "raWcTitle" of card "raWelcome"
+      put "Enter your passphrase to unlock your identity." into field "raWcSub" of card "raWelcome"
+      set the uRaKind of button "raUnlock" of card "raWelcome" to "primary"
+      set the uRaKind of button "raCreate" of card "raWelcome" to "ghost"
+   else
+      put "Create your identity" into field "raWcTitle" of card "raWelcome"
+      put "Choose a passphrase of at least 8 characters. It seals your key on this computer." into field "raWcSub" of card "raWelcome"
+      set the uRaKind of button "raUnlock" of card "raWelcome" to "ghost"
+      set the uRaKind of button "raCreate" of card "raWelcome" to "primary"
+   end if
+   raBtnEnable "raUnlock", "raWelcome", true
+   raBtnEnable "raCreate", "raWelcome", true
+end raWelcomePaint
 
-   -- 3. follow
-   uiSection "raSec3", "3. Follow: fetch a head, walk the chain, verify every signature", "608,58,1184,76"
-   uiLabel "raHandleL", "author handle (64 hex):", "608,80,772,98", 11
-   uiInput "raHandle", "776,80,1050,100"
-   uiButton "raFetch", "Fetch feed", "1056,80,1184,104"
-   uiArea "raTheirFeed", "608,110,1184,508"
-   -- cleared by raFetch itself, so this guidance lives exactly until the
-   -- first fetch replaces it with a real feed
-   put "paste an author's 64-hex handle above and Fetch:" & return \
-         & "the head and every post arrive signature-verified, or not at all." \
-         into field "raTheirFeed"
+-- Return in the passphrase field does what the primary button says.
+command raWelcomeEnter
+   local tPath
+   put field "raKeyFile" of card "raWelcome" into tPath
+   if tPath is not empty and there is a file tPath then
+      raUnlock
+   else
+      raCreate
+   end if
+end raWelcomeEnter
 
-   -- the phase-3 media strip: a walked post auto-fills the hash; Fetch
-   -- joins the swarm sequentially, and the button becomes Play once the
-   -- file's contiguous FRONT is on disk (raMediaFrontReady - mid-download
-   -- by design; file existence alone was the 2026-08-27 negative)
-   uiLabel "raMediaL", "media hash:", "608,514,694,532", 11
-   uiInput "raMediaHash", "698,514,1050,534"
-   uiButton "raMediaGet", "Fetch + play", "1056,510,1184,534"
-   uiCap "raMediaProg", empty, "608,540,1184,566"
+command raWcSay pText, pKind
+   if there is no field "raWcMsg" of card "raWelcome" then
+      exit raWcSay
+   end if
+   put pText into field "raWcMsg" of card "raWelcome"
+   if pKind is "bad" then
+      set the foregroundColor of field "raWcMsg" of card "raWelcome" to kRaDanger
+   else if pKind is "ok" then
+      set the foregroundColor of field "raWcMsg" of card "raWelcome" to kRaOk
+   else
+      set the foregroundColor of field "raWcMsg" of card "raWelcome" to kRaInk2
+   end if
+end raWcSay
 
-   uiFooter \
-         "Phases 1-3: public feeds are public, the DHT keeps records" \
-         & " until expiry, nothing here is deletion or anonymity - and" \
-         & " media rides ordinary BitTorrent swarms, so seeding or" \
-         & " fetching shows your IP to its peers. While unlocked, the" \
-         & " identity seed lives in unlocked engine memory: Lock when" \
-         & " done, and never reuse a real passphrase in a demo. Phase 3 is" \
-         & " done when a follower on a SECOND machine plays a video" \
-         & " mid-download.", \
-         "16,572,1184,632"
-end raBuildFeedCard
+-- Profile: anyone's, yours included (then the display name is editable).
+command raBuildProfileCard
+   if there is no card "raProfile" then
+      create card
+      set the name of this card to "raProfile"
+   end if
+   go to card "raProfile"
+   raShell "Profile", "Their posts, newest first. Each one was checked against their key.", "raNavProfile"
+   raCardPanel "raPfPanel", "232,92,1184,240"
+   raAvatar "raPfAvatar", "252,112,332,192", 26
+   uiLabel "raPfName", empty, "348,108,980,140", 22
+   set the textStyle of field "raPfName" to "bold"
+   set the foregroundColor of field "raPfName" to kRaInk
+   uiLabel "raPfHandle", empty, "348,142,980,160", 11
+   set the textFont of field "raPfHandle" to uiMonoFont()
+   set the foregroundColor of field "raPfHandle" to kRaMuted
+   raText "raPfStats", empty, "348,164,980,184", 12, kRaInk2
+   raText "raNameL", "Display name", "348,198,440,216", 12, kRaInk2
+   raInput "raName", "440,192,760,222", false, false
+   raBtn "raSaveName", "Save", "768,192,872,222", "primary"
+   raBtn "raPfFollow", "Follow", "1000,108,1168,140", "primary"
+   raBtn "raPfMessage", "Message", "1000,148,1168,180", "ghost"
+   raBtn "raPfCopy", "Copy handle", "1000,188,1168,220", "ghost"
+   raView "raPfFeed", "232,252,1184,606", kRaPage
+end raBuildProfileCard
+
+-- Following: the list, add by handle, and your own handle to share.
+command raBuildFollowingCard
+   if there is no card "raFollowing" then
+      create card
+      set the name of this card to "raFollowing"
+   end if
+   go to card "raFollowing"
+   raShell "Following", "The people whose posts fill your Home. Following is knowing someone's key; nobody else is asked.", "raNavFollowing"
+   raView "raFollowList", "232,92,792,606", kRaPage
+   raCardPanel "raFwAddPanel", "808,92,1184,236"
+   raTitle "raFwAddTitle", "Follow someone", "824,104,1168,124"
+   raSub "raFwAddSub", "Paste their Riptide handle (64 characters).", "824,126,1168,146"
+   raInput "raFollowTo", "824,154,1072,182", true, false
+   raBtn "raFollowAdd", "Follow", "1080,154,1168,182", "primary"
+   raText "raFwNote", empty, "824,190,1168,228", 11, kRaMuted
+   raCardPanel "raSharePanel", "808,248,1184,420"
+   raTitle "raShareTitle", "Your handle", "824,260,1168,280"
+   raSub "raShareSub", "Send it to people so they can follow you. It is your public key, safe to share.", "824,282,1168,314"
+   uiArea "raMyHandle", "824,318,1168,368"
+   set the borderWidth of field "raMyHandle" to 0
+   set the backgroundColor of field "raMyHandle" to kRaPage
+   set the dontWrap of field "raMyHandle" to false
+   set the vScrollbar of field "raMyHandle" to false
+   set the textSize of field "raMyHandle" to 12
+   set the traversalOn of field "raMyHandle" to true
+   raBtn "raCopyHandle2", "Copy handle", "824,378,992,408", "ghost"
+   raCardPanel "raFwTipPanel", "808,432,1184,606"
+   raTitle "raFwTipTitle", "How it works", "824,444,1168,464"
+   raText "raFwTip", "Riptide has no server, so there is no search and no suggestions: you follow people by their handle. Their posts are fetched from the network and verified against that key before they appear. You see replies from people you follow.", "824,468,1168,598", 12, kRaInk2
+end raBuildFollowingCard
 
 command raBuildDmCard
    if there is no card "raMessages" then
@@ -16494,107 +17486,66 @@ command raBuildDmCard
       set the name of this card to "raMessages"
    end if
    go to card "raMessages"
-   uiChrome "Riptide Social - Messages", 1200, 640
-   uiPanel "raPanL", "8,54,598,568"
-   uiPanel "raPanR", "602,54,1192,568"
-   raNavBar "raNavMsgs"
+   raShell "Messages", "End-to-end encrypted, straight to the other person. Nothing is stored on a server, or kept after you lock.", "raNavMsgs"
+   raCardPanel "raDmListPanel", "232,92,520,606"
+   raTitle "raDmListTitle", "Conversations", "248,104,504,124"
+   raView "raDmContacts", "244,128,512,470", kRaWhite
+   raText "raDmToL", "New chat: paste a handle", "248,478,504,494", 11, kRaInk2
+   raInput "raDmTo", "248,498,420,526", true, false
+   raBtn "raDmStart", "Chat", "428,498,504,526", "primary"
+   raText "raDmMine", "Unlock to open your inbox.", "248,534,504,598", 11, kRaMuted
 
-   uiSection "raDmSec1", "1. My inbox: the phantom swarm strangers reach you in", "16,58,592,76"
-   uiCap "raDmMine", "Unlock on the Feed card first; the inbox derives from your identity.", "16,82,592,124"
-   uiArea "raDmLog", "16,130,592,562"
-   put "inbox log - your inbox opens when you unlock." & return into field "raDmLog"
-
-   uiSection "raDmSec2", "2. Conversation: sealed first contact, then a private stream", "608,58,1184,76"
-   uiLabel "raDmToL", "to handle (64 hex):", "608,80,748,98", 11
-   uiInput "raDmTo", "752,80,1050,100"
-   uiButton "raDmStart", "Start DM", "1056,80,1116,104"
-   uiButton "raDmCallBtn", "Call", "1122,80,1184,104"
-   uiArea "raDmChat", "608,110,1184,498"
-   put "conversation - Start a DM with a handle, or answer a knock in your inbox." \
-         & return into field "raDmChat"
-   uiInput "raDmMsg", "608,506,1050,528"
-   uiButton "raDmSend", "Send", "1056,504,1184,528"
-   -- the phase-5 typing lane paints here during a call (spec 6.2):
-   -- absolute state over a second, deliberately lossy dc channel
-   uiCap "raDmTyping", empty, "608,534,1184,560"
-
-   uiFooter \
-         "DMs are end-to-end encrypted (a sealed RSI1 intro, then a" \
-         & " secretstream in each direction) - but rp1 peers see your IP," \
-         & " exactly as any torrent peer does, and this demo holds ONE" \
-         & " conversation at a time. Sessions live in memory only: Lock" \
-         & " or close ends them, there is no history. During a call a" \
-         & " second lossy dc channel carries live typing state (spec" \
-         & " 6.2). Phase 4 is done when TWO machines exchange" \
-         & " authenticated encrypted DMs with no server.", \
-         "16,572,1184,632"
+   raCardPanel "raDmChatPanel", "532,92,1184,606"
+   raAvatar "raDmAvatar", "548,104,588,144", 14
+   uiLabel "raDmWith", "No conversation selected", "600,106,980,126", 15
+   set the textStyle of field "raDmWith" to "bold"
+   set the foregroundColor of field "raDmWith" to kRaInk
+   raText "raDmState", "Pick someone on the left, or start a new chat.", "600,127,980,145", 11, kRaMuted
+   raBtn "raDmConnect", "Connect", "992,108,1084,138", "ghost"
+   raBtn "raDmCallBtn", "Call", "1092,108,1168,138", "ghost"
+   raView "raDmChat", "548,152,1172,520", kRaWhite
+   raText "raDmTyping", empty, "552,522,1168,540", 11, kRaMuted
+   raInput "raDmMsg", "548,546,1072,590", false, false
+   raBtn "raDmSend", "Send", "1080,546,1172,590", "primary"
 end raBuildDmCard
 
 -- Phase 6: the LAN device mesh. Your own devices (all sharing your master
--- seed) meet on the LAN and prove they are yours with the challenge/response
--- above; a stranger on the same Wi-Fi cannot answer. This is enet, not the
--- DHT: host on one device, Join by IP on the others.
+-- seed) meet on the LAN and prove they are yours with a challenge and
+-- response; a stranger on the same Wi-Fi cannot answer. This is enet, not
+-- the DHT: host on one device, Join by IP on the others.
 command raBuildLanCard
    if there is no card "raDevices" then
       create card
       set the name of this card to "raDevices"
    end if
    go to card "raDevices"
-   uiChrome "Riptide Social - Devices", 1200, 640
-   uiPanel "raPanL", "8,54,598,568"
-   uiPanel "raPanR", "602,54,1192,568"
-   raNavBar "raNavDevs"
-
-   uiSection "raLanSec1", "1. This device: host the mesh, or join one on your LAN", "16,58,592,76"
-   uiLabel "raLanNameL", "device name:", "16,80,110,98", 11
-   uiInput "raLanName", "114,80,340,100"
+   raShell "My devices", "Your own devices on one network, proving to each other that they share your key. Records are signed, not encrypted.", "raNavDevs"
+   raCardPanel "raLanPanL", "232,92,700,606"
+   raTitle "raLanSec1", "This device", "248,104,684,124"
+   raText "raLanNameL", "Device name", "248,134,340,152", 12, kRaInk2
+   raInput "raLanName", "344,128,520,156", false, false
    put "this device" into field "raLanName"
-   uiButton "raLanHostBtn", "Host", "446,80,516,104"
-   uiButton "raLanLeaveBtn", "Leave", "524,80,592,104"
-   uiLabel "raLanToL", "host address (IP):", "16,108,130,126", 11
-   uiInput "raLanTo", "134,108,340,128"
-   uiButton "raLanJoinBtn", "Join", "446,108,592,132"
-   uiArea "raLanLog", "16,138,592,336"
-   put "mesh log - Host here, or Join your host device's IP (unlock first)." \
-         & return into field "raLanLog"
+   raBtn "raLanHostBtn", "Host", "528,128,604,156", "primary"
+   raBtn "raLanLeaveBtn", "Leave", "612,128,684,156", "ghost"
+   raText "raLanToL", "Host address", "248,170,340,188", 12, kRaInk2
+   raInput "raLanTo", "344,164,604,192", true, false
+   raBtn "raLanJoinBtn", "Join", "612,164,684,192", "primary"
+   raLogArea "raLanLog", "248,204,684,392"
+   put "Host here, or Join your host device's IP." & return into field "raLanLog"
+   raTitle "raLanSec3", "My draft, synced as I type", "248,404,684,424"
+   raInput "raLanDraft", "248,430,684,594", false, true
 
-   -- the phase-6 sync payload: type here and every admitted device sees
-   -- it (debounced on the poll timer, signed per record, absolute state)
-   uiSection "raLanSec3", "3. My draft: synced to every admitted device as I type", "16,342,592,360"
-   uiInput "raLanDraft", "16,366,592,562"
-
-   -- "devices on the mesh", not "admitted devices": on a joiner most rows
-   -- are devices the HOST admitted and relays to us, and we verified them
-   -- per record rather than at a handshake of our own
-   uiSection "raLanSec2", "2. Devices on the mesh (each proved it shares your master seed)", "608,58,1184,76"
-   uiArea "raLanDevices", "608,80,1184,268"
-
-   uiSection "raLanSec4", "4. Drafts from your other devices (signature-verified)", "608,274,1184,292"
-   uiArea "raLanDrafts", "608,298,1184,428"
-
-   -- the channel-2 decision made visible: media between your devices is
-   -- a SIGNED POINTER on channel 0; the bytes ride the phase-3 torrent
-   -- rail (seed in place, fetch by hash), and channel 2 stays dark
-   uiSection "raLanSec5", "5. Media to your other devices (a signed pointer; bytes ride the torrent rail)", "608,434,1184,452"
-   uiButton "raLanSendMedia", "Send media...", "608,458,756,482"
-   uiButton "raLanMediaGet", "Fetch + play", "764,458,912,482"
-   uiCap "raLanMediaOffer", "No media offered yet.", "608,488,1184,514"
-   uiCap "raLanMediaProg", empty, "608,520,1184,546"
-
-   uiFooter \
-         "This is your OWN devices only, on one LAN: admission is a" \
-         & " signature under a key only a holder of your master seed can" \
-         & " derive, and every sync record (drafts + feed state + media" \
-         & " offers on channel 0, presence/typing on channel 1) is signed" \
-         & " under that key too - a stranger on the same Wi-Fi is refused" \
-         & " at admission AND per record. Records are authenticated, NOT" \
-         & " encrypted: the LAN sees draft plaintext. Sync records never" \
-         & " touch the internet; offered media BYTES ride the phase-3" \
-         & " torrent rail (swarm peers see your IP, discovery is the" \
-         & " DHT). Unlock on the Feed card first. Phase 6 is done when a" \
-         & " draft typed here appears on another device with a stranger" \
-         & " refused. Verified statically; needs the two-machine pass.", \
-         "16,572,1184,632"
+   raCardPanel "raLanPanR", "716,92,1184,606"
+   raTitle "raLanSec2", "Devices on the mesh", "732,104,1168,124"
+   raTableArea "raLanDevices", "732,128,1168,250"
+   raTitle "raLanSec4", "Drafts from your other devices", "732,262,1168,282"
+   raTableArea "raLanDrafts", "732,286,1168,410"
+   raTitle "raLanSec5", "Media to your other devices", "732,422,1168,442"
+   raBtn "raLanSendMedia", "Send media...", "732,450,880,478", "ghost"
+   raBtn "raLanMediaGet", "Fetch + play", "888,450,1036,478", "primary"
+   raText "raLanMediaOffer", "No media offered yet.", "732,486,1168,520", 11, kRaInk2
+   raText "raLanMediaProg", empty, "732,524,1168,558", 11, kRaInk2
+   raText "raLanFoot", "Media between your devices is a signed pointer; the bytes ride the torrent rail, where swarm peers see your IP.", "732,562,1168,598", 10, kRaMuted
 end raBuildLanCard
 
 -- Phase 7: the anonymous persona. A separate onion-only identity derived
@@ -16606,48 +17557,27 @@ command raBuildAnonCard
       set the name of this card to "raAnon"
    end if
    go to card "raAnon"
-   uiChrome "Riptide Social - Anon persona", 1200, 640
-   uiPanel "raPanL", "8,54,598,568"
-   uiPanel "raPanR", "602,54,1192,568"
-   raNavBar "raNavAnon"
+   raShell "Anonymous persona", "A second identity from the same seed, reachable only as a Tor onion service. It never touches the public network.", "raNavAnon"
+   raCardPanel "raAnonPanL", "232,92,700,606"
+   raTitle "raAnonSec1", "Your persona", "248,104,684,124"
+   raBtn "raAnonReveal", "Reveal persona", "248,132,392,160", "ghost"
+   raBtn "raAnonPublishBtn", "Publish + serve", "400,132,544,160", "primary"
+   raBtn "raAnonStopBtn", "Unpublish", "552,132,684,160", "ghost"
+   raText "raAnonEntriesL", "Feed entries it serves (one per line, at / over the onion)", "248,172,684,190", 12, kRaInk2
+   raInput "raAnonEntries", "248,194,684,290", false, true
+   raLogArea "raAnonOut", "248,302,684,594"
+   put "Reveal derives the key; Publish + serve puts it on Tor (needs a running tor daemon)." & return into field "raAnonOut"
 
-   uiSection "raAnonSec1", "1. Your anonymous persona (a separate key, same master seed)", "16,58,592,76"
-   uiButton "raAnonReveal", "Reveal persona 0", "16,80,220,104"
-   uiButton "raAnonPublishBtn", "Publish + serve", "228,80,432,104"
-   uiButton "raAnonStopBtn", "Unpublish", "440,80,592,104"
-   -- 8.2: what the persona's onion SERVES as its feed page - typed here,
-   -- never taken from the public feed (cross-posting is the exact
-   -- operator mistake spec 8.4 warns links the personas)
-   uiLabel "raAnonEntriesL", "anon feed entries (one per line; served at / over the onion):", "16,110,592,128", 11
-   uiInput "raAnonEntries", "16,130,592,224"
-   uiArea "raAnonOut", "16,230,592,562"
-   put "persona log - Reveal derives the key; Publish + serve puts it on Tor" \
-         & " (unlock first)." & return into field "raAnonOut"
-
-   uiSection "raAnonSec2", "2. The deanonymization guard (9.3): what this persona may touch", "608,58,1184,76"
-   uiArea "raAnonGuard", "608,80,1184,562"
-
-   uiFooter \
-         "The anon persona is a DIFFERENT key from your public identity," \
-         & " reachable ONLY as an onion service - it never publishes to the" \
-         & " DHT, seeds a torrent, or opens an rp1 peer (that would leak its" \
-         & " IP and link it to your public feed). The guard enforces that at" \
-         & " every transport branch. Publish + serve carries onionxt AND" \
-         & " onion-httpd embedded in this file, so it needs only a running" \
-         & " tor daemon (control port" \
-         & " enabled); it serves the feed page at /, the signed prekey at" \
-         & " /prekey, and accepts sealed intros POSTed to /dm. Serving is" \
-         & " verified statically; needs an OXT + live-Tor pass." \
-         & " Cross-posting or correlated timing can still link" \
-         & " your personas: the tool removes the easy links, not the hard" \
-         & " ones (spec 9).", \
-         "16,572,1184,632"
+   raCardPanel "raAnonPanR", "716,92,1184,606"
+   raTitle "raAnonSec2", "The guard: what this persona may touch", "732,104,1168,124"
+   raTableArea "raAnonGuard", "732,130,1168,520"
+   raText "raAnonFoot", "Cross-posting, or posting at telling times, can still link your two identities. The guard removes the easy links, not the hard ones.", "732,528,1168,598", 11, kRaMuted
 end raBuildAnonCard
 
 -- Phase 8: the Nostr rail. The one card in this app that talks to somebody
--- else's servers, and it is laid out to say so: the relay list and its
--- honesty note sit ABOVE the timeline, because "which strangers am I
--- talking to" is the question this rail makes a user answer.
+-- else's servers, and it is laid out to say so: the relay list sits beside
+-- the identity, because "which strangers am I talking to" is the question
+-- this rail makes a user answer.
 --
 -- Nothing here dials on open. The default relays are typed into the field
 -- for convenience and connecting is always a click - a social app that
@@ -16659,94 +17589,58 @@ command raBuildNostrCard
       set the name of this card to "raNostr"
    end if
    go to card "raNostr"
-   uiChrome "Riptide Social - Nostr", 1200, 640
-   uiPanel "raPanL", "8,54,598,568"
-   uiPanel "raPanR", "602,54,1192,568"
-   raNavBar "raNavNostr"
-
-   -- 1. identity + the bridge
-   uiSection "raNxSec1", "1. Your Nostr identity: the same master seed, its own key", "16,58,592,76"
-   uiLabel "raNxNpubL", "npub:", "16,80,60,98", 11
-   uiInput "raNxNpub", "64,80,470,100"
-   uiButton "raNxCopyNpub", "Copy", "476,78,592,102"
-   uiButton "raNxBridgeBtn", "Publish identity bridge", "16,106,300,130"
-   uiButton "raNxExportBtn", "Export nsec", "308,106,450,130"
-   uiCap "raNxIdNote", \
-         "Unlock on the Feed card first. The bridge is a signed statement" \
-         & " by BOTH keys that this npub and your riptide handle are one" \
-         & " person - publishing it is what links them, so it is a click.", \
-         "16,134,592,178"
-
-   -- 2. relays
-   uiSection "raNxSec2", "2. Relays: whose servers this rail talks to", "16,184,592,202"
-   uiInput "raNxRelays", "16,206,470,268"
+   raShell "Nostr bridge", "Reach people on Nostr relays. Relays are other people's servers: they see your IP and everything you publish there.", "raNavNostr"
+   raCardPanel "raNxPanL", "232,92,700,606"
+   raTitle "raNxSec1", "Your Nostr identity", "248,104,684,124"
+   raText "raNxNpubL", "npub", "248,134,296,152", 12, kRaInk2
+   raInput "raNxNpub", "300,128,596,156", true, false
+   raBtn "raNxCopyNpub", "Copy", "604,128,684,156", "ghost"
+   raBtn "raNxBridgeBtn", "Publish identity bridge", "248,164,452,192", "ghost"
+   raBtn "raNxExportBtn", "Export nsec", "460,164,580,192", "ghost"
+   raText "raNxIdNote", "The bridge is a public statement, signed by both keys, that this npub and your Riptide handle are one person. It cannot be unpublished.", "248,198,684,236", 11, kRaMuted
+   raTitle "raNxSec2", "Relays", "248,246,684,266"
+   raInput "raNxRelays", "248,272,580,332", true, true
    put raNxDefaultRelays() into field "raNxRelays"
-   uiButton "raNxConnect", "Connect", "476,204,592,228"
-   uiButton "raNxDisconnect", "Disconnect", "476,232,592,256"
-   uiArea "raNxRelayLog", "16,274,592,406"
-   put "relay log - nothing dials until you click Connect." & return \
-         into field "raNxRelayLog"
+   raBtn "raNxConnect", "Connect", "588,272,684,300", "primary"
+   raBtn "raNxDisconnect", "Disconnect", "588,304,684,332", "ghost"
+   raLogArea "raNxRelayLog", "248,340,684,436"
+   put "Nothing dials until you click Connect." & return into field "raNxRelayLog"
+   raTitle "raNxSec3", "Follows", "248,446,684,466"
+   raInput "raNxFollowTo", "248,472,596,500", true, false
+   raBtn "raNxFollowBtn", "Follow", "604,472,684,500", "primary"
+   raTableArea "raNxFollows", "248,508,684,594"
+   put "not following anyone yet - paste an npub or 64-hex key above." into field "raNxFollows"
 
-   -- 3. follows
-   uiSection "raNxSec3", "3. Follows: npub or 64-hex, one at a time", "16,412,592,430"
-   uiInput "raNxFollowTo", "16,434,470,454"
-   uiButton "raNxFollowBtn", "Follow", "476,432,592,456"
-   uiArea "raNxFollows", "16,460,592,562"
-   put "not following anyone yet - paste an npub or 64-hex key above." \
-         into field "raNxFollows"
-
-   -- 4. the timeline
-   uiSection "raNxSec4", "4. Timeline: every event verified before it is shown", "608,58,1184,76"
-   uiArea "raNxTimeline", "608,80,1184,466"
-   put "timeline - verified notes land here once a relay is connected." \
-         & return into field "raNxTimeline"
-   uiLabel "raNxComposeL", "post a note to your relays:", "608,472,1184,490", 11
-   uiInput "raNxCompose", "608,492,1050,534"
-   uiButton "raNxPostBtn", "Post note", "1056,492,1184,516"
-   uiCap "raNxStatus", empty, "608,538,1184,564"
-
-   uiFooter \
-         "Nostr is REACH, never a dependency: with no relay reachable" \
-         & " every other rail here works exactly as before. The honest" \
-         & " costs, all of them: a relay is somebody else's server, so it" \
-         & " sees your IP and every event you publish; publishing the" \
-         & " bridge deliberately LINKS your npub to your riptide handle" \
-         & " in public, and cannot be unpublished; and the anon persona" \
-         & " may never use this rail (the 9.3 guard refuses it). DMs stay" \
-         & " on riptide's own rail - Nostr DMs are not built here." \
-         & " Verified statically; needs an OXT + live-relay pass.", \
-         "16,572,1184,632"
+   raCardPanel "raNxPanR", "716,92,1184,606"
+   raTitle "raNxSec4", "Timeline", "732,104,1168,124"
+   raTableArea "raNxTimeline", "732,130,1168,464"
+   set the textFont of field "raNxTimeline" to empty
+   set the textSize of field "raNxTimeline" to 12
+   put "Verified notes land here once a relay is connected." & return into field "raNxTimeline"
+   raText "raNxComposeL", "Post a note to your relays", "732,474,1168,492", 12, kRaInk2
+   raInput "raNxCompose", "732,496,1072,552", false, true
+   raBtn "raNxPostBtn", "Post note", "1080,496,1168,524", "primary"
+   raText "raNxStatus", empty, "732,560,1168,598", 11, kRaInk2
 end raBuildNostrCard
 
--- ---- navigation: one tab bar, five cards -------------------------------------
--- The same five buttons in the title band of every card, the current one
--- held down. The hilite is script-managed (autoHilite off - the kit's
--- checkbox discipline): a pressed look that flashed back on click would
--- read as a broken button, not as "you are here".
-command raNavBar pCurrent
-   uiButton "raNavFeed", "Feed", "736,4,824,26"
-   uiButton "raNavMsgs", "Messages", "828,4,916,26"
-   uiButton "raNavDevs", "Devices", "920,4,1008,26"
-   uiButton "raNavAnon", "Anon", "1012,4,1100,26"
-   uiButton "raNavNostr", "Nostr", "1104,4,1192,26"
-   set the autoHilite of button "raNavFeed" to false
-   set the autoHilite of button "raNavMsgs" to false
-   set the autoHilite of button "raNavDevs" to false
-   set the autoHilite of button "raNavAnon" to false
-   set the autoHilite of button "raNavNostr" to false
-   raNavMark pCurrent
-end raNavBar
+-- Activity: the one log every rail writes to (identity, sync, DMs), and the
+-- boot self-check's block, which a maintainer copies into a pass record.
+command raBuildLogCard
+   if there is no card "raLog" then
+      create card
+      set the name of this card to "raLog"
+   end if
+   go to card "raLog"
+   raShell "Activity", "What the app did, for troubleshooting. The boot self-check is at the top: copy it into a pass record.", "raNavLog"
+   raBtn "raLogCopy", "Copy log", "1052,22,1176,54", "ghost"
+   raLogArea "raIdOut", "232,92,1184,606"
+end raBuildLogCard
 
--- Mark the current card's tab. Unqualified on purpose: the builders call
--- this with their card current, and the mouseUp cases call it AFTER the
--- go, so the writes always land on the card being looked at.
-command raNavMark pCurrent
-   set the hilite of button "raNavFeed" to (pCurrent is "raNavFeed")
-   set the hilite of button "raNavMsgs" to (pCurrent is "raNavMsgs")
-   set the hilite of button "raNavDevs" to (pCurrent is "raNavDevs")
-   set the hilite of button "raNavAnon" to (pCurrent is "raNavAnon")
-   set the hilite of button "raNavNostr" to (pCurrent is "raNavNostr")
-end raNavMark
+-- An empty state for a rendered view: a heading and a line under it,
+-- centred-ish, in the page's quiet colours.
+function raEmptyHtml pTitle, pLine
+   return "<p spaceabove=" & quote & "40" & quote & " align=" & quote & "center" & quote & "><font size=" & quote & "16" & quote & " color=" & quote & kRaInkHex & quote & "><b>" & raHtml(pTitle) & "</b></font></p>" & "<p align=" & quote & "center" & quote & " spaceabove=" & quote & "6" & quote & "><font size=" & quote & "13" & quote & " color=" & quote & kRaMutedHex & quote & ">" & raHtml(pLine) & "</font></p>"
+end raEmptyHtml
 
 -- ---- the upgrade path: shed an older version's furniture ---------------------
 -- Runs ONLY when raBuild finds a different uUiVersion already stamped on
@@ -16757,7 +17651,7 @@ end raNavMark
 -- already has controls would sit ON TOP of them.
 command raBuildReset
    local tCard
-   repeat for each item tCard in "raMessages,raDevices,raAnon,raNostr"
+   repeat for each item tCard in kRaCards
       if there is a card tCard then
          go to card tCard
          raBuildResetCard
@@ -16768,23 +17662,18 @@ command raBuildReset
 end raBuildReset
 
 command raBuildResetCard
-   local tName
-   -- uiBand rides along by name: uiChrome builds it, but the registry is
-   -- derived from the demo's OWN references (check-demo-control-lists.py)
-   -- and the demo never names it, so it cannot live in kRaScControls
-   repeat for each item tName in (kRaScControls & comma & kRaScRetired & ",uiBand")
-      if there is a field tName then
-         delete field tName
-      end if
-      if there is a button tName then
-         delete button tName
-      end if
-      if there is a graphic tName then
-         delete graphic tName
-      end if
-      -- the hairline divider uiSection builds beside each header
-      if there is a graphic (tName & "Line") then
-         delete graphic (tName & "Line")
+   local tN, tName
+   -- BY PREFIX, not by list. Every control this app builds, and every one
+   -- an older version built, is named ra* or ui* (the kit's), so a walk of
+   -- the card sheds them all: the registry cannot list a name the builders
+   -- compute (an input's frame, an avatar's initials), and a list of retired
+   -- names is one more thing to forget to update. A control a person added
+   -- under any other name is theirs, and stays. Newest first, so deleting
+   -- never renumbers a control the walk has yet to reach.
+   repeat with tN = the number of controls of this card down to 1
+      put the short name of control tN of this card into tName
+      if char 1 to 2 of tName is "ra" or char 1 to 2 of tName is "ui" then
+         delete control tN of this card
       end if
    end repeat
 end raBuildResetCard
@@ -16793,43 +17682,132 @@ end raBuildResetCard
 -- Buttons that cannot work without an unlocked seed start disabled and
 -- enable on unlock, so a new user's first click cannot be a refusal.
 -- AFFORDANCE ONLY: every one of these handlers keeps its own guard, so a
--- click that slips through still refuses with its reason. Qualified and
--- try-wrapped per the multi-card rule - this runs from card 1, and a card
--- that is mid-build must not throw out of the builder.
+-- click that slips through still refuses with its reason. Qualified per the
+-- multi-card rule - this runs from any card, and raBtnEnable skips a card
+-- that is mid-build.
 command raGateIdentity
-   local tOn, tErr
+   local tOn
    put (sMasterSeed is not empty) into tOn
-   try
-      set the enabled of button "raPost" of card 1 to tOn
-      set the enabled of button "raAttach" of card 1 to tOn
-   catch tErr
-   end try
-   try
-      set the enabled of button "raDmStart" of card "raMessages" to tOn
-      set the enabled of button "raDmCallBtn" of card "raMessages" to tOn
-      set the enabled of button "raDmSend" of card "raMessages" to tOn
-   catch tErr
-   end try
-   try
-      set the enabled of button "raLanHostBtn" of card "raDevices" to tOn
-      set the enabled of button "raLanJoinBtn" of card "raDevices" to tOn
-      set the enabled of button "raLanSendMedia" of card "raDevices" to tOn
-   catch tErr
-   end try
-   try
-      set the enabled of button "raAnonReveal" of card "raAnon" to tOn
-      set the enabled of button "raAnonPublishBtn" of card "raAnon" to tOn
-   catch tErr
-   end try
-   try
-      set the enabled of button "raNxCopyNpub" of card "raNostr" to tOn
-      set the enabled of button "raNxBridgeBtn" of card "raNostr" to tOn
-      set the enabled of button "raNxExportBtn" of card "raNostr" to tOn
-      set the enabled of button "raNxPostBtn" of card "raNostr" to tOn
-      set the enabled of button "raNxFollowBtn" of card "raNostr" to tOn
-   catch tErr
-   end try
+   raBtnEnable "raPost", "1", tOn
+   raBtnEnable "raAttach", "1", tOn
+   raBtnEnable "raRefresh", "1", tOn
+   raBtnEnable "raFollowBtn", "1", tOn
+   raBtnEnable "raCopyHandle", "1", tOn
+   raBtnEnable "raEditProfile", "1", tOn
+   raBtnEnable "raFollowAdd", "raFollowing", tOn
+   raBtnEnable "raCopyHandle2", "raFollowing", tOn
+   raBtnEnable "raSaveName", "raProfile", tOn
+   raBtnEnable "raPfFollow", "raProfile", tOn
+   raBtnEnable "raPfMessage", "raProfile", tOn
+   raBtnEnable "raDmStart", "raMessages", tOn
+   raBtnEnable "raDmConnect", "raMessages", tOn
+   raBtnEnable "raDmCallBtn", "raMessages", tOn
+   raBtnEnable "raDmSend", "raMessages", tOn
+   raBtnEnable "raLanHostBtn", "raDevices", tOn
+   raBtnEnable "raLanJoinBtn", "raDevices", tOn
+   raBtnEnable "raLanSendMedia", "raDevices", tOn
+   raBtnEnable "raAnonReveal", "raAnon", tOn
+   raBtnEnable "raAnonPublishBtn", "raAnon", tOn
+   raBtnEnable "raNxCopyNpub", "raNostr", tOn
+   raBtnEnable "raNxBridgeBtn", "raNostr", tOn
+   raBtnEnable "raNxExportBtn", "raNostr", tOn
+   raBtnEnable "raNxPostBtn", "raNostr", tOn
+   raBtnEnable "raNxFollowBtn", "raNostr", tOn
 end raGateIdentity
+
+-- Paint who is unlocked everywhere it shows: the sidebar chip on every
+-- card, the Home "you" panel, the composer avatar and the share panel.
+-- Qualified and guarded throughout: it runs from unlock, lock, a profile
+-- save and the pump.
+command raPaintIdentity
+   local tC, tName, tShort, tCard
+   if sHandle is empty then
+      put "Locked" into tName
+      put empty into tShort
+   else
+      put raNameOf(sHandle) into tName
+      put raShortHandle(sHandle) into tShort
+   end if
+   repeat for each item tCard in ("1," & kRaCards)
+      if there is a field "raSbName" of card tCard then
+         put tName into field "raSbName" of card tCard
+         put tShort into field "raSbHandle" of card tCard
+         raAvatarPaint "raSbAvatar", tCard, sHandle
+      end if
+      if there is a button "raLock" of card tCard then
+         set the visible of button "raLock" of card tCard to (sHandle is not empty)
+      end if
+   end repeat
+   if there is a field "raMeName" of card 1 then
+      put tName into field "raMeName" of card 1
+      put tShort into field "raMeHandle" of card 1
+      raAvatarPaint "raMeAvatar", "1", sHandle
+      raAvatarPaint "raCmpAvatar", "1", sHandle
+      if sHandle is empty then
+         put empty into field "raMeStats" of card 1
+      else
+         put raFollowCount() && "following" && numToCodepoint(183) && raPostCountBy(sHandle) && "posts" into field "raMeStats" of card 1
+      end if
+   end if
+   if there is a field "raMyHandle" of card "raFollowing" then
+      if sHandle is empty then
+         put "Unlock to see your handle." into field "raMyHandle" of card "raFollowing"
+      else
+         -- two lines of 32: a 64-character word does not wrap in a field
+         put char 1 to 32 of sHandle & return & char 33 to 64 of sHandle \
+               into field "raMyHandle" of card "raFollowing"
+      end if
+   end if
+end raPaintIdentity
+
+-- The status bar, painted on every card at once so the line a person reads
+-- does not depend on which card they were on when it was written. The kit's
+-- uiStatus writes the CURRENT card's line (and stays the self-check's
+-- probe); this mirrors it to the rest.
+command raSay pText, pKind
+   local tCard, tColor
+   uiStatus pText, pKind
+   if pKind is "ok" then
+      put kUiOk into tColor
+   else if pKind is "warn" then
+      put kUiWarn into tColor
+   else if pKind is "bad" then
+      put kUiBad into tColor
+   else
+      put kUiInkSoft into tColor
+   end if
+   repeat for each item tCard in ("1," & kRaCards)
+      if there is a field "uiStatus" of card tCard then
+         put pText into field "uiStatus" of card tCard
+         set the foregroundColor of field "uiStatus" of card tCard to tColor
+      end if
+   end repeat
+end raSay
+
+-- One line into the Activity log, from anywhere, safely. The log is the
+-- boot self-check's block (sScLines, kept by the carried block) followed by
+-- the app's own lines (sRaLog). The block writes its lines to the field
+-- UNQUALIFIED, so a line it makes while another card is in front (its
+-- delayed probe, while the welcome card shows) reaches only sScLines; a
+-- visit to Activity redraws the field from both (raLogRefresh), so the
+-- record a person copies is always whole.
+command raLogLine pLine
+   put pLine & return after sRaLog
+   if the number of lines of sRaLog > 4000 then
+      delete line 1 to 1000 of sRaLog
+   end if
+   if there is a field "raIdOut" of card "raLog" then
+      put pLine & return after field "raIdOut" of card "raLog"
+   end if
+end raLogLine
+
+command raLogCopy
+   if there is a field "raIdOut" of card "raLog" then
+      raLogRefresh
+      set the clipboardData["text"] to field "raIdOut" of card "raLog"
+      uiCopyFlash "raLogCopy"
+   end if
+end raLogCopy
 
 -- ---- probes (fail closed, name the missing piece) ----------------------------
 command raProbe
@@ -16842,15 +17820,19 @@ command raProbe
       -- library absent; reported below
    end try
    if sHaveLib is not "true" then
-      uiStatus "Riptide library missing. It is EMBEDDED in this demo, so this means the embedded copy is damaged - re-paste the whole file, or run tools/sync-demo-embeds.py.", "bad"
+      raSay "Riptide library missing. It is EMBEDDED in this app, so this means the embedded copy is damaged - re-paste the whole file, or run tools/sync-demo-embeds.py.", "bad"
    else if sCaps["canCrypto"] is not true then
-      uiStatus "SodiumXT missing, and identity cannot exist without it: install org.openxtalk.library.sodium.", "bad"
+      raSay "SodiumXT missing, and identity cannot exist without it: install org.openxtalk.library.sodium.", "bad"
    else if sCaps["hasTorrent"] is not true then
-      uiStatus "Offline mode (TorrentXT absent): identity works; publish and fetch are disabled.", "warn"
+      raSay "Offline mode (TorrentXT absent): your identity works; posting, following and messages need TorrentXT.", "warn"
    else if sCaps["hasSha3"] is not true then
-      uiStatus "Ready, minus the .onion spelling: no SHA3 provider is loaded (SodiumXT ABI 7 serves sxSha3_256; CoinXT's cxSha3_256 is the fallback).", "warn"
+      raSay "Ready, minus the .onion spelling: no SHA3 provider is loaded (SodiumXT ABI 7 serves sxSha3_256; CoinXT's cxSha3_256 is the fallback).", "warn"
    else
-      uiStatus "Ready. Create or unlock your identity on this card to begin.", "ok"
+      raSay "Ready. Unlock or create your identity to begin.", "ok"
+   end if
+   -- a locked app has one place to be
+   if sMasterSeed is empty and there is a card "raWelcome" then
+      go to card "raWelcome"
    end if
 end raProbe
 
@@ -16858,18 +17840,17 @@ end raProbe
 command raCreate
    local tPass, tPath, tFolder, tSeed, tSealed, tSaved, tErr, tFailed
    if sHaveLib is not "true" or sCaps["canCrypto"] is not true then
-      uiStatus "Cannot create an identity without the library and SodiumXT (see above).", "bad"
+      raWcSay "Cannot create an identity without the library and SodiumXT (see the line below).", "bad"
       exit raCreate
    end if
-   put field "raPassphrase" into tPass
+   put raPassValue() into tPass
    if the number of chars of tPass < 8 then
-      put "REFUSED: use a passphrase of at least 8 characters." & return into field "raIdOut"
+      raWcSay "Use a passphrase of at least 8 characters.", "bad"
       exit raCreate
    end if
-   put field "raKeyFile" into tPath
+   put field "raKeyFile" of card "raWelcome" into tPath
    if there is a file tPath then
-      put "REFUSED: a key file already exists at" && tPath & return \
-            & "Unlock it, or point the key-file field somewhere new." & return into field "raIdOut"
+      raWcSay "A key file already exists there. Unlock it, or change the key file path below to make a second identity.", "bad"
       exit raCreate
    end if
    put false into tFailed
@@ -16903,24 +17884,26 @@ command raCreate
    put empty into tSeed
    put empty into tSealed
    if tFailed then
-      put "Create failed:" && tErr & return into field "raIdOut"
+      raWcSay "Could not create the identity:" && tErr, "bad"
+      raLogLine "Create failed:" && tErr
       exit raCreate
    end if
-   put "Identity CREATED and sealed (RIPTKEY1, Argon2id) at:" && tPath & return into field "raIdOut"
-   put "Write the passphrase down; the seed cannot be recovered without it." & return after field "raIdOut"
+   raLogLine "Identity CREATED and sealed (RIPTKEY1, Argon2id) at:" && tPath
+   raLogLine "Write the passphrase down; the seed cannot be recovered without it."
+   put true into sJustCreated
    raIdentityReady
 end raCreate
 
 command raUnlock
    local tPass, tPath, tRaw, tMaster, tErr, tFailed
    if sHaveLib is not "true" or sCaps["canCrypto"] is not true then
-      uiStatus "Cannot unlock without the library and SodiumXT (see above).", "bad"
+      raWcSay "Cannot unlock without the library and SodiumXT (see the line below).", "bad"
       exit raUnlock
    end if
-   put field "raPassphrase" into tPass
-   put field "raKeyFile" into tPath
+   put raPassValue() into tPass
+   put field "raKeyFile" of card "raWelcome" into tPath
    if there is no file tPath then
-      put "REFUSED: no key file at" && tPath & return into field "raIdOut"
+      raWcSay "There is no key file at that path. Create a new identity, or point the path at your key file.", "bad"
       exit raUnlock
    end if
    put false into tFailed
@@ -16939,10 +17922,12 @@ command raUnlock
    put empty into tMaster
    put empty into tRaw
    if tFailed then
-      put "Unlock failed:" && tErr & return into field "raIdOut"
+      raWcSay "That passphrase did not open this key file.", "bad"
+      raLogLine "Unlock failed:" && tErr
       exit raUnlock
    end if
-   put "Identity UNLOCKED from" && tPath & return into field "raIdOut"
+   raLogLine "Identity UNLOCKED from" && tPath
+   put false into sJustCreated
    raIdentityReady
 end raUnlock
 
@@ -16952,38 +17937,57 @@ end raUnlock
 -- refused by BEP44, so the network's number is the truthful one).
 command raIdentityReady
    local tOk
+   raPassClear
+   raWcSay empty, empty
    put rsHandleFromSeed(sIdSeed) into sHandle
    put rsOnionFromHandle(sHandle) into sOnion
-   put "handle (the key your feed publishes under):" & return & "  " & sHandle & return after field "raIdOut"
+   raLogLine "handle (the key your feed publishes under):" & return & "  " & sHandle
    if sOnion is empty then
-      put "onion spelling: unavailable (no SHA3 provider; identity still works)" & return after field "raIdOut"
+      raLogLine "onion spelling: unavailable (no SHA3 provider; identity still works)"
    else
-      put "the SAME key as an onion identity:" & return & "  " & sOnion & return after field "raIdOut"
+      raLogLine "the SAME key as an onion identity:" & return & "  " & sOnion
    end if
    put 0 into sSeq
    put empty into sMyLatest
+   -- the saved state FIRST (our head seq, the reader watermarks, the follow
+   -- list and the post cache), so everything below starts from what this
+   -- identity already knew rather than from nothing
+   raAppLoad
+   raSocialLoad
+   -- no placeholder name: a follower would see every unnamed person as
+   -- the same "Riptide user"; unnamed, everyone shows as @<their handle>
    raStartSession
    if sSession is an integer and sSession > 0 then
       put rsRequestHead(sSession, sHandle) into tOk
       if tOk is true then
          put "true" into sAwaitOwn
          put the milliseconds + kDhtWaitMs into sWaitUntil
-         put "recovering your head from the DHT (fresh identities start at seq 0)..." & return after field "raIdOut"
+         raLogLine "recovering your head from the DHT (fresh identities start at seq 0)..."
       end if
       raDmBringUp
    else
-      put "no session: posts stay disabled until TorrentXT is available." & return after field "raIdOut"
+      raLogLine "no session: posting stays disabled until TorrentXT is available."
    end if
-   -- phase 8, LAST: the Nostr key and the saved app state both derive from
-   -- the master, so they can only exist once the keyring does. Neither
-   -- publishes anything or dials anything - that stays a click.
+   -- phase 8, LAST: the Nostr key derives from the master, so it can only
+   -- exist once the keyring does. It publishes and dials nothing - that
+   -- stays a click.
    raNxIdentityReady
-   raAppLoad
-   -- the status line doubles as the identity chip: one glance says who is
-   -- unlocked, from any card
-   uiStatus "Unlocked as" && raDmShort(sHandle) && \
-         "- posting, DMs, devices and Nostr are live. Lock when done.", "ok"
+   raNxPaintFollows
+   raNxPaintRelayField
    raGateIdentity
+   raPaintIdentity
+   put 0 into sSyncRoundAt
+   put the milliseconds + kRepublishMs into sRepublishAt
+   go to card 1
+   raNavMark "raNavHome"
+   raPaintTimeline
+   raPaintFollowing
+   raDmPaintContacts
+   if sJustCreated is true then
+      raSay "Welcome to Riptide. Set your display name on your profile, then share your handle so people can follow you.", "ok"
+   else
+      raSay "Unlocked as" && raNameOf(sHandle) & ". Posting, following and messages are live. Lock when you are done.", "ok"
+   end if
 end raIdentityReady
 
 -- Phase 4 bring-up, run once per unlock: derive the kx prekey pair,
@@ -17006,12 +18010,13 @@ command raDmBringUp
       raDmLog "prekey record refused:" && rsLastError()
       exit raDmBringUp
    end if
+   put tPrekey into sMyPrekeyBytes
    put rsPublishImmutable(sSession, tPrekey) into sMyPrekeyTarget
    if sMyPrekeyTarget is empty then
       raDmLog "prekey publish failed:" && rsLastError()
    else
       raDmLog "prekey published at" && sMyPrekeyTarget & \
-            "; your next post's head will advertise it."
+            "; your next head will advertise it."
    end if
    put rsDmJoinInbox(sSession, sHandle, raMediaFolder()) into tH
    if tH is empty then
@@ -17020,26 +18025,23 @@ command raDmBringUp
    else
       put tH into sDmInbox
       raDmLog "inbox open at swarm" && rsInboxId(sHandle) & \
-            "; strangers who follow you can now knock."
+            "; people who follow you can now reach you."
    end if
    raDmPaintMine
 end raDmBringUp
 
--- The inbox status cap on the Messages card, painted on state change.
+-- The inbox status line on the Messages card, painted on state change.
 command raDmPaintMine
    local tLine
    if sHandle is empty then
-      put "Unlock on the Feed card first; the inbox derives from your identity." into tLine
+      put "Unlock to open your inbox." into tLine
    else
-      if sMyPrekeyTarget is empty then
-         put "prekey: NOT published. " into tLine
-      else
-         put "prekey: published. " into tLine
-      end if
       if sDmInbox is empty then
-         put "inbox: NOT joined." after tLine
+         put "Your inbox is not open, so nobody can start a chat with you (see Activity)." into tLine
+      else if sMyPrekeyTarget is empty then
+         put "Inbox open. Your prekey did not publish yet, so new contacts cannot reach you until it does." into tLine
       else
-         put "inbox: joined (swarm" && rsInboxId(sHandle) & ")." after tLine
+         put "Inbox open: people can start a chat with you." into tLine
       end if
    end if
    if there is a field "raDmMine" of card "raMessages" then
@@ -17050,16 +18052,29 @@ command raDmPaintMine
    end if
 end raDmPaintMine
 
+-- The DM rail's technical lines: the Activity log, plus the newest one as
+-- the conversation header's status, so "what is it doing" is one glance.
 command raDmLog pLine
-   if there is a field "raDmLog" of card "raMessages" then
-      put pLine & return after field "raDmLog" of card "raMessages"
+   raLogLine "dm:" && pLine
+   if there is a field "raDmState" of card "raMessages" then
+      put pLine into field "raDmState" of card "raMessages"
    end if
 end raDmLog
 
+-- A system line in a conversation (connected, closed, the call's progress).
+-- It belongs to the conversation of the peer it is about when that is
+-- known, else to the one on screen.
 command raDmChatLine pLine
-   if there is a field "raDmChat" of card "raMessages" then
-      put pLine & return after field "raDmChat" of card "raMessages"
+   local tWho
+   put sDmTheirHandle[sDmActivePeer] into tWho
+   if tWho is empty then
+      put sDmSel into tWho
    end if
+   if tWho is empty then
+      raLogLine "dm:" && pLine
+      exit raDmChatLine
+   end if
+   raChatAdd tWho, "sys", pLine
 end raDmChatLine
 
 private function raDmShort pHandleHex
@@ -17068,12 +18083,21 @@ end raDmShort
 
 command raLock
    raClearKeys
-   put "LOCKED: the identity seed left memory. Unlock to publish again." & return into field "raIdOut"
-   uiStatus "Locked: the seed left memory. Unlock to act again.", "warn"
+   raLogLine "LOCKED: the identity seed left memory."
    raGateIdentity
+   raPaintIdentity
+   raWelcomePaint
+   if there is a card "raWelcome" then
+      go to card "raWelcome"
+   end if
+   raSay "Locked: your key left memory. Unlock to continue.", "warn"
 end raLock
 
 command raClearKeys
+   -- the social cache flushes FIRST, while the master seed can still seal it
+   if sSocialDirty is "true" then
+      raSocialSave
+   end if
    raDmTeardown
    raLanLeave
    raAnonStop
@@ -17095,7 +18119,12 @@ command raClearKeys
    put 0 into sSeq
    put empty into sMyLatest
    put empty into sMyPrekeyTarget
+   put empty into sMyPrekeyBytes
    put empty into sAwaitOwn
+   -- the social layer: who you follow and what you read are the social
+   -- graph, so they leave memory with the key (the cache stays sealed on disk)
+   raSocialForget
+   raPassClear
 end raClearKeys
 
 -- The clean-close half of the secretstream, and the reason the far side
@@ -17136,7 +18165,8 @@ end raDmPushClose
 -- End every DM conversation: say goodbye, then free the secretstream
 -- handles (SodiumXT has no unload hook; sxFreeStream is idempotent) and
 -- forget the per-peer state. The inbox swarms stay in the session - they
--- carry no secrets.
+-- carry no secrets. The conversations' text goes too: messages live in
+-- memory only, and a locked app keeps none.
 command raDmTeardown
    local tPeer, tErr
    raDcTeardown
@@ -17167,6 +18197,11 @@ command raDmTeardown
    put empty into sDmTargetKx
    put empty into sDmAwaitDmHead
    put empty into sDmAwaitPrekey
+   put empty into sChat
+   put empty into sChatUnread
+   put empty into sDmSel
+   raDmPaintContacts
+   raDmPaintChat
 end raDmTeardown
 
 -- ---- the session + the pump --------------------------------------------------
@@ -17192,7 +18227,7 @@ command raStartSession
          btDhtAddBootstrap sSession, "dht.transmissionbt.com", 6881
       end if
    catch tErr
-      uiStatus "TorrentXT session failed:" && tErr, "bad"
+      raSay "TorrentXT session failed:" && tErr, "bad"
    end try
    if sSession is an integer and sSession > 0 and sPolling is not "true" then
       put "true" into sPolling
@@ -17298,6 +18333,15 @@ command raPoll
       if sLanHost is not empty then
          raLanPaintDevices
       end if
+      -- the social layer: the timeline's background sync, the debounced
+      -- cache save, the keep-alive republish, and the repaint of whatever
+      -- they changed. Its own try, like every other tier member: a bad
+      -- sync tick must never cost the pump.
+      try
+         raSyncTick
+      catch tErr
+         -- the next tick retries
+      end try
       -- phase 8: the debounced app-state save and the relay connect
       -- watchdog. On the PAINT tier, never the transport tier: neither is
       -- latency-sensitive, and a state file written 30 times a second
@@ -17329,49 +18373,23 @@ private function raPollDelay
    return kPollMs
 end raPollDelay
 
--- Append a status line to a Feed-card (card 1) field from anywhere, safely.
--- The pump and its handlers run on whatever card the user is viewing, but
--- the feed status fields live only on card 1; a bare cross-card reference
--- throws, and several callers run outside raPoll's try, so a throw here
--- would kill the pump. Qualify to card 1 and guard existence, exactly as
--- raDmLog / raLanLog / raAnonLog do for their own cards.
+-- One line about the feed into the Activity log, from anywhere, safely.
+-- (Its first argument named a Feed-card field when the feed was a log; the
+-- feed is rendered now, and every such note lands in the one log.)
 command raFeedNote pFieldName, pLine
-   if there is a field pFieldName of card 1 then
-      put pLine & return after field pFieldName of card 1
-   end if
+   raLogLine "feed:" && pLine
 end raFeedNote
 
--- The deadline half: the walk keys every request by the exact target it
--- awaits, so a DHT that never answers expires visibly instead of hanging.
+-- The deadline half for the single-flight lookups (our own head at unlock,
+-- and the DM dance): each one expires visibly instead of hanging. The
+-- timeline's many lookups carry their own deadlines (raSyncExpire).
 command raExpire
    if the milliseconds <= sWaitUntil then
       exit raExpire
    end if
-   -- The pump runs from every card since phase 4, but these status fields
-   -- live on the Feed card (card 1). Clear the state flags UNCONDITIONALLY
-   -- (they must expire wherever the user is), then land the message on card
-   -- 1, guarded - a bare cross-card field reference throws "no such object"
-   -- and, because raExpire runs OUTSIDE raPoll's try, that throw would kill
-   -- the whole pump. raFeedNote qualifies + guards, like raDmLog et al.
    if sAwaitOwn is "true" then
       put empty into sAwaitOwn
-      raFeedNote "raIdOut", "no head found for your key (fresh identity, or not yet propagated); starting at seq 0."
-   end if
-   if sAwaitHead is "true" then
-      put empty into sAwaitHead
-      raFeedNote "raTheirFeed", "the DHT did not answer for that head in time; try again in a minute (bootstrap takes a moment)."
-   end if
-   if sWalkNext is not empty then
-      raFeedNote "raTheirFeed", "the DHT did not answer for post target" && sWalkNext && "in time; walk abandoned."
-      put empty into sWalkNext
-   end if
-   if sChunkNext is not empty then
-      raFeedNote "raTheirFeed", "chunk" && sChunkNext && "did not arrive in time; post" && sChunkPostNum && "keeps its (chunked) placeholder."
-      raChunkAbandon
-   end if
-   if sProfileNext is not empty then
-      raFeedNote "raTheirFeed", "the profile-name blob did not arrive in time; showing the head's own name."
-      put empty into sProfileNext
+      raFeedNote empty, "no head found for your key (fresh identity, or not yet propagated); starting at seq" && sSeq & "."
    end if
    if sDmProfileNext is not empty then
       raDmLog "their profile-name blob did not arrive in time; showing the handle."
@@ -17379,11 +18397,11 @@ command raExpire
    end if
    if sDmAwaitDmHead is "true" then
       put empty into sDmAwaitDmHead
-      raDmLog "no head arrived for" && raDmShort(sDmTarget) && \
-            "in time; Start DM again in a minute."
+      raDmLog "no head arrived for" && raNameOf(sDmTarget) && \
+            "in time. Are they online, and following you? Try Connect again in a minute."
    end if
    if sDmAwaitPrekey is not empty then
-      raDmLog "their prekey record did not arrive in time; Start DM again."
+      raDmLog "their prekey record did not arrive in time; try Connect again."
       put empty into sDmAwaitPrekey
    end if
 end raExpire
@@ -17460,7 +18478,7 @@ private command raHeadAccepted pHandleHex, pSeq
 end raHeadAccepted
 
 command raHandleEvent pEvent
-   local tHead, tPost, tNext, tOk, tKeyCount
+   local tHead, tOk, tKeyCount, tKey, tTarget
    -- DHT targets compare as TEXT, a letter on each side: bare `is` reads
    -- two number-like texts as NUMBERS (suite engine note 2.11), so a
    -- 40-hex target shaped digits-e-digits could match a different one,
@@ -17476,15 +18494,16 @@ command raHandleEvent pEvent
             if tKeyCount > 0 then
                raHeadAccepted sDmTarget, tHead["seq"]
                put empty into sDmAwaitDmHead
+               raSyncNoteName sDmTarget, tHead["displayName"]
                if ("h" & tHead["prekeyTarget"]) is ("h" & rsZeroTarget()) then
-                  raDmLog raDmShort(sDmTarget) && "publishes no prekey" && \
-                        "(their app predates DMs); cannot open a channel."
+                  raDmLog raNameOf(sDmTarget) && "publishes no prekey" && \
+                        "(their app predates messages); cannot open a chat."
                else
                   put tHead["prekeyTarget"] into sDmAwaitPrekey
                   put the milliseconds + kDhtWaitMs into sWaitUntil
                   put rsRequestImmutable(sSession, sDmAwaitPrekey) into tOk
                   if tOk is true then
-                     raDmLog "head verified; fetching their prekey record..."
+                     raDmLog "found them; checking their prekey..."
                   else
                      raDmLog "prekey lookup refused:" && rsLastError()
                      put empty into sDmAwaitPrekey
@@ -17492,10 +18511,7 @@ command raHandleEvent pEvent
                   -- A.9: the head also names a profileMeta blob (spec
                   -- 4.1's display name); fetch and show it beside the
                   -- handle, degrading honestly when it is absent
-                  if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
-                     raDmLog "they publish no profile-name blob;" && \
-                           "showing the handle."
-                  else
+                  if ("h" & tHead["profileMetaTarget"]) is not ("h" & rsZeroTarget()) then
                      put tHead["profileMetaTarget"] into sDmProfileNext
                      put rsRequestImmutable(sSession, sDmProfileNext) \
                            into tOk
@@ -17516,139 +18532,58 @@ command raHandleEvent pEvent
                raHeadAccepted sHandle, tHead["seq"]
                put empty into sAwaitOwn
                put tHead["seq"] into sSeq
+               put pEvent["value"] into sMyHeadBytes
                if ("h" & tHead["latestPostTarget"]) is not ("h" & rsZeroTarget()) then
                   put tHead["latestPostTarget"] into sMyLatest
                end if
-               raFeedNote "raIdOut", "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"]
+               if ("h" & tHead["profileMetaTarget"]) is not ("h" & rsZeroTarget()) then
+                  put tHead["profileMetaTarget"] into sMyProfileTarget
+               end if
+               -- the name the network holds wins over the placeholder, never
+               -- over a name this machine saved
+               if tHead["displayName"] is not empty and sMyNameSaved is not "true" then
+                  put tHead["displayName"] into sMyName
+                  raPaintIdentity
+               end if
+               raFeedNote empty, "recovered your head: seq" && sSeq & comma && "latest post" && tHead["latestPostTarget"]
+               raSyncWalkFrom sHandle, tHead["latestPostTarget"]
             end if
          end if
-         if sAwaitHead is "true" then
-            put rsIngestHead(pEvent, sFollowHandle, \
-                  raHeadWatermark(sFollowHandle, 0)) into tHead
-            put the number of lines of the keys of tHead into tKeyCount
-            if tKeyCount > 0 then
-               raHeadAccepted sFollowHandle, tHead["seq"]
-               put empty into sAwaitHead
-               raFeedNote "raTheirFeed", "head VERIFIED for" && tHead["displayName"] && "(seq" && tHead["seq"] & ")"
-               -- A.9 (2026-08-23): the profileMeta READER. The head
-               -- names a display-name blob (spec 4.1: "so a reader can
-               -- show a name without parsing the head's own name field
-               -- out of band"); fetch it and show it, verified by its
-               -- content address on arrival - and say so honestly when
-               -- the head carries the none target instead.
-               if ("h" & tHead["profileMetaTarget"]) is ("h" & rsZeroTarget()) then
-                  raFeedNote "raTheirFeed", "no profile-name blob published (the head carries the none target)."
-               else
-                  put tHead["profileMetaTarget"] into sProfileNext
-                  put the milliseconds + kDhtWaitMs into sWaitUntil
-                  put rsRequestImmutable(sSession, sProfileNext) into tOk
-                  if tOk is not true then
-                     raFeedNote "raTheirFeed", "profile-name lookup refused:" && rsLastError() && "- showing the head's own name."
-                     put empty into sProfileNext
-                  end if
-               end if
-               if ("h" & tHead["latestPostTarget"]) is ("h" & rsZeroTarget()) then
-                  raFeedNote "raTheirFeed", "no posts yet."
-               else
-                  put tHead["latestPostTarget"] into sWalkNext
-                  put 0 into sWalkCount
-                  put the milliseconds + kDhtWaitMs into sWaitUntil
-                  put rsRequestImmutable(sSession, sWalkNext) into tOk
-                  if tOk is not true then
-                     raFeedNote "raTheirFeed", "lookup refused:" && rsLastError()
-                     put empty into sWalkNext
-                  end if
-               end if
-            end if
+         -- the timeline's own lookups, keyed by the author's key
+         put toLower(pEvent["publicKey"]) into tKey
+         if tKey is not empty and sSyncHead[tKey] is not empty then
+            raSyncHeadArrived pEvent, tKey
          end if
          break
       case "dhtImmutableItem"
-         if sDmAwaitPrekey is not empty and ("h" & pEvent["target"]) is ("h" & sDmAwaitPrekey) then
+         put toLower(pEvent["target"]) into tTarget
+         if sDmAwaitPrekey is not empty and ("h" & tTarget) is ("h" & sDmAwaitPrekey) then
             raDmPrekeyArrived pEvent["value"]
          end if
-         -- the kind-C reassembly walk (A2) and the profileMeta reader
-         -- (A.9) ride the same event stream as the chain walk, each with
-         -- its own await slot - independent ifs, the prekey-vs-walk
-         -- pattern, so concurrent lookups never steal each other's answer
-         if sChunkNext is not empty and ("h" & pEvent["target"]) is ("h" & sChunkNext) then
-            raChunkArrived pEvent
-         end if
-         if sProfileNext is not empty and ("h" & pEvent["target"]) is ("h" & sProfileNext) then
-            raFeedNote "raTheirFeed", raProfileLine(pEvent, sProfileNext)
-            put empty into sProfileNext
-         end if
+         -- every await slot is matched on its own, the prekey-vs-walk
+         -- pattern, so two lookups that name one target (a post someone
+         -- quotes and its author's chain) never steal each other's answer
          if sDmProfileNext is not empty and \
-               ("h" & pEvent["target"]) is ("h" & sDmProfileNext) then
+               ("h" & tTarget) is ("h" & sDmProfileNext) then
             raDmLog raProfileLine(pEvent, sDmProfileNext)
+            raSyncNoteName sDmTarget, raProfileName(pEvent, sDmProfileNext)
             put empty into sDmProfileNext
          end if
-         if sWalkNext is not empty and ("h" & pEvent["target"]) is ("h" & sWalkNext) then
-            put rsIngestPost(pEvent, sWalkNext, sFollowHandle) into tPost
-            put the number of lines of the keys of tPost into tKeyCount
-            if tKeyCount is 0 then
-               raFeedNote "raTheirFeed", "post REFUSED (tamper or wrong author):" && rsLastError()
-               put empty into sWalkNext
-            else
-               add 1 to sWalkCount
-               -- THE KIND BRANCH (A2, 2026-08-23). Before it, this line
-               -- rendered tPost["text"] unconditionally, and a kind-C
-               -- post has no "text" key - so it displayed as a VERIFIED
-               -- post with blank text, the worst failure shape, because
-               -- authorSig passes and nothing looks wrong. A chunked
-               -- post now renders an honest placeholder and starts the
-               -- reassembly walk; the full text prints under the same
-               -- post number once every part has verified.
-               if tPost["kind"] is "C" then
-                  set the itemDelimiter to comma
-                  raFeedNote "raTheirFeed", "post" && sWalkCount && "[t=" & tPost["timestamp"] & "] authorSig VERIFIED: (chunked," && the number of items in tPost["chunkTargets"] && "part(s) - fetching the text...)"
-                  raChunkStart tPost["chunkTargets"]
-               else
-                  raFeedNote "raTheirFeed", "post" && sWalkCount && "[t=" & tPost["timestamp"] & "] authorSig VERIFIED:" && tPost["text"]
-               end if
-               if tPost["mediaTargets"] is not empty then
-                  -- a verified post's media list is trustworthy (it sat
-                  -- under the authorSig); surface it and pre-fill the strip
-                  -- with the first hash so Fetch + play is one click
-                  raFeedNote "raTheirFeed", "  media attachment(s):" && tPost["mediaTargets"]
-                  -- set the itemDelimiter right before the item read, and
-                  -- target card 1's field, guarded. This once blamed a
-                  -- global delimiter left as "/" by the LIBRARY
-                  -- (rsMediaCreate, fixed at its source to save and restore
-                  -- the narrowest span); the suite's engine note 2.3 has
-                  -- since observed the itemDelimiter handler-local on
-                  -- Windows and Linux, so there no other handler can set it
-                  -- for this one. The line stays: one line is cheaper than
-                  -- an assumption, and macOS has not run the probe.
-                  set the itemDelimiter to comma
-                  if there is a field "raMediaHash" of card 1 then
-                     if field "raMediaHash" of card 1 is empty then
-                        put item 1 of tPost["mediaTargets"] into \
-                              field "raMediaHash" of card 1
-                     end if
-                  end if
-               end if
-               put tPost["prevPostTarget"] into tNext
-               if ("h" & tNext) is ("h" & rsZeroTarget()) then
-                  raFeedNote "raTheirFeed", "chain COMPLETE:" && sWalkCount && "post(s), every authorSig verified."
-                  put empty into sWalkNext
-               else if sWalkCount >= kWalkMax then
-                  raFeedNote "raTheirFeed", "stopped at the" && kWalkMax & "-post demo cap; the chain continues at" && tNext
-                  put empty into sWalkNext
-               else
-                  put tNext into sWalkNext
-                  put the milliseconds + kDhtWaitMs into sWaitUntil
-                  put rsRequestImmutable(sSession, sWalkNext) into tOk
-                  if tOk is not true then
-                     raFeedNote "raTheirFeed", "lookup refused:" && rsLastError()
-                     put empty into sWalkNext
-                  end if
-               end if
+         if tTarget is not empty then
+            if sSyncPost[tTarget] is not empty then
+               raSyncPostArrived pEvent, tTarget
+            end if
+            if sSyncChunk[tTarget] is not empty then
+               raSyncChunkArrived pEvent, tTarget
+            end if
+            if sSyncName[tTarget] is not empty then
+               raSyncNameArrived pEvent, tTarget
             end if
          end if
          break
       case "dhtPut"
          -- store confirmations arrive here; the publish calls already
-         -- validated synchronously, so these stay quiet in the demo
+         -- validated synchronously, so these stay quiet
          break
       case "metadataReceived"
          -- B7 (2026-08-23): a sequential media fetch learns its piece
@@ -17663,9 +18598,9 @@ command raHandleEvent pEvent
                pEvent["torrent"] is sMediaWatch then
             put rsMediaStreamPlan(sMediaWatch) into tOk
             if tOk is empty then
-               raFeedNote "raTheirFeed", "media metadata arrived; streaming plan skipped (" & rsLastError() & ") - the fetch stays sequential."
+               raFeedNote empty, "media metadata arrived; streaming plan skipped (" & rsLastError() & ") - the fetch stays sequential."
             else
-               raFeedNote "raTheirFeed", "media metadata arrived; the front" && tOk && "piece(s) are deadline-prioritized for playback."
+               raFeedNote empty, "media metadata arrived; the front" && tOk && "piece(s) are deadline-prioritized for playback."
             end if
          end if
          if sLanMediaWatch is an integer and sLanMediaWatch > 0 and \
@@ -17680,88 +18615,6 @@ command raHandleEvent pEvent
          break
    end switch
 end raHandleEvent
-
--- ---- the kind-C reassembly walk (backlog A2) ---------------------------------
--- The chain walk verifies a kind-C post's SIGNATURE, but the signature
--- covers the chunk TARGETS, not the text; these helpers fetch each part,
--- verify it by content address (which is what extends the authorSig to
--- the bytes), and print the reassembled text under the post's own walk
--- number. One reassembly at a time, one immutable await at a time - the
--- chain walk's own discipline, run concurrently beside it.
-
-private command raChunkStart pTargets
-   if sChunkNext is not empty then
-      raFeedNote "raTheirFeed", "  (another chunked post is still reassembling; this one keeps its placeholder - Fetch again for its text)"
-      exit raChunkStart
-   end if
-   put pTargets into sChunkTargets
-   put empty into sChunkParts
-   put sWalkCount into sChunkPostNum
-   raChunkRequestNext
-end raChunkStart
-
--- Ask for the first part not yet verified; with none left, assemble.
--- Duplicate targets inside one post are legal wire and cost one fetch:
--- the parts array is keyed by target.
-private command raChunkRequestNext
-   local tItem, tWant, tOk
-   put empty into tWant
-   set the itemDelimiter to comma
-   repeat for each item tItem in sChunkTargets
-      if sChunkParts[tItem] is empty then
-         put tItem into tWant
-         exit repeat
-      end if
-   end repeat
-   if tWant is empty then
-      raChunkFinish
-      exit raChunkRequestNext
-   end if
-   put tWant into sChunkNext
-   put the milliseconds + kDhtWaitMs into sWaitUntil
-   put rsRequestImmutable(sSession, sChunkNext) into tOk
-   if tOk is not true then
-      raFeedNote "raTheirFeed", "  chunk lookup refused:" && rsLastError() && "- post" && sChunkPostNum && "keeps its placeholder."
-      raChunkAbandon
-   end if
-end raChunkRequestNext
-
--- One part arrived: verify by content address BEFORE keeping a byte
--- (rsIngestBlob). A refused part abandons the reassembly LOUDLY - the
--- placeholder stands, and nothing unverified is ever rendered.
-private command raChunkArrived pEvent
-   local tBytes
-   put rsIngestBlob(pEvent, sChunkNext) into tBytes
-   if tBytes is empty then
-      raFeedNote "raTheirFeed", "  chunk" && sChunkNext && "REFUSED:" && rsLastError() && "- post" && sChunkPostNum && "keeps its placeholder."
-      raChunkAbandon
-      exit raChunkArrived
-   end if
-   put tBytes into sChunkParts[sChunkNext]
-   put empty into sChunkNext
-   raChunkRequestNext
-end raChunkArrived
-
--- Every part is in: the library re-verifies each against its target and
--- decodes the CONCATENATION (a producer may split inside a UTF-8
--- sequence, so only the whole is decodable) - then the text prints under
--- the post's own number.
-private command raChunkFinish
-   local tText
-   put rsAssembleChunkText(sChunkTargets, sChunkParts) into tText
-   if tText is empty then
-      raFeedNote "raTheirFeed", "post" && sChunkPostNum && "(chunked) REFUSED at reassembly:" && rsLastError()
-   else
-      raFeedNote "raTheirFeed", "post" && sChunkPostNum && "(chunked) full text VERIFIED:" && tText
-   end if
-   raChunkAbandon
-end raChunkFinish
-
-private command raChunkAbandon
-   put empty into sChunkNext
-   put empty into sChunkTargets
-   put empty into sChunkParts
-end raChunkAbandon
 
 -- ---- the profileMeta reader (remaining-work A.9) -----------------------------
 -- One verified log line for an arrived profile blob: content address
@@ -17795,31 +18648,47 @@ private function raProfileLine pEvent, pExpected
    return "profile name (spec 4.1, content-verified):" && tName
 end raProfileLine
 
--- ---- 2. my feed --------------------------------------------------------------
+-- The verified name alone, or empty: raProfileLine's verdict, read back, so
+-- the checks live in one place.
+private function raProfileName pEvent, pExpected
+   local tLine, tPrefix
+   put "profile name (spec 4.1, content-verified): " into tPrefix
+   put raProfileLine(pEvent, pExpected) into tLine
+   if char 1 to (the number of chars of tPrefix) of tLine is tPrefix then
+      return char (the number of chars of tPrefix + 1) to -1 of tLine
+   end if
+   return empty
+end raProfileName
+
+-- ---- 2. posting ---------------------------------------------------------------
 command raPost
-   local tText, tName, tPost, tTarget, tHead, tOk, tMediaHash, tProfile
-   local tMediaCount, tCapacity, tKindNote
+   local tText, tPost, tTarget, tMediaHash, tNow, tPrev, tKind
+   local tMediaCount, tCapacity, tKindNote, tChunkList
    if sIdSeed is empty then
-      uiStatus "Unlock (or create) your identity before posting.", "warn"
+      raSay "Unlock (or create) your identity before posting.", "warn"
       exit raPost
    end if
    raStartSession
    if sSession is not an integer or sSession <= 0 then
-      uiStatus "No TorrentXT session: cannot publish.", "bad"
+      raSay "No TorrentXT session: cannot publish.", "bad"
       exit raPost
    end if
-   put field "raCompose" into tText
-   if tText is empty then
-      uiStatus "Nothing to post: the compose field is empty.", "warn"
+   put field "raCompose" of card 1 into tText
+   if word 1 to -1 of tText is empty then
+      raSay "Nothing to post: write something first.", "warn"
       exit raPost
    end if
-   put field "raName" into tName
+   -- a reply carries its one-line reference ABOVE the text (the reply
+   -- convention, raReplyRef): the post is still an ordinary RSP1 post
+   if sReplyTo is not empty then
+      put kRaReplyPrefix & sReplyTo & return & tText into tText
+   end if
    -- BYTES of UTF-8, not chars: rsBuildHead caps the encoded name at 64 bytes, so
    -- until 2026-09-24 a name of at most 64 characters but over 64 bytes (any run of
    -- multi-byte characters) passed this check and then came back as a bare
    -- "rsBuildHead refused:" instead of this message.
-   if the number of bytes in textEncode(tName, "UTF-8") > kNameMax then
-      uiStatus "The display name is over the 64-byte head budget; shorten it.", "warn"
+   if the number of bytes in textEncode(sMyName, "UTF-8") > kNameMax then
+      raSay "Your display name is over the 64-byte head budget; shorten it on your profile.", "warn"
       exit raPost
    end if
    -- the attachment seeds FIRST, so a refusal (file moved, torrent error)
@@ -17828,7 +18697,7 @@ command raPost
    if sPendingMediaPath is not empty then
       put rsMediaCreate(sSession, sPendingMediaPath) into tMediaHash
       if tMediaHash is empty then
-         uiStatus "rsMediaCreate refused:" && rsLastError(), "bad"
+         raSay "rsMediaCreate refused:" && rsLastError(), "bad"
          exit raPost
       end if
    end if
@@ -17844,70 +18713,122 @@ command raPost
       put 1 into tMediaCount
    end if
    put empty into tKindNote
+   put empty into tPost
+   put the seconds into tNow
+   put sMyLatest into tPrev
    put rsPostTextCapacity(tMediaCount) into tCapacity
    if tCapacity is not empty and \
          the number of bytes in textEncode(tText, "UTF-8") > tCapacity then
-      put rsPublishChunkedPost(sSession, the seconds, sMyLatest, tText, \
+      put rsPublishChunkedPost(sSession, tNow, sMyLatest, tText, \
             tMediaHash, sIdSeed) into tTarget
       if tTarget is empty then
-         uiStatus "rsPublishChunkedPost refused:" && rsLastError(), "bad"
+         raSay "rsPublishChunkedPost refused:" && rsLastError(), "bad"
          exit raPost
       end if
       put " (chunked)" into tKindNote
+      put "C" into tKind
    else
-      put rsBuildPost(the seconds, sMyLatest, tText, tMediaHash, sIdSeed) into tPost
+      put rsBuildPost(tNow, sMyLatest, tText, tMediaHash, sIdSeed) into tPost
       if tPost is empty then
-         uiStatus "rsBuildPost refused:" && rsLastError(), "bad"
+         raSay "rsBuildPost refused:" && rsLastError(), "bad"
          exit raPost
       end if
       put rsPublishPost(sSession, tPost) into tTarget
       if tTarget is empty then
-         uiStatus "rsPublishPost failed:" && rsLastError(), "bad"
+         raSay "rsPublishPost failed:" && rsLastError(), "bad"
          exit raPost
+      end if
+      put "D" into tKind
+   end if
+   if not raPublishMyHead(tTarget) then
+      exit raPost
+   end if
+   put tTarget into sMyLatest
+   -- into the cache NOW, so the post is on the timeline without waiting for
+   -- the DHT round trip; the sync walk then stops at it (it is held). The
+   -- signed post bytes are kept for the keep-alive
+   put toLower(tTarget) into tTarget
+   -- a chunked post's record is rebuilt here from the same inputs (signing
+   -- is deterministic) and kept only when it hashes to the target the
+   -- library published, so the keep-alive refreshes it like a direct one;
+   -- its chunks are re-split from the text at republish (raRepublishChunks)
+   if tKind is "C" then
+      put raChunkTargetsFor(tText) into tChunkList
+      if tChunkList is not empty then
+         put rsBuildPostChunked(tNow, tPrev, tChunkList, tMediaHash, sIdSeed) \
+               into tPost
+         if tPost is not empty and \
+               ("t" & toLower(rsImmutableTarget(tPost))) is not ("t" & tTarget) then
+            put empty into tPost
+         end if
+         put tChunkList into sPosts[tTarget]["c"]
+      end if
+   end if
+   put sHandle into sPosts[tTarget]["a"]
+   put tNow into sPosts[tTarget]["t"]
+   put toLower(tPrev) into sPosts[tTarget]["p"]
+   put tKind into sPosts[tTarget]["k"]
+   put tMediaHash into sPosts[tTarget]["m"]
+   put tText into sPosts[tTarget]["x"]
+   if tPost is not empty then
+      put tPost into sMyPostBytes[tTarget]
+   end if
+   raSocialMark
+   raLogLine "posted seq" && sSeq & tKindNote & ":" && tTarget
+   if tMediaHash is not empty then
+      raLogLine "  media seeding:" && tMediaHash
+      put empty into sPendingMediaPath
+      raAttachPaint
+   end if
+   put empty into field "raCompose" of card 1
+   put empty into sReplyTo
+   raPaintComposer
+   raPaintAll
+   raSay "Posted. Your followers see it on their next sync.", "ok"
+end raPost
+
+-- Publish our head at the next seq, naming pLatest as the newest post, with
+-- the display name, the prekey and the onion spelling. Shared by Post and
+-- by a profile save (a rename republishes the head with the posts it
+-- already names). The head's profileMeta names a display-name blob (spec
+-- 4.1): a small immutable item carrying the name's UTF-8 bytes. It is
+-- content-addressed, so republishing the same name is idempotent and a
+-- rename mints a new target. A refusal of the blob is NON-fatal: the head
+-- still publishes with the none target, and the reason lands in the log.
+-- Since phase 4 the head advertises the prekey target, so a reader can
+-- open a DM to any author whose post they verified.
+function raPublishMyHead pLatest
+   local tProfile, tHead, tOk
+   put empty into tProfile
+   if sMyName is not empty then
+      put rsPublishImmutable(sSession, textEncode(sMyName, "UTF-8")) \
+            into tProfile
+      if tProfile is empty then
+         raLogLine "profile-meta publish refused (the head carries the none" && \
+               "target):" && rsLastError()
       end if
    end if
    add 1 to sSeq
-   -- the head's profileMeta names a display-name blob (spec 4.1): a small
-   -- immutable item carrying the name's UTF-8 bytes, so a reader can show
-   -- a name without parsing the head's own name field out of band. It is
-   -- content-addressed, so republishing the same name is idempotent and a
-   -- rename mints a new target. A refusal is NON-fatal: the head still
-   -- publishes with the none target, and the reason lands in the feed log.
-   put empty into tProfile
-   if tName is not empty then
-      put rsPublishImmutable(sSession, textEncode(tName, "UTF-8")) \
-            into tProfile
-      if tProfile is empty then
-         put "profile-meta publish refused (the head carries the none" && \
-               "target):" && rsLastError() & return before field "raMyFeed"
-      end if
-   end if
-   -- since phase 4 the head advertises the prekey target, so a reader can
-   -- open a DM to any author whose post they verified
-   put rsBuildHead(sSeq, tName, tTarget, sMyPrekeyTarget, sOnion, tProfile) \
+   put rsBuildHead(sSeq, sMyName, pLatest, sMyPrekeyTarget, sOnion, tProfile) \
          into tHead
    if tHead is empty then
       subtract 1 from sSeq
-      uiStatus "rsBuildHead refused:" && rsLastError(), "bad"
-      exit raPost
+      raSay "rsBuildHead refused:" && rsLastError(), "bad"
+      return false
    end if
    put rsPublishHead(sSession, tHead, sIdSeed) into tOk
    if tOk is not true then
       subtract 1 from sSeq
-      uiStatus "rsPublishHead failed:" && rsLastError(), "bad"
-      exit raPost
+      raSay "rsPublishHead failed:" && rsLastError(), "bad"
+      return false
    end if
-   put tTarget into sMyLatest
-   if tMediaHash is empty then
-      put "seq" && sSeq & tKindNote & ":" && tText & return & "  ->" && tTarget & return before field "raMyFeed"
-   else
-      put "seq" && sSeq & tKindNote & ":" && tText & return & "  ->" && tTarget & return & "  media seeding:" && tMediaHash & return before field "raMyFeed"
-      put empty into sPendingMediaPath
-      set the label of button "raAttach" to "Attach"
-   end if
-   put empty into field "raCompose"
-   uiStatus "Posted, and the signed head republished at seq" && sSeq & ".", "ok"
-end raPost
+   put tHead into sMyHeadBytes
+   put tProfile into sMyProfileTarget
+   -- the seq is app state (RIPTSTATE1 headseq), the head bytes social cache
+   raAppMark
+   raSocialMark
+   return true
+end raPublishMyHead
 
 -- The attachment picker: choose now, seed at post time (the session is
 -- guaranteed then, and a cancelled post leaves nothing seeding). A second
@@ -17916,8 +18837,8 @@ command raAttach
    local tShortName
    if sPendingMediaPath is not empty then
       put empty into sPendingMediaPath
-      set the label of button "raAttach" to "Attach"
-      uiStatus "Attachment cleared.", empty
+      raAttachPaint
+      raSay "Attachment cleared.", empty
       exit raAttach
    end if
    answer file "Choose a photo or video to attach (it seeds from where it is):"
@@ -17934,38 +18855,1512 @@ command raAttach
    set the itemDelimiter to "/"
    put item -1 of sPendingMediaPath into tShortName
    set the itemDelimiter to comma
-   set the label of button "raAttach" to "Clear attach"
-   uiStatus "Attached" && quote & tShortName & quote & \
+   raAttachPaint
+   raSay "Attached" && quote & tShortName & quote & \
          "- it rides the next post and seeds from its current location.", empty
 end raAttach
 
--- ---- 3. follow ---------------------------------------------------------------
-command raFetch
-   local tHandle, tOk
+command raAttachPaint
+   local tShortName
+   if there is no button "raAttach" of card 1 then
+      exit raAttachPaint
+   end if
+   if sPendingMediaPath is empty then
+      set the label of button "raAttach" of card 1 to "Attach media"
+      put empty into field "raComposeInfo" of card 1
+   else
+      set the itemDelimiter to "/"
+      put item -1 of sPendingMediaPath into tShortName
+      set the itemDelimiter to comma
+      set the label of button "raAttach" of card 1 to "Remove media"
+      put tShortName into field "raComposeInfo" of card 1
+   end if
+end raAttachPaint
+
+-- An attachment link in a post (m:<hash>): fill Home's media panel and
+-- fetch, so a click on a post is the whole flow.
+command raMediaFromLink pHash
+   put toLower(word 1 of pHash) into pHash
+   if not raIsHex(pHash, 40) then
+      exit raMediaFromLink
+   end if
+   go to card 1
+   raNavMark "raNavHome"
+   put pHash into field "raMediaHash" of card 1
+   raMediaGet
+end raMediaFromLink
+
+-- ---- the social layer: following, the timeline sync, the post cache ----------
+-- WHAT THE NETWORK GIVES US, and what it does not. Every author publishes
+-- one mutable head (RSH1) that names their newest post, and every post
+-- names the one before it. There is no server to ask "what is new from the
+-- people I follow", so the app asks the DHT for each author's head in turn,
+-- and walks back from its newest post until it meets a post it already
+-- holds. Every head and post is verified on arrival (rsIngestHead,
+-- rsIngestPost) and only then stored, so the cache holds nothing a reader
+-- has not checked, and the timeline is drawn from the cache.
+--
+-- MANY LOOKUPS AT ONCE, each keyed by what it waits for. A head is matched
+-- by the author's key, a post, chunk or profile blob by its 40-hex target,
+-- so answers can arrive in any order, and each slot carries its own
+-- deadline (sSyncDl), so a DHT that never answers expires one lookup, not
+-- the sync. At most kSyncMaxInFlight are out at once: the DHT is polite to
+-- a client that does not flood it.
+--
+-- WHAT IS NOT POSSIBLE HERE, said plainly in the UI: there is no search,
+-- and you see a reply only from someone you follow (nothing indexes who
+-- replied to whom; a reader only walks the chains it knows).
+
+-- Pump work for the social layer, on the paint tier. Cheap when idle: one
+-- comparison per in-flight lookup and a round check every kSyncRoundMs.
+command raSyncTick
+   local tNow, tQueue, tH, tInFlight
+   if sHandle is empty then
+      exit raSyncTick
+   end if
+   put the milliseconds into tNow
+   raSyncExpire tNow
+   if sSession is an integer and sSession > 0 then
+      if tNow >= sSyncRoundAt then
+         put tNow + kSyncRoundMs into sSyncRoundAt
+         -- who is due: you, everyone you follow, and the profile on screen
+         put sHandle into tQueue
+         repeat for each key tH in sFollows
+            put return & tH after tQueue
+         end repeat
+         if sViewHandle is not empty then
+            put return & sViewHandle after tQueue
+         end if
+         repeat for each line tH in tQueue
+            if tH is not empty and sSyncHead[tH] is empty then
+               if sSyncChecked[tH] is not an integer or \
+                     tNow - sSyncChecked[tH] >= kSyncEveryMs then
+                  if not (tH is among the lines of sSyncQueue) then
+                     put tH & return after sSyncQueue
+                  end if
+               end if
+            end if
+         end repeat
+      end if
+      put the number of lines of the keys of sSyncDl into tInFlight
+      repeat while tInFlight < kSyncMaxInFlight and sSyncQueue is not empty
+         put line 1 of sSyncQueue into tH
+         delete line 1 of sSyncQueue
+         if tH is not empty then
+            raSyncRequestHead tH
+            add 1 to tInFlight
+         end if
+      end repeat
+      raSyncRetryChunks tInFlight
+      -- the keep-alive: DHT items expire unless someone puts them again
+      if sRepublishAt is an integer and tNow >= sRepublishAt then
+         put tNow + kRepublishMs into sRepublishAt
+         raRepublish
+      end if
+   end if
+   if sSocialDirty is "true" and sSocialSaveAt is an integer then
+      if tNow >= sSocialSaveAt then
+         raSocialSave
+      end if
+   end if
+   if sTimelineDirty is "true" then
+      put empty into sTimelineDirty
+      raPaintAll
+   end if
+   raPaintSyncPill
+end raSyncTick
+
+-- Ask now: everyone is due again (the Refresh button).
+command raSyncNow
+   local tH
+   if sHandle is empty then
+      raSay "Unlock first.", "warn"
+      exit raSyncNow
+   end if
    raStartSession
    if sSession is not an integer or sSession <= 0 then
-      uiStatus "No TorrentXT session: cannot fetch.", "bad"
-      exit raFetch
+      raSay "No TorrentXT session: the timeline cannot refresh.", "bad"
+      exit raSyncNow
    end if
-   put toLower(word 1 of field "raHandle") into tHandle
-   if the number of chars of tHandle is not 64 then
-      uiStatus "A handle is 64 hex characters (the author's public key).", "warn"
-      exit raFetch
+   repeat for each key tH in sSyncChecked
+      put 0 into sSyncChecked[tH]
+   end repeat
+   put 0 into sSyncRoundAt
+   put empty into sSyncCount
+   raSay "Refreshing: asking the network for the newest posts from you and the people you follow...", empty
+end raSyncNow
+
+-- Drop every lookup whose deadline passed. A head that never came is
+-- normal (an author offline for days still has a head, but the DHT may be
+-- slow to find it); it is logged, and retried next round.
+command raSyncExpire pNow
+   local tKey, tTarget
+   repeat for each key tKey in sSyncDl
+      if sSyncDl[tKey] is an integer and pNow > sSyncDl[tKey] then
+         delete variable sSyncDl[tKey]
+         put char 3 to -1 of tKey into tTarget
+         if char 1 to 2 of tKey is "h:" then
+            delete variable sSyncHead[tTarget]
+            -- said once per unlock, not every round: an author who has not
+            -- posted yet (or whose records faded) is normal, not news
+            if sSyncMissSaid[tTarget] is empty then
+               put "1" into sSyncMissSaid[tTarget]
+               raFeedNote empty, "nothing found on the network yet for" && raNameOf(tTarget) & "; the app keeps asking."
+            end if
+         else
+            delete variable sSyncPost[tTarget]
+            delete variable sSyncPostMode[tTarget]
+            delete variable sSyncChunk[tTarget]
+            delete variable sSyncName[tTarget]
+         end if
+      end if
+   end repeat
+end raSyncExpire
+
+-- False for the DHT's "found nothing" answer: a signature of zeros, or
+-- seq 0. Every head this app (or any older build) publishes starts at seq
+-- 1, so a seq-0 answer is never one; on OXT-Beyond (2026-10-21) a lookup
+-- for a key that never published came back at seq 0 and was still not
+-- recognised by its signature alone.
+function raSignedEvent pEvent
+   local tSig
+   if ("s" & pEvent["seq"]) is "s0" then
+      return false
    end if
-   put tHandle into sFollowHandle
-   put empty into sWalkNext
-   put 0 into sWalkCount
-   put "true" into sAwaitHead
-   put the milliseconds + kDhtWaitMs into sWaitUntil
-   put empty into field "raTheirFeed"
-   put rsRequestHead(sSession, sFollowHandle) into tOk
+   put pEvent["signature"] into tSig
+   replace "0" with empty in tSig
+   return tSig is not empty
+end raSignedEvent
+
+command raSyncRequestHead pHandle
+   local tOk
+   if sSession is not an integer or sSession <= 0 then
+      exit raSyncRequestHead
+   end if
+   put the milliseconds into sSyncChecked[pHandle]
+   put rsRequestHead(sSession, pHandle) into tOk
    if tOk is not true then
-      put empty into sAwaitHead
-      uiStatus "rsRequestHead refused:" && rsLastError(), "bad"
-      exit raFetch
+      raFeedNote empty, "head lookup refused for" && raNameOf(pHandle) & ":" && rsLastError()
+      exit raSyncRequestHead
    end if
-   uiStatus "Asking the DHT for" && sFollowHandle & "...", empty
-end raFetch
+   put "1" into sSyncHead[pHandle]
+   put the milliseconds + kDhtWaitMs into sSyncDl["h:" & pHandle]
+   put 0 into sSyncCount[pHandle]
+end raSyncRequestHead
+
+-- An immutable lookup for the sync: a post (walking a chain, or one post a
+-- reply quotes), a kind-C chunk, or a profile-name blob. pSlot names which.
+command raSyncRequestTarget pTarget, pSlot, pValue
+   local tOk
+   if sSession is not an integer or sSession <= 0 then
+      exit raSyncRequestTarget
+   end if
+   if sSyncDl["i:" & pTarget] is not empty then
+      -- already on its way: note the slot, and the one answer fills it
+      raSyncFillSlot pTarget, pSlot, pValue
+      exit raSyncRequestTarget
+   end if
+   put rsRequestImmutable(sSession, pTarget) into tOk
+   if tOk is not true then
+      raFeedNote empty, "lookup refused for" && pTarget & ":" && rsLastError()
+      exit raSyncRequestTarget
+   end if
+   put the milliseconds + kDhtWaitMs into sSyncDl["i:" & pTarget]
+   raSyncFillSlot pTarget, pSlot, pValue
+end raSyncRequestTarget
+
+private command raSyncFillSlot pTarget, pSlot, pValue
+   switch pSlot
+      case "post"
+         put pValue into sSyncPost[pTarget]
+         break
+      case "chunk"
+         put pValue into sSyncChunk[pTarget]
+         break
+      case "name"
+         put pValue into sSyncName[pTarget]
+         break
+   end switch
+end raSyncFillSlot
+
+-- A head arrived for an author the sync asked about: verify it (with the
+-- same rollback watermark the rest of the app keeps), learn the name, and
+-- walk from its newest post.
+command raSyncHeadArrived pEvent, pHandle
+   local tHead, tFloor
+   -- THE "FOUND NOTHING" ANSWER IS NOT A FORGERY: libtorrent reports a
+   -- lookup that found no item as an event with no head in it (seen on
+   -- OXT-Beyond, 2026-10-21, where every one was logged as a REFUSED
+   -- truncated head); raSignedEvent tells it apart. The slot stays until
+   -- its deadline, so a later answer to the same lookup is still taken;
+   -- raSyncExpire says it once.
+   if not raSignedEvent(pEvent) then
+      exit raSyncHeadArrived
+   end if
+   delete variable sSyncHead[pHandle]
+   delete variable sSyncDl["h:" & pHandle]
+   put 0 into tFloor
+   if ("h" & pHandle) is ("h" & sHandle) then
+      put sSeq into tFloor
+   end if
+   put rsIngestHead(pEvent, pHandle, raHeadWatermark(pHandle, tFloor)) into tHead
+   if the number of lines of the keys of tHead is 0 then
+      raFeedNote empty, "a head for" && raNameOf(pHandle) && "was REFUSED:" && rsLastError()
+      exit raSyncHeadArrived
+   end if
+   raHeadAccepted pHandle, tHead["seq"]
+   if ("h" & pHandle) is ("h" & sHandle) then
+      -- our own head, seen again: keep its bytes for the keep-alive
+      if rsSeqCompare(tHead["seq"], sSeq) is not "below" then
+         put tHead["seq"] into sSeq
+         put pEvent["value"] into sMyHeadBytes
+         if ("h" & tHead["latestPostTarget"]) is not ("h" & rsZeroTarget()) then
+            put tHead["latestPostTarget"] into sMyLatest
+         end if
+      end if
+   else
+      raSyncNoteName pHandle, tHead["displayName"]
+      if ("h" & tHead["profileMetaTarget"]) is not ("h" & rsZeroTarget()) then
+         if ("h" & sNameTarget[pHandle]) is not ("h" & tHead["profileMetaTarget"]) then
+            put tHead["profileMetaTarget"] into sNameTarget[pHandle]
+            raSyncRequestTarget tHead["profileMetaTarget"], "name", pHandle
+         end if
+      end if
+   end if
+   put "true" into sTimelineDirty
+   raSyncWalkFrom pHandle, tHead["latestPostTarget"]
+end raSyncHeadArrived
+
+-- Walk an author's chain from pTarget towards its start, past every post
+-- already held, and ask for the first one that is not. A chain we hold
+-- whole costs no lookup at all; a gap left by an earlier deadline is
+-- filled the next time round. At most kSyncWalkMax new posts per author
+-- per round, so a prolific author cannot starve the rest.
+command raSyncWalkFrom pHandle, pTarget
+   local tT, tGuard
+   put toLower(pTarget) into tT
+   put 0 into tGuard
+   repeat while tT is not empty and ("h" & tT) is not ("h" & rsZeroTarget())
+      if sPosts[tT]["a"] is empty then
+         exit repeat
+      end if
+      put sPosts[tT]["p"] into tT
+      add 1 to tGuard
+      if tGuard > kCacheMax then
+         -- a cycle cannot be signed into a hash chain, but a damaged cache
+         -- must not hang the pump either
+         exit raSyncWalkFrom
+      end if
+   end repeat
+   if tT is empty or ("h" & tT) is ("h" & rsZeroTarget()) then
+      exit raSyncWalkFrom
+   end if
+   if sSyncCount[pHandle] is an integer and sSyncCount[pHandle] >= kSyncWalkMax then
+      exit raSyncWalkFrom
+   end if
+   put "walk" into sSyncPostMode[tT]
+   raSyncRequestTarget tT, "post", pHandle
+end raSyncWalkFrom
+
+-- A post arrived: verify it against its author and its content address,
+-- keep it, and keep walking (a chain walk), or stop (a quoted post).
+command raSyncPostArrived pEvent, pTarget
+   local tAuthor, tMode, tPost, tChunk, tReply
+   put sSyncPost[pTarget] into tAuthor
+   put sSyncPostMode[pTarget] into tMode
+   delete variable sSyncPost[pTarget]
+   delete variable sSyncPostMode[pTarget]
+   delete variable sSyncDl["i:" & pTarget]
+   put rsIngestPost(pEvent, pTarget, tAuthor) into tPost
+   if the number of lines of the keys of tPost is 0 then
+      raFeedNote empty, "a post by" && raNameOf(tAuthor) && "was REFUSED (tamper or wrong author):" && rsLastError()
+      exit raSyncPostArrived
+   end if
+   raStorePost pTarget, tAuthor, tPost
+   if ("h" & tAuthor) is ("h" & sHandle) then
+      put pEvent["value"] into sMyPostBytes[pTarget]
+   end if
+   -- a long post's text is in its chunks: fetch every part (each is checked
+   -- against its own content address on arrival)
+   if tPost["kind"] is "C" then
+      set the itemDelimiter to comma
+      repeat for each item tChunk in tPost["chunkTargets"]
+         if tChunk is not empty then
+            raSyncRequestTarget tChunk, "chunk", pTarget
+         end if
+      end repeat
+   end if
+   -- a reply quotes its parent: fetch that one post if we do not hold it
+   put raReplyRef(sPosts[pTarget]["x"]) into tReply
+   if tReply is not empty then
+      raSyncFetchParent tReply
+   end if
+   if tMode is "walk" then
+      if sSyncCount[tAuthor] is not an integer then
+         put 0 into sSyncCount[tAuthor]
+      end if
+      add 1 to sSyncCount[tAuthor]
+      raSyncWalkFrom tAuthor, tPost["prevPostTarget"]
+   end if
+end raSyncPostArrived
+
+-- A long post whose text never assembled (a chunk lookup timed out, or the
+-- app restarted mid-fetch: the cache keeps the post, never the parts) asks
+-- again for every part it lacks, within the in-flight budget left, at most
+-- once per kSyncEveryMs a post (parts that are gone for good are asked for
+-- at the head cadence, never every tick).
+command raSyncRetryChunks pInFlight
+   local tT, tItem, tNow
+   put the milliseconds into tNow
+   repeat for each key tT in sPosts
+      if pInFlight >= kSyncMaxInFlight then
+         exit repeat
+      end if
+      if sPosts[tT]["k"] is "C" and sPosts[tT]["x"] is empty and \
+            (sSyncChunkAt[tT] is not an integer or tNow - sSyncChunkAt[tT] >= kSyncEveryMs) then
+         put tNow into sSyncChunkAt[tT]
+         set the itemDelimiter to comma
+         repeat for each item tItem in sPosts[tT]["c"]
+            if pInFlight >= kSyncMaxInFlight then
+               exit repeat
+            end if
+            if tItem is not empty and sChunkBytes[tT][tItem] is empty and \
+                  sSyncDl["i:" & tItem] is empty then
+               raSyncRequestTarget tItem, "chunk", tT
+               add 1 to pInFlight
+            end if
+         end repeat
+      end if
+   end repeat
+   set the itemDelimiter to comma
+end raSyncRetryChunks
+
+-- pRef is "<handle>/<target>" (raReplyRef). One post, no walk.
+command raSyncFetchParent pRef
+   local tH, tT, tSaved
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to "/"
+   put item 1 of pRef into tH
+   put item 2 of pRef into tT
+   set the itemDelimiter to tSaved
+   if sPosts[tT]["a"] is not empty then
+      exit raSyncFetchParent
+   end if
+   if sSyncPost[tT] is not empty then
+      exit raSyncFetchParent
+   end if
+   put "one" into sSyncPostMode[tT]
+   raSyncRequestTarget tT, "post", tH
+end raSyncFetchParent
+
+-- One chunk of a long post: verified by content address, kept, and once
+-- every part is in, the text is assembled and re-verified by the library
+-- (rsAssembleChunkText re-hashes every part and UTF-8-checks the whole).
+command raSyncChunkArrived pEvent, pChunk
+   local tPostT, tBytes, tText, tItem, tAll
+   put sSyncChunk[pChunk] into tPostT
+   delete variable sSyncChunk[pChunk]
+   delete variable sSyncDl["i:" & pChunk]
+   put rsIngestBlob(pEvent, pChunk) into tBytes
+   if tBytes is empty then
+      raFeedNote empty, "a chunk of a long post was REFUSED:" && rsLastError()
+      exit raSyncChunkArrived
+   end if
+   if sPosts[tPostT]["a"] is empty then
+      exit raSyncChunkArrived
+   end if
+   put tBytes into sChunkBytes[tPostT][pChunk]
+   put true into tAll
+   set the itemDelimiter to comma
+   repeat for each item tItem in sPosts[tPostT]["c"]
+      if sChunkBytes[tPostT][tItem] is empty then
+         put false into tAll
+         exit repeat
+      end if
+   end repeat
+   if not tAll then
+      exit raSyncChunkArrived
+   end if
+   put rsAssembleChunkText(sPosts[tPostT]["c"], sChunkBytes[tPostT]) into tText
+   delete variable sChunkBytes[tPostT]
+   if tText is empty then
+      raFeedNote empty, "a long post was REFUSED at reassembly:" && rsLastError()
+      exit raSyncChunkArrived
+   end if
+   put tText into sPosts[tPostT]["x"]
+   raSocialMark
+end raSyncChunkArrived
+
+command raSyncNameArrived pEvent, pTarget
+   local tH
+   put sSyncName[pTarget] into tH
+   delete variable sSyncName[pTarget]
+   delete variable sSyncDl["i:" & pTarget]
+   raSyncNoteName tH, raProfileName(pEvent, pTarget)
+end raSyncNameArrived
+
+-- Learn a display name for a handle (from a verified head or profile blob).
+-- Empty teaches nothing. Our own name is ours to set, never the network's.
+command raSyncNoteName pHandle, pName
+   if pHandle is empty or pName is empty then
+      exit raSyncNoteName
+   end if
+   if ("h" & pHandle) is ("h" & sHandle) then
+      exit raSyncNoteName
+   end if
+   set the caseSensitive to true
+   if ("n" & sNames[pHandle]) is ("n" & pName) then
+      exit raSyncNoteName
+   end if
+   put pName into sNames[pHandle]
+   raSocialMark
+end raSyncNoteName
+
+-- Keep a verified post. The text stays as the author wrote it; everything
+-- that draws it escapes it (raHtml).
+command raStorePost pTarget, pAuthor, pPost
+   put toLower(pAuthor) into sPosts[pTarget]["a"]
+   put pPost["timestamp"] into sPosts[pTarget]["t"]
+   put toLower(pPost["prevPostTarget"]) into sPosts[pTarget]["p"]
+   put pPost["kind"] into sPosts[pTarget]["k"]
+   put pPost["mediaTargets"] into sPosts[pTarget]["m"]
+   if pPost["kind"] is "C" then
+      put pPost["chunkTargets"] into sPosts[pTarget]["c"]
+      if sPosts[pTarget]["x"] is empty then
+         put empty into sPosts[pTarget]["x"]
+      end if
+   else
+      put pPost["text"] into sPosts[pTarget]["x"]
+   end if
+   raSocialMark
+end raStorePost
+
+command raSocialMark
+   put "true" into sSocialDirty
+   put "true" into sTimelineDirty
+   if sSocialSaveAt is not an integer or sSocialSaveAt < the milliseconds then
+      put the milliseconds + kSocialSaveMs into sSocialSaveAt
+   end if
+end raSocialMark
+
+-- THE KEEP-ALIVE. A BEP44 item lives on the DHT only as long as somebody
+-- keeps putting it (about two hours without a refresh), so an author who
+-- posts once and goes quiet would vanish from every follower's reach. Every
+-- kRepublishMs while unlocked, put the head we hold (same seq, same bytes:
+-- a refresh, not a new version), our newest posts, the prekey and the
+-- profile name again. Best-effort and quiet: a refusal is logged, never
+-- shown.
+command raRepublish
+   local tOk, tT, tList, tN, tName
+   if sSession is not an integer or sSession <= 0 or sIdSeed is empty then
+      exit raRepublish
+   end if
+   put 0 into tN
+   if sMyHeadBytes is not empty then
+      put rsPublishHead(sSession, sMyHeadBytes, sIdSeed) into tOk
+      if tOk is true then
+         add 1 to tN
+      else
+         raFeedNote empty, "keep-alive: head republish refused:" && rsLastError()
+      end if
+   end if
+   repeat for each key tT in sMyPostBytes
+      put sPosts[tT]["t"] & tab & tT & return after tList
+   end repeat
+   set the itemDelimiter to tab
+   sort lines of tList descending numeric by item 1 of each
+   repeat for each line tT in line 1 to kRepublishPosts of tList
+      if sMyPostBytes[item 2 of tT] is not empty then
+         if rsPublishImmutable(sSession, sMyPostBytes[item 2 of tT]) is not empty then
+            add 1 to tN
+         end if
+         if sPosts[item 2 of tT]["k"] is "C" then
+            add raRepublishChunks(item 2 of tT) to tN
+            set the itemDelimiter to tab
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to comma
+   if sMyPrekeyBytes is not empty then
+      if rsPublishImmutable(sSession, sMyPrekeyBytes) is not empty then
+         add 1 to tN
+      end if
+   end if
+   put sMyName into tName
+   if tName is not empty then
+      if rsPublishImmutable(sSession, textEncode(tName, "UTF-8")) is not empty then
+         add 1 to tN
+      end if
+   end if
+   raFeedNote empty, "keep-alive: republished" && tN && "record(s) so followers can still reach you."
+end raRepublish
+
+-- The chunk targets the library's split gives pText, comma-separated, or
+-- empty when it refuses (empty text, over the kind-C cap).
+function raChunkTargetsFor pText
+   local tParts, tI, tOut
+   put rsChunkPostText(pText) into tParts
+   if tParts is empty then
+      return empty
+   end if
+   repeat with tI = 1 to the number of elements in tParts
+      if tOut is not empty then
+         put comma after tOut
+      end if
+      put toLower(rsImmutableTarget(tParts[tI])) after tOut
+   end repeat
+   return tOut
+end raChunkTargetsFor
+
+-- Re-put the chunks of one of my kind-C posts. The parts are re-split from
+-- the held text and put only when they hash to the targets the post names
+-- (a post written on another device by a build that split differently is
+-- left to the head alone). Returns how many were put.
+function raRepublishChunks pTarget
+   local tParts, tI, tN
+   put 0 into tN
+   if sPosts[pTarget]["x"] is empty or sPosts[pTarget]["c"] is empty then
+      return 0
+   end if
+   if ("c" & raChunkTargetsFor(sPosts[pTarget]["x"])) is not \
+         ("c" & toLower(sPosts[pTarget]["c"])) then
+      return 0
+   end if
+   put rsChunkPostText(sPosts[pTarget]["x"]) into tParts
+   repeat with tI = 1 to the number of elements in tParts
+      if rsPublishImmutable(sSession, tParts[tI]) is not empty then
+         add 1 to tN
+      end if
+   end repeat
+   set the itemDelimiter to comma
+   return tN
+end raRepublishChunks
+
+-- ---- following ----------------------------------------------------------------
+
+-- A handle as people paste it: 64 hex, optionally as riptide:<hex>, with
+-- surrounding space. Returns the lowercase handle or empty.
+function raParseHandle pText
+   local tT
+   put word 1 of pText into tT
+   if char 1 to 8 of tT is "riptide:" then
+      delete char 1 to 8 of tT
+   end if
+   put toLower(tT) into tT
+   if not raIsHex(tT, 64) then
+      return empty
+   end if
+   return tT
+end raParseHandle
+
+function raIsHex pText, pLen
+   local tC
+   if the number of chars of pText is not pLen then
+      return false
+   end if
+   repeat for each char tC in pText
+      if not (tC is in "0123456789abcdef") then
+         return false
+      end if
+   end repeat
+   return true
+end raIsHex
+
+-- Follow from a field (Home's panel, or the Following card's). pCard names
+-- the card the field is on.
+command raFollowFromField pField, pCard
+   local tH
+   if there is no field pField of card pCard then
+      exit raFollowFromField
+   end if
+   put raParseHandle(field pField of card pCard) into tH
+   if tH is empty then
+      raFollowSay pCard, "That is not a Riptide handle: a handle is 64 characters, 0-9 and a-f.", "bad"
+      exit raFollowFromField
+   end if
+   if raFollowHandle(tH, pCard) then
+      put empty into field pField of card pCard
+   end if
+end raFollowFromField
+
+function raFollowHandle pHandle, pCard
+   local tH
+   put raParseHandle(pHandle) into tH
+   if sHandle is empty then
+      raSay "Unlock first: who you follow is saved with your key.", "warn"
+      return false
+   end if
+   if tH is empty then
+      raFollowSay pCard, "That is not a Riptide handle.", "bad"
+      return false
+   end if
+   if ("h" & tH) is ("h" & sHandle) then
+      raFollowSay pCard, "That is your own handle. Your posts are always on your timeline.", "warn"
+      return false
+   end if
+   if sFollows[tH] is not empty then
+      raFollowSay pCard, "You already follow" && raNameOf(tH) & ".", empty
+      return false
+   end if
+   if raFollowCount() >= kAppMaxFollows then
+      raFollowSay pCard, "You are at the" && kAppMaxFollows && "follow limit.", "bad"
+      return false
+   end if
+   put "1" into sFollows[tH]
+   raSocialMark
+   put 0 into sSyncChecked[tH]
+   put 0 into sSyncRoundAt
+   raFollowSay pCard, "Following" && raNameOf(tH) & ".", "ok"
+   raSay "Now following" && raNameOf(tH) & ". Their posts appear as the network answers, usually within a minute.", "ok"
+   raPaintAll
+   return true
+end raFollowHandle
+
+command raUnfollow pHandle
+   local tH
+   put raParseHandle(pHandle) into tH
+   if tH is empty or sFollows[tH] is empty then
+      exit raUnfollow
+   end if
+   delete variable sFollows[tH]
+   raSocialMark
+   raSay "Unfollowed" && raNameOf(tH) & ". Their posts leave your timeline.", empty
+   raPaintAll
+end raUnfollow
+
+command raFollowSay pCard, pText, pKind
+   local tField
+   if pCard is "raFollowing" then
+      put "raFwNote" into tField
+   else
+      put "raFollowNote" into tField
+      put "1" into pCard
+   end if
+   if there is a field tField of card pCard then
+      put pText into field tField of card pCard
+      if pKind is "bad" then
+         set the foregroundColor of field tField of card pCard to kRaDanger
+      else if pKind is "ok" then
+         set the foregroundColor of field tField of card pCard to kRaOk
+      else
+         set the foregroundColor of field tField of card pCard to kRaMuted
+      end if
+   end if
+end raFollowSay
+
+function raFollowCount
+   return the number of lines of the keys of sFollows
+end raFollowCount
+
+function raPostCountBy pHandle
+   local tT, tN
+   put 0 into tN
+   repeat for each key tT in sPosts
+      if ("h" & sPosts[tT]["a"]) is ("h" & pHandle) then
+         add 1 to tN
+      end if
+   end repeat
+   return tN
+end raPostCountBy
+
+-- ---- names, avatars, time -------------------------------------------------------
+
+function raNameOf pHandle
+   if pHandle is empty then
+      return "someone"
+   end if
+   if ("h" & pHandle) is ("h" & sHandle) and sMyName is not empty then
+      return sMyName
+   end if
+   if sNames[pHandle] is not empty then
+      return sNames[pHandle]
+   end if
+   return "@" & char 1 to 8 of pHandle
+end raNameOf
+
+function raShortHandle pHandle
+   if pHandle is empty then
+      return empty
+   end if
+   return char 1 to 8 of pHandle & "..." & char -6 to -1 of pHandle
+end raShortHandle
+
+function raInitials pHandle
+   local tName, tOut, tW
+   if pHandle is empty then
+      return empty
+   end if
+   put raNameOf(pHandle) into tName
+   if char 1 of tName is "@" then
+      return toUpper(char 1 to 2 of pHandle)
+   end if
+   repeat for each word tW in tName
+      put toUpper(char 1 of tW) after tOut
+      if the number of chars of tOut >= 2 then
+         exit repeat
+      end if
+   end repeat
+   if tOut is empty then
+      return toUpper(char 1 to 2 of pHandle)
+   end if
+   return tOut
+end raInitials
+
+private function raPaletteIndex pHandle
+   return ((codepointToNum(char 1 of pHandle) * 7 + codepointToNum(char 2 of pHandle)) mod 8) + 1
+end raPaletteIndex
+
+function raAvatarColor pHandle
+   local tOut
+   set the itemDelimiter to ";"
+   put item raPaletteIndex(pHandle) of kRaPaletteRgb into tOut
+   set the itemDelimiter to comma
+   return tOut
+end raAvatarColor
+
+function raAvatarHex pHandle
+   local tOut
+   set the itemDelimiter to ";"
+   put item raPaletteIndex(pHandle) of kRaPaletteHex into tOut
+   set the itemDelimiter to comma
+   return tOut
+end raAvatarHex
+
+-- "now", "5m", "3h", "2d", "4w", "1y": relative, because there is no
+-- single right timezone for a post whose author may be anywhere. A clock
+-- skewed into the future reads "now".
+function raAgo pTs
+   local tD
+   if pTs is not an integer then
+      return empty
+   end if
+   put the seconds - pTs into tD
+   if tD < 60 then
+      return "now"
+   end if
+   if tD < 3600 then
+      return (tD div 60) & "m"
+   end if
+   if tD < 86400 then
+      return (tD div 3600) & "h"
+   end if
+   if tD < 604800 then
+      return (tD div 86400) & "d"
+   end if
+   if tD < 31536000 then
+      return (tD div 604800) & "w"
+   end if
+   return (tD div 31536000) & "y"
+end raAgo
+
+-- Text for htmlText: the five characters that would be read as markup, and
+-- line breaks as soft breaks, so a post stays one card.
+function raHtml pText
+   local tOut
+   put pText into tOut
+   replace "&" with "&amp;" in tOut
+   replace "<" with "&lt;" in tOut
+   replace ">" with "&gt;" in tOut
+   replace quote with "&quot;" in tOut
+   replace return with "&#11;" in tOut
+   return tOut
+end raHtml
+
+-- ---- replies: a convention inside the post text ----------------------------------
+-- A reply is an ordinary post whose text begins with one line naming what
+-- it answers: `re: riptide:<64-hex handle>/<40-hex target>`. No byte of
+-- RSP1 moves and no magic bumps, so every reader that predates replies
+-- shows it as a post with that line on top - readable, and still verified.
+-- A reader that knows the convention draws "Replying to ..." instead and
+-- fetches the quoted post. The line costs 107 bytes of the post's budget;
+-- a reply too long for a direct post goes out chunked, like any other.
+
+-- "<handle>/<target>" when pText opens with a well-formed reply line, else
+-- empty. Strict: a line that is almost right is text, not a reply.
+function raReplyRef pText
+   local tLine, tRef, tH, tT, tSaved
+   put line 1 of pText into tLine
+   if char 1 to 12 of tLine is not kRaReplyPrefix then
+      return empty
+   end if
+   put char 13 to -1 of tLine into tRef
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to "/"
+   put item 1 of tRef into tH
+   put item 2 of tRef into tT
+   set the itemDelimiter to tSaved
+   if not raIsHex(tH, 64) or not raIsHex(tT, 40) then
+      return empty
+   end if
+   if the number of chars of tRef is not 105 then
+      return empty
+   end if
+   return tH & "/" & tT
+end raReplyRef
+
+-- The post text without its reply line.
+function raReplyBody pText
+   if raReplyRef(pText) is empty then
+      return pText
+   end if
+   return line 2 to -1 of pText
+end raReplyBody
+
+command raReplyStart pTarget
+   local tAuthor
+   put toLower(pTarget) into pTarget
+   put sPosts[pTarget]["a"] into tAuthor
+   if tAuthor is empty or not raIsHex(pTarget, 40) then
+      exit raReplyStart
+   end if
+   if sHandle is empty then
+      raSay "Unlock to reply.", "warn"
+      exit raReplyStart
+   end if
+   put tAuthor & "/" & pTarget into sReplyTo
+   go to card 1
+   raNavMark "raNavHome"
+   raPaintComposer
+   focus on field "raCompose" of card 1
+end raReplyStart
+
+command raReplyCancel
+   put empty into sReplyTo
+   raPaintComposer
+end raReplyCancel
+
+command raPaintComposer
+   local tH, tT, tSaved, tSnippet
+   if there is no field "raComposeHint" of card 1 then
+      exit raPaintComposer
+   end if
+   if sReplyTo is empty then
+      put "Share something with your followers" into field "raComposeHint" of card 1
+      set the foregroundColor of field "raComposeHint" of card 1 to kRaMuted
+      set the visible of button "raReplyCancel" of card 1 to false
+   else
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to "/"
+      put item 1 of sReplyTo into tH
+      put item 2 of sReplyTo into tT
+      set the itemDelimiter to tSaved
+      put raReplyBody(sPosts[tT]["x"]) into tSnippet
+      replace return with " " in tSnippet
+      if the number of chars of tSnippet > 60 then
+         put char 1 to 57 of tSnippet & "..." into tSnippet
+      end if
+      put "Replying to" && raNameOf(tH) & ":" && quote & tSnippet & quote into field "raComposeHint" of card 1
+      set the foregroundColor of field "raComposeHint" of card 1 to kRaPrimary
+      set the visible of button "raReplyCancel" of card 1 to true
+   end if
+end raPaintComposer
+
+-- ---- rendering ---------------------------------------------------------------
+-- One post as one htmlText paragraph: a white, hairline-bordered card with
+-- soft line breaks (&#11;) inside it, which the engine draws as one block
+-- (measured on an OXT-Beyond engine, 2026-10-21, before this was written).
+function raPostHtml pTarget
+   local tA, tName, tOut, tText, tRef, tParentH, tParentT, tQuote, tSaved
+   local tMedia, tHash, tN, tQ
+   put quote into tQ
+   put sPosts[pTarget]["a"] into tA
+   put raNameOf(tA) into tName
+   put "<p bgcolor=" & tQ & "#FFFFFF" & tQ & " padding=" & tQ & "14" & tQ & \
+         " spacebelow=" & tQ & "10" & tQ & " borderwidth=" & tQ & "1" & tQ & \
+         " bordercolor=" & tQ & kRaLineHex & tQ & ">" into tOut
+   put "<font bgcolor=" & tQ & raAvatarHex(tA) & tQ & " color=" & tQ & "#FFFFFF" & tQ & \
+         "><b>&nbsp;" & raHtml(raInitials(tA)) & "&nbsp;</b></font>&nbsp;&nbsp;" after tOut
+   put "<a href=" & tQ & "p:" & tA & tQ & "><b>" & raHtml(tName) & "</b></a>&nbsp;&nbsp;" after tOut
+   put "<font color=" & tQ & kRaMutedHex & tQ & " size=" & tQ & "11" & tQ & ">@" & \
+         char 1 to 8 of tA & " &#183; " & raAgo(sPosts[pTarget]["t"]) & "</font>" after tOut
+   put sPosts[pTarget]["x"] into tText
+   put raReplyRef(tText) into tRef
+   if tRef is not empty then
+      put the itemDelimiter into tSaved
+      set the itemDelimiter to "/"
+      put item 1 of tRef into tParentH
+      put item 2 of tRef into tParentT
+      set the itemDelimiter to tSaved
+      put "&#11;<font color=" & tQ & kRaMutedHex & tQ & " size=" & tQ & "11" & tQ & \
+            ">Replying to <a href=" & tQ & "p:" & tParentH & tQ & ">" & \
+            raHtml(raNameOf(tParentH)) & "</a></font>" after tOut
+      if sPosts[tParentT]["a"] is not empty then
+         put raReplyBody(sPosts[tParentT]["x"]) into tQuote
+         replace return with " " in tQuote
+         if the number of chars of tQuote > 140 then
+            put char 1 to 137 of tQuote & "..." into tQuote
+         end if
+         if tQuote is not empty then
+            put "&#11;<font color=" & tQ & kRaInk2Hex & tQ & " size=" & tQ & "12" & tQ & \
+                  "><i>" & numToCodepoint(8220) & raHtml(tQuote) & numToCodepoint(8221) & \
+                  "</i></font>" after tOut
+         end if
+      end if
+      put raReplyBody(tText) into tText
+   end if
+   if sPosts[pTarget]["k"] is "C" and tText is empty then
+      put "&#11;<font color=" & tQ & kRaMutedHex & tQ & "><i>A long post: fetching the rest of it...</i></font>" after tOut
+   else
+      put "&#11;<font size=" & tQ & "13" & tQ & ">" & raHtml(tText) & "</font>" after tOut
+   end if
+   put sPosts[pTarget]["m"] into tMedia
+   if tMedia is not empty then
+      put 0 into tN
+      set the itemDelimiter to comma
+      repeat for each item tHash in tMedia
+         add 1 to tN
+         put "&#11;<a href=" & tQ & "m:" & tHash & tQ & ">" & numToCodepoint(9654) & \
+               " Play attachment" after tOut
+         if the number of items of tMedia > 1 then
+            put " " & tN after tOut
+         end if
+         put "</a>" after tOut
+      end repeat
+   end if
+   put "&#11;<font size=" & tQ & "12" & tQ & "><a href=" & tQ & "r:" & pTarget & tQ & \
+         ">Reply</a>" after tOut
+   if ("h" & tA) is not ("h" & sHandle) then
+      put "&nbsp;&nbsp;&nbsp;&nbsp;<a href=" & tQ & "c:" & tA & tQ & ">Message</a>" after tOut
+   end if
+   put "</font></p>" after tOut
+   return tOut
+end raPostHtml
+
+-- The newest pMax posts by the authors in pAuthors (a return list), newest
+-- first, as htmlText; empty when there are none.
+function raFeedHtml pAuthors, pMax
+   local tT, tList, tOut, tN, tLine, tWho
+   repeat for each line tLine in pAuthors
+      put "1" into tWho[tLine]
+   end repeat
+   repeat for each key tT in sPosts
+      if tWho[sPosts[tT]["a"]] is "1" then
+         put sPosts[tT]["t"] & tab & tT & return after tList
+      end if
+   end repeat
+   if tList is empty then
+      return empty
+   end if
+   set the itemDelimiter to tab
+   sort lines of tList descending numeric by item 1 of each
+   put 0 into tN
+   repeat for each line tT in tList
+      add 1 to tN
+      if tN > pMax then
+         exit repeat
+      end if
+      put raPostHtml(item 2 of tT) after tOut
+      set the itemDelimiter to tab
+   end repeat
+   set the itemDelimiter to comma
+   return tOut
+end raFeedHtml
+
+-- Set a rendered field's htmlText only when it changed, and keep the
+-- reader's scroll position, so a background sync never yanks the page.
+command raSetHtml pField, pCard, pHtml
+   local tScroll
+   if there is no field pField of card pCard then
+      exit raSetHtml
+   end if
+   set the caseSensitive to true
+   if ("h" & the uRaHtml of field pField of card pCard) is ("h" & pHtml) then
+      exit raSetHtml
+   end if
+   put the vScroll of field pField of card pCard into tScroll
+   set the htmlText of field pField of card pCard to pHtml
+   set the uRaHtml of field pField of card pCard to pHtml
+   if tScroll is an integer then
+      set the vScroll of field pField of card pCard to tScroll
+   end if
+end raSetHtml
+
+command raPaintAll
+   raPaintTimeline
+   raPaintProfile
+   raPaintFollowing
+   raPaintIdentity
+end raPaintAll
+
+command raPaintTimeline
+   local tAuthors, tH, tHtml
+   if there is no field "raTimeline" of card 1 then
+      exit raPaintTimeline
+   end if
+   if sHandle is empty then
+      raSetHtml "raTimeline", "1", raEmptyHtml("Your timeline is empty", "Unlock to see your posts and the people you follow.")
+      exit raPaintTimeline
+   end if
+   put sHandle into tAuthors
+   repeat for each key tH in sFollows
+      put return & tH after tAuthors
+   end repeat
+   put raFeedHtml(tAuthors, kTimelineMax) into tHtml
+   if tHtml is empty then
+      if raFollowCount() is 0 then
+         put raEmptyHtml("Welcome to your timeline", "Write your first post above, then follow someone with their handle (on the right). Their posts arrive here, verified.") into tHtml
+      else
+         put raEmptyHtml("Nothing yet", "Posts from the people you follow appear as the network answers. Refresh asks again.") into tHtml
+      end if
+   end if
+   raSetHtml "raTimeline", "1", tHtml
+end raPaintTimeline
+
+-- The sync pill in Home's header: what the background sync is doing.
+command raPaintSyncPill
+   local tN, tText, tKind
+   if there is no field "raSyncPill" of card 1 then
+      exit raPaintSyncPill
+   end if
+   if sHandle is empty then
+      put "locked" into tText
+      put "wait" into tKind
+   else if sSession is not an integer or sSession <= 0 then
+      put "offline" into tText
+      put "bad" into tKind
+   else
+      put the number of lines of the keys of sSyncDl into tN
+      if tN > 0 then
+         put "syncing" && tN into tText
+         put "wait" into tKind
+      else
+         put "up to date" into tText
+         put "ok" into tKind
+      end if
+   end if
+   set the caseSensitive to true
+   if ("p" & field "raSyncPill" of card 1) is ("p" & tText) then
+      exit raPaintSyncPill
+   end if
+   -- uiPill writes unqualified: repaint only while Home is in front (a
+   -- later visit repaints, because the text compare above then differs)
+   if the number of this card is 1 then
+      uiPill "raSyncPill", tText, "868,26,1040,50", tKind
+   end if
+end raPaintSyncPill
+
+-- ---- profiles ----------------------------------------------------------------
+
+command raShowProfile pHandle
+   local tH
+   put raParseHandle(pHandle) into tH
+   if tH is empty then
+      if sHandle is empty then
+         raSay "Unlock to see your profile.", "warn"
+         exit raShowProfile
+      end if
+      put sHandle into tH
+   end if
+   put tH into sViewHandle
+   go to card "raProfile"
+   raNavMark "raNavProfile"
+   raPaintProfile
+   -- someone we do not follow: ask for their head now, so the page fills
+   if ("h" & tH) is not ("h" & sHandle) and sSyncHead[tH] is empty then
+      if sSession is an integer and sSession > 0 then
+         raSyncRequestHead tH
+      end if
+   end if
+end raShowProfile
+
+command raPaintProfile
+   local tH, tMe, tHtml, tN
+   if there is no field "raPfName" of card "raProfile" then
+      exit raPaintProfile
+   end if
+   put sViewHandle into tH
+   if tH is empty then
+      put sHandle into tH
+   end if
+   put (tH is not empty and ("h" & tH) is ("h" & sHandle)) into tMe
+   put raNameOf(tH) into field "raPfName" of card "raProfile"
+   put tH into field "raPfHandle" of card "raProfile"
+   raAvatarPaint "raPfAvatar", "raProfile", tH
+   put raPostCountBy(tH) into tN
+   if tMe then
+      put tN && "posts" && numToCodepoint(183) && raFollowCount() && "following" && numToCodepoint(183) && "this is you" into field "raPfStats" of card "raProfile"
+   else if sFollows[tH] is not empty then
+      put tN && "posts" && numToCodepoint(183) && "you follow them" into field "raPfStats" of card "raProfile"
+   else
+      put tN && "posts" && numToCodepoint(183) && "not followed" into field "raPfStats" of card "raProfile"
+   end if
+   set the visible of field "raNameL" of card "raProfile" to tMe
+   set the visible of field "raName" of card "raProfile" to tMe
+   set the visible of graphic ("raName" & "Fr") of card "raProfile" to tMe
+   set the visible of button "raSaveName" of card "raProfile" to tMe
+   set the visible of button "raPfFollow" of card "raProfile" to not tMe
+   set the visible of button "raPfMessage" of card "raProfile" to not tMe
+   if tMe then
+      if the uRaEditing of field "raName" of card "raProfile" is not "true" then
+         put sMyName into field "raName" of card "raProfile"
+      end if
+   else
+      if sFollows[tH] is not empty then
+         set the label of button "raPfFollow" of card "raProfile" to "Unfollow"
+         set the uRaKind of button "raPfFollow" of card "raProfile" to "ghost"
+      else
+         set the label of button "raPfFollow" of card "raProfile" to "Follow"
+         set the uRaKind of button "raPfFollow" of card "raProfile" to "primary"
+      end if
+      raBtnEnable "raPfFollow", "raProfile", (sHandle is not empty)
+   end if
+   put raFeedHtml(tH, kTimelineMax) into tHtml
+   if tHtml is empty then
+      if tMe then
+         put raEmptyHtml("No posts yet", "Your posts appear here. Write one on Home.") into tHtml
+      else
+         put raEmptyHtml("No posts to show yet", "Asking the network for their posts. Someone offline for a long time may take a while to find.") into tHtml
+      end if
+   end if
+   raSetHtml "raPfFeed", "raProfile", tHtml
+end raPaintProfile
+
+command raProfileFollowToggle
+   if sViewHandle is empty then
+      exit raProfileFollowToggle
+   end if
+   if sFollows[sViewHandle] is not empty then
+      raUnfollow sViewHandle
+   else
+      get raFollowHandle(sViewHandle, "raProfile")
+   end if
+   raPaintProfile
+end raProfileFollowToggle
+
+-- Save the display name: the head is republished at the next seq with the
+-- new name and the posts it already names, so followers see the change on
+-- their next sync without a new post.
+command raSaveProfile
+   local tName
+   if sHandle is empty then
+      raSay "Unlock first.", "warn"
+      exit raSaveProfile
+   end if
+   put word 1 to -1 of field "raName" of card "raProfile" into tName
+   if tName is empty then
+      raSay "A display name cannot be empty.", "warn"
+      exit raSaveProfile
+   end if
+   if the number of bytes in textEncode(tName, "UTF-8") > kNameMax then
+      raSay "That name is too long: at most 64 bytes.", "warn"
+      exit raSaveProfile
+   end if
+   put tName into sMyName
+   put "true" into sMyNameSaved
+   raSocialMark
+   raPaintIdentity
+   raStartSession
+   if sSession is not an integer or sSession <= 0 then
+      raSay "Saved here. It reaches the network once TorrentXT is available.", "warn"
+      exit raSaveProfile
+   end if
+   if raPublishMyHead(sMyLatest) then
+      raSay "Profile saved and published: followers see" && quote & tName & quote && "on their next sync.", "ok"
+   end if
+end raSaveProfile
+
+-- ---- following list ----------------------------------------------------------
+
+command raPaintFollowing
+   local tH, tList, tOut, tQ, tLast, tT
+   if there is no field "raFollowList" of card "raFollowing" then
+      exit raPaintFollowing
+   end if
+   put quote into tQ
+   if sHandle is empty then
+      raSetHtml "raFollowList", "raFollowing", raEmptyHtml("Locked", "Unlock to see who you follow.")
+      exit raPaintFollowing
+   end if
+   repeat for each key tH in sFollows
+      put raNameOf(tH) & tab & tH & return after tList
+   end repeat
+   if tList is empty then
+      raSetHtml "raFollowList", "raFollowing", raEmptyHtml("You do not follow anyone yet", "Paste someone's handle on the right. Ask them for it: it is on their Home, under Copy my handle.")
+      exit raPaintFollowing
+   end if
+   set the itemDelimiter to tab
+   sort lines of tList ascending text by item 1 of each
+   repeat for each line tT in tList
+      put item 2 of tT into tH
+      put raLatestPostAt(tH) into tLast
+      put "<p bgcolor=" & tQ & "#FFFFFF" & tQ & " padding=" & tQ & "14" & tQ & \
+            " spacebelow=" & tQ & "8" & tQ & " borderwidth=" & tQ & "1" & tQ & \
+            " bordercolor=" & tQ & kRaLineHex & tQ & ">" after tOut
+      put "<font bgcolor=" & tQ & raAvatarHex(tH) & tQ & " color=" & tQ & "#FFFFFF" & tQ & \
+            "><b>&nbsp;" & raHtml(raInitials(tH)) & "&nbsp;</b></font>&nbsp;&nbsp;" after tOut
+      put "<a href=" & tQ & "p:" & tH & tQ & "><b>" & raHtml(raNameOf(tH)) & "</b></a>" after tOut
+      put "&#11;<font color=" & tQ & kRaMutedHex & tQ & " size=" & tQ & "11" & tQ & ">" & \
+            raShortHandle(tH) & " &#183; " & raPostCountBy(tH) & " posts" after tOut
+      if tLast is not empty then
+         put " &#183; last post " & raAgo(tLast) after tOut
+      end if
+      put "</font>&#11;<font size=" & tQ & "12" & tQ & "><a href=" & tQ & "p:" & tH & tQ & \
+            ">View profile</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href=" & tQ & "c:" & tH & tQ & \
+            ">Message</a>&nbsp;&nbsp;&nbsp;&nbsp;<a href=" & tQ & "u:" & tH & tQ & \
+            ">Unfollow</a></font></p>" after tOut
+      set the itemDelimiter to tab
+   end repeat
+   set the itemDelimiter to comma
+   raSetHtml "raFollowList", "raFollowing", tOut
+end raPaintFollowing
+
+function raLatestPostAt pHandle
+   local tT, tBest
+   repeat for each key tT in sPosts
+      if ("h" & sPosts[tT]["a"]) is ("h" & pHandle) then
+         if sPosts[tT]["t"] is an integer then
+            if tBest is empty or sPosts[tT]["t"] > tBest then
+               put sPosts[tT]["t"] into tBest
+            end if
+         end if
+      end if
+   end repeat
+   return tBest
+end raLatestPostAt
+
+command raCopyHandle pButton
+   local tH, tCard
+   if pButton is "raPfCopy" then
+      put sViewHandle into tH
+   else
+      put sHandle into tH
+   end if
+   if tH is empty then
+      raSay "Unlock first.", "warn"
+      exit raCopyHandle
+   end if
+   set the clipboardData["text"] to tH
+   uiCopyFlash pButton
+   if ("h" & tH) is ("h" & sHandle) then
+      raSay "Your handle is on the clipboard. Send it to people so they can follow you.", "ok"
+   else
+      raSay "Their handle is on the clipboard.", "ok"
+   end if
+end raCopyHandle
+
+-- ---- the social cache on disk ------------------------------------------------
+-- WHY A SECOND FILE, and not more lines in RIPTSTATE1. raAppSave rewrites
+-- that file from what it knows, so an older build that opened it would
+-- write it back WITHOUT lines it never knew: a user who tried an older
+-- build would lose their follow list. This file is one no older build
+-- reads or writes. It is sealed exactly as the app state is (RIPTAPP1,
+-- subkey 5, so it opens only while unlocked: who you follow and what you
+-- read are the social graph), and it is per identity, so two identities on
+-- one machine never share or clobber one.
+
+function raSocialPath
+   local tFolder
+   if sHandle is empty then
+      return empty
+   end if
+   put raMediaFolder() into tFolder
+   if tFolder is empty then
+      return empty
+   end if
+   return tFolder & "/riptide-social-" & char 1 to 16 of sHandle & ".dat"
+end raSocialPath
+
+function raB64 pText
+   local tOut
+   put base64Encode(textEncode(pText, "UTF-8")) into tOut
+   replace return with empty in tOut
+   return tOut
+end raB64
+
+function raUnB64 pText
+   return textDecode(base64Decode(pText), "UTF-8")
+end raUnB64
+
+-- The dirty flag clears only once the sealed file is written: a refusal
+-- (no folder, a seal error, a write that throws) leaves it set with a fresh
+-- deadline, so a later tick tries again instead of dropping the follows.
+command raSocialSave
+   local tOut, tH, tT, tPath, tSealed, tErr, tB
+   if sMasterSeed is empty then
+      put empty into sSocialDirty
+      put empty into sSocialSaveAt
+      exit raSocialSave
+   end if
+   put the milliseconds + kSocialSaveMs into sSocialSaveAt
+   put raSocialPath() into tPath
+   if tPath is empty then
+      exit raSocialSave
+   end if
+   raSocialPrune
+   put kSocialVersion & return into tOut
+   if sMyNameSaved is "true" then
+      put "me" & tab & raB64(sMyName) & return after tOut
+   end if
+   repeat for each key tH in sFollows
+      put "follow" & tab & tH & return after tOut
+   end repeat
+   repeat for each key tH in sNames
+      put "name" & tab & tH & tab & raB64(sNames[tH]) & return after tOut
+   end repeat
+   repeat for each key tT in sPosts
+      put "post" & tab & tT & tab & sPosts[tT]["a"] & tab & sPosts[tT]["t"] & tab & \
+            sPosts[tT]["p"] & tab & sPosts[tT]["k"] & tab & sPosts[tT]["m"] & tab & \
+            sPosts[tT]["c"] & tab & raB64(sPosts[tT]["x"]) & return after tOut
+   end repeat
+   repeat for each key tT in sMyPostBytes
+      put base64Encode(sMyPostBytes[tT]) into tB
+      replace return with empty in tB
+      put "mine" & tab & tT & tab & tB & return after tOut
+   end repeat
+   if sMyHeadBytes is not empty then
+      put base64Encode(sMyHeadBytes) into tB
+      replace return with empty in tB
+      put "head" & tab & tB & return after tOut
+   end if
+   put rsSealAppState(tOut, sMasterSeed) into tSealed
+   if tSealed is empty then
+      raFeedNote empty, "could not seal the social cache:" && rsLastError()
+      exit raSocialSave
+   end if
+   try
+      put tSealed into url ("binfile:" & tPath)
+   catch tErr
+      raFeedNote empty, "could not write the social cache:" && tErr
+      exit raSocialSave
+   end try
+   if the result is not empty then
+      raFeedNote empty, "could not write the social cache:" && the result
+      exit raSocialSave
+   end if
+   put empty into sSocialDirty
+   put empty into sSocialSaveAt
+end raSocialSave
+
+command raSocialLoad
+   local tPath, tBytes, tText, tLine, tErr, tT, tSaved
+   raSocialForget
+   put raSocialPath() into tPath
+   if tPath is empty or there is no file tPath then
+      exit raSocialLoad
+   end if
+   try
+      put url ("binfile:" & tPath) into tBytes
+   catch tErr
+      raFeedNote empty, "could not read the social cache:" && tErr
+      exit raSocialLoad
+   end try
+   if tBytes is empty then
+      exit raSocialLoad
+   end if
+   put rsOpenAppState(tBytes, sMasterSeed) into tText
+   if tText is empty then
+      raFeedNote empty, "the social cache did not open (" & rsLastError() & "); starting empty."
+      exit raSocialLoad
+   end if
+   put the itemDelimiter into tSaved
+   set the itemDelimiter to tab
+   repeat for each line tLine in tText
+      -- UNKNOWN KINDS ARE IGNORED, never refused (raAppLoad's rule): a file
+      -- a newer build wrote must not lock this one out of its follows
+      switch item 1 of tLine
+         case "me"
+            put raUnB64(item 2 of tLine) into sMyName
+            put "true" into sMyNameSaved
+            break
+         case "follow"
+            if raIsHex(item 2 of tLine, 64) then
+               put "1" into sFollows[item 2 of tLine]
+            end if
+            break
+         case "name"
+            if raIsHex(item 2 of tLine, 64) then
+               put raUnB64(item 3 of tLine) into sNames[item 2 of tLine]
+            end if
+            break
+         case "post"
+            put item 2 of tLine into tT
+            if raIsHex(tT, 40) and raIsHex(item 3 of tLine, 64) then
+               put item 3 of tLine into sPosts[tT]["a"]
+               put item 4 of tLine into sPosts[tT]["t"]
+               put item 5 of tLine into sPosts[tT]["p"]
+               put item 6 of tLine into sPosts[tT]["k"]
+               put item 7 of tLine into sPosts[tT]["m"]
+               put item 8 of tLine into sPosts[tT]["c"]
+               put raUnB64(item 9 of tLine) into sPosts[tT]["x"]
+            end if
+            break
+         case "mine"
+            if raIsHex(item 2 of tLine, 40) then
+               put base64Decode(item 3 of tLine) into sMyPostBytes[item 2 of tLine]
+            end if
+            break
+         case "head"
+            put base64Decode(item 2 of tLine) into sMyHeadBytes
+            break
+      end switch
+   end repeat
+   set the itemDelimiter to tSaved
+end raSocialLoad
+
+-- Everything the social layer holds in memory, gone (Lock, close, and the
+-- start of a load).
+command raSocialForget
+   put empty into sFollows
+   put empty into sNames
+   put empty into sNameTarget
+   put empty into sPosts
+   put empty into sChunkBytes
+   put empty into sSyncHead
+   put empty into sSyncPost
+   put empty into sSyncPostMode
+   put empty into sSyncChunk
+   put empty into sSyncChunkAt
+   put empty into sSyncName
+   put empty into sSyncDl
+   put empty into sSyncChecked
+   put empty into sSyncCount
+   put empty into sSyncQueue
+   put empty into sSyncMissSaid
+   put 0 into sSyncRoundAt
+   put empty into sSocialDirty
+   put empty into sSocialSaveAt
+   put empty into sTimelineDirty
+   put empty into sMyPostBytes
+   put empty into sMyHeadBytes
+   put empty into sMyProfileTarget
+   put empty into sMyName
+   put empty into sMyNameSaved
+   put empty into sReplyTo
+   put empty into sViewHandle
+   put empty into sRepublishAt
+end raSocialForget
+
+-- Keep the cache bounded: past kCacheMax posts, drop the oldest posts of
+-- authors you no longer follow first, then the oldest of everyone but you.
+-- Your own posts are never dropped (they are what the keep-alive puts).
+command raSocialPrune
+   local tN, tT, tList, tOver, tLine
+   put the number of lines of the keys of sPosts into tN
+   if tN <= kCacheMax then
+      exit raSocialPrune
+   end if
+   repeat for each key tT in sPosts
+      if ("h" & sPosts[tT]["a"]) is not ("h" & sHandle) then
+         if sFollows[sPosts[tT]["a"]] is empty then
+            put "0" & tab & sPosts[tT]["t"] & tab & tT & return after tList
+         else
+            put "1" & tab & sPosts[tT]["t"] & tab & tT & return after tList
+         end if
+      end if
+   end repeat
+   set the itemDelimiter to tab
+   sort lines of tList ascending numeric by item 2 of each
+   sort lines of tList ascending numeric by item 1 of each
+   put tN - kCacheMax into tOver
+   repeat for each line tLine in tList
+      if tOver <= 0 then
+         exit repeat
+      end if
+      delete variable sPosts[item 3 of tLine]
+      subtract 1 from tOver
+   end repeat
+   set the itemDelimiter to comma
+end raSocialPrune
 
 -- ---- phase 4: DMs ------------------------------------------------------------
 -- The outbound dance (Start DM): fetch their head -> fetch + VERIFY their
@@ -17976,24 +20371,49 @@ end raFetch
 -- a byte of plaintext. Inbound is the mirror: an intro arrives in MY
 -- inbox, is opened + verified, and I answer with my own header.
 
-command raDmStart
+-- New chat from the handle field: open the conversation, then dial.
+command raDmStartFromField
+   local tH
+   put raParseHandle(field "raDmTo" of card "raMessages") into tH
+   if tH is empty then
+      raSay "That is not a Riptide handle: 64 characters, 0-9 and a-f.", "warn"
+      exit raDmStartFromField
+   end if
+   put empty into field "raDmTo" of card "raMessages"
+   raOpenChat tH
+   raDmStart tH
+end raDmStartFromField
+
+-- Connect: dial the conversation on screen.
+command raDmConnectSelected
+   if sDmSel is empty then
+      raSay "Pick a conversation first, or paste a handle under New chat.", "warn"
+      exit raDmConnectSelected
+   end if
+   raDmStart sDmSel
+end raDmConnectSelected
+
+command raDmStart pHandle
    local tHandle, tOk
    if sIdSeed is empty or sDmKeys is empty then
-      uiStatus "Unlock (or create) your identity before starting a DM.", "warn"
+      raSay "Unlock (or create) your identity before starting a chat.", "warn"
       exit raDmStart
    end if
    if sSession is not an integer or sSession <= 0 then
-      uiStatus "No TorrentXT session: DMs need the network.", "bad"
+      raSay "No TorrentXT session: chats need the network.", "bad"
       exit raDmStart
    end if
-   put toLower(word 1 of field "raDmTo" of card "raMessages") \
-         into tHandle
-   if the number of chars of tHandle is not 64 then
-      uiStatus "A handle is 64 hex characters (from the author's Feed card).", "warn"
+   put toLower(word 1 of pHandle) into tHandle
+   if not raIsHex(tHandle, 64) then
+      raSay "A handle is 64 hex characters (the author's public key).", "warn"
       exit raDmStart
    end if
    if ("h" & tHandle) is ("h" & sHandle) then
-      uiStatus "That is your own handle; DM someone else.", "warn"
+      raSay "That is your own handle; chat with someone else.", "warn"
+      exit raDmStart
+   end if
+   if raDmPeerFor(tHandle) is not empty then
+      raSay "You are already connected to" && raNameOf(tHandle) & ".", "ok"
       exit raDmStart
    end if
    put tHandle into sDmTarget
@@ -18003,11 +20423,11 @@ command raDmStart
    put rsRequestHead(sSession, sDmTarget) into tOk
    if tOk is not true then
       put empty into sDmAwaitDmHead
-      uiStatus "rsRequestHead refused:" && rsLastError(), "bad"
+      raSay "rsRequestHead refused:" && rsLastError(), "bad"
       exit raDmStart
    end if
-   raDmLog "dialing" && raDmShort(sDmTarget) & ": fetching their head..."
-   uiStatus "Fetching their head from the DHT...", empty
+   raDmLog "connecting to" && raNameOf(sDmTarget) & ": looking them up..."
+   raSay "Connecting to" && raNameOf(sDmTarget) & ". They need Riptide open too; this can take a minute.", empty
 end raDmStart
 
 -- Their prekey record arrived: check the content address, verify the
@@ -18105,12 +20525,22 @@ command raHandleRp1 pEvent
                   raDmLog "their stream header failed:" && tErr
                   break
                end try
-               -- the channel-open moment is also when the compose box
-               -- binds to this peer; a peer that never authenticates
-               -- (first "M" pull fails) is dropped right back off it
-               put tPeer into sDmActivePeer
-               raDmChatLine "-- channel open with" && \
-                     raDmShort(sDmTheirHandle[tPeer]) && "--"
+               -- the channel-open moment is when a conversation can bind
+               -- to this peer: it becomes the active one when it is the
+               -- chat on screen (or nothing is), and a peer that never
+               -- authenticates (first "M" pull fails) is dropped right off
+               if sDmSel is empty then
+                  put sDmTheirHandle[tPeer] into sDmSel
+               end if
+               if ("h" & sDmTheirHandle[tPeer]) is ("h" & sDmSel) then
+                  put tPeer into sDmActivePeer
+               end if
+               if ("h" & sDmTheirHandle[tPeer]) is ("h" & sDmTarget) then
+                  put empty into sDmTarget
+                  put empty into sDmTargetKx
+               end if
+               raChatAdd sDmTheirHandle[tPeer], "sys", "connected: end-to-end encrypted"
+               raDmLog "connected to" && raNameOf(sDmTheirHandle[tPeer]) & "."
                break
             case "M"
                if sDmPull[tPeer] is empty then
@@ -18141,8 +20571,8 @@ command raHandleRp1 pEvent
                   put false into tFinal
                end try
                if tFinal is true then
-                  raDmChatLine "-- " & raDmShort(sDmTheirHandle[tPeer]) && \
-                        "closed the conversation --"
+                  raChatAdd sDmTheirHandle[tPeer], "sys", \
+                        raNameOf(sDmTheirHandle[tPeer]) && "closed the conversation"
                   raDmDropPeer tPeer
                   break
                end if
@@ -18154,20 +20584,21 @@ command raHandleRp1 pEvent
                   break
                end if
                if tParsed["kind"] is "T" then
-                  raDmChatLine raDmShort(sDmTheirHandle[tPeer]) & ":" && \
-                        tParsed["text"]
+                  raChatAdd sDmTheirHandle[tPeer], "them", tParsed["text"]
                else if tParsed["kind"] is "O" then
-                  raDmCallIncoming tParsed["text"]
+                  raDmCallIncoming tParsed["text"], tPeer
                else if tParsed["kind"] is "A" then
-                  raDmCallAnswered tParsed["text"]
+                  -- only the peer we called may answer it
+                  if ("p" & tPeer) is ("p" & sDcRpPeer) then
+                     raDmCallAnswered tParsed["text"]
+                  end if
                end if
                break
          end switch
          break
       case "rp1PeerDisconnected"
          if sDmTheirHandle[tPeer] is not empty then
-            raDmChatLine "-- " & raDmShort(sDmTheirHandle[tPeer]) && \
-                  "disconnected --"
+            raChatAdd sDmTheirHandle[tPeer], "sys", "disconnected"
          end if
          raDmDropPeer tPeer
          break
@@ -18270,22 +20701,27 @@ command raDmDropPeer pPeer
 end raDmDropPeer
 
 command raDmSend
-   local tBody, tOk
-   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
-      uiStatus "No open conversation yet: Start DM and wait for the" && \
-            "channel-open line.", "warn"
+   local tBody, tOk, tPeer
+   if sDmSel is empty then
+      raSay "Pick a conversation first.", "warn"
       exit raDmSend
    end if
+   put raDmPeerFor(sDmSel) into tPeer
+   if tPeer is empty then
+      raSay "Not connected to" && raNameOf(sDmSel) && "yet: press Connect. They need Riptide open too.", "warn"
+      exit raDmSend
+   end if
+   put tPeer into sDmActivePeer
    put field "raDmMsg" of card "raMessages" into tBody
-   if tBody is empty then
+   if word 1 to -1 of tBody is empty then
       exit raDmSend
    end if
    put raDmSendMessage("T", tBody) into tOk
    if tOk is not true then
-      uiStatus "send refused:" && rsLastError(), "bad"
+      raSay "Send refused:" && rsLastError(), "bad"
       exit raDmSend
    end if
-   raDmChatLine "you:" && tBody
+   raChatAdd sDmSel, "me", tBody
    set the text of field "raDmMsg" of card "raMessages" to empty
 end raDmSend
 
@@ -18294,10 +20730,15 @@ end raDmSend
 -- authenticated encrypted rail (the whole point of the kinds existing).
 -- Returns true/false. rsSetError is PRIVATE to the library, so a failure
 -- here that is not a library refusal logs its reason to the chat directly
--- (callers guard the no-conversation case before calling).
-private function raDmSendMessage pKind, pBody
+-- (callers guard the no-conversation case before calling). pPeer names the
+-- rp1 peer when the message belongs to one (a call's signalling); empty is
+-- the active conversation.
+private function raDmSendMessage pKind, pBody, pPeer
    local tMsg, tCipher, tFrame, tOk, tErr
-   if sDmActivePeer is empty or sDmPush[sDmActivePeer] is empty then
+   if pPeer is empty then
+      put sDmActivePeer into pPeer
+   end if
+   if pPeer is empty or sDmPush[pPeer] is empty then
       return false
    end if
    put rsDmMessageBody(pKind, the seconds, pBody) into tMsg
@@ -18308,7 +20749,7 @@ private function raDmSendMessage pKind, pBody
    -- ends the stream for good, so it belongs to exactly one caller
    -- (raDmPushClose, at teardown) and nothing else may spend it
    try
-      put sxSecretStreamPush(sDmPush[sDmActivePeer], tMsg, empty, false) \
+      put sxSecretStreamPush(sDmPush[pPeer], tMsg, empty, false) \
             into tCipher
    catch tErr
       raDmChatLine "-- send failed: stream push:" && tErr && "--"
@@ -18318,9 +20759,214 @@ private function raDmSendMessage pKind, pBody
    if tFrame is empty then
       return false
    end if
-   put rsDmSend(sSession, sDmActivePeer, tFrame) into tOk
+   put rsDmSend(sSession, pPeer, tFrame) into tOk
    return tOk is true
 end raDmSendMessage
+
+-- ---- conversations: the Messages card --------------------------------------
+-- Messages live in memory only, per handle (sChat), and leave with Lock:
+-- the rail is end-to-end encrypted and nothing about it is kept on disk.
+-- One line per message: who ("me", "them", "sys"), the seconds, and the
+-- text as base64 (a message may hold returns and tabs).
+
+-- The live peer for a handle: an rp1 peer whose session is up both ways.
+function raDmPeerFor pHandle
+   local tPeer
+   if pHandle is empty then
+      return empty
+   end if
+   repeat for each key tPeer in sDmTheirHandle
+      if ("h" & sDmTheirHandle[tPeer]) is ("h" & pHandle) then
+         if sDmPush[tPeer] is not empty and sDmPull[tPeer] is not empty then
+            return tPeer
+         end if
+      end if
+   end repeat
+   return empty
+end raDmPeerFor
+
+-- Open the conversation with pHandle on the Messages card.
+command raOpenChat pHandle
+   local tH, tPeer
+   put raParseHandle(pHandle) into tH
+   if tH is empty then
+      exit raOpenChat
+   end if
+   if sHandle is empty then
+      raSay "Unlock to chat.", "warn"
+      exit raOpenChat
+   end if
+   if ("h" & tH) is ("h" & sHandle) then
+      exit raOpenChat
+   end if
+   put tH into sDmSel
+   delete variable sChatUnread[tH]
+   put raDmPeerFor(tH) into tPeer
+   if tPeer is not empty then
+      put tPeer into sDmActivePeer
+   end if
+   if sChat[tH] is empty then
+      put empty into sChat[tH]
+   end if
+   go to card "raMessages"
+   raNavMark "raNavMsgs"
+   raDmPaintContacts
+   raDmPaintChat
+   if there is a field "raDmMsg" of card "raMessages" then
+      focus on field "raDmMsg" of card "raMessages"
+   end if
+end raOpenChat
+
+command raChatAdd pHandle, pWho, pText
+   local tLine
+   if pHandle is empty then
+      exit raChatAdd
+   end if
+   put pWho & tab & the seconds & tab & raB64(pText) into tLine
+   if sChat[pHandle] is empty then
+      put tLine into sChat[pHandle]
+   else
+      put return & tLine after sChat[pHandle]
+   end if
+   if pWho is "them" then
+      if ("h" & pHandle) is not ("h" & sDmSel) or the short name of this card is not "raMessages" then
+         if sChatUnread[pHandle] is not an integer then
+            put 0 into sChatUnread[pHandle]
+         end if
+         add 1 to sChatUnread[pHandle]
+         raSay "New message from" && raNameOf(pHandle) & ".", "ok"
+      end if
+   end if
+   raDmPaintContacts
+   if ("h" & pHandle) is ("h" & sDmSel) then
+      raDmPaintChat
+   end if
+end raChatAdd
+
+-- The conversation list: everyone you follow, plus anyone you have chatted
+-- with, the most recent conversation first.
+command raDmPaintContacts
+   local tH, tList, tOut, tQ, tLast, tLine, tSeen, tBg, tState
+   if there is no field "raDmContacts" of card "raMessages" then
+      exit raDmPaintContacts
+   end if
+   put quote into tQ
+   if sHandle is empty then
+      raSetHtml "raDmContacts", "raMessages", raEmptyHtml("Locked", "Unlock to see your conversations.")
+      exit raDmPaintContacts
+   end if
+   repeat for each key tH in sChat
+      put "1" into tSeen[tH]
+      put empty into tLast
+      if sChat[tH] is not empty then
+         set the itemDelimiter to tab
+         put item 2 of line -1 of sChat[tH] into tLast
+         set the itemDelimiter to comma
+      end if
+      if tLast is not an integer then
+         put 0 into tLast
+      end if
+      put tLast & tab & tH & return after tList
+   end repeat
+   repeat for each key tH in sFollows
+      if tSeen[tH] is empty then
+         put "0" & tab & tH & return after tList
+      end if
+   end repeat
+   if tList is empty then
+      raSetHtml "raDmContacts", "raMessages", raEmptyHtml("No conversations", "Follow someone, or paste a handle below to start a chat.")
+      exit raDmPaintContacts
+   end if
+   set the itemDelimiter to tab
+   sort lines of tList descending numeric by item 1 of each
+   repeat for each line tLine in tList
+      put item 2 of tLine into tH
+      if ("h" & tH) is ("h" & sDmSel) then
+         put "#EEF2FF" into tBg
+      else
+         put "#FFFFFF" into tBg
+      end if
+      if raDmPeerFor(tH) is not empty then
+         put "connected" into tState
+      else if sChat[tH] is not empty then
+         put "not connected" into tState
+      else
+         put "you follow them" into tState
+      end if
+      put "<p bgcolor=" & tQ & tBg & tQ & " padding=" & tQ & "10" & tQ & \
+            " spacebelow=" & tQ & "4" & tQ & ">" after tOut
+      put "<font bgcolor=" & tQ & raAvatarHex(tH) & tQ & " color=" & tQ & "#FFFFFF" & tQ & \
+            "><b>&nbsp;" & raHtml(raInitials(tH)) & "&nbsp;</b></font>&nbsp;&nbsp;" after tOut
+      put "<a href=" & tQ & "c:" & tH & tQ & "><b>" & raHtml(raNameOf(tH)) & "</b></a>" after tOut
+      if sChatUnread[tH] is an integer and sChatUnread[tH] > 0 then
+         put "&nbsp;&nbsp;<font bgcolor=" & tQ & "#4F46E5" & tQ & " color=" & tQ & "#FFFFFF" & tQ & \
+               " size=" & tQ & "11" & tQ & "><b>&nbsp;" & sChatUnread[tH] & "&nbsp;</b></font>" after tOut
+      end if
+      put "&#11;<font color=" & tQ & kRaMutedHex & tQ & " size=" & tQ & "11" & tQ & ">" & \
+            tState & "</font></p>" after tOut
+      set the itemDelimiter to tab
+   end repeat
+   set the itemDelimiter to comma
+   raSetHtml "raDmContacts", "raMessages", tOut
+end raDmPaintContacts
+
+-- The open conversation: a header (who, and whether the line is up) and
+-- the messages as bubbles, yours on the right.
+command raDmPaintChat
+   local tH, tOut, tQ, tLine, tWho, tText, tTs
+   if there is no field "raDmChat" of card "raMessages" then
+      exit raDmPaintChat
+   end if
+   put quote into tQ
+   put sDmSel into tH
+   if tH is empty then
+      put "No conversation selected" into field "raDmWith" of card "raMessages"
+      raAvatarPaint "raDmAvatar", "raMessages", empty
+      raSetHtml "raDmChat", "raMessages", raEmptyHtml("Your messages", "Pick someone on the left, or paste a handle under New chat. Chats are end-to-end encrypted and never stored.")
+      exit raDmPaintChat
+   end if
+   put raNameOf(tH) into field "raDmWith" of card "raMessages"
+   raAvatarPaint "raDmAvatar", "raMessages", tH
+   if raDmPeerFor(tH) is not empty then
+      put "Connected: end-to-end encrypted." into field "raDmState" of card "raMessages"
+      set the label of button "raDmConnect" of card "raMessages" to "Connected"
+   else
+      if ("h" & sDmTarget) is not ("h" & tH) then
+         put "Not connected. Press Connect; they need Riptide open too." into field "raDmState" of card "raMessages"
+      end if
+      set the label of button "raDmConnect" of card "raMessages" to "Connect"
+   end if
+   set the itemDelimiter to tab
+   repeat for each line tLine in sChat[tH]
+      put item 1 of tLine into tWho
+      put item 2 of tLine into tTs
+      put raUnB64(item 3 of tLine) into tText
+      if tWho is "sys" then
+         put "<p align=" & tQ & "center" & tQ & " spacebelow=" & tQ & "6" & tQ & \
+               "><font size=" & tQ & "11" & tQ & " color=" & tQ & kRaMutedHex & tQ & ">" & \
+               raHtml(tText) & "</font></p>" after tOut
+      else if tWho is "me" then
+         put "<p leftindent=" & tQ & "160" & tQ & " bgcolor=" & tQ & "#4F46E5" & tQ & \
+               " padding=" & tQ & "8" & tQ & " spacebelow=" & tQ & "6" & tQ & \
+               "><font color=" & tQ & "#FFFFFF" & tQ & " size=" & tQ & "13" & tQ & ">" & \
+               raHtml(tText) & "</font>&#11;<font color=" & tQ & "#C7D2FE" & tQ & \
+               " size=" & tQ & "10" & tQ & ">" & raAgo(tTs) & "</font></p>" after tOut
+      else
+         put "<p rightindent=" & tQ & "160" & tQ & " bgcolor=" & tQ & "#F1F5F9" & tQ & \
+               " padding=" & tQ & "8" & tQ & " spacebelow=" & tQ & "6" & tQ & \
+               "><font color=" & tQ & kRaInkHex & tQ & " size=" & tQ & "13" & tQ & ">" & \
+               raHtml(tText) & "</font>&#11;<font color=" & tQ & kRaMutedHex & tQ & \
+               " size=" & tQ & "10" & tQ & ">" & raAgo(tTs) & "</font></p>" after tOut
+      end if
+   end repeat
+   set the itemDelimiter to comma
+   if tOut is empty then
+      put raEmptyHtml("Say hello", "Connect, then write below. Messages are end-to-end encrypted and leave memory when you lock.") into tOut
+   end if
+   raSetHtml "raDmChat", "raMessages", tOut
+   -- newest at the bottom, where the eye goes in a chat
+   set the vScroll of field "raDmChat" of card "raMessages" to the formattedHeight of field "raDmChat" of card "raMessages"
+end raDmPaintChat
 
 -- ---- phase 5: the live session (a dc call over the DM rail) ------------------
 -- The cold-start problem phase 5 exists to solve is ALREADY solved by
@@ -18359,7 +21005,7 @@ command raDmCall
    local tChan
    if sDcPeer is not empty then
       raDmChatLine "-- you hung up --"
-      get raDmSendMessage("T", "(hung up)")
+      get raDmSendMessage("T", "(hung up)", sDcRpPeer)
       raDcTeardown
       exit raDmCall
    end if
@@ -18381,6 +21027,8 @@ command raDmCall
       put empty into sDcPeer
       exit raDmCall
    end if
+   -- the call belongs to this conversation even if the screen moves on
+   put sDmActivePeer into sDcRpPeer
    raDcTypingReset
    -- the first channel triggers the offer (auto-negotiation)
    put dcCreateChannel(sDcPeer, "riptide-call") into tChan
@@ -18407,7 +21055,7 @@ command raDmCall
 end raDmCall
 
 -- An SDP offer arrived inside the secretstream (the far side pressed Call).
-command raDmCallIncoming pSdp
+command raDmCallIncoming pSdp, pRpPeer
    local tR
    if sDcPeer is not empty then
       raDmChatLine "-- incoming call ignored: already in one --"
@@ -18422,6 +21070,9 @@ command raDmCallIncoming pSdp
       put empty into sDcPeer
       exit raDmCallIncoming
    end if
+   -- the answer goes back to the peer that offered, whichever chat is on
+   -- screen
+   put pRpPeer into sDcRpPeer
    -- the caller opens BOTH channels (call + typing lane); they arrive
    -- here as dcChannelIncoming events, routed by label
    raDcTypingReset
@@ -18464,7 +21115,7 @@ command raDmCallShipLocal
    end if
    put sDcAwaitLocal into tKind
    put empty into sDcAwaitLocal
-   if raDmSendMessage(tKind, tSdp) is true then
+   if raDmSendMessage(tKind, tSdp, sDcRpPeer) is true then
       if tKind is "O" then
          raDmChatLine "-- offer sent over the encrypted DM channel --"
       else
@@ -18555,6 +21206,7 @@ command raDcTeardown
       end try
    end if
    put empty into sDcPeer
+   put empty into sDcRpPeer
    put empty into sDcChannel
    put empty into sDcAwaitLocal
    raDcTypingReset
@@ -21178,10 +23830,17 @@ end scFinish
 -- so the declaration must sit above that first use.
 
 command raScRun
-   local tMissing, tVer, tErr
+   local tMissing, tVer, tErr, tBack
+   -- the block writes to its log field UNQUALIFIED, so the synchronous half
+   -- runs with the Activity card in front, and the card the boot chose
+   -- (welcome, while locked) comes back at the end
+   put the number of this card into tBack
+   if there is a card "raLog" then
+      go to card "raLog"
+   end if
    scBegin "raIdOut"
    put scMissing(kRaScControls) into tMissing
-   scAssert "all 98 controls this script names exist (missing: " \
+   scAssert "all 91 controls this script names exist (missing: " \
          & scShow(tMissing) & ")", (tMissing is empty)
 
    if sHaveLib is not "true" then
@@ -21216,12 +23875,23 @@ command raScRun
             (rsPersonaAllows(false, "nostr") is true)
       scAssert "...and refuses an unknown transport fail-closed", \
             (rsPersonaAllows(false, "nostrr") is false)
-      -- The five cards this app builds. A card that failed to build is a
-      -- whole rail the user cannot reach, and every painter here is
+      -- The nine cards this app builds. A card that failed to build is a
+      -- whole place the user cannot reach, and every painter here is
       -- existence-guarded, so it would fail SILENTLY rather than loudly.
-      scAssert "all five cards were built", \
-            (there is a card "raMessages" and there is a card "raDevices" \
-             and there is a card "raAnon" and there is a card "raNostr")
+      scAssert "all nine cards were built", \
+            (there is a card "raWelcome" and there is a card "raProfile" \
+             and there is a card "raFollowing" and there is a card "raMessages" \
+             and there is a card "raDevices" and there is a card "raAnon" \
+             and there is a card "raNostr" and there is a card "raLog")
+      -- The reply convention is pure text, so it is checked here on every
+      -- open: a well-formed line is read, a near miss is not.
+      scAssert "a reply line is read back (raReplyRef)", \
+            (("r" & raReplyRef(kRaReplyPrefix & raScRepeat("a", 64) & "/" & \
+             raScRepeat("b", 40) & return & "hello")) is \
+             ("r" & raScRepeat("a", 64) & "/" & raScRepeat("b", 40)))
+      scAssert "...and a malformed one is plain text", \
+            (raReplyRef(kRaReplyPrefix & raScRepeat("a", 63) & "/" & \
+             raScRepeat("b", 40)) is empty)
       -- SodiumXT is the one hard dependency: identity cannot exist without it,
       -- and raProbe already says so in red. Asserting it here puts that in the
       -- pasteable record rather than only on the status line.
@@ -21260,4 +23930,28 @@ command raScRun
       end if
    end if
    scArmProbe
+   go to card tBack
 end raScRun
+
+function raScRepeat pChar, pCount
+   local tOut
+   repeat pCount times
+      put pChar after tOut
+   end repeat
+   return tOut
+end raScRepeat
+
+-- Below the carried self-check block ON PURPOSE: it reads the block's
+-- sScLines, and a script local resolves by lexical position (engine note
+-- 1.2), so above the block's declaration the name would not be in scope.
+command raLogRefresh
+   local tWant
+   if there is no field "raIdOut" of card "raLog" then
+      exit raLogRefresh
+   end if
+   put sScLines & sRaLog into tWant
+   set the caseSensitive to true
+   if ("t" & field "raIdOut" of card "raLog") is not ("t" & tWant) then
+      put tWant into field "raIdOut" of card "raLog"
+   end if
+end raLogRefresh
