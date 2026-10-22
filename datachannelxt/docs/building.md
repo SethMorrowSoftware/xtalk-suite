@@ -149,6 +149,11 @@ and the stale-handle surface. The live loopback runs in a browser, in
 OXT-Beyond's web IDE check, which runs `tests/datachannel-selftest.livecodescript`
 inside the IDE. Status: on 2026-10-22 that harness ran green in headless
 Chromium in the web IDE (75 passed, 0 failed, 0 skipped, its loopback
-section included); Firefox and WebKit run in OXT-Beyond's CI job and have
-no recorded result yet. A browser engine is not the OXT desktop engine:
-this says nothing about the native builds.
+section included), and the same day in OXT-Beyond's CI job in Firefox
+(75 passed, 0 failed, 0 skipped) and WebKit. A later run failed one
+assertion in both, "selected pair has localCandidate": the shim then sent
+a channel's open event before its getStats() snapshot of the pair had
+settled. Since then the open event waits for that snapshot (see the
+shim's header); the build with that change is verified in a browser only
+where a later dated record says so. A browser engine is not the OXT
+desktop engine: this says nothing about the native builds.

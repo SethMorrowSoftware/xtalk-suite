@@ -39,7 +39,12 @@
  *     browser refuses: it is stripped.
  *   - dcx_selected_candidate_pair answers from a snapshot of getStats() taken
  *     when the connection or a channel opens (a browser has no synchronous
- *     getter), in libdatachannel's "candidate:..." spelling.
+ *     getter), in libdatachannel's "candidate:..." spelling. libdatachannel
+ *     knows the pair by the time a channel opens, so a channel's open event
+ *     waits for the snapshot (retried for up to about 2 s, then sent
+ *     anyway), and the channel's later events are held behind it in order:
+ *     getStats() is a promise that can settle after the open, and in
+ *     Firefox the pair can show as selected only some milliseconds later.
  *   - dcx_channel_max_message is the SCTP limit the browser negotiated,
  *     capped at DCX_MAX_MESSAGE.
  *   - With no RTCPeerConnection (WebRTC disabled, or node), dcx_init and
@@ -153,8 +158,10 @@ EM_JS(int, dcx_js, (int op, int a, int b, int c, int d, int e, int f, int g, int
       ' ' + (c.priority || 0) + ' ' + (c.address || c.ip || "") + ' ' + (c.port || 0) +
       ' typ ' + (c.candidateType || 'host');
   }
-  function snapshotPair(P) {
-    if (!P.pc.getStats) return;
+  /* done, when given, runs once the pair is known or tries more 50 ms
+   * retries have not found it */
+  function snapshotPair(P, done, tries) {
+    if (!P.pc.getStats) { if (done) done(); return; }
     P.pc.getStats().then(function (stats) {
       var pair = null;
       stats.forEach(function (s) {
@@ -165,9 +172,16 @@ EM_JS(int, dcx_js, (int op, int a, int b, int c, int d, int e, int f, int g, int
           if (s.type === 'candidate-pair' && (s.selected || s.nominated) && s.state === 'succeeded') pair = s;
         });
       }
-      if (pair) P.pair = [candidateLine(stats.get(pair.localCandidateId)),
-        candidateLine(stats.get(pair.remoteCandidateId))];
-    }).catch(function () {});
+      /* a pair whose candidate reports are not in this snapshot yet is not
+       * taken: the retry asks again */
+      var local = pair && stats.get(pair.localCandidateId);
+      var remote = pair && stats.get(pair.remoteCandidateId);
+      if (local && remote) P.pair = [candidateLine(local), candidateLine(remote)];
+    }).catch(function () {}).then(function () {
+      if (!done) return;
+      if (P.pair || !(tries > 0) || P.pc.connectionState === 'closed') done();
+      else setTimeout(function () { snapshotPair(P, done, tries - 1); }, 50);
+    });
   }
   function peerState(P, h, s) {
     if (s === undefined || s === P.state) return;
@@ -178,7 +192,7 @@ EM_JS(int, dcx_js, (int op, int a, int b, int c, int d, int e, int f, int g, int
 
   function wireChannel(dc, peerHandle, incoming) {
     var ch = X.nextChan++;
-    var C = { dc: dc, peer: peerHandle, open: false, closed: false, low: false };
+    var C = { dc: dc, peer: peerHandle, open: false, closed: false, low: false, held: null };
     X.chans.set(ch, C);
     var P = X.peers.get(peerHandle);
     if (P) P.chans.add(ch);
@@ -187,38 +201,51 @@ EM_JS(int, dcx_js, (int op, int a, int b, int c, int d, int e, int f, int g, int
       emit(K.E_CHANNEL_INCOMING, peerHandle, ch,
         [strField(K.F_DC_LABEL, dc.label), strField(K.F_DC_PROTOCOL, dc.protocol)]);
     }
+    /* While the open event waits for the pair (see the header), this
+     * channel's events queue in C.held, so none overtakes the open */
+    function out(type, extra) {
+      if (C.held) C.held.push([type, extra]);
+      else emit(type, C.peer, ch, extra);
+    }
     function opened() {
       if (X.chans.get(ch) !== C || C.open) return;
       C.open = true;
-      emit(K.E_CHANNEL_OPEN, C.peer, ch);
       var Q = X.peers.get(C.peer);
-      if (Q) snapshotPair(Q);
+      if (!Q || Q.pair) { emit(K.E_CHANNEL_OPEN, C.peer, ch); return; }
+      C.held = [];
+      snapshotPair(Q, function () {
+        var held = C.held;
+        C.held = null;
+        if (X.chans.get(ch) !== C || !held) return;
+        emit(K.E_CHANNEL_OPEN, C.peer, ch);
+        for (var i = 0; i < held.length; i++) emit(held[i][0], C.peer, ch, held[i][1]);
+      }, 40);
     }
     dc.onopen = opened;
     dc.onclose = function () {
       if (X.chans.get(ch) !== C || C.closed) return;
       C.closed = true;
-      emit(K.E_CHANNEL_CLOSED, C.peer, ch);
+      out(K.E_CHANNEL_CLOSED);
     };
     dc.onerror = function (ev) {
       if (X.chans.get(ch) !== C) return;
       var m = ev && ev.error && ev.error.message ? ev.error.message : 'data channel error';
-      emit(K.E_CHANNEL_ERROR, C.peer, ch, [strField(K.F_DC_ERROR, m)]);
+      out(K.E_CHANNEL_ERROR, [strField(K.F_DC_ERROR, m)]);
     };
     dc.onmessage = function (ev) {
       if (X.chans.get(ch) !== C) return;
       var text = typeof ev.data === 'string';
       var bytes = text ? enc.encode(ev.data) : new Uint8Array(ev.data);
       if (bytes.length > K.MAX_MESSAGE) {
-        emit(K.E_CHANNEL_ERROR, C.peer, ch, [strField(K.F_DC_ERROR,
+        out(K.E_CHANNEL_ERROR, [strField(K.F_DC_ERROR,
           'oversized inbound message dropped (' + bytes.length + ' bytes > ' + K.MAX_MESSAGE + ')')]);
         return;
       }
-      emit(K.E_MESSAGE, C.peer, ch, [[text ? K.F_DC_TEXT : K.F_DC_PAYLOAD, text ? K.FT_UTF8 : K.FT_RAW, bytes]]);
+      out(K.E_MESSAGE, [[text ? K.F_DC_TEXT : K.F_DC_PAYLOAD, text ? K.FT_UTF8 : K.FT_RAW, bytes]]);
     };
     dc.onbufferedamountlow = function () {
       if (X.chans.get(ch) !== C || !C.low) return;
-      emit(K.E_BUFFERED_LOW, C.peer, ch);
+      out(K.E_BUFFERED_LOW);
     };
     if (dc.readyState === 'open') opened();
     return ch;
@@ -332,7 +359,11 @@ EM_JS(int, dcx_js, (int op, int a, int b, int c, int d, int e, int f, int g, int
       P.pc.close();
       P.chans.forEach(function (ch) {
         var C = X.chans.get(ch);
-        if (C && !C.closed) { C.closed = true; emit(K.E_CHANNEL_CLOSED, a, ch); }
+        if (!C || C.closed) return;
+        /* an open still waiting for the pair is never sent: it would follow the close */
+        C.held = null;
+        C.closed = true;
+        emit(K.E_CHANNEL_CLOSED, a, ch);
       });
       peerState(P, a, 5);
       return K.OK;
