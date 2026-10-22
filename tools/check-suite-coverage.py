@@ -562,7 +562,7 @@ HOLDEM_WORKLIST = {
         "its own body drives the b2k Kit, an audioClip, or the stack's file "
         "on disk - and the Kit half is forbidden outright by check 7d",
         ["heHasKit", "heKitCarriedPath", "heKitLayerSprites", "heKitReload",
-         "heKitSourceWidth", "heKitSweepStaleSprites", "heKitTryInit",
+         "heKitSourceWidth", "heKitSpriteResync", "heKitSweepStaleSprites", "heKitTryInit",
          "heProbeKit", "heProbeSounds", "heSndPlay", "heSndTryInit",
          "heStackFolder", "heUIHideHole", "heUIShowCardBack",
          "heUIShowCardIn", "heUIShowHoleBack"],

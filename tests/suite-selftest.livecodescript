@@ -43708,6 +43708,30 @@ command he1heKitSweepStaleSprites
    end repeat
 end he1heKitSweepStaleSprites
 
+command he1heKitSpriteResync pSpr, pSheet, pFrame
+   -- v0.25.7: the Kit remembers each sprite's icon by the sprite's LONG ID and
+   -- skips setting an icon it believes is already there. A stack reopened in
+   -- the same session (closed, deleted from memory, opened again) creates its
+   -- pool buttons with the SAME ids as last time, so the Kit, still holding
+   -- the last instance's record, skipped the icon: every face-down card drew
+   -- blank (seen on Windows, 2026-10-21) and a face could too. Showing
+   -- another frame and then the wanted one makes the Kit set the icon for
+   -- real, whatever it remembered. The other frame is the sheet's first one
+   -- (its second when pFrame is the first); a one-frame sheet skips it.
+   local he1tOther
+   if pSpr is empty then
+      exit he1heKitSpriteResync
+   end if
+   put line 1 of b2kSheetFrameNames(pSheet) into he1tOther
+   if he1tOther is pFrame then
+      put line 2 of b2kSheetFrameNames(pSheet) into he1tOther
+   end if
+   if he1tOther is not empty then
+      b2kSpriteSetFrame pSpr, he1tOther
+   end if
+   b2kSpriteSetFrame pSpr, pFrame
+end he1heKitSpriteResync
+
 function he1heKitSourceWidth pSheet, pFrame
    -- a frame's width in SOURCE pixels, from the sheet's own regions (v0.25.7).
    -- b2kSheetFrameSize answers at the sheet's CURRENT scale, and sheets persist
@@ -43859,6 +43883,7 @@ command he1heKitTryInit
          put he1gSlotCenter[he1tSlot] into he1tCtr
          b2kSpriteNew "heCards", he1heKenneyFrame(1) & he1gKitSuffix, item 1 of he1tCtr, item 2 of he1tCtr
          put the result into he1tSpr
+         he1heKitSpriteResync he1tSpr, "heCards", he1heKenneyFrame(1) & he1gKitSuffix
          b2kSpriteMoveTo he1tSpr, item 1 of he1tCtr, item 2 of he1tCtr
          set the visible of he1tSpr to false
          put he1tSpr into he1gCardSpr[he1tSlot]
@@ -43897,6 +43922,7 @@ command he1heKitTryInit
                         item 1 of he1tCtr, item 2 of he1tCtr
                   put the result into he1tSpr
                   if he1tSpr is not empty then
+                     he1heKitSpriteResync he1tSpr, "heCardBacks", he1kHeCardBackFrame & he1gKitBackSuffix
                      b2kSpriteMoveTo he1tSpr, item 1 of he1tCtr, item 2 of he1tCtr
                      set the visible of he1tSpr to false
                      put he1tSpr into he1gBackSpr[he1tSlot]
