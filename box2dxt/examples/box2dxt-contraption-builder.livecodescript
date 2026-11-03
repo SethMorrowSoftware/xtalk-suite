@@ -226,6 +226,7 @@ local sCamLastH, sCamLastV -- last written scroll (skip redundant sets)
 local sCamNote       -- empty = healthy; else why the camera is degraded
 local sCamLocVisual  -- true when this engine reports grouped locs SCROLL-ADJUSTED
 local sCamCurH, sCamCurV -- the scroll actually applied this frame (cached)
+local sCamOX, sCamOY     -- the viewport's top-left on the card: world 0,0 is drawn there
 local sInCam         -- ctrlRef -> true when the Kit placed it inside the viewport
 local sPlayRef       -- the player's control (empty = no player controller)
 local sPlayArt       -- the sprite whose anims the controller drives
@@ -1171,8 +1172,10 @@ command b2kAddBox pControl, pDynamic
    put ((the width of pControl) / 2) / sScale into tHw
    put ((the height of pControl) / 2) / sScale into tHh
    if tHw <= 0 or tHh <= 0 then return 0
-   put b2kToWorldX(item 1 of the loc of pControl) into tWx
-   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   -- the control's WORLD centre: its loc plus the camera's write shift
+   -- (0 off-camera, and in a camera at the card's corner that is unscrolled)
+   put b2kToWorldX(item 1 of the loc of pControl + b2kCamShiftX(tRef)) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl + b2kCamShiftY(tRef)) into tWy
    put (word 1 of tRef is "graphic") into tGraphic
    put (word 1 of tRef is "image") into tImage
    -- Graphics rotate as polygons; dynamic images rotate via `the angle`. Other
@@ -1231,8 +1234,10 @@ command b2kAddBall pControl, pDynamic
    else put 0 into tType
    put ((the width of pControl) / 2) / sScale into tRad
    if tRad <= 0 then return 0
-   put b2kToWorldX(item 1 of the loc of pControl) into tWx
-   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   -- the control's WORLD centre: its loc plus the camera's write shift
+   -- (0 off-camera, and in a camera at the card's corner that is unscrolled)
+   put b2kToWorldX(item 1 of the loc of pControl + b2kCamShiftX(tRef)) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl + b2kCamShiftY(tRef)) into tWy
    put b2NewBody(sWorld, tType, tWx, tWy, 0, false, false) into tBody
    b2ShapeDefEnableSensorEvents true   -- so sensors can detect this shape
    put b2AddCircle(tBody, 0, 0, tRad, 1.0, 0.4, 0.4) into sShapeH[tRef]
@@ -1288,8 +1293,10 @@ command b2kAddCapsule pControl, pDynamic
       put tWm / 2 into tR
       put max(0, tHm / 2 - tR) into tL
    end if
-   put b2kToWorldX(item 1 of the loc of pControl) into tWx
-   put b2kToWorldY(item 2 of the loc of pControl) into tWy
+   -- the control's WORLD centre: its loc plus the camera's write shift
+   -- (0 off-camera, and in a camera at the card's corner that is unscrolled)
+   put b2kToWorldX(item 1 of the loc of pControl + b2kCamShiftX(tRef)) into tWx
+   put b2kToWorldY(item 2 of the loc of pControl + b2kCamShiftY(tRef)) into tWy
    put (word 1 of tRef is "graphic") into tGraphic
    put (word 1 of tRef is "image") into tImage
    if tGraphic or (tImage and pDynamic) then put false into tFixed
@@ -1346,8 +1353,9 @@ command b2kAddPolygon pControl, pDynamic
    else put 0 into tType
    put item 1 of the loc of pControl into tCx
    put item 2 of the loc of pControl into tCy
-   put b2kToWorldX(tCx) into tWx
-   put b2kToWorldY(tCy) into tWy
+   -- the body at the WORLD centre; the vertices stay local to the loc
+   put b2kToWorldX(tCx + b2kCamShiftX(tRef)) into tWx
+   put b2kToWorldY(tCy + b2kCamShiftY(tRef)) into tWy
    put b2NewBody(sWorld, tType, tWx, tWy, 0, false, false) into tBody
    b2PolyBegin
    put empty into tLocal
@@ -1455,6 +1463,9 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -1478,6 +1489,7 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBox tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBox
 
@@ -1511,6 +1523,9 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -1534,6 +1549,7 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBall tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBall
 
@@ -1574,6 +1590,9 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -1602,6 +1621,7 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddCapsule tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnCapsule
 
@@ -4249,7 +4269,10 @@ command b2kAddChain pControl, pPoints, pLoop
    put the long id of pControl into tRef
    put item 1 of the loc of pControl into tCx
    put item 2 of the loc of pControl into tCy
-   put b2NewStaticBody(sWorld, b2kToWorldX(tCx), b2kToWorldY(tCy)) into tBody
+   -- the body at the control's WORLD centre (its loc plus the camera's
+   -- write shift); the points, in the loc's own space (the control's
+   -- points, as the example passes), are made local to the loc
+   put b2NewStaticBody(sWorld, b2kToWorldX(tCx + b2kCamShiftX(tRef)), b2kToWorldY(tCy + b2kCamShiftY(tRef))) into tBody
    b2ChainBegin
    repeat for each line p in pPoints
       if p is empty then next repeat
@@ -8913,7 +8936,8 @@ end b2kPlayerShowState
 /**
 Summary: Turn on the scrolling camera.
 
-pRect: The viewport rect on the card. Empty means the card's rect.
+pRect: The viewport rect on the card. Empty means the card's rect. World
+0,0 is the viewport's top-left corner, wherever the viewport is on the card.
 
 Example:
 b2kCamOn
@@ -8971,8 +8995,16 @@ command b2kCamOn pRect
    -- pans correctly at any level size.
    put tG into sCamGroup
    set the itemDelimiter to comma
-   put ((item 1 of pRect) + (item 3 of pRect)) / 2 into sCamX
-   put ((item 2 of pRect) + (item 4 of pRect)) / 2 into sCamY
+   -- The view starts on world 0,0 at its top-left. World pixels are
+   -- counted from the viewport's corner (setting the group's rect moves
+   -- the anchor there, and the scroll is the view corner), so the centre
+   -- is half the viewport's size, NOT the viewport's centre on the card:
+   -- that was the same number only for a viewport at the card's 0,0, and
+   -- any other viewport opened scrolled by its own left and top.
+   put item 1 of pRect into sCamOX
+   put item 2 of pRect into sCamOY
+   put ((item 3 of pRect) - (item 1 of pRect)) / 2 into sCamX
+   put ((item 4 of pRect) - (item 2 of pRect)) / 2 into sCamY
    put 0.15 into sCamLerp
    put 0 into sCamDZW
    put 0 into sCamDZH
@@ -9044,6 +9076,8 @@ command b2kCamOff
    put false into sCamLocVisual
    put 0 into sCamCurH
    put 0 into sCamCurV
+   put 0 into sCamOX
+   put 0 into sCamOY
    put empty into sInCam
 end b2kCamOff
 
@@ -9340,7 +9374,9 @@ References: b2kCamShiftY (handler), b2kCamLocSemantics (handler), b2kSpriteMoveT
 function b2kCamShiftX pRef
    if sCamLocVisual is not true then return 0
    if sInCam[pRef] is not true then return 0
-   return sCamCurH
+   -- a visual engine reports and takes CARD locs: world x is drawn at the
+   -- viewport's left + x - scroll (0 for a viewport at the card's left)
+   return sCamCurH - sCamOX
 end b2kCamShiftX
 
 /**
@@ -9358,7 +9394,7 @@ References: b2kCamShiftX (handler)
 function b2kCamShiftY pRef
    if sCamLocVisual is not true then return 0
    if sInCam[pRef] is not true then return 0
-   return sCamCurV
+   return sCamCurV - sCamOY
 end b2kCamShiftY
 
 -- Move ANY sprite/control to a WORLD position, camera-correct (use this
@@ -9438,12 +9474,14 @@ command b2kCamTick
       try
          set the itemDelimiter to comma
          put the loc of sCamFollow into tLoc
-         put (item 1 of tLoc) + b2kCamShiftX(sCamFollow) - (the hScroll of sCamGroup) into tTX
+         -- the target's WORLD x, then where it is in the view
+         put (item 1 of tLoc) + b2kCamShiftX(sCamFollow) into tTY
+         put tTY - (the hScroll of sCamGroup) into tTX
          put ((item 3 of the rect of sCamGroup) - (item 1 of the rect of sCamGroup)) into tHalfW
          if tTX < 48 or tTX > tHalfW - 48 then
-            set the hScroll of sCamGroup to round((item 1 of tLoc) - tHalfW / 2)
+            set the hScroll of sCamGroup to round(tTY - tHalfW / 2)
             put the hScroll of sCamGroup into sCamLastH
-            put item 1 of tLoc into sCamX
+            put tTY into sCamX
          end if
       catch tErr
       end try

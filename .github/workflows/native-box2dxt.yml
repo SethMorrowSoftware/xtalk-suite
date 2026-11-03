@@ -132,6 +132,18 @@ jobs:
             asset: libbox2dxt-linux-i686.so
     steps:
       - uses: actions/checkout@v4
+      # Box2D is cloned HERE, on the host, and handed to FetchContent as its
+      # source: since 2026-11-03 the newest manylinux2014_i686 image cannot
+      # resolve github.com from inside the container ("Could not resolve
+      # host", every attempt), while the x86_64 one still can. The tag is
+      # the one CMakeLists.txt declares, read from it so the two never part;
+      # the clone sits at the checkout's root, which the container sees as
+      # /io here and in the member's own repository alike.
+      - name: Fetch Box2D on the host
+        run: |
+          tag="$(grep -rh -A1 --include=CMakeLists.txt 'erincatto/box2d.git' . | sed -n 's/.*GIT_TAG *\(v[0-9.]*\).*/\1/p' | head -n 1)"
+          test -n "$tag"
+          git clone --quiet --depth 1 --branch "$tag" https://github.com/erincatto/box2d.git .box2d-src
       - name: Build & smoke-test in ${{ matrix.image }} (glibc 2.17)
         run: |
           docker run --rm -v "$PWD":/io -w /io/box2dxt "${{ matrix.image }}" \
@@ -141,7 +153,8 @@ jobs:
                 "$PYBIN/pip" install --quiet cmake ninja
                 export PATH="$PYBIN:$PATH"
               fi
-              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON ${{ matrix.cmake_args }}
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOX2DXT_BUILD_TESTS=ON \
+                -DFETCHCONTENT_SOURCE_DIR_BOX2D=/io/.box2d-src ${{ matrix.cmake_args }}
               cmake --build build --config Release
               ctest --test-dir build --output-on-failure
               mkdir -p dist

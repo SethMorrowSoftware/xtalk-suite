@@ -483,7 +483,7 @@ infinite-distance parallax backdrop. Level coordinates should start at 0,0.
 
 | Handler | Purpose |
 |---------|---------|
-| `b2kCamOn [rect]` | Create the viewport (default: the card rect). Do this *before* building the level, after any static backdrop. |
+| `b2kCamOn [rect]` | Create the viewport (default: the card rect). Do this *before* building the level, after any static backdrop. World 0,0 is the viewport's top-left corner, wherever the rect is on the card (since 2026-11-03; before, a viewport away from the card's 0,0 opened scrolled by its own left and top). |
 | `b2kCamOff` | Dissolve the viewport - children return to the card with their world locs. Called automatically by `b2kTeardown`. |
 | `b2kCamIsOn()` / `b2kCamGroup()` | State / the group's ref - build your own level controls inside it: `create graphic "x" in b2kCamGroup()`. |
 | `b2kCamAdopt ctrl` | Move an existing control (IDE-designed levels, fallback shapes) into the viewport. |
@@ -495,7 +495,7 @@ infinite-distance parallax backdrop. Level coordinates should start at 0,0.
 | `b2kCamStatus()` | Empty = healthy; otherwise why the camera degraded (group/scroll failures). Check it after `b2kCamOn` and fall back gracefully. |
 | `b2kCamLocSemantics()` | `"visual"` or `"content"` - which grouped-loc coordinate model the startup probe detected. Diagnostic; the Kit compensates automatically. |
 | `b2kCamMouseX()` / `b2kCamMouseY()` | The mouse in **world** pixels - use for `b2kGrab`, click-picking, spawning at the pointer. (The Kit's own drag already uses them.) |
-| `b2kCamShiftX(ctrl)` / `b2kCamShiftY(ctrl)` | The scroll to subtract when WRITING a position for a control inside the viewport, on an engine whose grouped locs are visual (`b2kCamLocSemantics()` is `"visual"`); `0` otherwise, and for a control outside the viewport. `b2kSpriteMoveTo` and the renderer apply it for you. |
+| `b2kCamShiftX(ctrl)` / `b2kCamShiftY(ctrl)` | The scroll, less the viewport's left (top), to subtract when WRITING a position for a control inside the viewport, on an engine whose grouped locs are visual (`b2kCamLocSemantics()` is `"visual"`); `0` otherwise, and for a control outside the viewport. `b2kSpriteMoveTo`, the renderer and the `b2kAdd...` handlers (reading a control's world centre) apply it for you. |
 | `b2kCamTick` / `b2kCamApply` | The loop's camera step: chase the followed control (eased, but snapped when the target would leave the view), then clamp to the bounds, add the shake and write the scroll (skipped when unchanged). |
 
 ```
