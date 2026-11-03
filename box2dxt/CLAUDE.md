@@ -149,6 +149,10 @@ doc map) - `dist/INSTALL.md` (packed by `make-release.py`) - `.github/workflows/
 12. **Scrolled-group locs are SCROLL-ADJUSTED** on OXT, so per-frame world
     writes cancel the pan; `b2kCamOn` probes it and `b2kCamShiftX/Y`
     compensates. Hand-animate with `b2kSpriteMoveTo`, never `set the loc`.
+    Those locs are CARD locs, so world 0,0 sits at the viewport's corner:
+    the shift is the scroll less the viewport's left/top (OBSERVED 2026-11-03 on
+    OXT-Beyond 0.2.7-rc.6.12's Linux engine, a viewport at 270,140; the selftest's
+    stTestCamOffsetView). The "content" model is unobserved; its shift stays 0.
 13. **Object-type tokens are single words:** `import audioClip from file`
     compiles, `import audio clip` fails ("bad image type"); same for `videoClip`.
 14. **Sensor/contact MESSAGES go to `b2kContactTarget`, not the frame target**;
