@@ -95,7 +95,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "34"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "35"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -191,6 +191,7 @@ command stRunAll
    stRun "stTestCamera"
    stRun "stTestCamScrolledWrite"
    stRun "stTestCamOffsetView"
+   stRun "stTestSpawnScreenLock"
    stRun "stTestEngineContracts"
    stRun "stTestLoaderMapping"
    stRun "stTestMaterialsJoints"
@@ -910,6 +911,28 @@ command stTestCamOffsetView
          (abs(the hScroll of b2kCamGroup() - (900 - 215)) < 2)
    b2kCamOff
 end stTestCamOffsetView
+
+-- A spawn locks the screen while its control is made, sized and placed
+-- (since 2026-11-03: before, a new graphic showed for a moment at the
+-- card's middle at its default size, and a burst of spawns flickered).
+-- Its lock must be its own: the caller's lockScreen is as it was after
+-- each kind of spawn, locked or not.
+command stTestSpawnScreenLock
+   local tWas
+   stNewWorld "spawns: the screen lock is the spawn's own"
+   put the lockScreen into tWas
+   b2kSpawnBox 200, 100, 30, 30
+   b2kSpawnBall 260, 100, 30
+   b2kSpawnCapsule 330, 100, 60, 24
+   stAssert "the lockScreen is as it was after three spawns (" & the lockScreen & ")", \
+         (the lockScreen is tWas)
+   lock screen
+   b2kSpawnBall 400, 100, 30
+   stAssert "...and a caller's own lock is still on after one", (the lockScreen is true)
+   unlock screen
+   stAssert "...and comes off with the caller's unlock", (the lockScreen is tWas)
+   stAssert "the four spawned bodies are in the world", (b2kBodyCount() >= 4)
+end stTestSpawnScreenLock
 
 -- The LC/OXT behaviours the Kit silently RELIES on. When an engine
 -- update or a new platform breaks one, this names it in plain text.
@@ -4386,6 +4409,9 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -4409,6 +4435,7 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBox tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBox
 
@@ -4442,6 +4469,9 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -4465,6 +4495,7 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBall tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBall
 
@@ -4505,6 +4536,9 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -4533,6 +4567,7 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddCapsule tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnCapsule
 

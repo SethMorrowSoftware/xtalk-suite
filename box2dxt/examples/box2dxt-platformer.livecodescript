@@ -9067,6 +9067,9 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -9090,6 +9093,7 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBox tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBox
 
@@ -9123,6 +9127,9 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -9146,6 +9153,7 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBall tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBall
 
@@ -9186,6 +9194,9 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -9214,6 +9225,7 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddCapsule tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnCapsule
 

@@ -8,6 +8,15 @@ The native shim's ABI is tracked separately by `b2Version()` (currently `4`).
 
 ## [Unreleased]
 
+- **A spawn no longer flashes at the card's middle** (2026-11-03).
+  `b2kSpawnBox`, `b2kSpawnBall` and `b2kSpawnCapsule` made their graphic at
+  the engine's default size and place and only then sized and placed it, so
+  each new shape showed for a moment in the card's middle (a burst of
+  spawns flickered). Each now locks the screen from making the control to
+  placing it and unlocks it once: the caller's own lock is as it was. What
+  a spawn makes and returns is unchanged; `stTestSpawnScreenLock` adds four
+  assertions (415/415 on OXT-Beyond 0.2.7-rc.6.12's Linux engine).
+
 - **The Kit's camera works in a viewport away from the card's corner**
   (2026-11-03). `b2kCamOn "270,140,700,620"` used to open scrolled by the
   viewport's own left and top, and on a visual-semantics engine every

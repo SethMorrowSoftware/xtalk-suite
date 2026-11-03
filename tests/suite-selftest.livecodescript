@@ -621,7 +621,7 @@ local dc1sStRunDone           -- "true" once the run finished (drives the color)
 local b21gRep, b21gPass, b21gFail, b21gFellCount, b21gRunning
 local b21gMsgEnters, b21gMsgContacts   -- message-path counters (vs polling)
 constant b21kStUIVersion = "1"
-constant b21kStHarnessV = "34"  -- bump on EVERY harness change: the report
+constant b21kStHarnessV = "35"  -- bump on EVERY harness change: the report
 
 -- ---- Riptide Social (phases 1-8): the rs* self-test ----
 constant rs1kRsGoldMasterHex = "4242424242424242424242424242424242424242424242424242424242424242"
@@ -11190,6 +11190,9 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -11213,6 +11216,7 @@ command b2kSpawnBox pScreenX, pScreenY, pW, pH, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBox tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBox
 
@@ -11224,6 +11228,9 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -11247,6 +11254,7 @@ command b2kSpawnBall pScreenX, pScreenY, pDiameter, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddBall tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnBall
 
@@ -11260,6 +11268,9 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    put b2kNumberOr(pScreenX, sOriginX) into pScreenX
    put b2kNumberOr(pScreenY, sOriginY) into pScreenY
    put "b2kspawn_" & the milliseconds & "_" & random(1000000) into tName
+   -- (locked until the control is sized and in its place: a new graphic
+   -- shows at the card's middle at its default size until then)
+   lock screen
    if sCamGroup is empty then
       create graphic (tName)
    else
@@ -11288,6 +11299,7 @@ command b2kSpawnCapsule pScreenX, pScreenY, pLength, pThickness, pColor
    set the loc of tRef to round(pScreenX - b2kCamShiftX(tRef)) & "," & round(pScreenY - b2kCamShiftY(tRef))
    b2kAddCapsule tRef
    put true into sSpawned[tRef]
+   unlock screen
    return tRef
 end b2kSpawnCapsule
 
@@ -27684,6 +27696,7 @@ command b21stRunAll
    b21stRun "b21stTestCamera"
    b21stRun "b21stTestCamScrolledWrite"
    b21stRun "b21stTestCamOffsetView"
+   b21stRun "b21stTestSpawnScreenLock"
    b21stRun "b21stTestEngineContracts"
    b21stRun "b21stTestLoaderMapping"
    b21stRun "b21stTestMaterialsJoints"
@@ -28344,6 +28357,23 @@ command b21stTestCamOffsetView
          (abs(the hScroll of b2kCamGroup() - (900 - 215)) < 2)
    b2kCamOff
 end b21stTestCamOffsetView
+
+command b21stTestSpawnScreenLock
+   local b21tWas
+   b21stNewWorld "spawns: the screen lock is the spawn's own"
+   put the lockScreen into b21tWas
+   b2kSpawnBox 200, 100, 30, 30
+   b2kSpawnBall 260, 100, 30
+   b2kSpawnCapsule 330, 100, 60, 24
+   b21stAssert "the lockScreen is as it was after three spawns (" & the lockScreen & ")", \
+         (the lockScreen is b21tWas)
+   lock screen
+   b2kSpawnBall 400, 100, 30
+   b21stAssert "...and a caller's own lock is still on after one", (the lockScreen is true)
+   unlock screen
+   b21stAssert "...and comes off with the caller's unlock", (the lockScreen is b21tWas)
+   b21stAssert "the four spawned bodies are in the world", (b2kBodyCount() >= 4)
+end b21stTestSpawnScreenLock
 
 command b21stTestEngineContracts
    local b21tPath, b21tData, b21i, b21tRef, b21tVol, b21tLo, b21tHi, b21tOwn, b21tErr
