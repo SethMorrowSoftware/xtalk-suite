@@ -1,5 +1,18 @@
 # xTalk Suite
 
+[![Suite gates](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/suite-gates.yml/badge.svg)](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/suite-gates.yml)
+[![.lce packages](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/lce-packages.yml/badge.svg)](https://github.com/SethMorrowSoftware/xtalk-suite/actions/workflows/lce-packages.yml)
+[![Latest release](https://img.shields.io/github/v/release/SethMorrowSoftware/xtalk-suite?include_prereleases&label=packages)](https://github.com/SethMorrowSoftware/xtalk-suite/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Community: OpenXTalk forums](https://img.shields.io/badge/community-OpenXTalk%20forums-orange)](https://openxtalk.org/forum/)
+
+**[Get the packages](https://github.com/SethMorrowSoftware/xtalk-suite/releases)** ·
+**[Built into OXT-Beyond](https://github.com/SethMorrowSoftware/OpenXTalk-Beyond)** ·
+[Extensions page](https://sethmorrowsoftware.github.io/OpenXTalk-Beyond/extensions/) ·
+[Forum](https://openxtalk.org/forum/) ·
+[Contributing](CONTRIBUTING.md) ·
+[Security](SECURITY.md)
+
 **Extensions that give OpenXTalk (OXT) and the xTalk family (also LiveCode 9.6.3+) the
 capabilities app authors reach for: cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor,
 Bitcoin and Ethereum primitives, 2-D physics with a game kit, and Nostr.** Each is a small,
@@ -67,7 +80,9 @@ absent, rather than failing.
 
 ## Start here (no experience needed)
 
-1. Install [OpenXTalk](https://openxtalk.org).
+1. Install [OXT-Beyond](https://github.com/SethMorrowSoftware/OpenXTalk-Beyond/releases), which
+   has every extension built in, or another IDE built on LiveCode Community 9 such as
+   [OpenXTalk](https://openxtalk.org) with the packages from [Install](#install).
 2. Download this repository (the green **Code** button, then **Download ZIP**) and unzip it
    anywhere, or `git clone` it.
 3. In OpenXTalk: `File > New Mainstack`, then `Object > Stack Script`. Paste **all** of
@@ -261,6 +276,16 @@ blocks, the gates and the generators. CI runs only from the root:
 - [docs/README.md](docs/README.md) indexes the suite documents: the engine runbook and engine
   notes, the work plan, the owner decisions, publishing, the binding playbook, the anonymous
   transport (Model C) and the Riptide spec and protocol.
+
+## Community and support
+
+- **Questions and discussion:** the [OpenXTalk forums](https://openxtalk.org/forum/).
+- **Bugs and ideas:** [GitHub issues](https://github.com/SethMorrowSoftware/xtalk-suite/issues),
+  with a form for each; [SUPPORT.md](SUPPORT.md) says where each kind of question goes.
+- **Security problems:** report them privately, as [SECURITY.md](SECURITY.md) describes. Several
+  members guard keys and money, so please do not open a public issue for one.
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md). Everyone taking part follows the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

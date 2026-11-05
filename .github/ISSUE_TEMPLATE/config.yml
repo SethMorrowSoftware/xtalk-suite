@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: OpenXTalk forums
+    url: https://openxtalk.org/forum/
+    about: Questions and general discussion about xTalk programming and the suite's extensions.
+  - name: OXT-Beyond
+    url: https://github.com/SethMorrowSoftware/OpenXTalk-Beyond/issues
+    about: Problems that only happen in OXT-Beyond, which has every extension built in.
+  - name: Security problems
+    url: https://github.com/SethMorrowSoftware/xtalk-suite/security/policy
+    about: Please report security problems privately, as described in the security policy, not in a public issue.
