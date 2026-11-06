@@ -50,11 +50,22 @@ on:
   workflow_dispatch:
 
 # A newer commit to a pull request cancels the run of the older one, which no
-# one will read (2026-10-20). main and a dispatch are never cancelled: each
-# run gets a group of its own (its run id), because the publisher reads every
-# run on main, and a cancelled run there would be a commit nobody checked.
+# one will read (2026-10-20). A dispatch is never cancelled: each gets a group
+# of its own (its run id).
+#
+# MAIN (2026-11-06). Until this date main was never cancelled either, so two
+# merges a minute apart each ran every member's gates to the end (2026-10-21:
+# 155 and 162 minutes, side by side), right after each pull request's own run
+# had passed. Now a newer push to main cancels the older main run, as the
+# native-<member>.yml lanes already did. Nothing goes unpublished:
+# publish-members.yml publishes the first-parent line UP TO the commit of the
+# green run that wakes it, so the newer run publishes the older commit with
+# it, and a commit is never published without a green run on a main that
+# contains it. What is given up is a full-walk run on the OLDER commit by
+# itself; its pull request's scoped run still checked it. The owner chose
+# this trade on 2026-11-06. tools/test-suite-gates-concurrency.py holds it.
 concurrency:
-  group: suite-gates-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  group: suite-gates-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && github.ref || format('run-{0}', github.run_id) }}
   cancel-in-progress: true
 
 # Nothing here writes: the jobs read the tree, run gates, and upload

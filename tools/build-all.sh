@@ -404,6 +404,13 @@ if [ -f tools/member-registry.py ]; then
   echo "== suite: tools/member-registry.py --selftest =="
   python3 tools/member-registry.py --selftest
 fi
+# Which suite-gates runs cancel which (2026-11-06: a newer push to main now
+# cancels the older main run; a pull request only its own; a dispatch none),
+# evaluated from the workflow's concurrency expression as Actions would.
+if [ -f tools/test-suite-gates-concurrency.py ]; then
+  echo "== suite: tools/test-suite-gates-concurrency.py =="
+  python3 tools/test-suite-gates-concurrency.py
+fi
 # The publisher itself (tools/publish-members.py) writes to eleven
 # repositories that are not this one, from .github/workflows/
 # publish-members.yml, so this is where its promises are held: it replays
