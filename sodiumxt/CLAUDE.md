@@ -9,7 +9,7 @@ original design plan is in git history, and what still matters from it is below.
 **SodiumXT** brings modern cryptography to OpenXTalk (OXT) and LiveCode 9.6.3+:
 authenticated encryption, Argon2id, streaming AEAD for big files, X25519 boxes, ed25519
 signatures, BLAKE2b, ristretto255 group arithmetic and a real CSPRNG. Layers: libsodium
-(ISC, static-linked; pinned 1.0.20, vcpkg's on Windows) -> the C shim `src/sodium_shim.c` (exports `sxt_*`,
+(ISC, static-linked; pinned 1.0.22 since 2026-11-06, vcpkg's on Windows) -> the C shim `src/sodium_shim.c` (exports `sxt_*`,
 marshals bytes, adds no cryptography) -> ONE library `sodiumxt.{so,dll,dylib}` -> the LCB
 binding `src/sodium.lcb` (library `org.openxtalk.library.sodium`, public `sx*`) -> the
 examples. 73 public `sx*` handlers over 124 `sxt_*` exports, at **ABI 10**

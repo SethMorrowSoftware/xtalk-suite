@@ -189,7 +189,7 @@ their `src/*.livecodescript` libraries, or open a demo that carries them
 Install only what you need. Each member answers a load check in the message box:
 
 ```
-put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.20)"
+put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.22)"
 put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession it)
 put enLibraryVersion()   -- enetxt
 put dcLibraryVersion()   -- datachannelxt

@@ -427,7 +427,7 @@ end handler
 /**
 Summary: Return the SodiumXT and libsodium version text.
 
-Returns: A string such as "SodiumXT 0.1.0 (libsodium 1.0.20)".
+Returns: A string such as "SodiumXT 0.1.0 (libsodium 1.0.22)".
 
 Example:
 put sxVersion() into field "version"

@@ -133,8 +133,10 @@ again there 2026-09-24 (Windows x86_64) and 2026-09-25 (Linux x86_64 and Windows
 ## Provenance and reporting
 
 SodiumXT statically links upstream libsodium, unmodified, so the cryptography you run is
-the audited code. The Linux and macOS builds fetch libsodium 1.0.20 by exact version and
-verify it against a pinned SHA256 before compiling. The committed Windows DLLs are MSVC
+the audited code. The Linux and macOS builds fetch libsodium 1.0.22 by exact version and
+verify it against a pinned SHA256 before compiling (1.0.20 until 2026-11-06; 1.0.21
+fixed a point-validation bug in `crypto_core_ed25519_is_valid_point`, a function
+SodiumXT does not call, and moving the pin made every platform the same version). The committed Windows DLLs are MSVC
 builds linking the libsodium vcpkg provides (1.0.22 in the DLLs committed 2026-08-27 and
 2026-09-12): held to the 1.0.x line rather than to the SHA256 pin. That was accepted by
 decision D-08 (2026-08-27), because every platform must pass the same known-answer tests

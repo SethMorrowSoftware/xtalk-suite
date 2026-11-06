@@ -18,9 +18,9 @@ scope in your stacks. Confirm it is working from the message box:
 
 ```
 put sxVersion()
--- e.g. SodiumXT 0.1.0 (libsodium 1.0.20)
--- (Linux and macOS report the pinned 1.0.20; the committed Windows DLLs are
---  MSVC + vcpkg builds and report 1.0.22)
+-- e.g. SodiumXT 0.1.0 (libsodium 1.0.22)
+-- (every platform reports 1.0.22: the pinned source on Linux and macOS,
+--  vcpkg's on Windows)
 ```
 
 ## Five conventions
