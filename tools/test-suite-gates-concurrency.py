@@ -11,7 +11,10 @@ block says why):
   - a newer push to main cancels the older main run (publish-members.yml
     publishes the first-parent line up to the green run's commit, so the
     older commit is published with the newer one);
-  - a dispatch is never cancelled, and never cancels anything.
+  - a dispatch is never cancelled, and never cancels anything;
+  - and because a cancelled main run never reached its cross-member lane,
+    the scope job diffs a push to main from the newest main commit with a
+    GREEN run, not from the push's parent.
 
 The group is a GitHub Actions expression. This test reads it from the
 workflow as written and evaluates it for each kind of event with a small
@@ -181,11 +184,35 @@ def main():
         check(name.startswith("suite-gates-") and "None" not in name and "False" not in name,
               "group name %r for %s" % (name, ctx["github"]["event_name"]))
 
+    # What the cancelling costs, held: a cancelled main run never got to
+    # its cross-member lane, so the NEXT main run must diff from the newest
+    # main commit with a green run, not from its own parent (`before`). Read
+    # the push branch of the scope job's decide step as written.
+    with open(WORKFLOW, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"^      - id: decide\n(.*?)^      - id: members", text, re.M | re.S)
+    check(m is not None, "the scope job's decide step not found")
+    if m:
+        step = m.group(1)
+        pushb = re.search(r'elif \[ "\$\{\{ github\.event_name \}\}" = "push" \]; then\n(.*?)\n          else\n',
+                         step, re.S)
+        check(pushb is not None, "decide: no branch of its own for a push to main")
+        if pushb:
+            body = pushb.group(1)
+            code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("#"))
+            check("github.event.before" not in code,
+                  "decide: a push to main must not diff from `before` (its parent's run may be cancelled)")
+            check("status=success" in code and "event=push" in code and "branch=main" in code,
+                  "decide: a push to main must diff from the newest GREEN push run on main")
+    scope = re.search(r"^  scope:\n(.*?)^  [a-z-]+:\n", text, re.M | re.S)
+    check(scope is not None and re.search(r"^      actions: read$", scope.group(1), re.M) is not None,
+          "the scope job needs `actions: read` to list this workflow's runs")
+
     if failures:
         for f in failures:
             print("FAIL: " + f)
         return 1
-    print("OK: suite-gates concurrency (PR, main, dispatch) and its evaluator fixture")
+    print("OK: suite-gates concurrency (PR, main, dispatch), its evaluator fixture, and the cross-member base after a cancelled main run")
     return 0
 
 
