@@ -1,0 +1,109 @@
+name: Bug report
+description: An extension, app or demo of the suite does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem.
+
+        - **Security problems:** do not report them here. See [SECURITY.md](https://github.com/SethMorrowSoftware/xtalk-suite/security/policy).
+        - **Questions about scripting:** the [OpenXTalk forums](https://openxtalk.org/forum/) are a better place.
+
+        Please check that the problem has not been reported already.
+
+  - type: dropdown
+    id: member
+    attributes:
+      label: Which member?
+      options:
+        - sodiumxt
+        - torrentxt
+        - enetxt
+        - datachannelxt
+        - onionxt
+        - nostrxt
+        - box2dxt (or the b2k Kit)
+        - coinxt
+        - riptide (Riptide Social)
+        - nocloud (No Cloud Quick Share)
+        - holde-em (Hold'em)
+        - The suite self-test or start-here
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >
+        Where you got it (an .lce package from a release, OXT-Beyond's built-in
+        copy, or a checkout) and its version or commit. A member's load check
+        (README, "Install") prints its version where it has one.
+      placeholder: "sodiumxt from xtalk-suite release v2026.11.05; sxVersion() says ..."
+    validations:
+      required: true
+
+  - type: input
+    id: engine
+    attributes:
+      label: IDE and engine
+      description: The IDE and its version, and whether the engine is 32- or 64-bit.
+      placeholder: OXT-Beyond 0.2.7-rc.6.16 (64-bit), OpenXTalk 1.15, LiveCode Community 9.6.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows x64
+        - Windows x86 (32-bit)
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux x86-64
+        - Linux x86 (32-bit)
+        - Linux 64-bit ARM
+        - A web browser (HTML5 standalone or the Stack Player)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system version
+      placeholder: Windows 11 24H2, macOS 15.6, Ubuntu 24.04.3 LTS
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest script that shows the problem, in a code block, and what you did.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Copy any error message or self-test output exactly (the harnesses' Copy results button copies the whole report).
+    validations:
+      required: true
+
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else?
+      description: Firewalls, Tor, relays, network setup, or anything else that might matter.

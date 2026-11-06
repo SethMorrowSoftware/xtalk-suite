@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new feature, a new handler or an improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Open work is listed in
+        [docs/WORK-PLAN.md](https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/docs/WORK-PLAN.md);
+        please check it and the existing issues first.
+
+  - type: input
+    id: member
+    attributes:
+      label: Which member, or a new one?
+      placeholder: torrentxt, or "a new extension for ..."
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you are trying to build and what gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: If it adds handlers, show how a script would call them.
+    validations:
+      required: true
