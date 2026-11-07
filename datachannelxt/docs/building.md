@@ -17,11 +17,11 @@ so the LCB `c:datachannelxt>` binding resolves.
 
 `NO_MEDIA=ON` (no libsrtp: Phase 1 is data channels only) and `NO_WEBSOCKET=ON`
 trim the build. Everything static-links into our one library except OpenSSL,
-which stays a dynamic dependency on Linux (the system `libssl.so.3`), and is linked
-in statically on Windows (vcpkg's unpinned port: the committed DLLs carry OpenSSL
-3.6.4) and in the shipped universal mac dylib (the release lane's SHA-pinned 3.5.4,
-built per arch); the per-member mac lane links Homebrew's instead. Versions read
-from the committed binaries 2026-09-23.
+which stays a dynamic dependency on 32-bit Linux (the system `libssl.so.3`), and is
+linked in statically on Windows (vcpkg's unpinned port: the committed DLLs carry
+OpenSSL 3.6.5), in the 64-bit Linux libraries and in the shipped universal mac dylib
+(the release lane's SHA-pinned 3.5.9, built per arch on mac); the per-member mac lane
+links Homebrew's instead. Versions read from the committed binaries 2026-11-07.
 
 Unlike TorrentXT's Boost+libtorrent ordeal, the whole stack builds in minutes.
 

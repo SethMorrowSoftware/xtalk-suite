@@ -9,7 +9,7 @@ original design plan is in git history, and what still matters from it is below.
 **SodiumXT** brings modern cryptography to OpenXTalk (OXT) and LiveCode 9.6.3+:
 authenticated encryption, Argon2id, streaming AEAD for big files, X25519 boxes, ed25519
 signatures, BLAKE2b, ristretto255 group arithmetic and a real CSPRNG. Layers: libsodium
-(ISC, static-linked; pinned 1.0.20, vcpkg's on Windows) -> the C shim `src/sodium_shim.c` (exports `sxt_*`,
+(ISC, static-linked; pinned 1.0.22 since 2026-11-06, vcpkg's on Windows) -> the C shim `src/sodium_shim.c` (exports `sxt_*`,
 marshals bytes, adds no cryptography) -> ONE library `sodiumxt.{so,dll,dylib}` -> the LCB
 binding `src/sodium.lcb` (library `org.openxtalk.library.sodium`, public `sx*`) -> the
 examples. 73 public `sx*` handlers over 124 `sxt_*` exports, at **ABI 10**
@@ -154,17 +154,18 @@ and zeroes the state. There is no LCB unload hook: apps free what they open (`cl
 
 | platform id | ABI | built from | engine record |
 |---|---|---|---|
-| `x86_64-linux` | **10** | release run 12 (2026-08-27), pinned 1.0.20 source; left unchanged by the 2026-09-12 run | 106/106 on 2026-09-25 (the maintainer's account: 64-bit Kubuntu 24.04, the latest committed builds), this file's first RECORDED engine load (the 2026-08-27 paste recorded no platform or package, so it may have been earlier: the suite work plan's sodiumxt coding #6); `sxVersion()` not recorded. Linux before it: ABI 9 (2026-08-18). The 2026-09-26 preflight (presumably the same machine) LOADED it at 10 and read `SodiumXT 0.1.0 (libsodium 1.0.20)`, the pin |
-| `x86-linux` | **10** | release run 12, pinned 1.0.20 source (`-m32`) | none recorded (runbook row 47; a 32-bit OXT) |
-| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-09-12 | 106/106 in each of the 2026-09-24 runs, their first engine load, and again 2026-09-25: 64-bit OXT by the maintainer's account (given 2026-09-26), so this DLL, the 2026-09-12 build on 2026-09-24 by the same account (on 2026-09-25 INFERRED: the same machine, and no Windows DLL committed since). LOADED at ABI 10 (the ChaCha20 section runs only past the `.lcb`'s exact guard) with SHA3, ristretto and ChaCha20 green; `sxVersion()` not recorded then; on 2026-09-26 (106/106 twice in one launch, the same machine by the maintainer's account) that evening's preflight read `SodiumXT 0.1.0 (libsodium 1.0.22)` from it, D-08's version, so runbook row 23's x86_64 half is met whole. The 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
+| `x86_64-linux` | **10** | release run 42338859619 (2026-11-07), pinned 1.0.22 source | none yet for this file. The 1.0.20 file it replaced had: 106/106 on 2026-09-25 (the maintainer's account: 64-bit Kubuntu 24.04, the latest committed builds), this file's first RECORDED engine load (the 2026-08-27 paste recorded no platform or package, so it may have been earlier: the suite work plan's sodiumxt coding #6); `sxVersion()` not recorded. Linux before it: ABI 9 (2026-08-18). The 2026-09-26 preflight (presumably the same machine) LOADED it at 10 and read `SodiumXT 0.1.0 (libsodium 1.0.20)`, the pin |
+| `x86-linux` | **10** | release run 42338859619 (2026-11-07), pinned 1.0.22 source (`-m32`) | none recorded (runbook row 47; a 32-bit OXT) |
+| `x86_64-win32` | **10** | MSVC + vcpkg libsodium 1.0.22 (D-08); last re-committed 2026-11-07 (release run 42338859619) | none yet for the 2026-11-07 DLL. Earlier DLLs of this row had: 106/106 in each of the 2026-09-24 runs, their first engine load, and again 2026-09-25: 64-bit OXT by the maintainer's account (given 2026-09-26), so this DLL, the 2026-09-12 build on 2026-09-24 by the same account (on 2026-09-25 INFERRED: the same machine, and no Windows DLL committed since). LOADED at ABI 10 (the ChaCha20 section runs only past the `.lcb`'s exact guard) with SHA3, ristretto and ChaCha20 green; `sxVersion()` not recorded then; on 2026-09-26 (106/106 twice in one launch, the same machine by the maintainer's account) that evening's preflight read `SodiumXT 0.1.0 (libsodium 1.0.22)` from it, D-08's version, so runbook row 23's x86_64 half is met whole. The 2026-08-24 106/106 ran on a mingw DLL that no longer ships |
 | `x86-win32` | **10** | as the x64 row | none recorded: every Windows run since 2026-09-12 was 64-bit by the maintainer's account (runbook row 23; a 32-bit OXT) |
-| `universal-mac` | **10** | release run 12, pinned 1.0.20 source; both slices in one pass, `lipo -archs` asserted, arm64 tested natively, x86_64 under Rosetta 2 | no OXT load recorded |
+| `universal-mac` | **10** | release run 42338859619 (2026-11-07), pinned 1.0.22 source; both slices in one pass, `lipo -archs` asserted, arm64 tested natively, x86_64 under Rosetta 2 | no OXT load recorded |
 
 The suite's `tools/build-preflight.py` parses the `universal-mac` row and needs exactly one;
 `tools/check-binary-freshness.py` decodes ABI 10 from every row, both mac slices included.
-`sxVersion()` reports libsodium 1.0.22 on the Windows DLLs and 1.0.20 elsewhere (the Linux
-and `x86_64-win32` readings are on record, 2026-09-26, the ledger; the `x86-win32` and mac
-readings are not).
+`sxVersion()` reports libsodium 1.0.22 on every committed native file since 2026-11-07 (read
+from the files' strings, not yet from an engine; before, the Linux and mac files were 1.0.20,
+and the Linux 1.0.20 and `x86_64-win32` 1.0.22 readings are on record from 2026-09-26, the
+ledger). The experimental `wasm32-emscripten` archive is still a 1.0.20 build.
 
 **CI executes the committed library (since 2026-08-16).** The build-matrix step "Execute
 the COMMITTED library's ristretto and ChaCha20 vectors" in `native-sodiumxt.yml` dlopen()s

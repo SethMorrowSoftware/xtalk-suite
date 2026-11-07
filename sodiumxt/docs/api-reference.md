@@ -35,7 +35,7 @@ New to SodiumXT? Start with [getting-started.md](getting-started.md), then
 | Handler | Returns | Notes |
 |---|---|---|
 | `sxInit()` | command | Optional. Every handler self-initializes libsodium and checks the ABI on first use; call this only to fail fast at startup. Throws on an ABI mismatch or a failed init. |
-| `sxVersion()` | `String` | e.g. `SodiumXT 0.1.0 (libsodium 1.0.20)`. |
+| `sxVersion()` | `String` | e.g. `SodiumXT 0.1.0 (libsodium 1.0.22)`. |
 | `sxLastError()` | `String` | The last native error message on this thread, or empty. |
 
 ## Randomness

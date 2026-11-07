@@ -192,14 +192,18 @@ and 2026-09-25 runs are the first records for the `x86_64-win32` and
 about those builds.
 
 **Windows ships different upstream versions from Linux and mac.** sodiumxt's MSVC
-DLLs carry libsodium 1.0.22 against a pinned 1.0.20 (accepted by D-08, documented;
-read on an engine by the 2026-09-26 Windows preflight, `libsodium 1.0.22`).
+DLLs carry libsodium 1.0.22, which is since 2026-11-07 also the pin the Linux and mac
+builds use (the Windows version was accepted by D-08 and read on an engine by the
+2026-09-26 Windows preflight, `libsodium 1.0.22`; the experimental `wasm32-emscripten`
+archive is still a 1.0.20 build, to be rebuilt by hand).
 torrentxt's carry libtorrent 2.1.1 from vcpkg's unpinned port against 2.0.11: **no
 decision covers it**. Its first Windows engine run was the 2026-09-24 suite paste
 (106/106, on the `x86_64-win32` DLL, 64-bit by the maintainer's account; again
-2026-09-25 and 2026-09-26; no run prints its version). datachannelxt's
-statically carry OpenSSL 3.6.4 (vcpkg, unpinned) against the mac dylib's pinned 3.5.4;
-Linux links the system `libssl.so.3`.
+2026-09-25 and 2026-09-26; no run prints its version). The Windows DLLs of both
+torrentxt and datachannelxt statically carry OpenSSL 3.6.5 (vcpkg, unpinned; read from
+the files committed 2026-11-07, with torrentxt's libtorrent 2.1.2) against the pinned
+3.5.9 that the 64-bit Linux and mac rows link statically since 2026-11-07 (3.5.4 before);
+the x86-linux rows link the system `libssl.so.3`.
 
 **Linux glibc floors** (the highest `GLIBC_` symbol each committed library needs,
 from `objdump -T`, measured 2026-09-23):
@@ -226,7 +230,10 @@ the committed files, the 64-bit floors are now: sodiumxt 2.25, torrentxt 2.28, e
 2.14 (arm64 2.17; it keeps the system libstdc++, held to GLIBCXX_3.4.25), datachannelxt
 2.25 with OpenSSL linked in (no `libssl.so.3`), coinxt 2.25 and box2dxt 2.17, so all
 six load on Ubuntu 20.04, Debian 11, RHEL 8 or newer (INFERRED from the symbols; no
-engine has loaded these files yet). The x86-linux column above is unchanged.
+engine has loaded these files yet). The x86-linux column above is unchanged. The
+2026-11-07 dispatch (run 42338859619, commit 059adc7: libsodium 1.0.22, OpenSSL 3.5.9)
+rebuilt sodiumxt, torrentxt and datachannelxt rows at the same floors, measured the same
+way (sodiumxt's x86-linux row still 2.33).
 
 **macOS floors** (the oldest macOS whose system libraries have every symbol each
 committed universal-mac dylib imports, read with `llvm-nm -u` on both slices,
@@ -348,7 +355,7 @@ keeping the scaffold for its report.
 
 - 73 public `sx*` handlers over 124 shim exports; coverage 73/73. **ABI 10** in the
   shim, the `.lcb` and all five binaries.
-- Windows DLLs: MSVC + vcpkg libsodium 1.0.22 (D-08); Linux/mac: pinned 1.0.20.
+- Windows DLLs: MSVC + vcpkg libsodium 1.0.22 (D-08); Linux/mac: pinned 1.0.22 since 2026-11-07 (1.0.20 before).
 - Latest records: 106/106 at ABI 10 in the suite paste on Linux, 2026-09-25, the
   7-check ChaCha20 section included: its first RECORDED Linux run (before it, Linux
   was last recorded at ABI 9, 2026-08-18), on the `x86_64-linux` file (release run

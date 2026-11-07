@@ -366,7 +366,7 @@ every registered demo embed the layers they call (3.2); a real project uses
 **Verify each one loaded** (the preflight does all of this in one paste):
 
 ```
-put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.20)"
+put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.22)"
 put btStartSession()     -- torrentxt: a handle > 0. Then btStopSession it.
 put enLibraryVersion()   -- enetxt
 put dcLibraryVersion()   -- datachannelxt

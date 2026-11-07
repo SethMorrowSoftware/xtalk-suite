@@ -41,9 +41,9 @@ integrity check:
 
 | | |
 |---|---|
-| version | `1.0.20` |
-| url | `https://github.com/jedisct1/libsodium/releases/download/1.0.20-RELEASE/libsodium-1.0.20.tar.gz` |
-| sha256 | `ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19` |
+| version | `1.0.22` (1.0.20 until 2026-11-06) |
+| url | `https://github.com/jedisct1/libsodium/releases/download/1.0.22-RELEASE/libsodium-1.0.22.tar.gz` |
+| sha256 | `adbdd8f16149e81ac6078a03aca6fc03b592b89ef7b5ed83841c086191be3349` (the tarball also checked against its minisign signature, key `RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3`, when it was pinned) |
 
 Re-pinning is a two-file change in one commit: the three `SODIUMXT_LIBSODIUM_*` values
 (version, URL, SHA256) in `CMakeLists.txt` AND the `SXT_PINNED_SODIUM` string in

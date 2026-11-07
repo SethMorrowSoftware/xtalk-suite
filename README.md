@@ -139,8 +139,9 @@ Linux pins. No OXT engine has
 loaded any `universal-mac` dylib. No record names a 32-bit engine: sodiumxt, torrentxt and coinxt on
 x86-win32 (coinxt's 32-bit DLL may never have executed anywhere: CI's Windows KAT step is x86_64
 only, and every Windows engine run since 2026-09-24 loaded the 64-bit DLL, by the same account), and
-sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libsodium 1.0.22 (accepted, D-08) and
-libtorrent 2.1.1 rather than the 1.0.20 and 2.0.11 the other platforms pin. Linux floors vary: both
+sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libtorrent 2.1.2 and OpenSSL 3.6.5 from vcpkg
+rather than the 2.0.11 and 3.5.9 the other platforms pin; libsodium is 1.0.22 everywhere since
+2026-11-07. Linux floors vary: both
 datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34. The
 macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
@@ -204,7 +205,7 @@ their `src/*.livecodescript` libraries, or open a demo that carries them
 Install only what you need. Each member answers a load check in the message box:
 
 ```
-put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.20)"
+put sxVersion()          -- sodiumxt, e.g. "SodiumXT 0.1.0 (libsodium 1.0.22)"
 put btStartSession()     -- torrentxt: a session handle > 0 (then btStopSession it)
 put enLibraryVersion()   -- enetxt
 put dcLibraryVersion()   -- datachannelxt

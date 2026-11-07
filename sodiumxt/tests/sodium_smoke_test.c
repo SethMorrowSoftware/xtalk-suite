@@ -28,7 +28,7 @@
  * a silent version drift cannot sneak length-constant changes past us. Update
  * this string in the same change that re-pins the version in CMakeLists.txt.
  */
-#define SXT_PINNED_SODIUM "1.0.20"
+#define SXT_PINNED_SODIUM "1.0.22"
 
 static int g_failures = 0;
 

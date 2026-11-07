@@ -28,13 +28,13 @@ project(SodiumXT
 # SXT_PINNED_SODIUM known-answer string in tests/sodium_smoke_test.c, in the
 # same commit. The sha256 is the integrity gate on the download.
 # ---------------------------------------------------------------------------
-set(SODIUMXT_LIBSODIUM_VERSION "1.0.20"
+set(SODIUMXT_LIBSODIUM_VERSION "1.0.22"
     CACHE STRING "Pinned libsodium release to build and static-link")
 set(SODIUMXT_LIBSODIUM_URL
-    "https://github.com/jedisct1/libsodium/releases/download/1.0.20-RELEASE/libsodium-1.0.20.tar.gz"
+    "https://github.com/jedisct1/libsodium/releases/download/1.0.22-RELEASE/libsodium-1.0.22.tar.gz"
     CACHE STRING "Download URL for the pinned libsodium source tarball")
 set(SODIUMXT_LIBSODIUM_SHA256
-    "ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19"
+    "adbdd8f16149e81ac6078a03aca6fc03b592b89ef7b5ed83841c086191be3349"
     CACHE STRING "Expected sha256 of the pinned libsodium tarball")
 
 option(SODIUMXT_BUILD_TESTS "Build the C smoke test (ctest)" OFF)

@@ -45,4 +45,4 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 (The Windows binaries are built from libsodium 1.0.22 via vcpkg, whose ISC
 notice is Copyright (c) 2013-2025 Frank Denis; the notice above accompanies
-the pinned 1.0.20 sources used for the Linux and macOS binaries.)
+the pinned 1.0.22 sources used for the Linux and macOS binaries.)

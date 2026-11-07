@@ -369,9 +369,9 @@ jobs:
           # ---- datachannelxt: OpenSSL, including the i386 one for the 32-bit lane
           #
           # The 64-bit Linux rows take torrentxt's container and its pinned,
-          # hash-checked static OpenSSL 3.5.4 (the version the mac dylib
-          # already carries), so DTLS is inside the .so and no libssl.so.3 is
-          # needed at all: the floor assertion below refuses a dynamic one.
+          # hash-checked static OpenSSL 3.5.9 (the version the mac dylib
+          # carries too; both were 3.5.4 until 2026-11-06), so DTLS is inside
+          # the .so and no libssl.so.3 is needed at all: the floor assertion below refuses a dynamic one.
           # The step also unpacks Boost, which this member never reads.
           - member: datachannelxt
             platform_id: x86_64-linux
@@ -519,7 +519,7 @@ jobs:
                    File::Spec FindBin Digest::SHA Math::BigInt Storable Carp; do
             perl -M"$m" -e1 >/dev/null 2>&1 \
               || echo "NOTE: perl module $m absent (not known to be required by" \
-                      "OpenSSL 3.5.4; listed so a later failure arrives with its" \
+                      "OpenSSL 3.5.9; listed so a later failure arrives with its" \
                       "name already known)"
           done
           # torrentxt's record_handle_test is built with
@@ -541,10 +541,10 @@ jobs:
           echo "2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26  /tmp/boost.tar.gz" | sha256sum -c -
           tar -C /opt -xzf /tmp/boost.tar.gz boost-1.86.0/boost
           curl -fsSL -o /tmp/openssl.tar.gz \
-            https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz
-          echo "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  /tmp/openssl.tar.gz" | sha256sum -c -
+            https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+          echo "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  /tmp/openssl.tar.gz" | sha256sum -c -
           tar -C /tmp -xzf /tmp/openssl.tar.gz
-          cd /tmp/openssl-3.5.4
+          cd /tmp/openssl-3.5.9
           ./Configure ${{ matrix.openssl_target || 'linux-x86_64' }} no-shared no-module no-tests -fPIC \
             --prefix=/opt/static-openssl --libdir=lib >/dev/null
           make -s -j"$(nproc)" >/dev/null 2>&1
@@ -1000,11 +1000,11 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL -o openssl.tar.gz \
-            https://github.com/openssl/openssl/releases/download/openssl-3.5.4/openssl-3.5.4.tar.gz
-          echo "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99  openssl.tar.gz" | shasum -a 256 -c -
+            https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+          echo "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  openssl.tar.gz" | shasum -a 256 -c -
           tar -xzf openssl.tar.gz
           for arch in arm64 x86_64; do
-            cp -R openssl-3.5.4 "ossl-src-$arch"
+            cp -R openssl-3.5.9 "ossl-src-$arch"
             ( cd "ossl-src-$arch"
               ./Configure "darwin64-$arch-cc" no-shared no-module no-tests \
                 --prefix="$RUNNER_TEMP/ossl-$arch" --libdir=lib >/dev/null
