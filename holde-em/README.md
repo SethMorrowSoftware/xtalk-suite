@@ -24,17 +24,21 @@ hand is verifiable after the fact.
 The whole game is one paste-and-run stack that builds its own UI; hotseat play needs
 no extensions at all.
 
-1. **Install [OpenXTalk](https://openxtalk.org) (OXT).**
+1. **Install [OpenXTalk](https://openxtalk.org) (OXT).** In
+   [OXT-Beyond](https://github.com/SethMorrowSoftware/OpenXTalk-Beyond) every extension below
+   is already built in (TorrentXT, SodiumXT, OnionXT and the Box2Dxt Kit load when the IDE
+   starts), so step 4 needs nothing installed there.
 2. **Paste the stack.** `File > New Mainstack`, then `Object > Stack Script`; paste all
    of [`src/holdem.livecodescript`](src/holdem.livecodescript) and apply.
 3. **Close the stack window and reopen it.** Reopening builds the table (1024x640) and
    opens on the lobby. Press **Play vs computer** to play the computer at once, or
    **Leave (play hotseat)** for a local game where people take every seat. Close the
    window when done: that stops the session and cancels this stack's timers.
-4. **For online play**, install **TorrentXT** (`org.openxtalk.library.torrent`) and
-   **SodiumXT** (`org.openxtalk.library.sodium`) via `Tools > Extension Manager`.
-   Optional: the **Box2Dxt Kit** (the `box2dxt-kit` stack in use) for card art, and a
-   locally running **tor** daemon (SOCKS 9050, control 9051) for onion tables. Every
+4. **For online play** in other OXT builds, install **TorrentXT**
+   (`org.openxtalk.library.torrent`) and **SodiumXT** (`org.openxtalk.library.sodium`) via
+   `Tools > Extension Manager`. Optional: the **Box2Dxt Kit** (the `box2dxt-kit` stack in
+   use) for card art. Onion tables need a locally running **tor** daemon (SOCKS 9050,
+   control 9051) everywhere, OXT-Beyond included. Every
    dependency is probed at its point of use and fails closed with a readable reason.
 5. **The self-test rides in the same stack:** `heRunSelftest` in the message box for
    the report panel, or `heSelfTest()` for the same report as a value.
@@ -78,9 +82,11 @@ dead-button rule.
 **v0.25.7 (harness 49), 2026-10-21.** Play vs computer, face-down card backs and the result in
 words ran on an engine on Windows (OXT-Beyond 9.7.1, through its MCP bridge): nine bot hands
 dealt and settled with the chips conserved, and the prebuilt stack OXT-Beyond ships opened with
-no `assets` folder and drew its carried card art. The harness's new section 25 has run only
-through the family interpreter: verified statically; needs an OXT pass. The rest below is
-unchanged from v0.25.6.
+no `assets` folder and drew its carried card art. On 2026-11-14 the self-test ran green on
+OXT-Beyond 0.2.8-dp.1 (Windows) with only its built-in extensions: **960/0/5** at harness 49,
+the computer opponents' section 25 included, the five live legs skipped by name. OXT-Beyond's
+Learn no longer carries a prebuilt copy (it left in 0.2.7-rc.6.12); paste the script as below.
+The rest below is unchanged from v0.25.6.
 
 **v0.25.6 (harness 48).** The folded harness is engine-green at v0.25.6 (harness 48):
 **929/0** on 2026-09-26 (in the suite paste, on Linux and then on Windows), every section

@@ -57,6 +57,8 @@ python3 tools/check-livecodescript.py
 # card atlas, sounds), and the independent-reference fuzz (a SECOND
 # evaluator/settlement implementation plus whole-game invariants - the
 # backing for the member's "verified sound" claim).
+echo "== holde-em: tools/check-docs.py --selftest =="
+python3 tools/check-docs.py --selftest
 echo "== holde-em: tools/check-docs.py =="
 python3 tools/check-docs.py
 
