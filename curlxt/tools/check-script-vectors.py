@@ -525,6 +525,11 @@ def drive(c, ip, base, smtp_port, tmp):
     ck("tsNetGetFileSync rBytes", s(out["rbytes"]), "200000")
     with open(dl, "rb") as fh:
         ck("the file holds the download", fh.read(), b"z" * 200000)
+    capped = DB_LCS.LcsArray()
+    capped["max_file_size"] = "1000"
+    r, out = ip.call_ref("tsNetGetFileSync", [dl, base + "/big", "", "", "", capped])
+    c.ok("max_file_size stops a download to a file", s(r).startswith("tsneterr:"))
+    c.ok("and the file stays within it", os.path.getsize(dl) <= 1000)
     up = os.path.join(tmp, "up.txt")
     with open(up, "wb") as fh:
         fh.write(b"file-body")

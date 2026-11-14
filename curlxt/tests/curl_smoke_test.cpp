@@ -331,6 +331,27 @@ static void test_files_and_redirects() {
     CHECK(run_sync(h) == 1 && cux_info(h, CUI_RESULT) != 0, "body cap ends the transfer");
     CHECK(text(h, CUT_ERROR).find("larger than the limit") != std::string::npos, "body cap says why");
     cux_free(h);
+
+    /* The cap holds for a download to a file too (tsNet's max_file_size
+     * maps to it; a file can fill a disk). */
+    h = cux_request_new("GET", url("/big").c_str());
+    cux_set_text(h, CUO_OUTPUT_FILE, out.c_str());
+    cux_set_int(h, CUO_MAX_BODY_BYTES, 1000);
+    CHECK(run_sync(h) == 1 && cux_info(h, CUI_RESULT) == 23, "body cap ends a file download");
+    CHECK(text(h, CUT_ERROR).find("larger than the limit") != std::string::npos, "file cap says why");
+    CHECK(read_file(out).size() <= 1000, "the file stops at the cap");
+    cux_free(h);
+    std::remove(out.c_str());
+
+#ifdef __linux__
+    /* A write the final fclose loses (here /dev/full, which takes nothing)
+     * is a write error, never a success over a short file. */
+    h = cux_request_new("GET", url("/hello").c_str());
+    cux_set_text(h, CUO_OUTPUT_FILE, "/dev/full");
+    CHECK(run_sync(h) == 1 && cux_info(h, CUI_RESULT) == 23, "a lost final write is CURLE_WRITE_ERROR");
+    CHECK(text(h, CUT_ERROR).find("output file") != std::string::npos, "and says so");
+    cux_free(h);
+#endif
 }
 
 static void test_async() {

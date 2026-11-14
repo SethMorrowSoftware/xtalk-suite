@@ -85,8 +85,10 @@ struct Request {
     FILE *in = nullptr;
     long long in_size = -1;
     std::vector<unsigned char> body;   /* response body held for cux_body    */
-    long long max_body = 0;
+    long long max_body = 0;           /* in memory OR to outputFile          */
+    long long out_written = 0;        /* bytes handed to fwrite on `out`     */
     bool body_overflow = false;
+    bool out_close_failed = false;    /* fclose lost buffered bytes          */
     std::string resp_headers;
     char errbuf[CURL_ERROR_SIZE];
     std::string file_error;
@@ -164,11 +166,17 @@ size_t on_write(char *ptr, size_t size, size_t nmemb, void *userdata) {
     Request *r = static_cast<Request *>(userdata);
     size_t n = size * nmemb;
     try {
-        if (r->out) return fwrite(ptr, 1, n, r->out);
-        if (r->max_body > 0 &&
-            static_cast<long long>(r->body.size() + n) > r->max_body) {
+        /* maxBodyBytes bounds a download to a file too: it is the one
+         * limit tsNet's max_file_size maps to, and a file can fill a disk */
+        long long have = r->out ? r->out_written : static_cast<long long>(r->body.size());
+        if (r->max_body > 0 && have + static_cast<long long>(n) > r->max_body) {
             r->body_overflow = true;
             return 0;   /* CURLE_WRITE_ERROR ends the transfer */
+        }
+        if (r->out) {
+            size_t w = fwrite(ptr, 1, n, r->out);
+            r->out_written += static_cast<long long>(w);
+            return w;   /* short: CURLE_WRITE_ERROR */
         }
         r->body.insert(r->body.end(), ptr, ptr + n);
         return n;
@@ -331,7 +339,17 @@ void finish(Request *r, int h, int result) {
     curl_multi_remove_handle(g_multi, r->easy);
     r->state = CUX_STATE_DONE;
     r->result = result;
-    if (r->out) { fclose(r->out); r->out = nullptr; }
+    /* fclose flushes the last buffered bytes; when that fails (a full
+     * disk) the file is short, so a transfer curl called a success is a
+     * write error, never a silent truncation */
+    if (r->out) {
+        int closed = fclose(r->out);
+        r->out = nullptr;
+        if (closed != 0) {
+            r->out_close_failed = true;
+            if (r->result == CURLE_OK) r->result = CURLE_WRITE_ERROR;
+        }
+    }
     if (r->in) { fclose(r->in); r->in = nullptr; }
     if (!r->quiet) g_done.push_back(h);
 }
@@ -747,6 +765,7 @@ CUX_API int CUX_CALL cux_text(int h, int field, char *out, int cap) {
         case CUT_ERROR:
             if (r->result == CUX_RESULT_CANCELLED) s = "cancelled";
             else if (r->body_overflow) s = "response body is larger than the limit set";
+            else if (r->out_close_failed) s = "could not finish writing the output file";
             else if (r->errbuf[0]) s = r->errbuf;
             else if (r->result > 0) s = curl_easy_strerror(static_cast<CURLcode>(r->result));
             break;
