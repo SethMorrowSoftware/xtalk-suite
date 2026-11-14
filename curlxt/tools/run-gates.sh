@@ -39,7 +39,7 @@ echo "== curlxt: tools/check-script-vectors.py =="
 python3 tools/check-script-vectors.py
 
 # Committed-binary integrity manifest: a committed blob that is unlisted or
-# does not match its recorded SHA256 fails the gate. Empty until the suite's
-# release-binaries dispatch commits the first libraries.
+# does not match its recorded SHA256 fails the gate, and so does an empty
+# manifest (the release dispatch of 2026-11-14 committed all six).
 echo "== curlxt: src/code/MANIFEST.sha256 =="
-( cd src/code && if [ -s MANIFEST.sha256 ]; then sha256sum -c --quiet MANIFEST.sha256; else echo "no committed binaries yet"; fi )
+( cd src/code && test -s MANIFEST.sha256 && sha256sum -c --quiet MANIFEST.sha256 )

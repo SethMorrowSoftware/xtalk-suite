@@ -296,11 +296,10 @@ MEMBERS = [
         "name": "curlxt",
         "lib": "curlxt",
         "lcb": ["curlxt/src/curl.lcb"],
-        # EMPTY until the first release-binaries dispatch lands curlxt's
-        # libraries (joined 2026-11-14 with none committed): that run's
-        # --installing tolerates each gained platform, and the change after it
-        # lists them here, exactly as this row's gained-platform failure says.
-        "ships": [],
+        # Joined 2026-11-14 with none committed; the first release-binaries
+        # dispatch (run 43635436132, commit 6edff95) landed all six.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac"],
         "shim": "curlxt/src/curl_shim.cpp",
         "prefix": "cux_",
         "abi_header": "curlxt/src/cux_abi.h",
