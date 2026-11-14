@@ -3890,7 +3890,12 @@ end stCheckSealed
 -- The fix is verified statically (check-suite-selftest.py check 19 holds the
 -- deadline to the pump and the report out of a live tick) and in
 -- tools/check-suite-ui-boot.py's Windows-stall scenario (which reproduces the
--- Windows report on the old core); needs an OXT pass on Windows. The
+-- Windows report on the old core), and it RAN on Windows on 2026-11-14
+-- (OXT-Beyond 0.2.8-dp.1; runbook section 8): both loopbacks completed on
+-- the launch's on-open Run all and on a second, and the notes answered the
+-- question above for that machine and IDE: the first tick came 48.9 s and
+-- 33.8 s after the arm, behind 1342 and 964 IDE timers queued first, while
+-- the polls took 1-2 ms and the arm-time render 73 ms (runbook 5.5). The
 -- standalone enet-selftest and
 -- datachannel-selftest keep the old shape (the deadline armed before a render
 -- each tick) at a report of about seventy lines; enet-selftest's completed on

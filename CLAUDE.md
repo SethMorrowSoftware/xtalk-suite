@@ -359,8 +359,12 @@ worse than no gate, because it answers the question nobody asks twice.
   unchanged, and from the 2026-11-07 dispatch (run 42338859619 from 32600af, commit 059adc7), which
   rebuilt every file whose sources or pins had moved: sodiumxt on all six rows at libsodium 1.0.22,
   torrentxt's and datachannelxt's 64-bit Linux and mac rows at OpenSSL 3.5.9, and the Windows DLLs
-  the MSVC lanes do not build byte-identically (its commit message lists each verdict); no engine
-  has loaded either dispatch's files yet. The records below are of the 2026-09-12 dispatch's
+  the MSVC lanes do not build byte-identically (its commit message lists each verdict). Their
+  `x86_64-win32` DLLs first met an engine on 2026-11-14, as the built-in extensions of
+  OXT-Beyond 0.2.8-dp.1 on the Windows machine (hashed there: five the 2026-11-07 builds, coinxt's
+  the 2026-10-16 one): the preflight LOADED all six at their ABIs and the suite paste ran
+  2983/0/8 twice in one launch, both loopbacks completing (runbook section 8); no engine has
+  loaded either dispatch's Linux, 32-bit or mac files yet. The older records below are of the 2026-09-12 dispatch's
   (run 34657390798 from 0f17ab5, commit 421bab3). Its `x86_64-win32` builds first met an engine
   on 2026-09-24: the D-23 suite paste loaded all six and ran every member's sections (runbook section 8), on a 64-bit OXT by the maintainer's
   account (given 2026-09-26), and again on 2026-09-25 on that machine (the builds INFERRED the

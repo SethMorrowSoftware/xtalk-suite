@@ -1723,10 +1723,17 @@ PROBE4_ITEMS = [
 #     the Linux reading item for item: the four C-library items read alike
 #     under the Windows engine's C runtime and Linux's. Each run is quoted in
 #     its own ledger row under this key.
+#   ("Win32", "2026-11-14"): the suite paste at d859d3d (riptide 0.14.0's
+#     harness) in OXT-Beyond 0.2.8-dp.1 (engine 9.7.1-BeyondEngine build
+#     25923, `processor` x86_64, Windows 11), on Seth's PC through its xTalk
+#     MCP Bridge, a fresh stack, the on-open Run all and a second in one
+#     launch. Both runs printed the line identically, and identical to the
+#     2026-09-26 readings: a newer engine and C runtime, the same answers.
 # Owed: MacOS (never run).
 PROBE4_RECORDED = {
     ("Linux", "2026-09-26"): "true,true,false,false,false,true",
     ("Win32", "2026-09-26"): "true,true,false,false,false,true",
+    ("Win32", "2026-11-14"): "true,true,false,false,false,true",
 }
 # `the platform` as an engine answers it, for the keys above
 PROBE4_PLATFORMS = ("Linux", "Win32", "MacOS")
