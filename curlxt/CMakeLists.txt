@@ -46,8 +46,9 @@ set(CURLXT_CURL_VERSION "8.22.0")
 set(CURLXT_LIBSSH2_VERSION "1.11.1")
 
 # TLS: Schannel on Windows (the system certificate store, nothing to ship),
-# OpenSSL elsewhere (the same posture as datachannelxt: the system OpenSSL,
-# a static OpenSSL is a release-image concern).
+# OpenSSL elsewhere: whatever find_package finds. The release lanes point it
+# at a pinned static OpenSSL 3.5.9 (64-bit Linux, both mac slices) or the
+# system's (32-bit Linux); see THIRD-PARTY-LICENSES.md.
 if(WIN32)
   set(_cux_crypto_backend "WinCNG")
 else()

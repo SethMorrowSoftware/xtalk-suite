@@ -12,7 +12,8 @@ libssh2 (static, PIC, FetchContent from pinned release tarballs with SHA256) -> 
 LCB binding `src/curl.lcb` (`org.openxtalk.library.curl`, public `cu*`) -> the helpers
 `src/curl-helpers.livecodescript` (stack `curlHelpers`, public `cu*`) -> the tsNet calls
 `src/tsnet.livecodescript` (stack `tsNetCompat`, public `tsNet*`, private `tsnx*`).
-TLS: Schannel on Windows; the system OpenSSL elsewhere, linked dynamically, not bundled.
+TLS: Schannel on Windows; OpenSSL elsewhere (static 3.5.9 in the 64-bit Linux and mac release
+builds, the system's in the 32-bit Linux one: "Release builds" below).
 
 ## The rules
 

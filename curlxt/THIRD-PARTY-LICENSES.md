@@ -80,8 +80,14 @@ in this Software without prior written authorization of the copyright holder.
  */
 ```
 
-## OpenSSL (not bundled)
+## OpenSSL 3.5.9 (Apache License 2.0; in some of the release libraries)
 
-On Linux and macOS, TLS comes from the system's OpenSSL 3, linked dynamically from the
-host and NOT bundled (the same posture as DataChannelXT). The Windows library uses the
-operating system's Schannel and links no OpenSSL.
+The release libraries for 64-bit Linux (`x86_64-linux`, `arm64-linux`) and macOS
+(`universal-mac`) link OpenSSL 3.5.9 statically, built from its pinned release tarball by
+the suite's `release-binaries.yml`. OpenSSL is Copyright (c) 1998-2025 The OpenSSL Project
+Authors and Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson, and is licensed under
+the Apache License 2.0; its full text is at https://www.openssl.org/source/license.html
+and in OpenSSL's `LICENSE.txt`, which a redistribution of those libraries must carry.
+The 32-bit Linux library (`x86-linux`) links the system's OpenSSL 3 (`libssl.so.3`)
+dynamically and bundles none; the Windows libraries use the operating system's Schannel
+and link no OpenSSL. A local build links whatever OpenSSL CMake finds.
