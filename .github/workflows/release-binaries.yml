@@ -95,6 +95,11 @@ on:
         type: string
         default: all
         required: false
+      members:
+        description: "Members whose libraries to INSTALL and commit, space-separated (e.g. 'curlxt'), or 'all'. Every lane still builds and tests; the other members' libraries are left as committed."
+        type: string
+        default: all
+        required: false
       mac_lipo:
         description: "Run the two-slice-lipo mac lanes (torrentxt, datachannelxt) - the heaviest, newest lanes. 'false' skips them DELIBERATELY (the skip is visible in the run), for a first dispatch that proves the rest before betting on these."
         type: choice
@@ -405,6 +410,48 @@ jobs:
             vcpkg_port: openssl
             triplet: x86-windows-static
             cmake_args: -A Win32
+
+          # ---- curlxt: added 2026-11-14. libcurl and libssh2 build from
+          # pinned tarballs inside the member's CMake; TLS is the one
+          # dependency, and it follows datachannelxt's rows exactly: the
+          # 64-bit Linux rows take the manylinux container's pinned static
+          # OpenSSL 3.5.9 (no libssl.so.3 needed, the floor assertion refuses
+          # one), the 32-bit row links the runner's i386 libssl dynamically,
+          # as datachannelxt's does, and Windows uses Schannel, so it needs no
+          # vcpkg port at all. The shim is C++ on the system libstdc++, like
+          # enetxt's, hence system_cxx. The mac dylib rides the mac-lipo job
+          # (static OpenSSL per slice).
+          - member: curlxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            manylinux_deps: "1"
+            system_cxx: "1"
+            cmake_args: -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
+          - member: curlxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            manylinux_deps: "1"
+            system_cxx: "1"
+            openssl_target: linux-aarch64
+            cmake_args: -DOPENSSL_ROOT_DIR=/opt/static-openssl -DOPENSSL_USE_STATIC_LIBS=ON
+          - member: curlxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: g++-multilib gcc-multilib
+            apt_i386: libssl-dev:i386
+            cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32 -DOPENSSL_SSL_LIBRARY=/usr/lib/i386-linux-gnu/libssl.so -DOPENSSL_CRYPTO_LIBRARY=/usr/lib/i386-linux-gnu/libcrypto.so -DOPENSSL_INCLUDE_DIR=/usr/include
+          - member: curlxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: curlxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
     runs-on: ${{ matrix.os }}
     # Empty for every row that does not set one, which Actions treats as "no
     # container" - only the manylinux lane runs containerized.
@@ -467,7 +514,7 @@ jobs:
       # which carries the flattened boost/ tree. OpenSSL builds static
       # (no-shared no-module) so the resulting .so carries its TLS stack
       # instead of requiring a host libssl soname.
-      - name: Acquire pinned deps (torrentxt and datachannelxt manylinux lanes)
+      - name: Acquire pinned deps (torrentxt, datachannelxt and curlxt manylinux lanes)
         if: matrix.manylinux_deps
         shell: bash
         working-directory: /
@@ -976,6 +1023,10 @@ jobs:
             build_jobs: 3
           - member: datachannelxt
             build_jobs: 3
+          # curlxt (2026-11-14): static OpenSSL per slice like datachannelxt;
+          # certificates come from the OS through curl's Apple SecTrust.
+          - member: curlxt
+            build_jobs: 3
     runs-on: macos-15
     defaults:
       run:
@@ -1219,6 +1270,25 @@ jobs:
             case " $PLATFORMS " in
               *" $p "*) echo "installing $d" ;;
               *) echo "leaving out $d (not in platforms: $PLATFORMS)"; rm -rf "$d" ;;
+            esac
+          done
+
+      # The `members` input is the same narrowing by member: a run that lands
+      # a NEW member's first libraries (curlxt, 2026-11-14) should not also
+      # replace the other members' Windows DLLs, which MSVC does not rebuild
+      # byte-identically.
+      - name: Keep only the members this run installs
+        if: github.event.inputs.members != '' && github.event.inputs.members != 'all'
+        shell: bash
+        env:
+          MEMBERS: ${{ github.event.inputs.members }}
+        run: |
+          set -euo pipefail
+          for d in "$RUNNER_TEMP"/release-bundle/*/; do
+            m=$(basename "$d")
+            case " $MEMBERS " in
+              *" $m "*) echo "installing $d" ;;
+              *) echo "leaving out $d (not in members: $MEMBERS)"; rm -rf "$d" ;;
             esac
           done
 

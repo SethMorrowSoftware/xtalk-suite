@@ -293,6 +293,25 @@ MEMBERS = [
         "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
+        "name": "curlxt",
+        "lib": "curlxt",
+        "lcb": ["curlxt/src/curl.lcb"],
+        # EMPTY until the first release-binaries dispatch lands curlxt's
+        # libraries (joined 2026-11-14 with none committed): that run's
+        # --installing tolerates each gained platform, and the change after it
+        # lists them here, exactly as this row's gained-platform failure says.
+        "ships": [],
+        "shim": "curlxt/src/curl_shim.cpp",
+        "prefix": "cux_",
+        "abi_header": "curlxt/src/cux_abi.h",
+        "abi_define": "CUX_ABI_VERSION",
+        "abi_symbol": "cux_abi_version",
+        # src/curlxt.map (GNU ld) and the derived -exported_symbols_list (ld64)
+        # export cux_* and nothing else; libcurl, libssh2 and libstdc++ are
+        # linked in, not re-exported (measured on the x86_64-linux build).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "datachannelxt",
         "lib": "datachannelxt",
         "lcb": ["datachannelxt/src/datachannel.lcb"],

@@ -807,6 +807,25 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | The platformer's first-run import (harness v33, 2026-10-08): open it from a fresh launch with its art folder present, let the import finish and accept the save; quit, move the art folder away, reopen the SAVED stack and play L1 to L7; then Shift+Reset re-imports | S1 item 5 (Windows, Linux) | 38 | no folder prompt after the save; every sprite, flip and sound present in the saved copy; the paste's box2dxt row at 405/0 |
 | 8 | The platformer's quiet build (2026-10-08): in the saved stack, R on L1 and a flag advance from L1, each with the IDE's project browser open and then closed, noting the debug overlay's (`) build and first-frame times; then play on to the L7 win; once more from a fresh copy with Cancel at the folder prompt (the no-art build, quiet since the level gate's first run) | S1 item 5 (Windows, Linux) | 38 | a flag advance builds once (one card hold); the times recorded; the win screen's totals cover all seven levels |
 
+### 2.9 curlxt
+
+- Joined 2026-11-14: libcurl 8.22.0 and libssh2 1.11.1 behind the `cux_*` shim (ABI 1),
+  the `cu*` binding and helpers, and the tsNet calls by name (`tsNet*`), written from
+  tsNet's public dictionary only (`curlxt/docs/tsnet-compat.md`). Records: the shim's
+  smoke test (90 checks, clean under ASan/UBSan) and a headless run of both script
+  layers over the built library against loopback HTTP and SMTP servers, in its gates.
+  No engine has loaded it: verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands
+  them (its rows ride `cmake-members` and `mac-lipo`), and the change after it lists
+  the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
+  EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
+| 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
+
 ---
 
 ## 3. The apps

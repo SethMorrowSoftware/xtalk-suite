@@ -1,0 +1,18 @@
+/* curlxt.map - the linker version script for the shipped shared library.
+ *
+ * curlxt statically links libcurl and libssh2 (and, on Linux and macOS,
+ * reaches OpenSSL), and a static archive's symbols inherit the shared
+ * library's default visibility: unfiltered, the .so would export the whole
+ * curl_* surface beside our cux_* ABI. Another extension in the same engine
+ * process that bundles its own libcurl could then interpose, and whichever
+ * library the loader resolved first would win (the enetxt lesson, release
+ * run 10, 2026-08-26). This script keeps only cux_*, which is all the .lcb
+ * binds by name; CMakeLists derives macOS's -exported_symbols_list from the
+ * globals below, so this file is the one source of truth for both linkers.
+ */
+{
+    global:
+        cux_*;
+    local:
+        *;
+};

@@ -33,7 +33,7 @@ COPY_SETS = {
     "check-livecodescript.py": ["sodiumxt", "torrentxt", "enetxt",
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
-                                "holde-em", "nostrxt"],
+                                "holde-em", "nostrxt", "curlxt"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
                             "nostrxt"],
     # ONE interpreter, two carriers (2026-08-23): the nostrxt execution gate

@@ -98,12 +98,22 @@ CORPUS = [
     "onionxt/src/onion-httpd.livecodescript",
     "nostrxt/src/nostrxt.livecodescript",
     "nostrxt/src/nostr-relay.livecodescript",
+    "curlxt/src/curl.lcb",
+    "curlxt/src/curl-helpers.livecodescript",
+    "curlxt/src/tsnet.livecodescript",
 ]
 
 # Script handlers that are public only because the engine or a `send`
 # must reach them: {file: {handler: reason}}. Each is left out of the
 # dictionaries on purpose.
 EXEMPT = {
+    "curlxt/src/curl-helpers.livecodescript": {
+        "cuPollOnce": "send target of the helpers' poll timer (one cuPoll pass that reschedules itself while anything waits); not API",
+    },
+    "curlxt/src/tsnet.livecodescript": {
+        "tsnxEnded": "the message curl-helpers sends when a tsNet transfer ends (cuRequestAsync's callback); not API",
+        "tsnxStatusTick": "self-sent status-callback timer (send ... in); not API",
+    },
     "enetxt/examples/enet-helpers.livecodescript": {
         "enetPollOnce": "send target of enStartPolling's pump timer (one pump pass that reschedules itself); not API",
     },

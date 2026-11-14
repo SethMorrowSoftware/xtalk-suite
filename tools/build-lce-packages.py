@@ -145,6 +145,7 @@ VERSION_FROM = {
     'datachannelxt': ('src/datachannel.lcb', LCB_VERSION),
     'box2dxt': ('src/box2dxt.lcb', LCB_VERSION),
     'coinxt': ('src/coinxt.lcb', LCB_VERSION),
+    'curlxt': ('src/curl.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -166,6 +167,8 @@ LICENCES = {
                ('native/vendor/LICENSE', 'trezor-crypto-LICENSE', None),
                ('native/vendor/address.c', 'trezor-crypto-address-NOTICE.txt', 'leading-comment'),
                ('native/vendor/hasher.c', 'trezor-crypto-hasher-NOTICE.txt', 'leading-comment')],
+    'curlxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None),
+               (OPENSSL, 'OpenSSL-LICENSE.txt', None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -215,6 +218,16 @@ PACKAGES = [
     P('lcs', 'coinxt', 'coinxt', 'src/coinxt.livecodescript', 'coinxt-script',
       'cxHexEncode(numToByte(0))', '^00$', stack='coinxt', title='CoinXT script layer',
       author='Seth Morrow Software', requires=['org.openxtalk.library.coin']),
+    # curlxt (2026-11-14): libcurl, its helpers, and the tsNet calls over
+    # them. cuWaitingCount() and tsNetVersion() need no request at all.
+    P('lcb', 'curlxt', 'org.openxtalk.library.curl', 'src/curl.lcb', 'curlxt',
+      'cuLibraryVersion()', '^curlxt ABI [0-9]+; libcurl/[0-9]'),
+    P('lcs', 'curlxt', 'curlHelpers', 'src/curl-helpers.livecodescript', 'curlxt-helpers',
+      'cuWaitingCount()', '^0$', stack='curlHelpers', title='curlxt helpers',
+      author='Seth Morrow Software', requires=['org.openxtalk.library.curl']),
+    P('lcs', 'curlxt', 'tsNetCompat', 'src/tsnet.livecodescript', 'curlxt-tsnet',
+      'tsNetVersion()', r'^1\.4\.5$', stack='tsNetCompat', title='tsNet calls (curlxt)',
+      author='Seth Morrow Software', requires=['curlHelpers']),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),

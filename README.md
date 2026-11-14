@@ -37,6 +37,7 @@ it is developed here, and each member is also published into its own repository
 | [nostrxt](nostrxt/) | `nx*` / `nxr*` | pure script over coinxt + sodiumxt | NIP-01 events with an owned canonical serializer and BIP-340 signatures, NIP-19 entities, NIP-44 v2 encryption, filters, and a websocket relay client that verifies before it delivers |
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
+| [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
 
 Design facts that decide how you use them (each member's own docs have the rest):
 
@@ -57,6 +58,9 @@ Design facts that decide how you use them (each member's own docs have the rest)
   can be embedded beside onionxt in one script.
 - **box2dxt**'s examples are complete games: a seven-level platformer, a contraption builder, a
   slingshot tower-knockdown and a physics demo.
+- **curlxt** is "pump or nothing" like enetxt: libcurl runs inside `cuPoll` / `cuWait`, and the
+  helpers keep a timer only while something waits. It never touches libURL: `get url` behaves as
+  before. Its tsNet layer was written from tsNet's public dictionary only.
 - **coinxt** signs only a digest the app hands it: the app owns custody. Secrets are wiped before
   free. `coinxt/examples/coin-wallet.livecodescript` is a full wallet over Esplora, Electrum or
   Bitcoin Core, clearnet or Tor.
@@ -114,6 +118,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | torrentxt | 5 platforms, ABI 11 | harness 106/106 in the suite paste on Linux, 2026-09-25 (again 2026-09-26), the 2026-09-12 `x86_64-linux` build's first engine load by the maintainer's account (64-bit; its 996-byte BEP44 refusals agree), and on Windows, 2026-09-24 to 09-26, on the `x86_64-win32` build by the maintainer's account (64-bit; its first engine load, and the first recorded libtorrent 2.1 run on Windows); rp1 chat reported working across two machines on one LAN, 2026-08-27 | the 32-bit Linux and Windows libraries; demo re-opens; the Tor paths; two-machine seed/leech and resume; a real public swarm |
 | enetxt | 5 platforms, ABI 2 | folded 34 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5), where the standalone selftest ran 68/0/0 with its own async loopback complete on 2026-09-26 (presumably on that DLL); standalone async loopback, 2026-08-13 | LAN chat between two machines; internet chat across two networks |
 | datachannelxt | 5 platforms, ABI 1 | folded 39 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5); standalone async loopback, 2026-08-15; a DHT-signalled chat reported working across two machines on one LAN, 2026-08-27 | the standalone selftest's own async loopback on the 2026-09-12 builds (the paste's own completed on Linux); browser interop; a call across two networks; the loopback demo's itemised record (on 2026-09-26 it "seems to work as intended", by the maintainer's account) |
+| curlxt | none yet (the first release dispatch lands them) | none: joined 2026-11-14; the shim's smoke test and a headless run of both script layers over the built library, verified statically; needs an OXT pass | every engine record |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
 | box2dxt | 5 platforms, ABI 4 | Kit harness v32: 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 (run 12's `x86_64-linux` file, by the maintainer's account) and Windows 2026-09-24 to 09-26 (on the 2026-09-12 DLL there); every run settles the itemDelimiter half of engine note 2.3 (handler-local). `playLoudness` reads back 0 on Linux and exact on Windows (engine note 5.4), a printed note since v31 | the five game stacks since the 2026-08-14 fold; risk R1 on Linux and macOS |
@@ -211,6 +216,7 @@ put enLibraryVersion()   -- enetxt
 put dcLibraryVersion()   -- datachannelxt
 put b2Version()          -- box2dxt: prints 4
 put cxKeccak256Len()     -- coinxt: prints 32
+put cuLibraryVersion()   -- curlxt
 put oxVersion()          -- onionxt (its library in use)
 put nxVersion()          -- nostrxt (after start using stack "nostrxt")
 ```

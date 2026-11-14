@@ -86,6 +86,11 @@ SCRIPT_LIBS = {
     # this corpus never listed it, so the claim held by luck, not by a gate.
     "torrentxt/examples/torrent-helpers.livecodescript": ("bt",),
     "coinxt/examples/wallet-core.livecodescript": ("cw",),
+    # curlxt joined 2026-11-14: its helpers (cu*) and the tsNet layer, whose
+    # PUBLIC names are tsNet's own (tsNet*, from the public dictionary) and
+    # whose private ones are tsnx*.
+    "curlxt/src/curl-helpers.livecodescript": ("cu",),
+    "curlxt/src/tsnet.livecodescript": ("tsNet", "tsnx"),
 }
 
 LCB_LIBS = {
@@ -95,6 +100,7 @@ LCB_LIBS = {
     "datachannelxt/src/datachannel.lcb": ("dc",),
     "coinxt/src/coinxt.lcb": ("cx",),
     "box2dxt/src/box2dxt.lcb": ("b2",),
+    "curlxt/src/curl.lcb": ("cu",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")

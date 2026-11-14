@@ -120,6 +120,7 @@ CARRIERS = [
     ("torrentxt",     "src/btx_handle_table.h", "btx"),
     ("enetxt",        "src/enx_handle_table.h", "enx"),
     ("datachannelxt", "src/dcx_handle_table.h", "dcx"),
+    ("curlxt",        "src/cux_handle_table.h", "cux"),
 ]
 
 # Native scaffolding this gate deliberately does NOT compare, with the reason

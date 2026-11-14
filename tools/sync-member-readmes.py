@@ -103,6 +103,10 @@ WHY = {
                                   "`tools/check-script-vectors.py` drives the "
                                   "dht-chat's signaling parse through",
     ("datachannelxt", "nostrxt"): "what riptide's runner loads at import time",
+    ("curlxt", "riptide"): "`tools/check-demo-boot.py`, the runner "
+                           "`tools/check-script-vectors.py` runs the helpers "
+                           "and the tsNet layer on",
+    ("curlxt", "nostrxt"): "what riptide's runner loads at import time",
     ("box2dxt", "riptide"): "`tools/check-demo-boot.py`, the boot runner "
                             "whose loaded interpreter "
                             "`tools/check-platformer-levels.py` plays the "
