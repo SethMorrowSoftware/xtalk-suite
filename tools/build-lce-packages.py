@@ -100,9 +100,11 @@ WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win3
 
 # DLLs every supported Windows has (Beyond's builder's SYSTEM_DLLS):
 # api-ms-win-crt-* is the Universal CRT, part of Windows 10 and later;
-# msvcrt.dll is the system C runtime MinGW builds (coinxt) use
+# msvcrt.dll is the system C runtime MinGW builds (coinxt) use;
+# secur32.dll is SSPI, through which curlxt's Schannel TLS works
 SYSTEM_DLLS = frozenset(('kernel32.dll', 'user32.dll', 'advapi32.dll', 'ws2_32.dll', 'winmm.dll',
-                         'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll'))
+                         'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll',
+                         'secur32.dll'))
 SYSTEM_DLL_PREFIXES = ('api-ms-win-crt-',)
 
 # The runtime DLLs copied next to the libraries that import them, as
