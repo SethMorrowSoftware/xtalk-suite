@@ -36,7 +36,7 @@ behaviour there is our best reading rather than tsNet's documented one.
 | `tsNetGetStatus(pID)` | function | dictionary |
 | `tsNetRetrError(pID)` | function | dictionary |
 | `tsNetCloseConn pID` | command | dictionary |
-| `tsNetRetrieveData(pID, rError)` | function | entry not readable; our reading |
+| `tsNetRetrData(pID, rError)` | function | entry not readable; the name and arguments are those OXT-Beyond's dropbox library (LiveCode's, written against tsNet) calls |
 | `tsNetHeaders(pID)` | function | entry not readable; our reading |
 
 Every async call returns empty when the transfer started, or text starting `tsneterr:`. Its

@@ -571,27 +571,42 @@ def drive(c, ip, base, smtp_port, tmp):
         ck("an upload's callback counts bytes sent", s(calls["c3"][2]), "2")
     if "c4" in calls:
         ck("SMTP callback status", s(calls["c4"][1]), "250")
-    r, out = ip.call_ref("tsNetRetrieveData", ["c1", "x"])
-    ck("tsNetRetrieveData", s(r), "hello world")
+    r, out = ip.call_ref("tsNetRetrData", ["c1", "x"])
+    ck("tsNetRetrData", s(r), "hello world")
     ck("and rError is empty", s(out["rerror"]), "")
-    r, out = ip.call_ref("tsNetRetrieveData", ["c2", ""])
-    ck("tsNetRetrieveData of a POST", s(r), "POST:pp")
-    ck("tsNetRetrieveData of a custom method", s(ip.call_ref("tsNetRetrieveData", ["c5", ""])[0]), "PATCH:")
+    r, out = ip.call_ref("tsNetRetrData", ["c2", ""])
+    ck("tsNetRetrData of a POST", s(r), "POST:pp")
+    ck("tsNetRetrData of a custom method", s(ip.call_ref("tsNetRetrData", ["c5", ""])[0]), "PATCH:")
     c.ok("tsNetHeaders", "X-Served: yes" in s(ip.call("tsNetHeaders", ["c1"])))
     ck("tsNetGetStatus when done", s(ip.call("tsNetGetStatus", ["c1"])), "completed 11 11 0 0")
     ck("tsNetRetrError of a success", s(ip.call("tsNetRetrError", ["c1"])), "")
     ck("a finished ID can be reused", s(ip.call("tsNetGet", ["c1", base + "/missing", "", "doneMsg"])), "")
     ip.callbacks.clear()
     pump_until(ip, lambda: len(ip.callbacks) >= 1)
-    ck("the reused ID reports its own transfer", s(ip.call_ref("tsNetRetrieveData", ["c1", ""])[0]), "nope")
+    ck("the reused ID reports its own transfer", s(ip.call_ref("tsNetRetrData", ["c1", ""])[0]), "nope")
+
+    # OXT-Beyond's dropbox library (LiveCode's, written against tsNet) is
+    # the one inherited caller of the background calls: tsNetPost with a
+    # uuid ID and headers, then in the callback tsNetRetrData(ID, error)
+    # and tsNetCloseConn. Replayed here so its names cannot drift again
+    # (this layer first spelled the second one tsNetRetrieveData).
+    ip.callbacks.clear()
+    ck("dropbox: tsNetPost starts", s(ip.call("tsNetPost", ["db-1", base + "/echo", "Content-Type: application/json", "{}", "dbMsg"])), "")
+    pump_until(ip, lambda: len(ip.callbacks) >= 1)
+    r, out = ip.call_ref("tsNetRetrData", ["db-1", ""])
+    ck("dropbox: tsNetRetrData", s(r), "POST:{}")
+    ck("dropbox: its error is empty", s(out["rerror"]), "")
+    ck("dropbox: tsNetCloseConn", s(ip.call("tsNetCloseConn", ["db-1"])), "")
+    r, out = ip.call_ref("tsNetRetrData", ["db-1", ""])
+    c.ok("dropbox: a closed ID has no data", s(out["rerror"]).startswith("tsneterr:"))
 
     ip.callbacks.clear()
     ck("tsNetGet of a dead port starts", s(ip.call("tsNetGet", ["dead", "http://127.0.0.1:1/", "", "doneMsg"])), "")
     pump_until(ip, lambda: len(ip.callbacks) >= 1)
     if ip.callbacks:
         ck("its curl code is 7 (could not connect)", s(ip.callbacks[0][1][3]), "7")
-    r, out = ip.call_ref("tsNetRetrieveData", ["dead", ""])
-    c.ok("tsNetRetrieveData's rError is tsneterr", s(out["rerror"]).startswith("tsneterr:"))
+    r, out = ip.call_ref("tsNetRetrData", ["dead", ""])
+    c.ok("tsNetRetrData's rError is tsneterr", s(out["rerror"]).startswith("tsneterr:"))
     c.ok("tsNetRetrError explains", s(ip.call("tsNetRetrError", ["dead"])) != "")
     ck("tsNetGetStatus of a failure", s(ip.call("tsNetGetStatus", ["dead"])).split()[0], "error")
 
@@ -602,7 +617,7 @@ def drive(c, ip, base, smtp_port, tmp):
     pump_until(ip, lambda: len(ip.callbacks) >= 2)
     with open(gf, "rb") as fh:
         ck("tsNetGetFile wrote the file", len(fh.read()), 200000)
-    ck("tsNetUploadFile", s(ip.call_ref("tsNetRetrieveData", ["f2", ""])[0]), "PUT:file-body")
+    ck("tsNetUploadFile", s(ip.call_ref("tsNetRetrData", ["f2", ""])[0]), "PUT:file-body")
 
     # status callback and close
     ip.callbacks.clear()

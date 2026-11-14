@@ -172,9 +172,9 @@ pSettings: An optional array of settings.
 Returns: Empty, or an error starting "tsneterr:".
 
 Description:
-Read the data with <tsNetRetrieveData> once the callback arrives.
+Read the data with <tsNetRetrData> once the callback arrives.
 
-References: tsNetGetSync (handler), tsNetRetrieveData (handler)
+References: tsNetGetSync (handler), tsNetRetrData (handler)
 */
 function tsNetGet pConnectionID, pURL, pHeaders, pCallback, pSettings
    return tsnxStartAsync(pConnectionID, "GET", pURL, pHeaders, empty, tsnxOptions(pSettings, pURL), pCallback, the long id of the target, false)
@@ -697,7 +697,7 @@ Returns: The data.
 
 References: tsNetGet (handler), tsNetRetrError (handler)
 */
-function tsNetRetrieveData pConnectionID, @rError
+function tsNetRetrData pConnectionID, @rError
    local tReq
    put empty into rError
    if pConnectionID is not among the keys of sTsnxReq then
@@ -707,7 +707,7 @@ function tsNetRetrieveData pConnectionID, @rError
    put sTsnxReq[pConnectionID] into tReq
    put tsnxFailure(tReq) into rError
    return cuBody(tReq)
-end tsNetRetrieveData
+end tsNetRetrData
 
 /**
 Summary: The response headers of a background transfer.
@@ -716,7 +716,7 @@ pConnectionID: The connection ID: any text you choose to name this transfer.
 
 Returns: The headers, or an error starting "tsneterr:".
 
-References: tsNetRetrieveData (handler)
+References: tsNetRetrData (handler)
 */
 function tsNetHeaders pConnectionID
    if pConnectionID is not among the keys of sTsnxReq then
@@ -733,7 +733,7 @@ pConnectionID: The connection ID: any text you choose to name this transfer.
 Returns: The error text, empty when it did not fail, or an error starting
 "tsneterr:" for an unknown connection.
 
-References: tsNetRetrieveData (handler)
+References: tsNetRetrData (handler)
 */
 function tsNetRetrError pConnectionID
    if pConnectionID is not among the keys of sTsnxReq then
