@@ -77,7 +77,8 @@ assets/cards/, assets/sounds/  vendored Kenney CC0 art and audio (see each NOTIC
    live-leg skips, and the first v47 total, 2026-09-25, 751 passed with the
    same 5, on Linux and on Windows (the ledger; no run is recorded at v46);
    and the first v48 total, 2026-09-26, 929 passed with the same 5, on
-   Linux (the ledger).
+   Linux (the ledger); and the first v49 total, 2026-11-14, 960 passed
+   with the same 5, on Windows, in the standalone stack (the ledger).
    `kHeHarnessV` is printed in the report header so a stale paste identifies
    itself. Asserts are self-diagnosing: print what was observed against what
    was expected, never a bare FAIL, and write first-contact tests to debug
@@ -604,6 +605,7 @@ sending `heNextHandTick`, which deals a hand, and no harness may arm that.
 | 2026-09-26 (Windows; the same evening, after the paste runs) | Windows by the maintainer's account (the message names the platform only; presumably the machine of the pass, and OXT 9.6.3 by that evening's preflight, INFERRED) | the standalone stack's `heRunSelftest` (its header: "holde-em self-test  stack v0.25.6  harness v48") | **929/0/5**, `RESULT: green`, every section's lines the same as the paste's folded report of that evening bar the fold's `he1` name prefix (compared line by line): the fold and the standalone stack agree on an engine at h48, and `heProbeSodium` ok (its `sxHash(empty,32)` is BLAKE2b-256's published empty digest). The first recorded standalone `heRunSelftest` at v0.25.4 or later (work plan Engine #1's half, closed with the row below); the five live legs SKIPped by name |
 | 2026-09-26 (Windows; the same evening) | as the row above, by the maintainer's account; the b2k Kit NOT loaded ("it was not the spritecheet version", verbatim), so the flat table | a six-seat hotseat session on the standalone stack, pasted back as its transcript ("here's a sample hold-em game in the gotseat transcript", verbatim) | Four hands to one winner (seat 5, all 2400 chips), sb 1 / bb 2, 400 each, the Level 0 deal; by the maintainer's account no error dialog, and "the layout for hold em looked decent, we saw all acrds etc." (verbatim), the Phase 1 exit's eye for the flat table. Headlessly, `tools/fold-kat.py`, which now holds the transcript verbatim, re-derives every deal from its revealed seeds (18 commitments, every hole and board card), accepts every blind and act, verifies every settle (pots 810, 807, 776 and 2014; hand 4 a three-way all-in with a side pot and seat 5's uncalled 386 returned) and matches the dead-button schedule (buttons 1, 1, 3, 3): the engine's deal (`sxHash` through SodiumXT), betting engine and settlement agree with the mirrors on a session a person played. The first six-seat hotseat session on record (the 2026-08-17 hands were heads-up). Work plan Engine #1 and #2 closed, and runbook row 14; the sprite-card table is Engine #10 |
 | 2026-10-21 (Windows; OXT-Beyond 9.7.1-OXT build 25923, Win32 x86_64) | Seth's PC, driven by Claude through OXT-Beyond's xTalk MCP Bridge, each run approved by the maintainer; the b2k Kit loaded (the box2dxt-kit stack OXT-Beyond ships) | v0.25.7 / h49 as the STACK SCRIPT of a fresh stack (not the harness, not the suite paste): the lobby's Play vs computer, then a driver stack playing seat You on timers while the five bots played; then the prebuilt `Texas Holdem.oxtstack` (built with `holde-em/assets` as the default folder, saved, removed from memory, the Kit's sheets wiped, reopened from a folder with NO assets beside it) | the Kit card faces and the face-down Kenney backs drawn at card size; hands 1-9 dealt, acted on by the bots and settled with chips conserved, folding bots' cards mucked, the bots' holes turned up at showdown, the result line in words ("Boris wins 6 with a pair." shape); the prebuilt stack adopted 53 face frames and 15 back frames with no file and dealt a bot hand. Found and fixed on the way: a re-init drew faces at twice their size, the bet slider drew as a lone thumb at 16 px, sprites hid the bet chips and captions, each reopen piled up 17 sprites, and the carried backs were never adopted. That evening the maintainer found the backs blank on a table reopened in the same session (the Kit keys a sprite's shown icon by its long id, and the reopened pool reused the last instance's ids); `heKitSpriteResync` fixed it, and a rebuilt stack reopened twice without a Kit wipe drew every back. The harness's section 25 ran only through the family interpreter (31/0): verified statically; needs an OXT pass; so do the 720p eye on a full session, macOS and Linux |
+| 2026-11-14 (Windows; OXT-Beyond 0.2.8-dp.1 by its installed `.version`, engine 9.7.1-BeyondEngine build 25923) | Seth's PC, the machine of 2026-10-21, driven by Claude through OXT-Beyond's xTalk MCP Bridge (the maintainer had set the bridge to run without asking, so each run is in its log, not approved one by one); every dependency the BUILT-IN copy OXT-Beyond ships (TorrentXT, SodiumXT reporting "SodiumXT 0.1.0 (libsodium 1.0.22)", OnionXT's library and the box2dxt-kit stack all loaded at IDE start, nothing installed by hand) | v0.25.7 / h49 (the file at suite commit 0baec69, byte-identical to the published hold-em repository's 5434163) as the STACK SCRIPT of a fresh stack, saved, then reopened by `go stack` | the table built (1024x640, 151 controls, titled "holde-em 0.25.7"); `heSelfTest()` **960/0/5**, the five live legs skipped by name. 960 is 929 (h48) plus section 25's 31, so the computer opponents' section has now RUN on an engine, and the carried onionxt layer ran beside OXT-Beyond's built-in `onionxt` library with section 17 green. No played hand, nothing visual and nothing between machines was exercised by this run |
 
 ## 7. Status
 
@@ -620,7 +622,9 @@ heHexEq and near-integer fixes (their pins in sections 5, 9, 11, 15 and 21),
 with the wire-arity checks, section 24, Level 2 compute, the batch mask step,
 void-and-audit, the five cheater bots and DLEQ (721/0 at h45, Windows,
 2026-09-24; the five live legs skip by name). The standalone stack ran
-too, on Windows on 2026-09-26: `heRunSelftest` 929/0/5 green at v0.25.6 / h48, and a
+too, on Windows on 2026-09-26: `heRunSelftest` 929/0/5 green at v0.25.6 / h48, and on
+2026-11-14 `heSelfTest()` 960/0/5 at v0.25.7 / h49 on OXT-Beyond 0.2.8-dp.1 with its
+built-in extensions (section 25, the computer opponents, included), and a
 six-seat hotseat session of four hands on the flat table, whose transcript `tools/fold-kat.py`
 holds and re-derives (the ledger). Verified statically; needs an OXT pass: what those
 runs do not reach, namely the v0.25.4, v0.25.5 and v0.25.6 wire rules between machines (a
@@ -644,7 +648,10 @@ python3 tools/check-livecodescript.py   # after EVERY .livecodescript edit
 python3 tools/check-script-vectors.py   # then the harness itself, headlessly
 ```
 
-`tools/run-gates.sh` is the one list: the static gate, `check-docs.py`,
+`tools/run-gates.sh` is the one list: the static gate, `check-docs.py`
+(smart quotes, and the version this file's "Current:" line and the README's
+newest status heading name against the script's constants; its `--selftest`
+fixture runs first),
 `check-table-layout.py`, the seven KATs (evaluator, betting, shuffle, protocol
 with every envelope, token and deal value it pins and all 22 wire types,
 fold, atlas, sounds),
