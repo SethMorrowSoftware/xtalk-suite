@@ -271,6 +271,14 @@ if [ -f tools/build-lce-packages.py ]; then
   echo "== suite: tools/build-lce-packages.py table =="
   python3 tools/build-lce-packages.py table
 fi
+# The download page pages.yml publishes on every release is built from the
+# release itself (tools/build-extensions-site.py), so it can only be checked
+# against one: the fixture builds it from a made-up release and proves the
+# links, the install order, the escaping and every refusal, offline.
+if [ -f tools/test-build-extensions-site.py ]; then
+  echo "== suite: tools/test-build-extensions-site.py =="
+  python3 tools/test-build-extensions-site.py
+fi
 # The three C++ shims carry ONE handle table in three files, and this is the
 # first gate in the suite that compares one member's NATIVE code to another's.
 # The existing native gates are all vertical and single-member; the horizontal
