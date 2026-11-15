@@ -1,0 +1,91 @@
+# pages.yml - the extensions download page, on GitHub Pages.
+#
+# WHAT IT IS: one static page that lists every .lce package of the newest
+# published release, with a description, version, platforms, install order,
+# SHA-256 and a link to the release asset, for people on HyperXTalk and
+# LiveCode Community 9 (OXT-Beyond has the extensions built in).
+# tools/build-extensions-site.py writes it FROM the release (each package's
+# manifest.xml and api.lcdoc, the release's SHA256SUMS), so the page cannot
+# drift from what the release holds; tools/test-build-extensions-site.py is
+# its fixture test, run by build-all.sh --gates in suite-gates.yml.
+#
+# WHEN IT RUNS: when a release is published (lce-packages.yml makes a DRAFT;
+# pressing Publish on it is the human decision, and that press is what fires
+# this), and by hand. A release created or published with the workflow token
+# fires no workflow, which is why the draft-then-publish path is the trigger.
+#
+# WHY IT IS SAFE: it checks out main's tools, reads only release assets of
+# this repository (every package checked against SHA256SUMS and GitHub's own
+# digest, or no page is built), escapes every word a package brings, and the
+# deploy job alone holds pages: write and the OIDC token Pages needs.
+#
+# ONE-TIME SETUP: Settings > Pages > Build and deployment > Source: GitHub
+# Actions. Until then the deploy job fails with "Pages site not found".
+name: extensions site
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Build from this release; empty = the newest published release with .lce packages'
+        required: false
+        default: ''
+
+# one deployment at a time; a newer release waits rather than cancels
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: The builder's fixtures
+        run: python3 tools/test-build-extensions-site.py
+
+      - name: Build the page from the release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # a dispatch's input, or empty: the newest published release with
+          # packages, which on a release event is the one just published (a
+          # release without packages, published later, would not hide it)
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          args=(--out site --repo "$GITHUB_REPOSITORY")
+          if [ -n "$TAG" ]; then args+=(--tag "$TAG"); fi
+          python3 tools/build-extensions-site.py "${args[@]}"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

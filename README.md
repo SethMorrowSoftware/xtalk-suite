@@ -193,7 +193,9 @@ macOS dylibs are universal (arm64 + x86_64) and unsigned.
 committed platform (and, for enetxt and box2dxt, the Visual C++ runtime their Windows DLLs need),
 and the nine script libraries (the torrentxt, enetxt and datachannelxt helpers, the b2k Kit,
 coinxt's script layer, OnionXT and its HTTP server, NostrXT and its relay client). Take them from
-a GitHub release of this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
+the download page, <https://sethmorrowsoftware.github.io/xtalk-suite/> (written from the newest
+published release by `tools/build-extensions-site.py` and published by `.github/workflows/pages.yml`
+each time a release is published), from a GitHub release of this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
 IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk, HyperXTalk, OXT-Beyond)
 choose **Tools > Extension Manager > +** and pick the `.lce`. Install a library before its
 helpers or script layer (`torrentxt` before `torrentxt-helpers`, `onionxt` before
