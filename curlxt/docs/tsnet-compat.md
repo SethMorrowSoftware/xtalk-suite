@@ -74,4 +74,4 @@ with every `cu*` handler bound to the BUILT curlxt library, against an HTTP serv
 SMTP server it runs on 127.0.0.1: every sync and async call above, callbacks and their
 parameters, settings, timeouts, status messages, file transfers, errors and cleanup.
 `tools/test-script-vectors.py` breaks the layer six ways and requires the gate to catch each.
-Verified statically + headless run over the native library; needs an OXT pass.
+Verified statically + headless run over the native library. On an engine, Windows x86-64 only (2026-11-14 DLL), 2026-11-15: `tsNetVersion`, `tsNetGetSync`, an async `tsNetGet` and a refused expired certificate (README, Status); every other call needs an OXT pass.

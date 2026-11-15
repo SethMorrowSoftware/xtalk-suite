@@ -74,9 +74,23 @@ if tData begins with "tsneterr:" then answer tData
 The shim and its smoke test are verified natively (the whole exported surface against a
 loopback HTTP server, clean under ASan/UBSan). The helpers and the tsNet layer RUN headlessly
 over the built library against loopback HTTP and SMTP servers (`tools/check-script-vectors.py`,
-on the family's interpreter). Everything script-side is verified statically; needs an OXT pass.
-The binaries are not committed yet: the suite's release-binaries dispatch builds and commits
-them for every platform.
+on the family's interpreter). The binaries for all six platforms come from the suite's
+release-binaries dispatch (2026-11-14, rebuilt 2026-11-15 with the file-download fixes).
+
+**First engine records (Windows x86-64 only), on the 2026-11-14 `x86_64-win32` DLL, the one
+before the 2026-11-15 rebuild:**
+- 2026-11-14: OXT-Beyond's own Windows CI loaded the three extensions as built in. It ran
+  `cuLibraryVersion()` (`curlxt ABI 1; libcurl/8.22.0 Schannel libssh2/1.11.1`),
+  `cuWaitingCount()` and `tsNetVersion()` (1.4.5), and found only system DLL imports.
+- 2026-11-15, the same build on the maintainer's Windows PC through the MCP bridge:
+  - `tsNetGetSync` fetched a page (200);
+  - an async `tsNetGet` called back;
+  - expired.badssl.com failed with 35.
+  - `cuRequestAsync`, five at once with the expired one among them: the expired one failed in
+    116-314 ms each of four runs, with no pump call over 108 ms.
+
+The rest (SFTP, SCP, SMTP, FTP, uploads, the helpers' callbacks, Linux and mac) is verified
+statically; needs an OXT pass.
 
 ## Building and testing
 
