@@ -60,7 +60,11 @@ PACKAGES = {
     'alphaxt-1.0.0.lce': lce([
         ('manifest.xml', manifest('org.example.alpha', 'AlphaXT', '1.0.0', ['com.livecode.foreign'])),
         ('api.lcdoc', 'Library: org.example.alpha\n\nType: library\n\nSummary:\nBindings to <alLib>, '
-                      'the alpha library.\n\nMore prose here.\n\nName: alOpen\n\nType: function\n'),
+                      'the alpha library.\n\nMore prose here: open one with <alOpen>.\nNote: not a key.\n\n'
+                      'The steps:\n- one\n- two\n\nTags: Networking, Library\n\n'
+                      'Name: alOpen\n\nType: function\n\nSyntax: alOpen(<pPath>)\n\n'
+                      'Summary: Open a thing.\n\npPath: Where it is.\n\nName: alClose\n\nType: command\n'),
+        ('licenses/LICENSE', b'MIT'), ('licenses/OpenSSL-LICENSE.txt', b'Apache'),
         ('code/x86_64-win32/alpha.dll', b'MZ'), ('code/universal-mac/alpha.dylib', b'\xca\xfe'),
         ('code/riscv64-linux/alpha.so', b'\x7fELF')]),
     # its helpers: a script library that requires it
@@ -135,11 +139,29 @@ def test_good(tmp):
     expect('the SHA256SUMS link', 'href="%sSHA256SUMS"' % BASE in page)
     expect('the .nojekyll marker', os.path.isfile(os.path.join(tmp, 'out', '.nojekyll')))
     a = card(page, 'alphaxt-1.0.0.lce')
-    expect('version from the manifest', '<dt>Version</dt><dd>1.0.0</dd>' in a)
+    expect('version from the manifest', '<h3>AlphaXT<span class="ver">1.0.0</span><span class="kind">native library</span>' in a, a[:300])
+    expect('platform chips with the full name on hover',
+           '<li title="Windows 64-bit">Win 64</li><li title="macOS (Intel and Apple silicon)">macOS</li>' in a)
+    expect('the file name and size beside the download', '<small>alphaxt-1.0.0.lce &middot; ' in a)
     expect('native platforms in order, an unknown id kept',
-           'Windows 64-bit, macOS (Intel and Apple silicon), riscv64-linux' in a, a)
-    expect('Summary is the description, link brackets dropped',
-           '<p>Bindings to alLib, the alpha library.</p>' in a, a)
+           'macOS</li><li title="riscv64-linux">riscv64-linux</li></ul>' in a, a)
+    expect('Summary is the description, a name that is not a handler is code',
+           '<p>Bindings to <code>alLib</code>, the alpha library.</p>' in a, a)
+    expect('the rest of the description is under More, a handler name links to its entry',
+           '<details><summary>More about AlphaXT</summary>' in a
+           and 'open one with <a href="#h-alphaxt-alOpen"><code>alOpen</code></a>. Note: not a key.' in a, a)
+    expect('a list keeps its lines', '<p>The steps:<br>\n- one<br>\n- two</p>' in a, a)
+    expect('every handler listed, with syntax, kind and summary',
+           '<summary>All 2 handlers</summary>' in a
+           and '<li id="h-alphaxt-alOpen"><code>alOpen(&lt;pPath&gt;)</code><span class="k">function</span>'
+               '<span class="s">Open a thing.</span></li>' in a
+           and '<li id="h-alphaxt-alClose"><code>alClose</code><span class="k">command</span></li>' in a, a)
+    expect('a parameter line is not part of the summary', 'Where it is' not in a)
+    expect('topics from the tags, without "Library"',
+           '<dt>Topics</dt><dd>Networking</dd>' in a, a)
+    expect('the licences the package carries', '<dt>Licences</dt><dd>LICENSE, OpenSSL-LICENSE.txt</dd>' in a, a)
+    expect('a family the registry does not know still links its source at the tag',
+           'href="https://github.com/%s/tree/v9/alphaxt">Source at v9</a>' % site.REPO in page)
     expect('an engine module is not something to install first', 'com.livecode' not in a
            and '<dt>Install first</dt><dd>nothing</dd>' in a)
     h = card(page, 'alphaxt-helpers-1.0.0.lce')
@@ -156,14 +178,18 @@ def test_good(tmp):
     expect('no markup from a package reaches the page',
            '<script>alert' not in page and '<img' not in page and '&lt;script&gt;' in b
            and '&lt;img src=x' in b, b[:400])
-    expect('a long description is shortened at a sentence',
-           'Sentence number 29' not in b and 'Sentence number 0' in b and 'more.</p>' in b)
+    expect('a long first paragraph is shown whole on its card', 'Sentence number 29 says a little more.</p>' in b)
+    expect('each family says how many packages it has',
+           '<h2>alphaxt</h2>\n<p>2 packages, in install order</p>' in page
+           and '<h2>betaxt</h2>\n<p>One package</p>' in page)
     expect('the SHA-256 is on the card', hashlib.sha256(PACKAGES['betaxt-2.0.0.lce']).hexdigest() in b)
-    expect('a pre-release says so', 'This is a pre-release' in page)
-    expect('the count of packages', '3 packages' in page)
-    expect('a jump link to every family', 'href="#alphaxt">alphaxt</a> &middot; <a href="#betaxt">' in page)
+    expect('a pre-release says so', '<span class="pre">Pre-release</span>' in page)
+    expect('the contents number and link every family',
+           '<a href="#alphaxt"><span class="num">01</span>alphaxt</a>' in page
+           and '<a href="#betaxt"><span class="num">02</span>betaxt</a>' in page)
+    expect('the count of packages and families', '<b>3</b> packages in <b>2</b> families' in page)
     _, page2, _ = build(tmp, release(prerelease=False), out='out2')
-    expect('a full release does not say pre-release', page2 is not None and 'pre-release' not in page2)
+    expect('a full release does not say pre-release', page2 is not None and 'Pre-release' not in page2)
     _, page3, _ = build(tmp, release(), out='out3')
     expect('the same release makes the same page', page3 == page)
 
@@ -230,11 +256,46 @@ def test_description():
     expect('a short text is not cut', site.shorten('Short.') == 'Short.')
 
 
+def test_links(tmp):
+    """The links that come from the tree's own tables: a family's
+    repository, docs and examples (tools/member-registry.py) and each
+    package's source file (tools/build-lce-packages.py)."""
+    rel = release()
+    _, lce_dir = write_release(tmp, rel)
+
+    def fetch(a):
+        with open(os.path.join(lce_dir, a['name']), 'rb') as f:
+            return f.read()
+
+    packages, sums_url = site.collect(rel, fetch)
+    members = {'alphaxt': {'title': 'Alpha XT', 'url': 'https://github.com/example/AlphaXT',
+                           'docs': True, 'examples': False}}
+    sources = {'alphaxt-helpers': ('alphaxt', 'examples/alpha-helpers.livecodescript')}
+    page = site.render(rel, packages, sums_url, 'example/suite', members, sources)
+    expect('the registry title names the family', '<h2>Alpha XT</h2>' in page)
+    expect('the family repository', '<a href="https://github.com/example/AlphaXT">Repository and README</a>' in page)
+    expect('documentation at the release tag',
+           '<a href="https://github.com/example/suite/tree/v9/alphaxt/docs">Documentation</a>' in page)
+    expect('no examples link where the member has none', '>Examples</a>' not in page)
+    expect('a package source file at the release tag',
+           '<a href="https://github.com/example/suite/blob/v9/alphaxt/examples/alpha-helpers.livecodescript">'
+           in card(page, 'alphaxt-helpers-1.0.0.lce'))
+    expect('no source link for a package the table does not name', '<dt>Source</dt>' not in card(page, 'betaxt-2.0.0.lce'))
+    # the real tables: every package row has a source, and every extension
+    # member a repository, so the page cannot lose them silently
+    members, sources = site.tree_facts()
+    expect('the real registry gives curlxt a repository', members.get('curlxt', {}).get('url', '').endswith('/curlxt'))
+    expect('the real package table gives curlxt-tsnet its source',
+           sources.get('curlxt-tsnet') == ('curlxt', 'src/tsnet.livecodescript'), repr(sources.get('curlxt-tsnet')))
+    expect('apps are not extension families', 'riptide' not in members)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix='test-extensions-site-')
     try:
         test_good(tmp)
         test_refusals(tmp)
+        test_links(tmp)
         test_pick_release()
         test_description()
     finally:

@@ -49,6 +49,7 @@ USAGE
 import argparse
 import hashlib
 import html
+import importlib.util
 import io
 import json
 import os
@@ -59,6 +60,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+SUITE_ROOT = os.path.dirname(HERE)
 REPO = 'SethMorrowSoftware/xtalk-suite'
 API = 'https://api.github.com'
 
@@ -66,12 +69,12 @@ API = 'https://api.github.com'
 # PLATFORMS), in the order the page lists them, with the words a visitor
 # knows. An id not named here is shown as it is, never dropped.
 PLATFORM_NAMES = [
-    ('x86_64-win32', 'Windows 64-bit'),
-    ('x86-win32', 'Windows 32-bit'),
-    ('universal-mac', 'macOS (Intel and Apple silicon)'),
-    ('x86_64-linux', 'Linux 64-bit'),
-    ('x86-linux', 'Linux 32-bit'),
-    ('arm64-linux', 'Linux ARM64'),
+    ('x86_64-win32', 'Windows 64-bit', 'Win 64'),
+    ('x86-win32', 'Windows 32-bit', 'Win 32'),
+    ('universal-mac', 'macOS (Intel and Apple silicon)', 'macOS'),
+    ('x86_64-linux', 'Linux 64-bit', 'Linux 64'),
+    ('x86-linux', 'Linux 32-bit', 'Linux 32'),
+    ('arm64-linux', 'Linux ARM64', 'Linux ARM'),
 ]
 SCRIPT_PLATFORMS = 'Every platform (script library, no native code)'
 
@@ -134,37 +137,91 @@ def parse_sums(text):
 
 # --- reading a package -------------------------------------------------------
 
-def library_entry(text):
-    """The library entry of an api.lcdoc: everything before the first
-    handler entry."""
+# The keys an api.lcdoc entry is made of (Beyond's docs parser writes them;
+# "author:" and "version:" arrive lower-case). Only a line that starts with
+# one of these ends a field: a description line such as "Note: ..." or a
+# parameter line ("pRequest: A handle ...") is text, not a key.
+LCDOC_KEYS = frozenset(('library', 'type', 'title', 'author', 'description', 'summary', 'tags', 'name',
+                        'syntax', 'returns', 'parameters', 'references', 'example', 'examples', 'version',
+                        'os', 'platforms', 'associations', 'introduced', 'changes', 'related'))
+
+
+def lcdoc_entries(text):
+    """An api.lcdoc as [entry text]: the library entry first, then one per
+    handler (each starts with "Name:")."""
     text = text.replace('\r\n', '\n').replace('\r', '\n')
-    return re.split(r'\n(?=Name:)', text, maxsplit=1)[0]
+    return re.split(r'\n(?=Name:)', text)
+
+
+def library_entry(text):
+    return lcdoc_entries(text)[0]
+
+
+def lcdoc_fields(entry):
+    """{key (lower case): [lines]} of one entry, in the order met."""
+    fields, key = {}, None
+    for line in entry.split('\n'):
+        m = re.match(r'^([A-Za-z][A-Za-z ]*):(?:\s+(.*))?$', line)
+        if m and m.group(1).lower() in LCDOC_KEYS:
+            key = m.group(1).lower()
+            fields.setdefault(key, [])
+            if m.group(2) and m.group(2).strip():
+                fields[key].append(m.group(2).rstrip())
+        elif key is not None:
+            fields[key].append(line.rstrip())
+    return fields
+
+
+def paragraphs(lines):
+    """[[line]] split on blank lines, with no empty paragraph."""
+    out, cur = [], []
+    for line in lines:
+        if line.strip():
+            cur.append(line)
+        elif cur:
+            out.append(cur)
+            cur = []
+    if cur:
+        out.append(cur)
+    return out
+
+
+def flat(par):
+    return ' '.join(l.strip() for l in par)
+
+
+def lcdoc_about(text):
+    """The library entry's Description (script libraries) or Summary (LCB
+    libraries) as paragraphs, and its tags."""
+    fields = lcdoc_fields(library_entry(text))
+    about = paragraphs(fields.get('description') or fields.get('summary') or [])
+    tags = [t.strip() for t in ' '.join(fields.get('tags', [])).split(',') if t.strip()]
+    # "Library" is every package's tag: it says nothing
+    return about, [t for t in tags if t.lower() != 'library']
 
 
 def lcdoc_description(text):
-    """The first paragraph of the library entry's Description (script
-    libraries) or Summary (LCB libraries), as plain text."""
-    head = library_entry(text)
-    lines = head.split('\n')
-    for key in ('Description', 'Summary'):
-        for i, line in enumerate(lines):
-            if line.strip() != key + ':' and not line.startswith(key + ': '):
-                continue
-            body = [line.split(':', 1)[1].strip()] if line.split(':', 1)[1].strip() else []
-            for nxt in lines[i + 1:]:
-                if re.match(r'^[A-Z][A-Za-z ]*:(\s|$)', nxt):
-                    break
-                if not nxt.strip():
-                    if body:
-                        break
-                    continue
-                body.append(nxt.strip())
-            para = ' '.join(body)
-            # <handlerName> is a Dictionary link; on the page it is a name
-            para = re.sub(r'<([A-Za-z][A-Za-z0-9_.]*)>', r'\1', para)
-            if para:
-                return shorten(para)
-    return ''
+    """The first paragraph of the library entry, as short plain text."""
+    about, _ = lcdoc_about(text)
+    if not about:
+        return ''
+    # <handlerName> is a Dictionary link; in plain text it is a name
+    return shorten(re.sub(r'<([A-Za-z][A-Za-z0-9_.]*)>', r'\1', flat(about[0])))
+
+
+def lcdoc_handlers(text):
+    """[{name, type, syntax, summary}] of every handler entry."""
+    out = []
+    for entry in lcdoc_entries(text)[1:]:
+        f = lcdoc_fields(entry)
+        name = ' '.join(f.get('name', [])).strip()
+        if not name:
+            continue
+        summary = paragraphs(f.get('summary', []))
+        out.append({'name': name, 'type': ' '.join(f.get('type', [])).strip(),
+                    'syntax': (f.get('syntax') or [''])[0].strip(),
+                    'summary': flat(summary[0]) if summary else ''})
+    return out
 
 
 def shorten(text, limit=MAX_DESCRIPTION):
@@ -193,12 +250,16 @@ def read_package(name, data):
     if not ident or not field('version'):
         raise Problem('%s: manifest.xml names no id or version' % name)
     platforms = sorted({n.split('/')[1] for n in names if n.startswith('code/') and n.count('/') >= 2})
-    doc = entry = ''
+    doc, entry, about, tags, handlers = '', '', [], [], []
     if 'api.lcdoc' in names:
         lcdoc = zf.read('api.lcdoc').decode('utf-8', 'replace')
         doc, entry = lcdoc_description(lcdoc), library_entry(lcdoc)
+        about, tags = lcdoc_about(lcdoc)
+        handlers = lcdoc_handlers(lcdoc)
     return {
         'file': name,
+        'stem': name[:-len('-%s.lce' % field('version'))] if name.endswith('-%s.lce' % field('version'))
+                else name[:-len('.lce')],
         'id': ident,
         'title': field('title') or ident,
         'version': field('version'),
@@ -208,6 +269,10 @@ def read_package(name, data):
         'platforms': platforms,
         'description': doc,
         'entry': entry,
+        'about': about,
+        'tags': tags,
+        'handlers': handlers,
+        'licences': sorted(n.split('/', 1)[1] for n in names if n.startswith('licenses/') and not n.endswith('/')),
     }
 
 
@@ -255,12 +320,12 @@ def human_size(n):
         n /= 1024.0
 
 
-def platform_text(ids):
-    if not ids:
-        return SCRIPT_PLATFORMS
-    known = dict(PLATFORM_NAMES)
-    ordered = [pid for pid, _ in PLATFORM_NAMES if pid in ids] + sorted(i for i in ids if i not in known)
-    return ', '.join(known.get(pid, pid) for pid in ordered)
+def platforms_of(ids):
+    """[(long name, short label)] in the page's order; an id not in
+    PLATFORM_NAMES is shown as it is, never dropped."""
+    known = {pid: (name, short) for pid, name, short in PLATFORM_NAMES}
+    ordered = [pid for pid, _, _ in PLATFORM_NAMES if pid in ids] + sorted(i for i in ids if i not in known)
+    return [known.get(pid, (pid, pid)) for pid in ordered]
 
 
 def base_packages(packages):
@@ -306,124 +371,311 @@ def order(packages):
     return sorted(packages, key=lambda p: (p['family'], depth(p), p['file']))
 
 
+# --- what the tree says about each family -------------------------------------
+
+def load_tool(name):
+    path = os.path.join(HERE, name)
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location(name.replace('-', '_').replace('.py', ''), path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def tree_facts():
+    '''({family: {title, url, docs, examples}}, {package stem: (member, path)})
+    from the two tables the rest of the suite already reads: a member's own
+    repository from tools/member-registry.py, and the source file each
+    package is made from from tools/build-lce-packages.py PACKAGES. Nothing
+    here is a second copy of either. A family neither table knows still gets
+    its page section, just without those links.'''
+    members, sources = {}, {}
+    reg = load_tool('member-registry.py')
+    for m in getattr(reg, 'MEMBERS', []) or []:
+        if m.kind != 'extension':
+            continue
+        here = os.path.join(SUITE_ROOT, m.name)
+        members[m.name] = {'title': m.title, 'url': m.url,
+                           'docs': os.path.isdir(os.path.join(here, 'docs')),
+                           'examples': os.path.isdir(os.path.join(here, 'examples'))}
+    lce = load_tool('build-lce-packages.py')
+    for row in getattr(lce, 'PACKAGES', []) or []:
+        sources[row['file']] = (row['member'], row['main'])
+    return members, sources
+
+
+# --- writing the page --------------------------------------------------------
+
 CSS = '''
-:root { --bg: #ffffff; --fg: #1d1d1f; --muted: #5f6368; --card: #f6f7f9; --line: #dfe1e5;
-        --link: #0b57d0; --note-bg: #fff6d6; --note-line: #e6c34a; color-scheme: light dark; }
+/* A catalogue, not a landing page: warm paper and ink, a serif for the
+   names, a numbered contents column, and rows that read like entries in a
+   printed software catalogue. System fonts only: the page loads nothing. */
+:root {
+  --paper: #f5f1e8; --panel: #fffdf8; --ink: #1d1a16; --muted: #6b6358; --rule: #d8d0bf;
+  --accent: #0e5a52; --accent-ink: #ffffff; --chip: #ebe4d4; --mark: #f6e3a1;
+  --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace;
+  color-scheme: light dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #16181c; --fg: #e8eaed; --muted: #a0a4ab; --card: #20232a; --line: #33373f;
-          --link: #8ab4f8; --note-bg: #2f2a17; --note-line: #8a7426; }
+  :root { --paper: #131210; --panel: #1b1a17; --ink: #ebe5d8; --muted: #a29988; --rule: #35312a;
+          --accent: #6cc7b9; --accent-ink: #0f1311; --chip: #28251f; --mark: #463a14; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg);
-       font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
-h1 { font-size: 1.7rem; margin: 0 0 4px; }
-h2 { font-size: 1.25rem; margin: 32px 0 8px; }
-h3 { font-size: 1.05rem; margin: 0; }
-a { color: var(--link); }
-.sub { color: var(--muted); margin: 0 0 16px; }
-.jump { line-height: 1.9; }
-.note { background: var(--note-bg); border-left: 4px solid var(--note-line); padding: 8px 12px; border-radius: 4px; }
-ol li { margin-bottom: 4px; }
-.family { margin-top: 28px; }
-.family > h2 { margin-bottom: 10px; text-transform: none; }
-.pkg { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 10px 0; }
-.pkg header { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; justify-content: space-between; }
-.pkg p { margin: 8px 0; }
-.pkg dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; font-size: 0.92rem; }
-.pkg dt { color: var(--muted); }
-.pkg dd { margin: 0; overflow-wrap: anywhere; }
-.dl { display: inline-block; padding: 6px 14px; border-radius: 6px; background: var(--link); color: var(--bg);
-      text-decoration: none; font-weight: 600; }
-code { font-size: 0.9em; overflow-wrap: anywhere; }
-.sha { font-size: 0.78rem; color: var(--muted); }
-footer { margin-top: 40px; color: var(--muted); font-size: 0.9rem; }
+html { scroll-padding-top: 16px; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 var(--sans); }
+a { color: var(--accent); text-underline-offset: 2px; }
+code { font: 0.88em var(--mono); overflow-wrap: anywhere; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+.mast { border-bottom: 1px solid var(--rule); padding: 40px 0 28px; }
+.kicker { font: 600 0.78rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.mast h1 { font: 600 clamp(1.9rem, 4.6vw, 3rem)/1.1 var(--serif); margin: 0 0 14px; letter-spacing: -0.01em; max-width: 22ch; }
+.lede { font-size: 1.08rem; max-width: 62ch; margin: 0 0 18px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 0.92rem; }
+.meta b { color: var(--ink); font-weight: 600; }
+.pre { display: inline-block; font: 600 0.72rem var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+       border: 1px solid currentColor; border-radius: 3px; padding: 0 6px; color: #9a5b00; }
+@media (prefers-color-scheme: dark) { .pre { color: #e8b04a; } }
+.navlinks { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 16px 0 0; padding: 0; list-style: none; font-weight: 500; }
+
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-top: 32px; }
+.toc { position: sticky; top: 16px; align-self: start; font-size: 0.93rem; }
+.toc h2 { font: 600 0.75rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--rule); }
+.toc li a { display: flex; gap: 10px; padding: 3px 0 3px 12px; text-decoration: none; color: var(--ink); }
+.toc li a:hover { color: var(--accent); }
+.num { font: 0.8rem var(--mono); color: var(--muted); min-width: 2ch; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; gap: 8px; }
+  .toc { position: static; }
+  .toc ol { columns: 2; column-gap: 16px; }
+}
+
+.install { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px; margin-bottom: 8px; }
+.install h2, .family h2 { font: 600 1.6rem/1.2 var(--serif); margin: 0; }
+.steps { counter-reset: step; list-style: none; margin: 16px 0; padding: 0;
+         display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.steps li { counter-increment: step; border-top: 2px solid var(--accent); padding-top: 8px; }
+.steps li::before { content: counter(step); font: 600 1.4rem var(--serif); color: var(--accent); display: block; }
+.install p { margin: 8px 0; font-size: 0.95rem; }
+
+.family { padding-top: 36px; }
+.fam-head { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; align-items: baseline;
+            border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+.fam-head .num { font-size: 1rem; }
+.fam-head p { grid-column: 2; margin: 6px 0 0; color: var(--muted); }
+.fam-head .navlinks { grid-column: 2; margin-top: 6px; font-size: 0.92rem; }
+
+.pkg { border-bottom: 1px solid var(--rule); padding: 20px 0; }
+.pkg-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: start; }
+.pkg h3 { font: 600 1.25rem/1.3 var(--serif); margin: 0; }
+.ver { font: 0.85rem var(--mono); color: var(--muted); margin-left: 6px; }
+.kind { font: 600 0.7rem var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
+.get { text-align: right; }
+.dl { display: inline-block; background: var(--accent); color: var(--accent-ink); text-decoration: none;
+      font-weight: 600; padding: 8px 16px; border-radius: 4px; white-space: nowrap; }
+.dl:hover { filter: brightness(1.1); }
+.get small { display: block; color: var(--muted); font: 0.78rem var(--mono); margin-top: 4px; }
+@media (max-width: 560px) { .pkg-top { grid-template-columns: 1fr; } .get { text-align: left; } }
+.pkg p { margin: 10px 0; max-width: 70ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.chips li { background: var(--chip); border-radius: 3px; padding: 1px 8px; font: 0.8rem var(--mono); }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 16px; margin: 14px 0 0; font-size: 0.9rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.sha { font-size: 0.75rem; color: var(--muted); }
+details { margin: 10px 0 0; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.handlers { list-style: none; margin: 10px 0 0; padding: 0; display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0 24px; font-size: 0.88rem; }
+.handlers li { padding: 6px 0; border-top: 1px solid var(--rule); }
+.handlers li:target { background: var(--mark); }
+.handlers .k { color: var(--muted); font-size: 0.75rem; margin-left: 4px; }
+.handlers span.s { display: block; color: var(--muted); }
+
+footer { border-top: 1px solid var(--rule); margin-top: 48px; padding: 24px 0 48px; color: var(--muted); font-size: 0.9rem; }
+footer p { max-width: 75ch; }
 '''
 
 
-def render(release, packages, sums_url, repo=REPO):
+def anchor(p, name):
+    return 'h-%s-%s' % (p['stem'], name)
+
+
+def rich(par, p):
+    '''One documentation paragraph as HTML: escaped, a <handlerName> link
+    pointing at that handler in the package's handler list, and a paragraph
+    whose lines are a list or are indented keeping its line breaks.'''
+    names = {h['name'] for h in p['handlers']}
+
+    def link(m):
+        name = html.unescape(m.group(1))
+        if name in names:
+            return '<a href="#%s"><code>%s</code></a>' % (esc(anchor(p, name)), esc(name))
+        return '<code>%s</code>' % esc(name)
+
+    keep_lines = any(re.match(r'^(\s+|[-*] |[0-9]+[.)] )', l) for l in par[1:]) or \
+        bool(re.match(r'^([-*] |[0-9]+[.)] )', par[0]))
+    text = '<br>\n'.join(esc(l.strip()) for l in par) if keep_lines else esc(flat(par))
+    return re.sub(r'&lt;([A-Za-z][A-Za-z0-9_.]*)&gt;', link, text)
+
+
+def render(release, packages, sums_url, repo=REPO, members=None, sources=None):
+    if members is None or sources is None:
+        tm, ts = tree_facts()
+        members = tm if members is None else members
+        sources = ts if sources is None else sources
     tag = release.get('tag_name', '')
-    rel_url = release.get('html_url') or 'https://github.com/%s/releases/tag/%s' % (repo, tag)
+    suite = 'https://github.com/%s' % repo
+    rel_url = release.get('html_url') or '%s/releases/tag/%s' % (suite, tag)
     published = (release.get('published_at') or '')[:10]
     by_id = {p['id']: p for p in packages}
+    ordered = order(packages)
+    families = []
+    for p in ordered:
+        if p['family'] not in families:
+            families.append(p['family'])
+
+    def fam_title(f):
+        return members.get(f, {}).get('title') or f
+
     out = []
     w = out.append
     w('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
       '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
       '<title>xTalk Suite extensions</title>\n'
       '<meta name="description" content="Extension packages (.lce) for HyperXTalk, LiveCode Community and OpenXTalk.">\n'
-      '<style>%s</style>\n</head>\n<body>\n<main>\n' % CSS)
-    w('<h1>xTalk Suite extensions</h1>\n')
-    w('<p class="sub">Extensions for HyperXTalk, LiveCode Community 9 and OpenXTalk, '
-      'from release <a href="%s">%s</a>%s. %d packages.</p>\n'
-      % (esc(rel_url), esc(tag), (', published ' + esc(published)) if published else '', len(packages)))
+      '<style>%s</style>\n</head>\n<body>\n' % CSS)
+
+    w('<header class="mast">\n<div class="wrap">\n<p class="kicker">xTalk Suite &middot; extension catalogue</p>\n'
+      '<h1>Extensions for HyperXTalk and LiveCode Community</h1>\n'
+      '<p class="lede">Free, open-source extensions for any IDE built on LiveCode Community 9. Most are '
+      'thin layers over proven open-source libraries; the rest are plain script. Each package carries '
+      'its own documentation, which appears in the Dictionary once it is installed.</p>\n')
+    w('<ul class="meta">\n<li>Release <b><a href="%s">%s</a></b></li>\n' % (esc(rel_url), esc(tag)))
+    if published:
+        w('<li>Published <b>%s</b></li>\n' % esc(published))
+    w('<li><b>%d</b> packages in <b>%d</b> families</li>\n' % (len(packages), len(families)))
     if release.get('prerelease'):
-        w('<p class="note">This is a pre-release: the extensions are new, and most of the testing '
-          'so far has been in OXT-Beyond. Please report anything that goes wrong on the '
-          '<a href="https://github.com/%s/issues">issue tracker</a>.</p>\n' % esc(repo))
+        w('<li><span class="pre">Pre-release</span></li>\n')
+    w('</ul>\n')
+    w('<ul class="navlinks">\n<li><a href="%s">Source code</a></li>\n<li><a href="%s">Release notes</a></li>\n'
+      '<li><a href="%s/releases">All releases</a></li>\n<li><a href="%s/issues">Report a problem</a></li>\n'
+      '<li><a href="%s">SHA256SUMS</a></li>\n</ul>\n</div>\n</header>\n'
+      % (esc(suite), esc(rel_url), esc(suite), esc(suite), esc(sums_url)))
 
-    w('<h2>How to install</h2>\n<ol>\n'
-      '<li>Download the <code>.lce</code> file for the extension you want. Do not unzip it.</li>\n'
+    w('<div class="wrap layout">\n<nav class="toc" aria-label="Contents">\n<h2>Contents</h2>\n<ol>\n'
+      '<li><a href="#install"><span class="num">00</span>Installing</a></li>\n')
+    for i, f in enumerate(families, 1):
+        w('<li><a href="#%s"><span class="num">%02d</span>%s</a></li>\n' % (esc(f), i, esc(fam_title(f))))
+    w('</ol>\n</nav>\n<main>\n')
+
+    w('<section class="install" id="install">\n<h2>Installing an extension</h2>\n<ol class="steps">\n'
+      '<li>Download its <code>.lce</code> file below. Leave it zipped.</li>\n'
       '<li>In HyperXTalk or LiveCode Community 9, choose <b>Tools &gt; Extension Manager</b>.</li>\n'
-      '<li>Click the <b>+</b> button and choose the <code>.lce</code> file.</li>\n'
-      '<li>Some extensions need another one installed first; each card says which under '
-      '"Install first". Installing a group from the top down gets the order right. '
-      '"Works with" names other extensions its documentation pairs it with: '
-      'some of its features may need them.</li>\n'
+      '<li>Click <b>+</b> and choose the <code>.lce</code> file.</li>\n'
       '</ol>\n'
-      '<p>The extension is then loaded every time the IDE starts, and its handlers are in the Dictionary. '
-      'To put one in a standalone, tick it in <b>Standalone Application Settings</b>, on the '
-      '<b>Inclusions</b> pane (choose "Select inclusions for the standalone application").</p>\n'
-      '<p>Packages marked "script library" are plain script and run anywhere the IDE runs. '
-      'The others carry a native library for each platform listed on their card. The macOS libraries '
-      'are not signed or notarized, so macOS may ask before it lets them load.</p>\n'
-      '<p>To check a download, compare its SHA-256 (on its card, and in '
-      '<a href="%s">SHA256SUMS</a>) with what your computer reports.</p>\n' % esc(sums_url))
+      '<p>Some extensions need another installed first: each entry says which under "Install first", '
+      'and installing a family from the top down gets the order right. "Works with" names other '
+      'extensions its documentation pairs it with, which some of its features may need.</p>\n'
+      '<p>An installed extension loads every time the IDE starts. To put one in a standalone, tick it in '
+      '<b>Standalone Application Settings &gt; Inclusions</b> (choose "Select inclusions for the standalone '
+      'application"). A <i>script</i> library runs anywhere the IDE runs; a <i>native</i> library carries '
+      'compiled code for the platforms listed with it. The macOS libraries are not signed or notarized, so '
+      'macOS may ask before it lets them load. To check a download, compare its SHA-256 with '
+      '<a href="%s">SHA256SUMS</a>.</p>\n' % esc(sums_url))
+    if release.get('prerelease'):
+        w('<p><span class="pre">Pre-release</span> These extensions are new, and most of the testing so far has '
+          'been in OXT-Beyond. Please <a href="%s/issues">report</a> anything that goes wrong.</p>\n' % esc(suite))
+    w('</section>\n')
 
-    w('<h2>Extensions</h2>\n')
-    families = sorted({p['family'] for p in packages})
-    w('<p class="jump">%s</p>\n' % ' &middot; '.join('<a href="#%s">%s</a>' % (esc(f), esc(f)) for f in families))
-    current = None
-    for p in order(packages):
-        if p['family'] != current:
-            if current is not None:
-                w('</section>\n')
-            current = p['family']
-            w('<section class="family" id="%s">\n<h2>%s</h2>\n' % (esc(current), esc(current)))
-        kind = 'script library' if not p['platforms'] else 'native library'
-        needs = []
-        for r in p['requires']:
-            dep = by_id.get(r)
-            needs.append('<a href="#pkg-%s">%s</a>' % (esc(dep['file']), esc(dep['title'])) if dep
-                         else '<code>%s</code>' % esc(r))
-        w('<article class="pkg" id="pkg-%s">\n<header><h3>%s</h3>'
-          '<a class="dl" href="%s" download>Download %s</a></header>\n'
-          % (esc(p['file']), esc(p['title']), esc(p['url']), esc(p['file'])))
-        if p['description']:
-            w('<p>%s</p>\n' % esc(p['description']))
-        w('<dl>\n<dt>Version</dt><dd>%s</dd>\n' % esc(p['version']))
-        w('<dt>Kind</dt><dd>%s</dd>\n' % kind)
-        w('<dt>Platforms</dt><dd>%s</dd>\n' % esc(platform_text(p['platforms'])))
-        w('<dt>Install first</dt><dd>%s</dd>\n' % (', '.join(needs) if needs else 'nothing'))
-        also = works_with(p, packages)
-        if also:
-            w('<dt>Works with</dt><dd>%s</dd>\n' % ', '.join(
-                '<a href="#pkg-%s">%s</a>' % (esc(b['file']), esc(b['title'])) for b in also))
-        if p['author']:
-            w('<dt>Author</dt><dd>%s</dd>\n' % esc(p['author']))
-        w('<dt>Extension id</dt><dd><code>%s</code></dd>\n' % esc(p['id']))
-        w('<dt>Size</dt><dd>%s</dd>\n' % esc(human_size(p['size'])))
-        w('<dt>SHA-256</dt><dd class="sha"><code>%s</code></dd>\n</dl>\n</article>\n' % esc(p['sha256']))
-    if current is not None:
+    for i, f in enumerate(families, 1):
+        info = members.get(f, {})
+        n = len([p for p in packages if p['family'] == f])
+        w('<section class="family" id="%s">\n<header class="fam-head">\n<span class="num">%02d</span>'
+          '<h2>%s</h2>\n<p>%s</p>\n' % (esc(f), i, esc(fam_title(f)),
+                                     'One package' if n == 1 else '%d packages, in install order' % n))
+        links = []
+        if info.get('url'):
+            links.append('<a href="%s">Repository and README</a>' % esc(info['url']))
+        if info.get('docs'):
+            links.append('<a href="%s/tree/%s/%s/docs">Documentation</a>' % (esc(suite), esc(tag), esc(f)))
+        if info.get('examples'):
+            links.append('<a href="%s/tree/%s/%s/examples">Examples</a>' % (esc(suite), esc(tag), esc(f)))
+        links.append('<a href="%s/tree/%s/%s">Source at %s</a>' % (esc(suite), esc(tag), esc(f), esc(tag)))
+        w('<ul class="navlinks">\n%s\n</ul>\n</header>\n' % '\n'.join('<li>%s</li>' % l for l in links))
+        for p in [q for q in ordered if q['family'] == f]:
+            render_card(w, p, packages, by_id, suite, tag, sources)
         w('</section>\n')
+    w('</main>\n</div>\n')
 
-    w('<footer>\n<p>OXT-Beyond includes all of these already, so its users need nothing from this page.</p>\n'
-      '<p>Built from <a href="%s">release %s</a> of <a href="https://github.com/%s">xtalk-suite</a> '
-      'by <code>tools/build-extensions-site.py</code>. Source code, documentation and licences '
-      'are in that repository; each package also carries its licences.</p>\n</footer>\n'
-      % (esc(rel_url), esc(tag), esc(repo)))
-    w('</main>\n</body>\n</html>\n')
+    w('<footer>\n<div class="wrap">\n<p>OXT-Beyond includes all of these already, so its users need nothing '
+      'from this page.</p>\n'
+      '<p>Built from <a href="%s">release %s</a> of <a href="%s">xtalk-suite</a> by '
+      '<code>tools/build-extensions-site.py</code>, from the packages themselves: their manifests, their '
+      'documentation and the checksums of the release. The extensions are MIT-licensed, the libraries they '
+      'bundle keep their own licences, and each package carries the text of every one.</p>\n</div>\n</footer>\n'
+      % (esc(rel_url), esc(tag), esc(suite)))
+    w('</body>\n</html>\n')
     return ''.join(out)
+
+
+def render_card(w, p, packages, by_id, suite, tag, sources):
+    kind = 'script library' if not p['platforms'] else 'native library'
+    needs = []
+    for r in p['requires']:
+        dep = by_id.get(r)
+        needs.append('<a href="#pkg-%s">%s</a>' % (esc(dep['file']), esc(dep['title'])) if dep
+                     else '<code>%s</code>' % esc(r))
+    w('<article class="pkg" id="pkg-%s">\n<div class="pkg-top">\n<div>\n'
+      '<h3>%s<span class="ver">%s</span><span class="kind">%s</span></h3>\n'
+      % (esc(p['file']), esc(p['title']), esc(p['version']), kind))
+    about = p['about']
+    if about:
+        w('<p>%s</p>\n' % rich(about[0], p))
+    elif p['description']:
+        w('<p>%s</p>\n' % esc(p['description']))
+    if p['platforms']:
+        w('<ul class="chips" aria-label="Platforms">%s</ul>\n' % ''.join(
+            '<li title="%s">%s</li>' % (esc(name), esc(short)) for name, short in platforms_of(p['platforms'])))
+    else:
+        w('<ul class="chips" aria-label="Platforms"><li title="%s">Any platform</li></ul>\n' % esc(SCRIPT_PLATFORMS))
+    w('</div>\n<div class="get"><a class="dl" href="%s" download>Download</a><small>%s &middot; %s</small></div>\n'
+      '</div>\n' % (esc(p['url']), esc(p['file']), esc(human_size(p['size']))))
+    if len(about) > 1:
+        w('<details><summary>More about %s</summary>\n%s\n</details>\n'
+          % (esc(p['title']), '\n'.join('<p>%s</p>' % rich(par, p) for par in about[1:])))
+    w('<dl class="facts">\n')
+    w('<dt>Install first</dt><dd>%s</dd>\n' % (', '.join(needs) if needs else 'nothing'))
+    also = works_with(p, packages)
+    if also:
+        w('<dt>Works with</dt><dd>%s</dd>\n' % ', '.join(
+            '<a href="#pkg-%s">%s</a>' % (esc(b['file']), esc(b['title'])) for b in also))
+    if p['tags']:
+        w('<dt>Topics</dt><dd>%s</dd>\n' % esc(', '.join(p['tags'])))
+    if p['author']:
+        w('<dt>Author</dt><dd>%s</dd>\n' % esc(p['author']))
+    w('<dt>Extension id</dt><dd><code>%s</code></dd>\n' % esc(p['id']))
+    src = sources.get(p['stem'])
+    if src:
+        w('<dt>Source</dt><dd><a href="%s/blob/%s/%s/%s"><code>%s/%s</code></a></dd>\n'
+          % (esc(suite), esc(tag), esc(src[0]), esc(src[1]), esc(src[0]), esc(src[1])))
+    if p['licences']:
+        w('<dt>Licences</dt><dd>%s</dd>\n' % esc(', '.join(p['licences'])))
+    w('<dt>SHA-256</dt><dd class="sha"><code>%s</code></dd>\n</dl>\n' % esc(p['sha256']))
+    if p['handlers']:
+        n = len(p['handlers'])
+        w('<details><summary>%s</summary>\n<ul class="handlers">\n'
+          % ('The one handler' if n == 1 else 'All %d handlers' % n))
+        for h in p['handlers']:
+            w('<li id="%s"><code>%s</code><span class="k">%s</span>%s</li>\n'
+              % (esc(anchor(p, h['name'])), esc(h['syntax'] or h['name']), esc(h['type']),
+                 ('<span class="s">%s</span>' % rich([h['summary']], p)) if h['summary'] else ''))
+        w('</ul>\n</details>\n')
+    w('</article>\n')
 
 
 def write_site(out_dir, page):
