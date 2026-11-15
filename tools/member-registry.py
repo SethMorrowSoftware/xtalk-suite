@@ -78,7 +78,7 @@ class Member(object):
         return os.path.join(ROOT, self.name)
 
 
-# The order is the order every generated document lists them in: the eight
+# The order is the order every generated document lists them in: the nine
 # extensions first (native before pure-script, as the root README's table
 # has them), then the three apps.
 MEMBERS = [
@@ -125,6 +125,15 @@ MEMBERS = [
            # and oracle at import time - so the wallet gate needs both.
            siblings=["riptide", "nostrxt"],
            mirror_note="the pre-suite home"),
+    Member("curlxt", "curlxt", "extension", OWNER + "/curlxt",
+           native=True,
+           # tools/check-script-vectors.py (2026-11-14) runs the helpers and
+           # the tsNet layer on riptide's runner, which loads nostrxt's
+           # interpreter at import. (The runner's coinxt binary is optional
+           # and this gate never asks for it.)
+           siblings=["riptide", "nostrxt"],
+           mirror_note="born in the suite (2026-11-14); its repository is "
+                       "created empty for the suite to publish into"),
     Member("onionxt", "OnionXT", "extension", OWNER + "/OnionXT",
            native=False, siblings=[],
            mirror_note="the pre-suite home"),

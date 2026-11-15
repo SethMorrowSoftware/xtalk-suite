@@ -1,0 +1,846 @@
+/**
+Bindings to libcurl: HTTP and HTTPS, FTP and FTPS, SFTP and SCP, and SMTP
+mail, for OpenXTalk.
+
+curlxt wraps libcurl 8.22.0 (with libssh2 1.11.1 for SFTP). A request is
+an integer handle: make one with <cuRequestNew>, set its headers, options
+and body, then start it with <cuStart>. Either wait for it on the spot with
+<cuWait> (the script pauses until it ends) or let it run in the background
+and call <cuPoll> on a timer, which moves every running request along and
+says which ones have finished. Read the outcome with <cuInfo>, <cuText> and
+<cuBody>, then release the handle with <cuFree>. A handle that has gone
+stale is a harmless no-op.
+
+Nothing moves between calls: a background request makes progress only
+while <cuPoll> or <cuWait> runs. The curlHelpers library (cuStartPolling)
+runs the timer for you and sends your callback when a request ends, and the
+tsNet library gives scripts written for LiveCode's tsNet external the same
+calls, built on this one.
+
+Call <cuInitialize> once at startup and <cuCleanup> once at quit.
+
+Tags: Networking, Library
+*/
+library org.openxtalk.library.curl
+
+-- curl.lcb - the LCB binding for curlxt (library org.openxtalk.library.curl).
+-- It declares one `private foreign handler` per cux_* symbol in
+-- src/cux_abi.h and wraps each in a `public cu*` handler. Options, info
+-- fields and text fields are addressed by NAME from script ("timeout",
+-- "responseCode", "headers"); the numbers live only here and in the header,
+-- and tools/check-abi-registry.py proves the two never drift.
+--
+-- THE MODEL: PUMP OR NOTHING (as in enetxt). The shim starts no thread and
+-- never calls script. A started request moves only while cuPoll or cuWait
+-- runs; the helpers library runs cuPoll on a timer.
+--
+-- The FFI idiom for buffers is the family's (carried from enetxt, which
+-- carried it from TorrentXT): output buffers are raw blocks from the engine
+-- <builtin> MCMemoryAllocate passed as a Pointer; input buffers pass
+-- MCDataGetBytePtr(theData) with a byte count; every foreign call sits inside
+-- `unsafe ... end unsafe`; every `variable` is declared at the top of its
+-- handler.
+--
+-- The out-buffer contract: a text call returns the bytes written, or
+-- -(bytes needed) when the buffer is too small. The scratch buffer is never
+-- smaller than kScratchCap, so a "needed" answer is always below
+-- -kScratchCap and can never be mistaken for one of the small error codes.
+--
+-- OXT cannot compile/run .lcb headlessly, so every edit gets the static gate
+-- (tools/check-livecodescript.py); verified statically; needs an OXT pass.
+
+use com.livecode.foreign
+
+metadata version is "0.1.0"
+metadata author is "Seth Morrow Software"
+metadata title is "curlxt"
+
+-- ===================================================================== --
+--  Constants (mirror src/cux_abi.h; tools/check-abi-registry.py)
+-- ===================================================================== --
+
+-- Must equal CUX_ABI_VERSION in src/cux_abi.h; _checkABI() throws on skew.
+constant kABIVersion is 1
+
+-- kMCStringEncodingUTF8, the engine's own enum value.
+constant kEncodingUtf8 is 4
+
+-- The reusable scratch buffer's floor (see the out-buffer contract above).
+constant kScratchCap is 4096
+
+constant kStateNew is 0
+constant kStateRunning is 1
+constant kStateDone is 2
+
+constant kResultCancelled is 1000
+
+constant kOptTimeoutMs is 1
+constant kOptConnectTimeoutMs is 2
+constant kOptFollowRedirects is 3
+constant kOptMaxRedirects is 4
+constant kOptVerifyPeer is 5
+constant kOptVerifyHost is 6
+constant kOptLowSpeedLimit is 7
+constant kOptLowSpeedTime is 8
+constant kOptUseSsl is 9
+constant kOptFtpPassive is 10
+constant kOptMaxBodyBytes is 11
+constant kOptHttpVersion is 12
+constant kOptDnsCacheSeconds is 13
+constant kOptCreateDirs is 14
+
+constant kOptUsername is 101
+constant kOptPassword is 102
+constant kOptProxy is 103
+constant kOptCaFile is 104
+constant kOptOutputFile is 105
+constant kOptInputFile is 106
+constant kOptMailFrom is 107
+constant kOptMailRcpt is 108
+constant kOptUserAgent is 109
+constant kOptSshPublicKey is 110
+constant kOptSshPrivateKey is 111
+constant kOptKeyPassword is 112
+constant kOptQuote is 113
+constant kOptPostQuote is 114
+constant kOptProxyUserpwd is 115
+constant kOptReferer is 116
+constant kOptAcceptEncoding is 117
+
+constant kInfoState is 1
+constant kInfoResult is 2
+constant kInfoResponseCode is 3
+constant kInfoBytesDown is 4
+constant kInfoBytesUp is 5
+constant kInfoLengthDown is 6
+constant kInfoLengthUp is 7
+constant kInfoTotalTime is 8
+constant kInfoRedirectCount is 9
+constant kInfoBodySize is 10
+constant kInfoCancelled is 11
+
+constant kTextHeaders is 1
+constant kTextError is 2
+constant kTextEffectiveUrl is 3
+constant kTextContentType is 4
+constant kTextMethod is 5
+
+-- ===================================================================== --
+--  Module state: the reusable scratch buffer
+-- ===================================================================== --
+
+variable sScratchPtr as Pointer
+variable sScratchCap as Integer
+
+-- ===================================================================== --
+--  Foreign handlers (one per cux_* symbol in cux_abi.h). Never rename.
+-- ===================================================================== --
+
+private foreign handler _cux_abi_version() returns CInt binds to "c:curlxt>cux_abi_version!cdecl"
+private foreign handler _cux_init() returns CInt binds to "c:curlxt>cux_init!cdecl"
+private foreign handler _cux_cleanup() returns CInt binds to "c:curlxt>cux_cleanup!cdecl"
+private foreign handler _cux_version_string(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_version_string!cdecl"
+private foreign handler _cux_last_error(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_last_error!cdecl"
+private foreign handler _cux_clear_error() returns nothing binds to "c:curlxt>cux_clear_error!cdecl"
+
+private foreign handler _cux_request_new(in pMethod as ZStringUTF8, in pUrl as ZStringUTF8) returns CInt binds to "c:curlxt>cux_request_new!cdecl"
+private foreign handler _cux_set_header(in pReq as CInt, in pLine as ZStringUTF8) returns CInt binds to "c:curlxt>cux_set_header!cdecl"
+private foreign handler _cux_set_int(in pReq as CInt, in pOption as CInt, in pValue as CInt) returns CInt binds to "c:curlxt>cux_set_int!cdecl"
+private foreign handler _cux_set_text(in pReq as CInt, in pOption as CInt, in pValue as ZStringUTF8) returns CInt binds to "c:curlxt>cux_set_text!cdecl"
+private foreign handler _cux_set_body(in pReq as CInt, in pBytes as Pointer, in pLen as CInt) returns CInt binds to "c:curlxt>cux_set_body!cdecl"
+private foreign handler _cux_start(in pReq as CInt) returns CInt binds to "c:curlxt>cux_start!cdecl"
+private foreign handler _cux_cancel(in pReq as CInt) returns CInt binds to "c:curlxt>cux_cancel!cdecl"
+private foreign handler _cux_free(in pReq as CInt) returns CInt binds to "c:curlxt>cux_free!cdecl"
+
+private foreign handler _cux_poll(in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_poll!cdecl"
+private foreign handler _cux_wait(in pReq as CInt, in pTimeoutMs as CInt) returns CInt binds to "c:curlxt>cux_wait!cdecl"
+
+private foreign handler _cux_info(in pReq as CInt, in pField as CInt) returns CDouble binds to "c:curlxt>cux_info!cdecl"
+private foreign handler _cux_text(in pReq as CInt, in pField as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_text!cdecl"
+private foreign handler _cux_body(in pReq as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_body!cdecl"
+private foreign handler _cux_live_count() returns CInt binds to "c:curlxt>cux_live_count!cdecl"
+
+-- ===================================================================== --
+--  Engine Foundation <builtin> foreign handlers (resolve by NAME: no `_`)
+-- ===================================================================== --
+private foreign handler MCStringDecode(in pData as Data, in pEncoding as CInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
+private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+
+-- ===================================================================== --
+--  Private helpers
+-- ===================================================================== --
+
+-- A legible throw at startup beats a crash at first use.
+private handler _checkABI()
+   variable tABI as Integer
+   unsafe
+      put _cux_abi_version() into tABI
+   end unsafe
+   if tABI is not kABIVersion then
+      throw "curlxt native library ABI does not match the LCB binding; rebuild and repackage the native library."
+   end if
+end handler
+
+-- Grow the scratch buffer to at least pNeed bytes (never below kScratchCap).
+private handler _ensureScratch(in pNeed as Integer)
+   variable tOk as Boolean
+   variable tWant as Integer
+   put pNeed into tWant
+   if tWant < kScratchCap then
+      put kScratchCap into tWant
+   end if
+   if sScratchCap < tWant then
+      if sScratchCap > 0 then
+         unsafe
+            MCMemoryDeallocate(sScratchPtr)
+         end unsafe
+      end if
+      put false into tOk
+      unsafe
+         put MCMemoryAllocate(tWant, sScratchPtr) into tOk
+      end unsafe
+      if not tOk then
+         put 0 into sScratchCap
+         throw "curlxt: failed to allocate the scratch buffer."
+      end if
+      put tWant into sScratchCap
+   end if
+end handler
+
+private handler _bufToData(in pPtr as Pointer, in pLen as Integer) returns Data
+   variable tData as Data
+   variable tOk as Boolean
+   put the empty data into tData
+   if pLen > 0 then
+      put false into tOk
+      unsafe
+         put MCDataCreateWithBytes(pPtr, pLen, tData) into tOk
+      end unsafe
+      if not tOk then
+         put the empty data into tData
+      end if
+   end if
+   return tData
+end handler
+
+private handler _decodeUtf8(in pData as Data) returns String
+   variable tStr as String
+   variable tOk as Boolean
+   put "" into tStr
+   if the number of bytes in pData is 0 then
+      return ""
+   end if
+   unsafe
+      put MCStringDecode(pData, kEncodingUtf8, false, tStr) into tOk
+   end unsafe
+   if tOk then
+      return tStr
+   end if
+   return ""
+end handler
+
+-- The raw bytes of one text field (headers, error, URL ...).
+private handler _textData(in pReq as Integer, in pField as Integer) returns Data
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _cux_text(pReq, pField, sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 - kScratchCap then
+      _ensureScratch(0 - tCount)
+      unsafe
+         put _cux_text(pReq, pField, sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return the empty data
+   end if
+   return _bufToData(sScratchPtr, tCount)
+end handler
+
+-- Option names to ids. 0 = not a known name (the shim then refuses it and
+-- says so in cuLastError). Integer options are below 100, text above.
+private handler _optionId(in pName as String) returns Integer
+   if pName is "timeout" then
+      return kOptTimeoutMs
+   else if pName is "connectTimeout" then
+      return kOptConnectTimeoutMs
+   else if pName is "followRedirects" then
+      return kOptFollowRedirects
+   else if pName is "maxRedirects" then
+      return kOptMaxRedirects
+   else if pName is "verifyPeer" then
+      return kOptVerifyPeer
+   else if pName is "verifyHost" then
+      return kOptVerifyHost
+   else if pName is "lowSpeedLimit" then
+      return kOptLowSpeedLimit
+   else if pName is "lowSpeedTime" then
+      return kOptLowSpeedTime
+   else if pName is "useSsl" then
+      return kOptUseSsl
+   else if pName is "ftpPassive" then
+      return kOptFtpPassive
+   else if pName is "maxBodyBytes" then
+      return kOptMaxBodyBytes
+   else if pName is "httpVersion" then
+      return kOptHttpVersion
+   else if pName is "dnsCacheSeconds" then
+      return kOptDnsCacheSeconds
+   else if pName is "createDirs" then
+      return kOptCreateDirs
+   else if pName is "username" then
+      return kOptUsername
+   else if pName is "password" then
+      return kOptPassword
+   else if pName is "proxy" then
+      return kOptProxy
+   else if pName is "caFile" then
+      return kOptCaFile
+   else if pName is "outputFile" then
+      return kOptOutputFile
+   else if pName is "inputFile" then
+      return kOptInputFile
+   else if pName is "mailFrom" then
+      return kOptMailFrom
+   else if pName is "mailRcpt" then
+      return kOptMailRcpt
+   else if pName is "userAgent" then
+      return kOptUserAgent
+   else if pName is "sshPublicKey" then
+      return kOptSshPublicKey
+   else if pName is "sshPrivateKey" then
+      return kOptSshPrivateKey
+   else if pName is "keyPassword" then
+      return kOptKeyPassword
+   else if pName is "quote" then
+      return kOptQuote
+   else if pName is "postQuote" then
+      return kOptPostQuote
+   else if pName is "proxyUserPassword" then
+      return kOptProxyUserpwd
+   else if pName is "referer" then
+      return kOptReferer
+   else if pName is "acceptEncoding" then
+      return kOptAcceptEncoding
+   end if
+   return 0
+end handler
+
+private handler _infoId(in pName as String) returns Integer
+   if pName is "state" then
+      return kInfoState
+   else if pName is "result" then
+      return kInfoResult
+   else if pName is "responseCode" then
+      return kInfoResponseCode
+   else if pName is "bytesDown" then
+      return kInfoBytesDown
+   else if pName is "bytesUp" then
+      return kInfoBytesUp
+   else if pName is "lengthDown" then
+      return kInfoLengthDown
+   else if pName is "lengthUp" then
+      return kInfoLengthUp
+   else if pName is "totalTime" then
+      return kInfoTotalTime
+   else if pName is "redirectCount" then
+      return kInfoRedirectCount
+   else if pName is "bodySize" then
+      return kInfoBodySize
+   else if pName is "cancelled" then
+      return kInfoCancelled
+   end if
+   return 0
+end handler
+
+private handler _textId(in pName as String) returns Integer
+   if pName is "headers" then
+      return kTextHeaders
+   else if pName is "error" then
+      return kTextError
+   else if pName is "effectiveUrl" then
+      return kTextEffectiveUrl
+   else if pName is "contentType" then
+      return kTextContentType
+   else if pName is "method" then
+      return kTextMethod
+   end if
+   return 0
+end handler
+
+-- ===================================================================== --
+--  Public API: lifecycle & diagnostics
+-- ===================================================================== --
+
+/**
+Summary: Initialize curlxt before any other call.
+
+Returns: The number of holds now taken (1 or more), or a negative error.
+
+Example:
+if cuInitialize() < 1 then answer "curlxt failed:" && cuLastError()
+
+Description:
+Use <cuInitialize> once at startup, before making a request. It checks
+that the installed native library matches this binding and throws an
+error if it does not. Calls are counted: each <cuInitialize> needs one
+matching <cuCleanup>.
+
+References: cuCleanup (handler), cuLastError (handler)
+*/
+public handler cuInitialize() returns Integer
+   variable tR as Integer
+   _checkABI()
+   unsafe
+      put _cux_init() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Give back one hold taken by <cuInitialize>.
+
+Returns: The number of holds still taken; 0 means curlxt is shut down.
+
+Description:
+Use <cuCleanup> once for each <cuInitialize>, at quit. The call that
+gives back the last hold stops every request still running and frees
+every handle, so a stack should give back only the holds it took.
+
+References: cuInitialize (handler)
+*/
+public handler cuCleanup() returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_cleanup() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: The versions of curlxt's ABI, libcurl and the libraries it uses.
+
+Returns: A line such as "curlxt ABI 1; libcurl/8.22.0 OpenSSL/3.0.13 libssh2/1.11.1".
+
+References: cuInitialize (handler)
+*/
+public handler cuLibraryVersion() returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _cux_version_string(sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeUtf8(_bufToData(sScratchPtr, tCount))
+end handler
+
+/**
+Summary: The last error curlxt recorded, as text.
+
+Returns: The text of the last error, or empty.
+
+Description:
+A handler that fails returns 0 or a negative number and records why here.
+The error of one finished request is its own: read it with
+<cuText>(tRequest, "error").
+
+References: cuClearError (handler), cuText (handler)
+*/
+public handler cuLastError() returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _cux_last_error(sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 - kScratchCap then
+      _ensureScratch(0 - tCount)
+      unsafe
+         put _cux_last_error(sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeUtf8(_bufToData(sScratchPtr, tCount))
+end handler
+
+/**
+Summary: Clear the text <cuLastError> returns.
+
+References: cuLastError (handler)
+*/
+public handler cuClearError()
+   unsafe
+      _cux_clear_error()
+   end unsafe
+end handler
+
+-- ===================================================================== --
+--  Public API: requests
+-- ===================================================================== --
+
+/**
+Summary: Make a new request.
+
+pMethod: GET, HEAD, POST, PUT, DELETE, or any other method name. PUT (or
+UPLOAD) sends the body as an upload, which is how FTP and SFTP files are
+stored and how SMTP sends a message.
+pURL: The URL, such as https://example.com/ or sftp://host/path/file.
+
+Returns: A request handle, or 0 if it could not be made (see <cuLastError>).
+
+Example:
+put cuRequestNew("GET", "https://example.com/") into tRequest
+
+Description:
+The request does nothing until <cuStart>. Before that, set its headers
+with <cuSetHeader>, its options with <cuSetOption>, and its body with
+<cuSetBody>.
+
+References: cuStart (handler), cuFree (handler), cuSetOption (handler)
+*/
+public handler cuRequestNew(in pMethod as String, in pURL as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_request_new(pMethod, pURL) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Add one request header.
+
+pRequest: A handle from <cuRequestNew>.
+pLine: One header line, such as "Accept: application/json".
+
+Returns: 0, or a negative error.
+
+References: cuRequestNew (handler)
+*/
+public handler cuSetHeader(in pRequest as Integer, in pLine as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_set_header(pRequest, pLine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Set a number option of a request.
+
+pRequest: A handle from <cuRequestNew>.
+pName: timeout (ms, whole transfer), connectTimeout (ms), followRedirects
+(0 or 1), maxRedirects, verifyPeer (0 or 1), verifyHost (0 or 1),
+lowSpeedLimit (bytes a second), lowSpeedTime (seconds), useSsl (0 none,
+1 try, 2 control, 3 all), ftpPassive (0 or 1), maxBodyBytes (0 = no cap),
+httpVersion (0 default, 1 is 1.0, 2 is 1.1), dnsCacheSeconds, createDirs
+(0 or 1).
+pValue: The value.
+
+Returns: 0, or a negative error (an unknown name included).
+
+References: cuSetTextOption (handler)
+*/
+public handler cuSetOption(in pRequest as Integer, in pName as String, in pValue as Integer) returns Integer
+   variable tR as Integer
+   variable tId as Integer
+   put _optionId(pName) into tId
+   if tId > 100 then
+      put 0 into tId
+   end if
+   unsafe
+      put _cux_set_int(pRequest, tId, pValue) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Set a text option of a request.
+
+pRequest: A handle from <cuRequestNew>.
+pName: username, password, proxy, caFile, outputFile (download straight to
+this file), inputFile (upload straight from this file), mailFrom,
+mailRcpt (adds one recipient), userAgent, sshPublicKey, sshPrivateKey,
+keyPassword, quote and postQuote (each adds one FTP or SFTP command, run
+before or after the transfer), proxyUserPassword, referer, acceptEncoding.
+pValue: The value.
+
+Returns: 0, or a negative error (an unknown name included).
+
+References: cuSetOption (handler)
+*/
+public handler cuSetTextOption(in pRequest as Integer, in pName as String, in pValue as String) returns Integer
+   variable tR as Integer
+   variable tId as Integer
+   put _optionId(pName) into tId
+   if tId < 100 then
+      put 0 into tId
+   end if
+   unsafe
+      put _cux_set_text(pRequest, tId, pValue) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Set the body a request sends.
+
+pRequest: A handle from <cuRequestNew>.
+pData: The bytes to send: the POST body, the PUT or upload content, or a
+whole mail message for SMTP.
+
+Returns: 0, or a negative error.
+
+References: cuRequestNew (handler)
+*/
+public handler cuSetBody(in pRequest as Integer, in pData as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pData into tLen
+   if tLen is 0 then
+      _ensureScratch(kScratchCap)
+      unsafe
+         put _cux_set_body(pRequest, sScratchPtr, 0) into tR
+      end unsafe
+      return tR
+   end if
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+      put _cux_set_body(pRequest, tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Start a request.
+
+pRequest: A handle from <cuRequestNew>.
+
+Returns: 0, or a negative error (an output or input file that cannot be
+opened is refused here).
+
+Description:
+A started request runs while <cuPoll> or <cuWait> is called. After
+<cuStart> its options can no longer change.
+
+References: cuPoll (handler), cuWait (handler)
+*/
+public handler cuStart(in pRequest as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_start(pRequest) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Stop a request.
+
+pRequest: A handle from <cuRequestNew>.
+
+Returns: 0, or a negative error.
+
+Description:
+A cancelled request is reported by <cuPoll> like any other that ended,
+with result 1000, so a callback waiting on it still arrives. Cancelling a
+finished request does nothing.
+
+References: cuStart (handler)
+*/
+public handler cuCancel(in pRequest as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_cancel(pRequest) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Release a request and everything it holds.
+
+pRequest: A handle from <cuRequestNew>.
+
+Returns: 0, or a negative error. After this the handle is stale.
+
+References: cuRequestNew (handler)
+*/
+public handler cuFree(in pRequest as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_free(pRequest) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Move every running request along, and list those that ended.
+
+Returns: A comma-separated list of the request handles that have ended
+since the last call, or empty. Each is listed once.
+
+Description:
+Call <cuPoll> on a timer for as long as requests run in the background:
+nothing moves between calls. 20 to 50 milliseconds is a good interval.
+The curlHelpers library does this for you.
+
+References: cuWait (handler), cuStart (handler)
+*/
+public handler cuPoll() returns String
+   variable tCount as Integer
+   _ensureScratch(kScratchCap)
+   unsafe
+      put _cux_poll(sScratchPtr, sScratchCap) into tCount
+   end unsafe
+   if tCount < 0 - kScratchCap then
+      _ensureScratch(0 - tCount)
+      unsafe
+         put _cux_poll(sScratchPtr, sScratchCap) into tCount
+      end unsafe
+   end if
+   if tCount <= 0 then
+      return ""
+   end if
+   return _decodeUtf8(_bufToData(sScratchPtr, tCount))
+end handler
+
+/**
+Summary: Wait for one request to end.
+
+pRequest: A started request.
+pTimeoutMs: The longest to wait, in milliseconds; -1 waits for the
+request's own timeouts alone.
+
+Returns: 1 when it ended, 0 when the wait ran out (it keeps running, and
+<cuPoll> reports it later), or a negative error.
+
+Description:
+The script pauses while it waits. Other running requests move too.
+
+References: cuPoll (handler)
+*/
+public handler cuWait(in pRequest as Integer, in pTimeoutMs as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_wait(pRequest, pTimeoutMs) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: A number about a request.
+
+pRequest: A request handle.
+pName: state (0 new, 1 running, 2 ended), result (0 = success, a libcurl
+error number, 1000 = cancelled, -1 while running), responseCode, bytesDown,
+bytesUp, lengthDown and lengthUp (-1 = not known), totalTime (seconds),
+redirectCount, bodySize, cancelled (0 or 1).
+
+Returns: The number, or -1 for a stale handle or an unknown name.
+
+References: cuText (handler)
+*/
+public handler cuInfo(in pRequest as Integer, in pName as String) returns Number
+   variable tR as Number
+   unsafe
+      put _cux_info(pRequest, _infoId(pName)) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: A piece of text about a request.
+
+pRequest: A request handle.
+pName: headers (the final response's header block), error, effectiveUrl,
+contentType, method.
+
+Returns: The text, decoded from UTF-8, or empty.
+
+References: cuTextData (handler), cuInfo (handler)
+*/
+public handler cuText(in pRequest as Integer, in pName as String) returns String
+   return _decodeUtf8(_textData(pRequest, _textId(pName)))
+end handler
+
+/**
+Summary: A piece of text about a request, as its raw bytes.
+
+pRequest: A handle from <cuRequestNew>.
+
+pName: The field name, as for <cuText>.
+
+Description:
+Use <cuTextData> instead of <cuText> where a server may send headers that
+are not UTF-8.
+
+References: cuText (handler)
+*/
+public handler cuTextData(in pRequest as Integer, in pName as String) returns Data
+   return _textData(pRequest, _textId(pName))
+end handler
+
+/**
+Summary: The response body a request received.
+
+pRequest: A handle from <cuRequestNew>.
+
+Returns: The bytes, or empty. Reading the body does not release it;
+<cuFree> does. A request with an outputFile holds no body.
+
+References: cuFree (handler), cuInfo (handler)
+*/
+public handler cuBody(in pRequest as Integer) returns Data
+   variable tSize as Number
+   variable tCount as Integer
+   variable tPtr as Pointer
+   variable tOk as Boolean
+   variable tData as Data
+   unsafe
+      put _cux_info(pRequest, kInfoBodySize) into tSize
+   end unsafe
+   if tSize <= 0 then
+      return the empty data
+   end if
+   -- A block of its own, freed before returning: a body can be large, and
+   -- growing the shared scratch buffer to it would hold that memory for the
+   -- life of the process.
+   put false into tOk
+   unsafe
+      put MCMemoryAllocate(tSize, tPtr) into tOk
+   end unsafe
+   if not tOk then
+      throw "curlxt: failed to allocate a buffer for the response body."
+   end if
+   unsafe
+      put _cux_body(pRequest, tPtr, tSize) into tCount
+   end unsafe
+   put _bufToData(tPtr, tCount) into tData
+   unsafe
+      MCMemoryDeallocate(tPtr)
+   end unsafe
+   return tData
+end handler
+
+/**
+Summary: How many request handles are live.
+
+Returns: The count of requests made and not yet freed.
+
+References: cuFree (handler)
+*/
+public handler cuLiveCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_live_count() into tR
+   end unsafe
+   return tR
+end handler
+
+end library

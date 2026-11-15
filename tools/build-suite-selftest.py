@@ -197,6 +197,10 @@ NO_HARNESS = {
     "nocloud": "an app with no in-engine harness; its file-server golden "
                "test and script-vector gate run headlessly in the gates "
                "(nocloud/tools/run-gates.sh)",
+    "curlxt": "joined 2026-11-14 with no in-engine harness yet; its native "
+              "smoke test (90 checks, ASan/UBSan) and a headless run of both "
+              "script layers over the built library against loopback HTTP "
+              "and SMTP servers run in the gates (curlxt/tools/run-gates.sh)",
 }
 
 # Handlers a member harness defines that belong to ITS OWN standalone UI. The

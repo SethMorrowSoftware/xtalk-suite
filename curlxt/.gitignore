@@ -1,0 +1,3 @@
+# build trees (any variant: build, build-asan, build-rel, ...)
+build*/
+dist/

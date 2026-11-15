@@ -1051,7 +1051,9 @@ class Board:
         k = ip.constants
         self.keys = _items(k["kSuKeys"])
         self.names = _items(k["kSuNames"])
-        self.no_harness = str(k["kSuNoHarness"])
+        # A LIST since curlxt joined (2026-11-14): every member with no
+        # in-engine harness, each a captioned row with no pill and no Run.
+        self.no_harness = tuple(_items(k["kSuNoHarness"]))
         self.width = int(k["kStWidth"])
         self.height = int(k["kStHeight"])
         self.colors = dict((n, str(k[n])) for n in
@@ -1142,7 +1144,7 @@ def check_profile(c, ip):
     c.eq("openStack is the four calls the boot scenario stands in for",
          body, OPEN_STACK)
     keys = _items(ip.constants["kSuKeys"])
-    unplaced = [k for k in keys if k != str(ip.constants["kSuNoHarness"])
+    unplaced = [k for k in keys if k not in _items(ip.constants["kSuNoHarness"])
                 and k not in FAST_SCOPES and k not in SLOW_SCOPES]
     c.eq("every row with a Run is in FAST_SCOPES or SLOW_SCOPES", unplaced,
          [])
@@ -1206,9 +1208,10 @@ def check_build(c, board):
          repr(rects))
     c.eq("exactly one results view shows",
          sum(1 for v in views if board.visible(v)), 1)
-    c.eq("nocloud has a caption and no Run",
-         (board.ctl("suNote" + board.no_harness) is not None,
-          board.ctl("suRun" + board.no_harness) is None), (True, True))
+    c.eq("every member with no harness has a caption and no Run",
+         [(k, board.ctl("suNote" + k) is not None, board.ctl("suRun" + k) is None)
+          for k in board.no_harness],
+         [(k, True, True) for k in board.no_harness])
     c.eq("the scaffold's two buttons keep their names under the board's "
          "labels", (board.ctl("stRerun").props.get("label"),
                     board.ctl("stCopy").props.get("label")),
@@ -1275,7 +1278,7 @@ def scenario_routing(c, board):
         c.eq("%s: nothing is armed and the view is unchanged" % label,
              (ip.pending_names(), board.g("sSuArmed"), board.g("sSuFilter")),
              ([], "", filt))
-    for key in (board.no_harness, "nosuchmember", ""):
+    for key in board.no_harness + ("nosuchmember", ""):
         try:
             ip.call("suArmRun", [key])
         except Exception as exc:                        # noqa: BLE001
@@ -1505,7 +1508,7 @@ def check_rows(c, board, scope, totals, expected=True):
     EXPECTED_PILLS established for it."""
     off_ground = []
     for key in board.keys:
-        if key == board.no_harness:
+        if key in board.no_harness:
             continue
         pill, bg = board.ctl("suPill" + key), board.ctl("suPill" + key + "Bg")
         ground = bg.props.get("backgroundcolor") if bg is not None else None
@@ -2076,9 +2079,9 @@ def scenario_all_accounting(c, board):
         return c.threw("the plain blocks", exc)
     c.eq("in all members every block counted to its OWN row",
          dict((k, board.row(k)) for k in board.keys
-              if k != board.no_harness),
+              if k not in board.no_harness),
          dict((k, tuple(v)) for k, v in want_rows.items()
-              if k != board.no_harness))
+              if k not in board.no_harness))
     lines = _lines(board.report())
     # each row owns exactly the lines written while its tally was open
     for key in ("sodiumxt", "coinxt", "holde-em"):
@@ -2094,7 +2097,7 @@ def scenario_all_accounting(c, board):
              "when they were apart" % key, err is None and got == want,
              err or "got %d lines, want %d" % (len(_lines(got)),
                                               len(_lines(want))))
-    rows = [board.row(k) for k in board.keys if k != board.no_harness]
+    rows = [board.row(k) for k in board.keys if k not in board.no_harness]
     c.eq("and the rows add up to the totals",
          tuple(sum(r[j] for r in rows) for j in range(3)), board.totals())
     try:
@@ -2884,7 +2887,7 @@ def check_stall_run(c, board, tag, want_notes=True):
          held(board), (0, 0))
     c.eq("(%s) the rows add up to the totals (the notes counted nothing)"
          % tag, tuple(sum(board.row(k)[i] for k in board.keys
-                          if k != board.no_harness) for i in range(3)),
+                          if k not in board.no_harness) for i in range(3)),
          board.totals())
     check_no_timers(c, board, also=("scTickProbe",))
     return lines, notes
@@ -3418,7 +3421,7 @@ def print_full_table(board, ip, wall, sync_s):
     print("  %-26s %7s %7s %8s  %-12s %8s" % ("row", "passed", "failed",
                                               "skipped", "pill", "seconds"))
     for key, title in zip(board.keys, board.names):
-        if key == board.no_harness:
+        if key in board.no_harness:
             print("  %-26s %7s %7s %8s  %-12s %8s" % (title, "-", "-", "-",
                                                       "no harness", "-"))
             continue
@@ -3565,7 +3568,7 @@ def check_full_run(c, ip, world, board):
 
     c.section("--full: the rows and the totals")
     rows = dict((k, board.row(k)) for k in board.keys
-                if k != board.no_harness)
+                if k not in board.no_harness)
     c.eq("the rows add up to the totals line",
          tuple(sum(r[j] for r in rows.values()) for j in range(3)),
          board.totals())

@@ -293,6 +293,24 @@ MEMBERS = [
         "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
+        "name": "curlxt",
+        "lib": "curlxt",
+        "lcb": ["curlxt/src/curl.lcb"],
+        # Joined 2026-11-14 with none committed; the first release-binaries
+        # dispatch (run 43635436132, commit 6edff95) landed all six.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac"],
+        "shim": "curlxt/src/curl_shim.cpp",
+        "prefix": "cux_",
+        "abi_header": "curlxt/src/cux_abi.h",
+        "abi_define": "CUX_ABI_VERSION",
+        "abi_symbol": "cux_abi_version",
+        # src/curlxt.map (GNU ld) and the derived -exported_symbols_list (ld64)
+        # export cux_* and nothing else; libcurl, libssh2 and libstdc++ are
+        # linked in, not re-exported (measured on the x86_64-linux build).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "datachannelxt",
         "lib": "datachannelxt",
         "lcb": ["datachannelxt/src/datachannel.lcb"],

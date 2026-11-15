@@ -90,7 +90,7 @@ CASES = [
      "command uiButton pName, pLabel, pRect\n   local tKitProbe\n",
      True, "fingerprint to"),
     ("d", "a constant the build reads (the row pitch)",
-     "constant kSuRowStep = 34\n",
+     "constant kSuRowStep = 31\n",
      "constant kSuRowStep = 36\n",
      True, "fingerprint to"),
     ("e", "a stale stamp: the hand-bumped value put back",
@@ -119,11 +119,11 @@ CASES = [
     # passes; l proves the comment did not blind it to the value beside it.
     ("k", "a trailing comment on a constant the build reads (NEGATIVE: "
           "must pass)",
-     "constant kSuRowStep = 34\n",
-     "constant kSuRowStep = 34   -- the row pitch\n",
+     "constant kSuRowStep = 31\n",
+     "constant kSuRowStep = 31   -- the row pitch\n",
      False, "check-suite-ui-version: OK"),
     ("l", "that constant's value changed beside a trailing comment",
-     "constant kSuRowStep = 34\n",
+     "constant kSuRowStep = 31\n",
      "constant kSuRowStep = 36   -- the row pitch\n",
      True, "fingerprint to"),
     # The same, on the STAMP's own line: the first cut read one as no

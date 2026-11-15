@@ -112,7 +112,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # checks below run over them, and the manifest refreshed by hand or not at all.
 # That is exactly the failure mode suite rule 5 exists to prevent, which is why
 # the token landed six days ahead of the YAML half (2026-08-23).
-MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt")
+#
+# CURLXT JOINED 2026-11-14 with its release-binaries.yml rows in the same
+# change, and with no library committed: its first dispatch CREATES its
+# src/code/MANIFEST.sha256 entries through the leg below.
+MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
+           "curlxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib"}
 
 

@@ -1,0 +1,155 @@
+# curlxt's native build matrix, at the ROOT of the monorepo (GitHub runs only
+# root workflows here; member workflows are generated for published repos).
+#
+# WHAT IT DOES NOT DO: it does not commit binaries. Each lane uploads its
+# library as an ARTIFACT; committed binaries come from the suite's manual
+# release-binaries.yml dispatch (suite rule 5).
+#
+# The sanitize job is the member's real gate: the shim's smoke test under
+# ASan/UBSan, and then the SCRIPT layers run over the freshly built library
+# (tools/run-gates.sh with CURLXT_REQUIRE_LIB=1, so the execution gates can
+# never quietly skip here).
+name: native curlxt
+
+on:
+  pull_request:
+    paths:
+      - "curlxt/**"
+      - ".github/workflows/native-curlxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "curlxt/**"
+      - ".github/workflows/native-curlxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-curlxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: "10.15"
+
+defaults:
+  run:
+    working-directory: curlxt
+
+jobs:
+  sanitize:
+    name: ASan+UBSan and the script layers (linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire toolchain + OpenSSL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build libssl-dev
+      - name: Configure + build + test under sanitizers
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCURLXT_BUILD_TESTS=ON \
+            -DCURLXT_SANITIZE=address
+          cmake --build build-asan --parallel 4
+          ASAN_OPTIONS=halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+          ctest --test-dir build-asan --output-on-failure --no-tests=error
+      - name: Release build for the script gates
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+      - name: The member's gates, over the built library
+        run: |
+          CURLXT_LIB="$PWD/build/curlxt.so" CURLXT_REQUIRE_LIB=1 bash tools/run-gates.sh
+
+  build-matrix:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            platform_id: x86_64-linux
+            acquire: linux64
+            cmake_args: ""
+          # The i386 OpenSSL must be named explicitly or the link fails with
+          # "file in wrong format" (datachannelxt's lesson).
+          - name: linux-x86
+            os: ubuntu-24.04
+            platform_id: x86-linux
+            acquire: linux32
+            cmake_args: "-DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32 -DOPENSSL_SSL_LIBRARY=/usr/lib/i386-linux-gnu/libssl.so -DOPENSSL_CRYPTO_LIBRARY=/usr/lib/i386-linux-gnu/libcrypto.so -DOPENSSL_INCLUDE_DIR=/usr/include"
+          # Host arch only: Homebrew's OpenSSL is one slice. A universal
+          # dylib is the release workflow's two-slice lipo job.
+          - name: macos
+            os: macos-15
+            platform_id: universal-mac
+            acquire: brew
+            cmake_args: ""
+          - name: windows-x86_64
+            os: windows-2025
+            platform_id: x86_64-win32
+            acquire: none
+            cmake_args: "-A x64"
+          - name: windows-x86
+            os: windows-2025
+            platform_id: x86-win32
+            acquire: none
+            cmake_args: "-A Win32"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Acquire toolchain + OpenSSL (Linux x86_64)
+        if: matrix.acquire == 'linux64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build libssl-dev
+
+      - name: Acquire 32-bit toolchain + i386 OpenSSL (Linux x86)
+        if: matrix.acquire == 'linux32'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y g++-multilib gcc-multilib ninja-build
+          sudo apt-get install -y libssl-dev:i386
+
+      - name: Acquire OpenSSL (Homebrew, macOS)
+        if: matrix.acquire == 'brew'
+        run: |
+          brew update
+          brew install openssl@3 ninja
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCURLXT_BUILD_TESTS=ON \
+            ${{ matrix.cmake_args }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Test (ctest)
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      - name: Stage the library
+        shell: bash
+        run: |
+          mkdir -p "dist/${{ matrix.platform_id }}"
+          for f in build/curlxt.so build/curlxt.dylib build/Release/curlxt.dll; do
+            if [ -f "$f" ]; then cp "$f" "dist/${{ matrix.platform_id }}/"; fi
+          done
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: curlxt-${{ matrix.platform_id }}
+          path: curlxt/dist/${{ matrix.platform_id }}/
+          if-no-files-found: ignore

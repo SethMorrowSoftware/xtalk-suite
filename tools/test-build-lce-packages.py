@@ -83,7 +83,12 @@ def test_check(tmp):
 def test_table():
     saved = copy.deepcopy(lce.PACKAGES)
     try:
-        expect('table holds on the tree', lce.check_table() == [])
+        problems = lce.check_table()
+        expect('table holds on the tree', problems == [])
+        for problem in problems:
+            # Name the row: a bare FAIL here once cost a whole release
+            # dispatch to diagnose (2026-11-14, curlxt's first).
+            print('     ' + problem)
         lce.PACKAGES[0]['main'] = 'src/missing.lcb'
         expect('table sees a missing main file', any('missing' in p for p in lce.check_table()))
         lce.PACKAGES[:] = copy.deepcopy(saved)
@@ -102,6 +107,10 @@ def test_table():
         expect('table sees an id used twice', any('twice' in p for p in lce.check_table()))
     finally:
         lce.PACKAGES[:] = saved
+    # secur32.dll is Schannel's SSPI (curlxt's TLS on Windows), on every
+    # Windows since NT; Beyond's builder must list it too
+    expect('secur32.dll counts as a system DLL', lce.is_system_dll('SECUR32.dll'))
+    expect('a pinned runtime DLL is not a system DLL', not lce.is_system_dll('vcruntime140.dll'))
     pins = copy.deepcopy(lce.VC_RUNTIME_PINS)
     try:
         del lce.VC_RUNTIME_PINS['x86_64-win32']['vcruntime140_1.dll']
