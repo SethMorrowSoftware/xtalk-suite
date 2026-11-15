@@ -35,12 +35,22 @@ licenses, reproduced with their sources:
                   files coinxt vendors)
   torrentxt       libtorrent-rasterbar          BSD-3-Clause
                   Boost                         Boost Software License 1.0
+                  OpenSSL 3 (Windows, 64-bit    Apache-2.0
+                  Linux and macOS libraries)
   enetxt          ENet 1.3.18                   MIT
   datachannelxt   libdatachannel                MPL-2.0
                   libjuice (ICE)                MPL-2.0
                   usrsctp (SCTP)                BSD-3-Clause
                   plog (logging)                MIT
-                  OpenSSL (DTLS)                system-provided, not bundled
+                  OpenSSL 3 (DTLS; Windows,     Apache-2.0
+                  64-bit Linux and macOS
+                  libraries; 32-bit Linux
+                  uses the system's)
+  curlxt          libcurl 8.22.0                curl (MIT-style)
+                  libssh2 1.11.1                BSD-3-Clause
+                  OpenSSL 3 (64-bit Linux and   Apache-2.0
+                  macOS libraries; Windows
+                  uses Schannel)
   onionxt         (no bundled code — connects to a Tor daemon you run)
   nostrxt         (no bundled code — pure script over sibling extensions
                   and relays you choose; published test vectors are
@@ -83,5 +93,7 @@ coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
 in the member's LICENSE file (sodiumxt), in a THIRD-PARTY-LICENSES.md next to
-the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt), or alongside
-the vendored sources (coinxt/native/vendor/LICENSE, for the MIT parts).
+the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt), or
+alongside the vendored sources (coinxt/native/vendor/LICENSE, for the MIT
+parts). OpenSSL's licence is in an OpenSSL-LICENSE.txt next to the LICENSE of
+each member that links it (torrentxt, datachannelxt, curlxt).

@@ -3,13 +3,16 @@
 The DataChannelXT shim and LCB binding are MIT (see LICENSE). The committed
 per-platform binaries under src/code/ statically link the libraries below;
 their license texts are reproduced here in full, as their licenses require
-for binary distribution. DTLS comes from the system OpenSSL, which is NOT
-bundled (it is linked dynamically from the host).
+for binary distribution. DTLS comes from OpenSSL 3, which is statically
+linked into the Windows, 64-bit Linux and macOS libraries (until 2026-11-15
+this file said OpenSSL was not bundled, which was true only of the 32-bit
+Linux library: that one links the system's `libssl.so.3` dynamically).
 
 - libdatachannel (MPL-2.0)
 - libjuice, its vendored ICE agent (MPL-2.0 - the same text; reproduced once)
 - usrsctp, its vendored SCTP stack (BSD-3-Clause)
 - plog, its vendored logging library (MIT)
+- OpenSSL 3, for DTLS (Apache License 2.0). OpenSSL is Copyright (c) 1998-2025 The OpenSSL Project Authors and Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson, and is licensed under the Apache License 2.0, whose text (OpenSSL's own LICENSE.txt, unchanged) is in OpenSSL-LICENSE.txt alongside this file.
 
 Per MPL-2.0 section 3.2(a): the source code for libdatachannel and libjuice
 is available at https://github.com/paullouisageneau/libdatachannel and

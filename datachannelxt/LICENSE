@@ -29,7 +29,9 @@ committed per-platform binaries:
   - libjuice        (MPL-2.0)  - libdatachannel's vendored ICE agent
   - usrsctp         (BSD-3-Clause) - its vendored SCTP stack
   - plog            (MIT) - its vendored logging library
+  - OpenSSL 3       (Apache-2.0) - DTLS; in the Windows, 64-bit Linux and
+                    macOS binaries (the 32-bit Linux one uses the system's)
 
-DTLS comes from the system OpenSSL, which is not bundled. The full license
-texts are reproduced in THIRD-PARTY-LICENSES.md alongside this file, as those
+The full license texts are reproduced in THIRD-PARTY-LICENSES.md (OpenSSL's in
+OpenSSL-LICENSE.txt) alongside this file, as those
 licenses require for binary distribution.

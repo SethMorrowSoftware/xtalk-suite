@@ -21,7 +21,9 @@ libcurl 8.22.0 + libssh2 1.11.1 (static)       the transfers
 It is ORIGINAL code. The tsNet layer was written from the public tsNet dictionary entries
 only (its names, parameters, callbacks and `tsneterr:` errors); no tsNet code was seen or
 used. [docs/tsnet-compat.md](docs/tsnet-compat.md) lists every tsNet call it answers and
-every place it may differ.
+every place it may differ. tsNet itself is Charles Warwick's (Techstrategies Solutions),
+whose design and documentation these calls follow; curlxt is not affiliated with him or
+with LiveCode Ltd.
 
 **Nothing changes for a stack that does not use it.** libURL stays the engine's URL
 handler: `get url`, `put ... into url` and `load url` behave exactly as they did.
