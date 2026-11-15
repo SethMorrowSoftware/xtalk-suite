@@ -34,3 +34,11 @@ in the Software without restriction, including without limitation the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the same conditions stated above.
+
+---
+
+The pictures in Spritesheets/, which the platformer and the demos draw, are
+Kenney's (https://kenney.nl), released under Creative Commons Zero, CC0 1.0
+(https://creativecommons.org/publicdomain/zero/1.0/): free to use for any
+purpose, with no attribution required. They are credited to Kenney here with
+thanks.

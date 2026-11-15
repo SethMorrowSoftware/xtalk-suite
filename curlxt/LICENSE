@@ -27,5 +27,6 @@ Daniel Stenberg and many contributors) and libssh2 (BSD 3-clause, Copyright
 (c) 2004-2007 Sara Golemon and others) into its per-platform binaries. The
 64-bit Linux and macOS release binaries also link OpenSSL 3.5.9 (Apache
 License 2.0) statically; the 32-bit Linux one uses the system's OpenSSL and
-the Windows ones use Schannel. The full license texts, and where OpenSSL's
-is, are in THIRD-PARTY-LICENSES.md alongside this file.
+the Windows ones use Schannel. The full license texts are in
+THIRD-PARTY-LICENSES.md and, for OpenSSL, OpenSSL-LICENSE.txt alongside this
+file.
