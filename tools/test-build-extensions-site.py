@@ -138,6 +138,17 @@ def test_good(tmp):
         expect('%s: its own download link' % name, 'href="%s%s" download' % (BASE, name) in card(page, name))
     expect('the SHA256SUMS link', 'href="%sSHA256SUMS"' % BASE in page)
     expect('the .nojekyll marker', os.path.isfile(os.path.join(tmp, 'out', '.nojekyll')))
+    home = 'https://sethmorrowsoftware.github.io/xtalk-suite/'
+    head = page[:page.index('</head>')]
+    expect('one canonical address, the Pages site', head.count('rel="canonical"') == 1
+           and '<link rel="canonical" href="%s">' % home in head, head[:600])
+    expect('link previews: title, description, address', '<meta property="og:title" content="xTalk Suite extensions">' in head
+           and '<meta property="og:url" content="%s">' % home in head and 'og:description' in head
+           and '<meta name="twitter:card" content="summary">' in head)
+    with open(os.path.join(tmp, 'out', 'sitemap.xml'), encoding='utf-8') as f:
+        sm = f.read()
+    expect('a sitemap of the one page', sm.count('<loc>') == 1 and '<loc>%s</loc>' % home in sm, sm)
+    expect('another repository, its own Pages address', site.site_url('Some-One/thing') == 'https://some-one.github.io/thing/')
     a = card(page, 'alphaxt-1.0.0.lce')
     expect('version from the manifest', '<h3>AlphaXT<span class="ver">1.0.0</span><span class="kind">native library</span>' in a, a[:300])
     expect('platform chips with the full name on hover',
