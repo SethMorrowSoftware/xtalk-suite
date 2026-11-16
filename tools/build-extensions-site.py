@@ -544,11 +544,22 @@ def render(release, packages, sums_url, repo=REPO, members=None, sources=None):
 
     out = []
     w = out.append
+    home = site_url(repo)
+    desc = 'Extension packages (.lce) for HyperXTalk, LiveCode Community and OpenXTalk.'
     w('<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
       '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
       '<title>xTalk Suite extensions</title>\n'
-      '<meta name="description" content="Extension packages (.lce) for HyperXTalk, LiveCode Community and OpenXTalk.">\n'
-      '<style>%s</style>\n</head>\n<body>\n' % CSS)
+      '<meta name="description" content="%s">\n' % esc(desc))
+    # For search engines and link previews (2026-11-16): the page's one
+    # address, so .../index.html and ...?x count as it, and what a shared
+    # link shows. The address is the repository's GitHub Pages site.
+    w('<link rel="canonical" href="%s">\n'
+      '<meta property="og:type" content="website">\n'
+      '<meta property="og:title" content="xTalk Suite extensions">\n'
+      '<meta property="og:description" content="%s">\n'
+      '<meta property="og:url" content="%s">\n'
+      '<meta name="twitter:card" content="summary">\n' % (esc(home), esc(desc), esc(home)))
+    w('<style>%s</style>\n</head>\n<body>\n' % CSS)
 
     w('<header class="mast">\n<div class="wrap">\n<p class="kicker">xTalk Suite &middot; extension catalogue</p>\n'
       '<h1>Extensions for HyperXTalk and LiveCode Community</h1>\n'
@@ -678,7 +689,13 @@ def render_card(w, p, packages, by_id, suite, tag, sources):
     w('</article>\n')
 
 
-def write_site(out_dir, page):
+def site_url(repo):
+    """The repository's GitHub Pages address: OWNER/NAME -> https://owner.github.io/NAME/."""
+    owner, _, name = repo.partition('/')
+    return 'https://%s.github.io/%s/' % (owner.lower(), name)
+
+
+def write_site(out_dir, page, repo=REPO):
     os.makedirs(out_dir, exist_ok=True)
     # a temporary file then a rename: a failed run never leaves half a page
     fd, tmp = tempfile.mkstemp(dir=out_dir, suffix='.tmp')
@@ -687,6 +704,12 @@ def write_site(out_dir, page):
     os.replace(tmp, os.path.join(out_dir, 'index.html'))
     # GitHub Pages: serve the folder as it is, without Jekyll
     open(os.path.join(out_dir, '.nojekyll'), 'w').close()
+    # The one page, for search engines (given to them through Search
+    # Console: a robots.txt here would not be read, only the host's own)
+    with open(os.path.join(out_dir, 'sitemap.xml'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                '  <url><loc>%s</loc></url>\n</urlset>\n' % esc(site_url(repo)))
 
 
 def main(argv=None):
@@ -722,7 +745,7 @@ def main(argv=None):
 
         release = pick_release(releases, args.tag)
         packages, sums_url = collect(release, fetch)
-        write_site(args.out, render(release, packages, sums_url, args.repo))
+        write_site(args.out, render(release, packages, sums_url, args.repo), args.repo)
     except Problem as e:
         print('build-extensions-site: ' + str(e), file=sys.stderr)
         return 1
