@@ -20,6 +20,13 @@ agree, so this test asks BOTH as they are written:
   - the publisher's awk program, cut out of publish-members.yml and RUN
     on the same changed-file lists.
 
+  - the publisher's whole "last change" block, cut out between its
+    `# >>> last-change` and `# <<< last-change` markers and RUN in a scratch
+    git repository with a `gh` that answers which commits have a lane run:
+    a docs-only commit with no run is looked past, but one WITH a run (the
+    head of a push that also brought code: GitHub filters a push by its
+    whole diff) is taken as it is.
+
 A fixture first proves the evaluator sees the difference between a docs
 change and a source change in the patterns before 2026-11-16 (where every
 change started the lane), so a blind evaluator cannot pass.
@@ -164,7 +171,88 @@ for path in lanes:
             fail("%s: the publisher reads %s as %s, the lane as %s"
                  % (member, files, not want, want))
 
+def publisher_block():
+    with open(os.path.join(WF, "publish-members.yml"), encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"# >>> last-change\n(.*?)\n\s*# <<< last-change", text, re.S)
+    if not m:
+        sys.exit("FAIL: no `# >>> last-change` block in publish-members.yml")
+    return m.group(1)
+
+
+def run_block(block):
+    """Scratch repository: commits, which of them have a lane run, and the
+    commit the block picks for each history."""
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        repo = os.path.join(tmp, "repo")
+        bindir = os.path.join(tmp, "bin")
+        os.makedirs(os.path.join(repo, "enetxt", "src"))
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "gh"), "w") as f:
+            # answers total_count: 1 when the asked head_sha is in $RUNS
+            f.write('#!/bin/bash\nsha=${2#*head_sha=}; sha=${sha%%&*}\n'
+                    'case " $RUNS " in *" $sha "*) echo 1 ;; *) echo 0 ;; esac\n')
+        os.chmod(os.path.join(bindir, "gh"), 0o755)
+        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"],
+                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+        def git(*a):
+            return subprocess.run(["git"] + list(a), cwd=repo, env=env, check=True,
+                                  stdout=subprocess.PIPE, text=True).stdout.strip()
+
+        def commit(path, name):
+            full = os.path.join(repo, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "a") as f:
+                f.write(name + "\n")
+            git("add", "-A")
+            git("commit", "-qm", name)
+            return git("rev-parse", "HEAD")
+
+        def pick(runs):
+            script = ('set -euo pipefail\nm=enetxt; lane=.github/workflows/native-enetxt.yml\n'
+                      'GITHUB_REPOSITORY=o/r; TARGET=HEAD\n' + block + '\necho "$last"\n')
+            p = subprocess.run(["bash", "-c", script], cwd=repo, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True,
+                               env=dict(env, RUNS=" ".join(runs)))
+            if p.returncode != 0:
+                fail("the publisher block failed: " + p.stdout)
+                return None
+            return p.stdout.strip().splitlines()[-1]
+
+        git("init", "-q")
+        code = commit("enetxt/src/a.c", "code")
+        docs = commit("enetxt/docs/a.md", "docs")
+        # pushed one by one: the code commit has a run, the docs one none
+        if pick([code]) != code:
+            fail("a docs-only commit with no run was not looked past")
+        # pushed together: the push's head (docs) has the run, code none
+        if pick([docs]) != docs:
+            fail("a docs-only push head WITH a lane run was looked past")
+        lic = commit("enetxt/THIRD-PARTY-LICENSES.md", "lic")
+        if pick([code]) != lic:
+            fail("a THIRD-PARTY-LICENSES.md change was looked past")
+        # a member whose every change is docs-only: the newest stands
+        git("checkout", "-q", "--orphan", "other")
+        git("rm", "-rqf", ".")
+        commit("enetxt/README.md", "r1")
+        r2 = commit("enetxt/docs/b.md", "r2")
+        if pick([]) != r2:
+            fail("with no change that starts the lane, the newest did not stand")
+    finally:
+        shutil.rmtree(tmp)
+
+
+if shutil.which("git") and shutil.which("bash") and shutil.which("awk"):
+    run_block(publisher_block())
+else:
+    print("SKIP: no git, bash or awk here; the publisher block is not run")
+
+
 if failures:
     sys.exit("%d failure(s)" % len(failures))
-print("test-native-lane-paths: OK (%d lanes x %d changes, lane filter and publisher agree)"
+print("test-native-lane-paths: OK (%d lanes x %d changes, lane filter and publisher agree; publisher block run)"
       % (len(lanes), len(CASES)))
