@@ -23,11 +23,17 @@ on:
   pull_request:
     paths:
       - "box2dxt/**"
+      - "!box2dxt/docs/**"
+      - "!box2dxt/**/*.md"
+      - "box2dxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-box2dxt.yml"
   push:
     branches: [main]
     paths:
       - "box2dxt/**"
+      - "!box2dxt/docs/**"
+      - "!box2dxt/**/*.md"
+      - "box2dxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-box2dxt.yml"
   workflow_dispatch:
 

@@ -12,11 +12,17 @@ on:
   pull_request:
     paths:
       - "torrentxt/**"
+      - "!torrentxt/docs/**"
+      - "!torrentxt/**/*.md"
+      - "torrentxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-torrentxt.yml"
   push:
     branches: [main]
     paths:
       - "torrentxt/**"
+      - "!torrentxt/docs/**"
+      - "!torrentxt/**/*.md"
+      - "torrentxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-torrentxt.yml"
   workflow_dispatch:
 

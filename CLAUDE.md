@@ -334,8 +334,11 @@ worse than no gate, because it answers the question nobody asks twice.
   request only the members its diff can reach run (`member-registry.py --affected`: the member and
   every member listing it as a gate sibling); main runs all. Plus the native cross-member job when
   a change touches it. `native-<member>.yml`: the
-  member's matrix and sanitizer lanes, scoped by `paths:`; artifacts only, it NEVER commits a
-  binary. Member `.github/workflows/` are GENERATED from these and run only in published repos.
+  member's matrix and sanitizer lanes, scoped by `paths:` (since 2026-11-16 a change to the
+  member's docs or Markdown alone starts none, bar its THIRD-PARTY-LICENSES.md; the publisher
+  holds a member to the lane run of its last change that does start one,
+  `tools/test-native-lane-paths.py`); artifacts only, it NEVER commits a binary. Member
+  `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
   requires. It builds all six native members on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a

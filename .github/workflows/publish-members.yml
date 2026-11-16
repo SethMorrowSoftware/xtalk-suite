@@ -146,6 +146,8 @@ jobs:
       # green on the member's LAST CHANGE at or before the target - the
       # commit whose tree is being published. Not on the target itself: the
       # lanes are paths-scoped, so most targets have no run of most lanes.
+      # Since 2026-11-16 a change to a member's docs or Markdown alone starts
+      # no lane, so "last change" means the last one that starts it.
       #   success  -> publish
       #   none     -> no run for that commit (a commit pushed by a workflow
       #               token triggers no lanes) - publish on the gates, warn
@@ -166,7 +168,20 @@ jobs:
           for m in "${members[@]}"; do
             lane=".github/workflows/native-$m.yml"
             if [ ! -f "$lane" ]; then go="$go $m"; continue; fi
-            last="$(git log -1 --first-parent --format=%H "$TARGET" -- "$m/" "$lane")"
+            # The member's last change that STARTS its lane. The lanes skip a
+            # change to the member's docs and Markdown alone (but not its
+            # THIRD-PARTY-LICENSES.md, which is packaged), so such a commit
+            # has no run; look past it to the change the lane last ran on,
+            # as the lane's own paths filter would (native-<member>.yml).
+            last=""
+            for c in $(git log --first-parent --format=%H "$TARGET" -- "$m/" "$lane"); do
+              if git diff-tree -r -m --first-parent --root --no-commit-id --name-only "$c" | awk -v m="$m/" -v lane="$lane" '
+                  $0 == lane || $0 == m "THIRD-PARTY-LICENSES.md" { hit = 1 }
+                  index($0, m) == 1 && index($0, m "docs/") != 1 && $0 !~ /\.md$/ { hit = 1 }
+                  END { exit hit ? 0 : 1 }'; then
+                last="$c"; break
+              fi
+            done
             # No commit at all: an empty head_sha would match ANY run. The
             # publisher refuses a member with no tree, so let it say so.
             if [ -z "$last" ]; then go="$go $m"; continue; fi

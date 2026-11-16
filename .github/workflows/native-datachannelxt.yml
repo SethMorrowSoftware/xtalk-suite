@@ -7,11 +7,17 @@ on:
   pull_request:
     paths:
       - "datachannelxt/**"
+      - "!datachannelxt/docs/**"
+      - "!datachannelxt/**/*.md"
+      - "datachannelxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-datachannelxt.yml"
   push:
     branches: [main]
     paths:
       - "datachannelxt/**"
+      - "!datachannelxt/docs/**"
+      - "!datachannelxt/**/*.md"
+      - "datachannelxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-datachannelxt.yml"
   workflow_dispatch:
 

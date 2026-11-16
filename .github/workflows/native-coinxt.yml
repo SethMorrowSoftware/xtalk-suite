@@ -62,11 +62,17 @@ on:
   pull_request:
     paths:
       - "coinxt/**"
+      - "!coinxt/docs/**"
+      - "!coinxt/**/*.md"
+      - "coinxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-coinxt.yml"
   push:
     branches: [main]
     paths:
       - "coinxt/**"
+      - "!coinxt/docs/**"
+      - "!coinxt/**/*.md"
+      - "coinxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-coinxt.yml"
   workflow_dispatch:
 
