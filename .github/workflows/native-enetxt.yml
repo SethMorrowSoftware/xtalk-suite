@@ -23,11 +23,17 @@ on:
   pull_request:
     paths:
       - "enetxt/**"
+      - "!enetxt/docs/**"
+      - "!enetxt/**/*.md"
+      - "enetxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-enetxt.yml"
   push:
     branches: [main]
     paths:
       - "enetxt/**"
+      - "!enetxt/docs/**"
+      - "!enetxt/**/*.md"
+      - "enetxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-enetxt.yml"
   workflow_dispatch:
 

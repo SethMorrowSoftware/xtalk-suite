@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""test-native-lane-paths.py - which changes start a member's native lane,
+and which change the publisher holds that lane to.
+
+Since 2026-11-16 a change to a member's docs or Markdown alone starts no
+native-<member>.yml run (its THIRD-PARTY-LICENSES.md still does: the
+packages carry it). Those lanes build and test on every platform, macOS
+among them, and a dated record or an honesty label changes nothing they
+test; the member's own gates, docs gates included, still run in
+suite-gates.yml for such a change.
+
+publish-members.yml holds a member back unless its lane is green on the
+member's last change. A docs-only commit has no lane run, so the publisher
+looks past it to the last change the lane's filter starts on. The two must
+agree, so this test asks BOTH as they are written:
+
+  - the lane's own `paths:` lists, read from every native-<member>.yml and
+    evaluated the way GitHub does (a path is in when the LAST pattern that
+    matches it is not a `!` pattern), for pull_request and push alike;
+  - the publisher's awk program, cut out of publish-members.yml and RUN
+    on the same changed-file lists.
+
+  - the publisher's whole "last change" block, cut out between its
+    `# >>> last-change` and `# <<< last-change` markers and RUN in a scratch
+    git repository with a `gh` that answers which commits have a lane run:
+    a docs-only commit with no run is looked past, but one WITH a run (the
+    head of a push that also brought code: GitHub filters a push by its
+    whole diff) is taken as it is.
+
+A fixture first proves the evaluator sees the difference between a docs
+change and a source change in the patterns before 2026-11-16 (where every
+change started the lane), so a blind evaluator cannot pass.
+
+USAGE
+    python3 tools/test-native-lane-paths.py
+"""
+
+import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+WF = os.path.join(ROOT, ".github", "workflows")
+
+failures = []
+
+
+def fail(msg):
+    failures.append(msg)
+    print("FAIL: " + msg)
+
+
+def glob_re(pattern):
+    """GitHub's filter globs: `**` any characters, `*` any but `/`."""
+    out, i = "", 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out += "(?:.*/)?"
+            i += 3
+        elif pattern.startswith("**", i):
+            out += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            out += "[^/]*"
+            i += 1
+        else:
+            out += re.escape(pattern[i])
+            i += 1
+    return re.compile("^" + out + "$")
+
+
+def starts(patterns, files):
+    """Whether a change to `files` starts a workflow with these `paths:`."""
+    for f in files:
+        verdict = False
+        for p in patterns:
+            neg = p.startswith("!")
+            if glob_re(p[1:] if neg else p).match(f):
+                verdict = not neg
+        if verdict:
+            return True
+    return False
+
+
+def paths_blocks(text):
+    """The `paths:` lists under on.pull_request and on.push, as written."""
+    blocks, cur = [], None
+    for line in text.split("\n"):
+        if line == "    paths:":
+            cur = []
+            blocks.append(cur)
+            continue
+        if cur is not None:
+            m = re.match(r'^      - "(.*)"$', line)
+            if m:
+                cur.append(m.group(1))
+                continue
+            cur = None
+    return blocks
+
+
+def publisher_awk():
+    with open(os.path.join(WF, "publish-members.yml"), encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"\| awk -v m=\"\$m/\" -v lane=\"\$lane\" '\n(.*?)'; then", text, re.S)
+    if not m:
+        sys.exit("FAIL: no awk program in publish-members.yml's lane step")
+    return m.group(1)
+
+
+def awk_starts(program, member, files):
+    lane = ".github/workflows/native-%s.yml" % member
+    p = subprocess.run(["awk", "-v", "m=%s/" % member, "-v", "lane=" + lane, program],
+                       input="".join(f + "\n" for f in files), text=True)
+    return p.returncode == 0
+
+
+# (changed files with <m> for the member, does the lane start)
+CASES = [
+    (["<m>/src/x.c"], True),
+    (["<m>/CMakeLists.txt"], True),
+    (["<m>/tests/smoke.py"], True),
+    (["<m>/tools/run-gates.sh"], True),
+    (["<m>/THIRD-PARTY-LICENSES.md"], True),
+    ([".github/workflows/native-<m>.yml"], True),
+    (["<m>/docs/building.md", "<m>/src/x.c"], True),
+    (["<m>/docs/building.md"], False),
+    (["<m>/docs/shot.png"], False),
+    (["<m>/README.md"], False),
+    (["<m>/CLAUDE.md", "<m>/CHANGELOG.md"], False),
+    (["<m>/examples/notes.md"], False),
+    (["docs/WORK-PLAN.md"], False),
+    (["othermember/src/x.c"], False),
+]
+
+# Fixture: the patterns before 2026-11-16 started on every change to the
+# member, docs included; the evaluator must say so.
+old = ["<m>/**", ".github/workflows/native-<m>.yml"]
+if not (starts([p.replace("<m>", "enetxt") for p in old], ["enetxt/docs/a.md"])
+        and not starts([p.replace("<m>", "enetxt") for p in old], ["docs/a.md"])):
+    sys.exit("FAIL: the evaluator does not read the old patterns as GitHub did")
+
+lanes = sorted(glob.glob(os.path.join(WF, "native-*.yml")))
+if not lanes:
+    sys.exit("FAIL: no native-<member>.yml lanes")
+awk = publisher_awk() if shutil.which("awk") else None
+if awk is None:
+    print("SKIP: no awk here; the publisher's half is not run")
+
+for path in lanes:
+    member = re.search(r"native-(\w+)\.yml$", path).group(1)
+    with open(path, encoding="utf-8") as f:
+        blocks = paths_blocks(f.read())
+    if len(blocks) != 2:
+        fail("%s: expected two paths: lists (pull_request, push), found %d"
+             % (os.path.basename(path), len(blocks)))
+        continue
+    if blocks[0] != blocks[1]:
+        fail("%s: pull_request and push list different paths" % os.path.basename(path))
+    for files, want in CASES:
+        files = [f.replace("<m>", member) for f in files]
+        got = starts(blocks[0], files)
+        if got != want:
+            fail("%s: %s %s the lane, expected %s" % (member, files,
+                 "starts" if got else "does not start", want))
+        if awk is not None and awk_starts(awk, member, files) != want:
+            fail("%s: the publisher reads %s as %s, the lane as %s"
+                 % (member, files, not want, want))
+
+def publisher_block():
+    with open(os.path.join(WF, "publish-members.yml"), encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"# >>> last-change\n(.*?)\n\s*# <<< last-change", text, re.S)
+    if not m:
+        sys.exit("FAIL: no `# >>> last-change` block in publish-members.yml")
+    return m.group(1)
+
+
+def run_block(block):
+    """Scratch repository: commits, which of them have a lane run, and the
+    commit the block picks for each history."""
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        repo = os.path.join(tmp, "repo")
+        bindir = os.path.join(tmp, "bin")
+        os.makedirs(os.path.join(repo, "enetxt", "src"))
+        os.makedirs(bindir)
+        with open(os.path.join(bindir, "gh"), "w") as f:
+            # answers total_count: 1 when the asked head_sha is in $RUNS
+            f.write('#!/bin/bash\nsha=${2#*head_sha=}; sha=${sha%%&*}\n'
+                    'case " $RUNS " in *" $sha "*) echo 1 ;; *) echo 0 ;; esac\n')
+        os.chmod(os.path.join(bindir, "gh"), 0o755)
+        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"],
+                   GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+
+        def git(*a):
+            return subprocess.run(["git"] + list(a), cwd=repo, env=env, check=True,
+                                  stdout=subprocess.PIPE, text=True).stdout.strip()
+
+        def commit(path, name):
+            full = os.path.join(repo, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "a") as f:
+                f.write(name + "\n")
+            git("add", "-A")
+            git("commit", "-qm", name)
+            return git("rev-parse", "HEAD")
+
+        def pick(runs):
+            script = ('set -euo pipefail\nm=enetxt; lane=.github/workflows/native-enetxt.yml\n'
+                      'GITHUB_REPOSITORY=o/r; TARGET=HEAD\n' + block + '\necho "$last"\n')
+            p = subprocess.run(["bash", "-c", script], cwd=repo, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True,
+                               env=dict(env, RUNS=" ".join(runs)))
+            if p.returncode != 0:
+                fail("the publisher block failed: " + p.stdout)
+                return None
+            return p.stdout.strip().splitlines()[-1]
+
+        git("init", "-q")
+        code = commit("enetxt/src/a.c", "code")
+        docs = commit("enetxt/docs/a.md", "docs")
+        # pushed one by one: the code commit has a run, the docs one none
+        if pick([code]) != code:
+            fail("a docs-only commit with no run was not looked past")
+        # pushed together: the push's head (docs) has the run, code none
+        if pick([docs]) != docs:
+            fail("a docs-only push head WITH a lane run was looked past")
+        lic = commit("enetxt/THIRD-PARTY-LICENSES.md", "lic")
+        if pick([code]) != lic:
+            fail("a THIRD-PARTY-LICENSES.md change was looked past")
+        # a member whose every change is docs-only: the newest stands
+        git("checkout", "-q", "--orphan", "other")
+        git("rm", "-rqf", ".")
+        commit("enetxt/README.md", "r1")
+        r2 = commit("enetxt/docs/b.md", "r2")
+        if pick([]) != r2:
+            fail("with no change that starts the lane, the newest did not stand")
+    finally:
+        shutil.rmtree(tmp)
+
+
+if shutil.which("git") and shutil.which("bash") and shutil.which("awk"):
+    run_block(publisher_block())
+else:
+    print("SKIP: no git, bash or awk here; the publisher block is not run")
+
+
+if failures:
+    sys.exit("%d failure(s)" % len(failures))
+print("test-native-lane-paths: OK (%d lanes x %d changes, lane filter and publisher agree; publisher block run)"
+      % (len(lanes), len(CASES)))

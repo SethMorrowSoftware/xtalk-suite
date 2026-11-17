@@ -15,11 +15,17 @@ on:
   pull_request:
     paths:
       - "curlxt/**"
+      - "!curlxt/docs/**"
+      - "!curlxt/**/*.md"
+      - "curlxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-curlxt.yml"
   push:
     branches: [main]
     paths:
       - "curlxt/**"
+      - "!curlxt/docs/**"
+      - "!curlxt/**/*.md"
+      - "curlxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-curlxt.yml"
   workflow_dispatch:
 

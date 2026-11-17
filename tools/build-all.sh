@@ -419,6 +419,13 @@ if [ -f tools/test-suite-gates-concurrency.py ]; then
   echo "== suite: tools/test-suite-gates-concurrency.py =="
   python3 tools/test-suite-gates-concurrency.py
 fi
+# Which changes start a member's native lane (2026-11-16: not its docs or
+# Markdown alone), and that publish-members.yml holds a member to the lane
+# run of the same changes: both read as written and run.
+if [ -f tools/test-native-lane-paths.py ]; then
+  echo "== suite: tools/test-native-lane-paths.py =="
+  python3 tools/test-native-lane-paths.py
+fi
 # The publisher itself (tools/publish-members.py) writes to eleven
 # repositories that are not this one, from .github/workflows/
 # publish-members.yml, so this is where its promises are held: it replays

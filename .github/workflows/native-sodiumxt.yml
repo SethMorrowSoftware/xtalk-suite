@@ -13,11 +13,17 @@ on:
   pull_request:
     paths:
       - "sodiumxt/**"
+      - "!sodiumxt/docs/**"
+      - "!sodiumxt/**/*.md"
+      - "sodiumxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-sodiumxt.yml"
   push:
     branches: [main]
     paths:
       - "sodiumxt/**"
+      - "!sodiumxt/docs/**"
+      - "!sodiumxt/**/*.md"
+      - "sodiumxt/THIRD-PARTY-LICENSES.md"
       - ".github/workflows/native-sodiumxt.yml"
   workflow_dispatch:
 
