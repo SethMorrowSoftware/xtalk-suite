@@ -75,6 +75,13 @@ PLATFORM_NAMES = [
     ('x86_64-linux', 'Linux 64-bit', 'Linux 64'),
     ('x86-linux', 'Linux 32-bit', 'Linux 32'),
     ('arm64-linux', 'Linux ARM64', 'Linux ARM'),
+    # Android (2026-11-18): one chip per ABI, as with the desktop rows. Most
+    # phones and tablets are the first; the x86 pair is emulators and a few
+    # Chromebooks.
+    ('arm64-android', 'Android phones and tablets (64-bit ARM)', 'Android ARM64'),
+    ('armv7-android', 'Older Android devices (32-bit ARM)', 'Android ARM32'),
+    ('x86_64-android', 'Android on 64-bit x86 (emulators, Chromebooks)', 'Android x86-64'),
+    ('x86-android', 'Android on 32-bit x86 (emulators)', 'Android x86'),
 ]
 SCRIPT_PLATFORMS = 'Every platform (script library, no native code)'
 

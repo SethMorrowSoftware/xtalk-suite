@@ -61,6 +61,20 @@ CODE_LAYOUT = {
     "universal-mac": ("mac",     "box2dxt.dylib"),
 }
 
+# Android (2026-11-18), one id per ABI OXT-Beyond's Android builder packs.
+# The libraries are built and placed by the suite's tools/build-android.sh
+# (the NDK builds all four from one machine), so there is no override flag
+# for them here; this table exists for --check. It is a SET: the tree holds
+# all four or none. Three would build an app that fails to load on the
+# fourth kind of device, and only there; none is the state before the first
+# Android release dispatch, and must not fail a gate that cannot build them.
+ANDROID_LAYOUT = {
+    "arm64-android":  "box2dxt.so",
+    "armv7-android":  "box2dxt.so",
+    "x86_64-android": "box2dxt.so",
+    "x86-android":    "box2dxt.so",
+}
+
 
 def main():
     ap = argparse.ArgumentParser(description="Refresh src/code/<platform-id>/ from per-platform native libraries.")
@@ -115,6 +129,15 @@ def main():
                 print(f"  {rel(dest)}  ({os.path.getsize(dest)} bytes)")
             else:
                 missing.append(f"src/code/{platform_id}/{bare}")
+        android = [pid for pid, bare in ANDROID_LAYOUT.items()
+                   if os.path.isfile(os.path.join(code_root, pid, bare))]
+        for platform_id in android:
+            dest = os.path.join(code_root, platform_id, ANDROID_LAYOUT[platform_id])
+            print(f"  {rel(dest)}  ({os.path.getsize(dest)} bytes)")
+        if android and len(android) != len(ANDROID_LAYOUT):
+            # All four, or none (see ANDROID_LAYOUT).
+            missing.extend(f"src/code/{pid}/{bare}" for pid, bare in ANDROID_LAYOUT.items()
+                           if pid not in android)
         if missing:
             print("MISSING -- the extension will not load on these targets:", file=sys.stderr)
             for m in missing:

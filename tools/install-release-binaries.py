@@ -5,6 +5,7 @@ install-release-binaries.py - land a release-binaries bundle into the tree.
 USAGE
     python3 tools/install-release-binaries.py <bundle-dir> [--dry-run]
     python3 tools/install-release-binaries.py --mac-floor <dylib>...
+    python3 tools/install-release-binaries.py --android-check <library>...
     python3 tools/install-release-binaries.py --selftest
 
 The bundle is what .github/workflows/release-binaries.yml publishes: one
@@ -43,6 +44,18 @@ the repository half-updated:
     its builder's, and every committed universal-mac dylib said 15.0 when
     measured. --mac-floor runs the same check on named files, which is how the
     mac lanes assert it where each dylib is born.
+  * an <arch>-android library is ANDROID's, built the way OXT-Beyond's Android
+    engine is (ANDROID_API_FLOOR and the rest, 2026-11-18): the machine its
+    directory names; the NDK's note, saying API 21; nothing needed but
+    Android's own system libraries (never libc++_shared.so, which an app
+    would have to carry); no text relocations, which Android 6.0 and later
+    refuse to load; and every segment of a 64-bit one aligned to 16 KB, which
+    Android 15's 16 KB devices require. A library in a -linux directory that
+    carries the NDK's note is refused the other way round: both are ELF of
+    the same machine, and only the note tells an Android arm64 library from
+    a Linux one. --android-check runs the same checks on named files, each
+    under a directory named for its platform id, which is how
+    tools/build-android.sh asserts them where each library is born.
   * for coinxt, the EXPORT SURFACE is exactly the cnx_* entry points. That check
     fails OPEN if it is skipped (a wrong export mechanism yields a WORKING
     library with 77 symbols), so it is asserted here too, not only in CI.
@@ -118,10 +131,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # src/code/MANIFEST.sha256 entries through the leg below.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
            "curlxt")
-EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib"}
+EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 
 def platform_kind(platform_id):
+    if platform_id in ANDROID_ABIS:
+        return "android"
     if platform_id.endswith("-linux"):
         return "linux"
     if platform_id.endswith("-win32"):
@@ -140,7 +155,8 @@ def read_format(path):
     if head[:4] == b"\x7fELF":
         cls = head[4]                      # 1 = 32-bit, 2 = 64-bit
         machine = struct.unpack_from("<H", head, 18)[0]
-        arch = {0x03: "x86", 0x3E: "x86_64", 0xB7: "arm64"}.get(machine, f"e_machine {machine:#x}")
+        arch = {0x03: "x86", 0x3E: "x86_64", 0xB7: "arm64",
+                0x28: "armv7"}.get(machine, f"e_machine {machine:#x}")
         if cls == 1 and arch == "x86_64":
             arch = "x86"                   # belt and braces; should not happen
         return "linux", arch
@@ -319,6 +335,244 @@ def mac_floor_cli(paths):
     return 1 if bad or not paths else 0
 
 
+# ANDROID (2026-11-18). OXT-Beyond's Android builder takes an extension's
+# native code from code/<arch>-android/ for these four names (its
+# kAndroidArchitectures) and puts it in the app as lib<name>.so. A library
+# there is an ELF like a Linux one, so the header alone cannot tell the two
+# apart, and everything Android asks of a library beyond the header fails
+# only on a device: at dlopen, on someone's phone. So each demand is read
+# from the file here. The values are OXT-Beyond's own for its Android engine
+# (its tools/ci/android_engine.py and BUILDING.md, "Building the Android
+# engine"), because the libraries are loaded by that engine, into that app:
+#
+#   the ABI      ELF class and e_machine, per directory (ANDROID_ABIS).
+#   the note     the NDK writes .note.android.ident into everything it
+#                links, with the API level the build targeted. No note means
+#                the file was not built with the NDK for Android at all (a
+#                Linux library under an Android name); a level above the
+#                floor means it may import what an older Android lacks.
+#   needed       only libraries every Android has. libc++_shared.so is the
+#                one a default NDK build asks for and no app has unless it
+#                ships it; OXT-Beyond's apps do not.
+#   textrel      Android 6.0 (API 23) and later refuse a library with text
+#                relocations outright.
+#   16 KB        Android 15 runs on devices with 16 KB pages, whose loader
+#                maps nothing aligned to less, and Google Play requires it
+#                of apps that target Android 15. 64-bit ABIs only: no 32-bit
+#                device has 16 KB pages.
+ANDROID_ABIS = {
+    # platform id: (ELF class, e_machine, the arch read_format names)
+    "arm64-android": (2, 0xB7, "arm64"),
+    "armv7-android": (1, 0x28, "armv7"),
+    "x86_64-android": (2, 0x3E, "x86_64"),
+    "x86-android": (1, 0x03, "x86"),
+}
+ANDROID_API_FLOOR = 21
+ANDROID_PAGE_SIZE = 16384
+# libz.so is one of them (a stable NDK library at every API level), and
+# curlxt needs it exactly as its 64-bit Linux libraries need libz.so.1:
+# libssh2's CMake links the zlib it finds beside an OpenSSL backend.
+ANDROID_SYSTEM_LIBS = ("libc.so", "libm.so", "libdl.so", "liblog.so",
+                       "libandroid.so", "libz.so")
+_PT_LOAD, _PT_DYNAMIC, _PT_NOTE = 1, 2, 4
+_DT_NULL, _DT_NEEDED, _DT_STRTAB, _DT_TEXTREL, _DT_FLAGS = 0, 1, 5, 22, 30
+_DF_TEXTREL = 0x4
+
+
+def elf_facts(path):
+    """What Android's loader reads of an ELF, from its program headers alone
+    (they are what a loader walks; section headers may be stripped): a dict
+    with `cls` (1 or 2), `machine`, `aligns` (each PT_LOAD's p_align),
+    `needed` (the DT_NEEDED names), `textrel`, `android_api` (the NDK note's
+    API level, None without the note) and `exports` (the defined global
+    dynamic symbols, None when the file keeps no section headers). None for
+    a file that is not a little-endian ELF this can walk."""
+    with open(path, "rb") as fh:
+        image = fh.read()
+    if len(image) < 52 or image[:4] != b"\x7fELF" or image[5] != 1:
+        return None
+    cls = image[4]
+    if cls not in (1, 2):
+        return None
+    is32 = cls == 1
+
+    def u16(off):
+        return struct.unpack_from("<H", image, off)[0]
+
+    def u32(off):
+        return struct.unpack_from("<I", image, off)[0]
+
+    def word(off):
+        return u32(off) if is32 else struct.unpack_from("<Q", image, off)[0]
+
+    try:
+        if is32:
+            e_phoff, e_shoff = word(28), word(32)
+            e_phentsize, e_phnum = u16(42), u16(44)
+            e_shentsize, e_shnum = u16(46), u16(48)
+        else:
+            e_phoff, e_shoff = word(32), word(40)
+            e_phentsize, e_phnum = u16(54), u16(56)
+            e_shentsize, e_shnum = u16(58), u16(60)
+        loads, aligns, dynamic, notes = [], [], None, []
+        for i in range(e_phnum):
+            base = e_phoff + i * e_phentsize
+            p_type = u32(base)
+            if is32:
+                p_offset, p_vaddr, p_filesz, p_align = (
+                    word(base + 4), word(base + 8), word(base + 16), word(base + 28))
+            else:
+                p_offset, p_vaddr, p_filesz, p_align = (
+                    word(base + 8), word(base + 16), word(base + 32), word(base + 48))
+            if p_type == _PT_LOAD:
+                loads.append((p_vaddr, p_filesz, p_offset))
+                aligns.append(p_align)
+            elif p_type == _PT_DYNAMIC:
+                dynamic = (p_offset, p_filesz)
+            elif p_type == _PT_NOTE:
+                notes.append((p_offset, p_filesz))
+
+        def to_offset(vaddr):
+            for seg_vaddr, filesz, offset in loads:
+                if seg_vaddr <= vaddr < seg_vaddr + filesz:
+                    return offset + vaddr - seg_vaddr
+            return None
+
+        needed_offsets, strtab, textrel = [], None, False
+        if dynamic:
+            step = 8 if is32 else 16
+            for off in range(dynamic[0], dynamic[0] + dynamic[1], step):
+                tag, value = word(off), word(off + step // 2)
+                if tag == _DT_NULL:
+                    break
+                if tag == _DT_NEEDED:
+                    needed_offsets.append(value)
+                elif tag == _DT_STRTAB:
+                    strtab = to_offset(value)
+                elif tag == _DT_TEXTREL:
+                    textrel = True
+                elif tag == _DT_FLAGS and value & _DF_TEXTREL:
+                    textrel = True
+        needed = []
+        for value in needed_offsets:
+            if strtab is None:
+                return None
+            end = image.index(b"\0", strtab + value)
+            needed.append(image[strtab + value:end].decode("ascii", "replace"))
+
+        android_api = None
+        for offset, size in notes:
+            off, end = offset, offset + size
+            while off + 12 <= end:
+                namesz, descsz, ntype = u32(off), u32(off + 4), u32(off + 8)
+                name = image[off + 12:off + 12 + namesz]
+                desc = off + 12 + ((namesz + 3) & ~3)
+                # NT_ANDROID_TYPE_IDENT (1), owner "Android": the API level
+                # is the first word of its description.
+                if name == b"Android\0" and ntype == 1 and descsz >= 4:
+                    android_api = u32(desc)
+                off = desc + ((descsz + 3) & ~3)
+
+        exports = None
+        if e_shnum:
+            exports = set()
+            for i in range(e_shnum):
+                base = e_shoff + i * e_shentsize
+                if u32(base + 4) != 11:              # SHT_DYNSYM
+                    continue
+                if is32:
+                    sh_offset, sh_size = word(base + 16), word(base + 20)
+                    sh_link, sh_entsize = u32(base + 24), word(base + 36)
+                else:
+                    sh_offset, sh_size = word(base + 24), word(base + 32)
+                    sh_link, sh_entsize = u32(base + 40), word(base + 56)
+                link = e_shoff + sh_link * e_shentsize
+                names = word(link + 16) if is32 else word(link + 24)
+                for j in range(sh_size // sh_entsize if sh_entsize else 0):
+                    sym = sh_offset + j * sh_entsize
+                    st_name = u32(sym)
+                    if is32:
+                        st_info, st_shndx = image[sym + 12], u16(sym + 14)
+                    else:
+                        st_info, st_shndx = image[sym + 4], u16(sym + 6)
+                    # Named, defined (not SHN_UNDEF), and global or weak.
+                    if st_name and st_shndx and (st_info >> 4) in (1, 2):
+                        end = image.index(b"\0", names + st_name)
+                        exports.add(image[names + st_name:end].decode(
+                            "ascii", "replace"))
+    except (struct.error, ValueError):
+        return None
+    return {"cls": cls, "machine": u16(18), "aligns": aligns, "needed": needed,
+            "textrel": textrel, "android_api": android_api, "exports": exports}
+
+
+def android_problem(path, platform_id):
+    """None when the library at `path` is what Android will load for
+    `platform_id`, else why not."""
+    cls, machine, arch = ANDROID_ABIS[platform_id]
+    facts = elf_facts(path)
+    if facts is None:
+        return ("not an ELF library this tool can read - refusing a file it "
+                "cannot verify")
+    if (facts["cls"], facts["machine"]) != (cls, machine):
+        return (f"an ELF of class {facts['cls']} and e_machine "
+                f"{facts['machine']:#x}, not the {arch} one {platform_id} "
+                f"names - a build for another ABI filed under this one")
+    if facts["android_api"] is None:
+        return ("it carries no Android note (.note.android.ident), which the "
+                "NDK writes into everything it links: this is not a library "
+                "built for Android (a Linux one loads nowhere on a device)")
+    if facts["android_api"] > ANDROID_API_FLOOR:
+        return (f"built for Android API {facts['android_api']}, above the "
+                f"suite's floor of {ANDROID_API_FLOOR} (Android 5.0, what "
+                f"OXT-Beyond's Android engine is built for): it may import "
+                f"what an older Android lacks, and fails to load there. "
+                f"Build with tools/build-android.sh")
+    stray = [n for n in facts["needed"] if n not in ANDROID_SYSTEM_LIBS]
+    if stray:
+        return (f"it needs {', '.join(stray)}, which is not one of Android's "
+                f"own system libraries ({', '.join(ANDROID_SYSTEM_LIBS)}): no "
+                f"app has it unless it carries it, so the library would not "
+                f"load. Link it in statically (ANDROID_STL=c++_static for "
+                f"libc++_shared.so)")
+    if facts["textrel"]:
+        return ("it has text relocations, and Android 6.0 and later refuse "
+                "to load such a library: every object in it must be built "
+                "position-independent")
+    if not facts["aligns"]:
+        return "it has no loadable segment"
+    if cls == 2 and min(facts["aligns"]) < ANDROID_PAGE_SIZE:
+        return (f"a segment is aligned to {min(facts['aligns'])} bytes: a "
+                f"64-bit Android library must be aligned to "
+                f"{ANDROID_PAGE_SIZE} (16 KB), or Android 15's 16 KB devices "
+                f"do not load it. Link with -Wl,-z,max-page-size=16384 (the "
+                f"pinned NDK's default)")
+    return None
+
+
+def android_check_cli(paths):
+    """--android-check: the checks tools/build-android.sh runs on each
+    library it builds. The platform id is the name of the file's directory,
+    as in the tree and in a bundle."""
+    bad = 0
+    for path in paths:
+        platform_id = os.path.basename(os.path.dirname(os.path.abspath(path)))
+        if platform_id not in ANDROID_ABIS:
+            print(f"FAIL  {path}: its directory, {platform_id!r}, is not an "
+                  f"Android platform id ({', '.join(sorted(ANDROID_ABIS))})")
+            bad += 1
+            continue
+        problem = android_problem(path, platform_id)
+        facts = elf_facts(path) or {}
+        shown = (f"API {facts.get('android_api')}, needs "
+                 f"{', '.join(facts.get('needed') or []) or 'nothing'}, "
+                 f"aligned to {min(facts.get('aligns') or [0])}")
+        print(f"{'FAIL' if problem else 'ok  '}  {path}: "
+              + (problem if problem else shown))
+        bad += bool(problem)
+    return 1 if bad or not paths else 0
+
+
 def coinxt_exports(path):
     """The cnx_-filtered export list of an ELF, or None when unreadable here."""
     try:
@@ -367,6 +621,39 @@ def main(argv):
             if got_kind is None:
                 problems.append(f"{member}/{platform_id}/{want}: {got_arch}")
                 continue
+            if kind == "android":
+                # An ELF either way, so the object format cannot refuse a
+                # Linux library here; android_problem reads what can.
+                if got_kind != "linux":
+                    problems.append(
+                        f"{member}/{platform_id}/{want}: it is a {got_kind} "
+                        f"library in an Android directory")
+                    continue
+                why = android_problem(src, platform_id)
+                if why:
+                    problems.append(f"{member}/{platform_id}/{want}: {why}")
+                    continue
+                if member == "coinxt":
+                    # The same fail-open check as the Linux libraries get
+                    # below, read from the file itself: the build machine's
+                    # nm does not read an ARM library.
+                    exports = (elf_facts(src) or {}).get("exports")
+                    if exports is None:
+                        problems.append(
+                            f"coinxt/{platform_id}/{want}: no section headers, "
+                            f"so its export surface cannot be read - refusing "
+                            f"a file this tool cannot verify")
+                        continue
+                    extra = {e for e in exports if not e.startswith("cnx_")}
+                    if extra:
+                        problems.append(
+                            f"coinxt/{platform_id}/{want}: exports {len(extra)} symbol(s) "
+                            f"outside the cnx_ surface, e.g. {sorted(extra)[:5]} - built "
+                            f"without src/coinxt.map")
+                        continue
+                dst = os.path.join(ROOT, member, "src", "code", platform_id, want)
+                plan.append((member, platform_id, src, dst))
+                continue
             if got_kind != kind:
                 problems.append(
                     f"{member}/{platform_id}/{want}: it is a {got_kind} library "
@@ -380,6 +667,18 @@ def main(argv):
                         f"{member}/{platform_id}/{want}: built for {got_arch}, not "
                         f"{want_arch} - a cross build that reported the build "
                         f"machine's arch would look exactly like this")
+                    continue
+                # An Android library is an ELF of the same machine, and the
+                # NDK's note is the one thing that tells it from a Linux one
+                # (2026-11-18): filed under arm64-linux it would pass the two
+                # checks above and load on no Linux at all.
+                if kind == "linux" and \
+                        (elf_facts(src) or {}).get("android_api") is not None:
+                    problems.append(
+                        f"{member}/{platform_id}/{want}: it carries the NDK's "
+                        f"Android note - an Android library filed under a "
+                        f"Linux platform, where it cannot load (its libc is "
+                        f"Android's)")
                     continue
             elif got_arch == "thin":
                 # A REFUSAL, not a note. `universal-mac` is a promise about the
@@ -541,6 +840,64 @@ def _bytes_elf(elf_class, e_machine):
     head[4] = elf_class
     struct.pack_into("<H", head, 18, e_machine)
     return bytes(head)
+
+
+def _bytes_android_elf(elf_class, e_machine, api=21, align=16384,
+                       needed=("libc.so", "libm.so", "libdl.so"),
+                       textrel=None, note=True):
+    """An ELF with what android_problem() reads and nothing else: one PT_LOAD
+    over the whole file (p_align `align`), a PT_DYNAMIC naming `needed` (and
+    a text-relocation mark when `textrel` is "tag", DT_TEXTREL, or "flag",
+    DF_TEXTREL in DT_FLAGS), and a PT_NOTE with the NDK's ident note at
+    `api` (left out with note=False). No section headers and no code: like
+    the header synthesisers above, a fixture for the checks, not a library."""
+    is32 = elf_class == 1
+    ehsize, phsize = (52, 32) if is32 else (64, 56)
+    word = "<I" if is32 else "<Q"
+    wsize = 4 if is32 else 8
+
+    strtab = b"\0"
+    names = []
+    for name in needed:
+        names.append(len(strtab))
+        strtab += name.encode("ascii") + b"\0"
+    strtab += b"\0" * (-len(strtab) % 8)
+
+    strtab_off = ehsize + 3 * phsize
+    dyn_off = strtab_off + len(strtab)
+    entries = [(_DT_NEEDED, off) for off in names]
+    entries.append((_DT_STRTAB, strtab_off))        # vaddr == offset here
+    if textrel == "tag":
+        entries.append((_DT_TEXTREL, 0))
+    elif textrel == "flag":
+        entries.append((_DT_FLAGS, _DF_TEXTREL))
+    entries.append((_DT_NULL, 0))
+    dynamic = b"".join(struct.pack(word, tag) + struct.pack(word, value)
+                       for tag, value in entries)
+    note_off = dyn_off + len(dynamic)
+    # namesz 8 ("Android\0"), descsz 4, type 1 (NT_ANDROID_TYPE_IDENT).
+    note_bytes = (struct.pack("<III", 8, 4, 1) + b"Android\0"
+                  + struct.pack("<I", api)) if note else b""
+    total = note_off + len(note_bytes)
+
+    def phdr(p_type, offset, size, p_align):
+        if is32:
+            return struct.pack("<IIIIIIII", p_type, offset, offset, offset,
+                               size, size, 4, p_align)
+        return struct.pack("<IIQQQQQQ", p_type, 4, offset, offset, offset,
+                           size, size, p_align)
+
+    head = bytearray(ehsize)
+    head[0:4] = b"\x7fELF"
+    head[4], head[5], head[6] = elf_class, 1, 1
+    struct.pack_into("<HH", head, 16, 3, e_machine)          # ET_DYN
+    struct.pack_into(word, head, 28 if is32 else 32, ehsize)  # e_phoff
+    struct.pack_into("<HHH", head, 40 if is32 else 52, ehsize, phsize, 3)
+    return (bytes(head)
+            + phdr(_PT_LOAD, 0, total, align)
+            + phdr(_PT_DYNAMIC, dyn_off, len(dynamic), wsize)
+            + phdr(_PT_NOTE, note_off, len(note_bytes), 4)
+            + strtab + dynamic + note_bytes)
 
 
 def _bytes_pe(machine):
@@ -817,6 +1174,98 @@ def selftest():
         check("a mis-named library is REFUSED (the bind token is a filename)",
               rc == 1 and "expected box2dxt.so" in out, out)
 
+        # 2b. ANDROID (2026-11-18). An Android library is an ELF like a Linux
+        #     one, so every refusal below is of something the object-format
+        #     and architecture checks above would have passed. Each fixture
+        #     differs from the accepted one in exactly the property named.
+        def android_case(name, platform_id, data, member="box2dxt"):
+            path = os.path.join(tmp, name, member, platform_id, f"{member}.so")
+            _put(path, data)
+            return path, _capture([os.path.join(tmp, name), "--dry-run"])
+
+        made = {}
+        for platform_id, (cls, machine, _arch) in sorted(ANDROID_ABIS.items()):
+            # 4096 on the 32-bit ABIs: what the NDK gives them, and what they
+            # may keep (no 32-bit device has 16 KB pages).
+            data = _bytes_android_elf(cls, machine,
+                                      align=16384 if cls == 2 else 4096)
+            made[platform_id], (rc, out) = android_case(
+                "android-" + platform_id, platform_id, data)
+            check(f"an Android library for {platform_id} is accepted",
+                  rc == 0 and "1 library verified" in out, out)
+        facts = elf_facts(made["arm64-android"])
+        check("  ...read as API 21, needing bionic's three, aligned to 16 KB",
+              facts is not None and facts["android_api"] == 21
+              and facts["needed"] == ["libc.so", "libm.so", "libdl.so"]
+              and facts["aligns"] == [16384] and not facts["textrel"], facts)
+
+        _p, (rc, out) = android_case(
+            "android-abi", "arm64-android", _bytes_android_elf(2, 0x3E))
+        check("an x86_64 Android library filed under arm64-android is REFUSED",
+              rc == 1 and "a build for another ABI filed under this one" in out,
+              out)
+        _p, (rc, out) = android_case(
+            "android-linux", "x86_64-android",
+            _bytes_android_elf(2, 0x3E, note=False))
+        check("a Linux library (no Android note) filed under x86_64-android "
+              "is REFUSED", rc == 1 and "carries no Android note" in out, out)
+        _p, (rc, out) = android_case(
+            "android-api", "arm64-android", _bytes_android_elf(2, 0xB7, api=24))
+        check("one built for API 24, above the floor of 21, is REFUSED",
+              rc == 1 and "built for Android API 24" in out, out)
+        _p, (rc, out) = android_case(
+            "android-stl", "arm64-android",
+            _bytes_android_elf(2, 0xB7, needed=("libc.so", "libc++_shared.so")))
+        check("one that needs libc++_shared.so is REFUSED",
+              rc == 1 and "it needs libc++_shared.so" in out, out)
+        for how in ("tag", "flag"):
+            _p, (rc, out) = android_case(
+                "android-textrel-" + how, "x86-android",
+                _bytes_android_elf(1, 0x03, align=4096, textrel=how))
+            check(f"one with text relocations (the DT_{'TEXTREL tag' if how == 'tag' else 'FLAGS bit'}) is REFUSED",
+                  rc == 1 and "it has text relocations" in out, out)
+        _p, (rc, out) = android_case(
+            "android-4k", "arm64-android",
+            _bytes_android_elf(2, 0xB7, align=4096))
+        check("a 64-bit one aligned to 4 KB is REFUSED (16 KB devices)",
+              rc == 1 and "a segment is aligned to 4096 bytes" in out, out)
+        _p, (rc, out) = android_case(
+            "android-in-linux", "x86_64-linux", _bytes_android_elf(2, 0x3E))
+        check("an Android library filed under x86_64-linux is REFUSED",
+              rc == 1 and "an Android library filed under a Linux platform"
+              in out, out)
+        _p, (rc, out) = android_case(
+            "android-pe", "x86_64-android", _bytes_pe(0x8664))
+        check("a PE filed under x86_64-android is REFUSED",
+              rc == 1 and "library in an Android directory" in out, out)
+        # coinxt's export surface is read from the file on Android (the
+        # build machine's nm reads no ARM library), so a file with nothing
+        # to read it from is refused, never passed unread.
+        _p, (rc, out) = android_case(
+            "android-coinxt", "arm64-android", _bytes_android_elf(2, 0xB7),
+            member="coinxt")
+        check("a coinxt Android library with no section headers is REFUSED "
+              "(its export surface cannot be read)",
+              rc == 1 and "its export surface cannot be read" in out, out)
+        # --android-check, build-android.sh's copy of the same checks: the
+        # platform id is the file's directory, and its exit status is what
+        # fails a build.
+        stray = os.path.join(tmp, "android-stray", "somewhere", "box2dxt.so")
+        _put(stray, _bytes_android_elf(2, 0xB7))
+        for want, paths, label in (
+                (0, [made["arm64-android"], made["armv7-android"]],
+                 "--android-check passes good libraries"),
+                (1, [os.path.join(tmp, "android-4k", "box2dxt",
+                                  "arm64-android", "box2dxt.so")],
+                 "--android-check fails a 4 KB-aligned arm64 library"),
+                (1, [stray], "--android-check fails a file whose directory "
+                             "is not an Android platform id"),
+                (1, [], "--android-check fails when given no file")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = android_check_cli(paths)
+            check(label, rc == want, buf.getvalue())
+
         # 3. THE ROUTING box2dxt used to get. Skipping an unknown directory is
         #    correct and must survive; what was wrong was which directories
         #    counted as unknown.
@@ -901,4 +1350,8 @@ if __name__ == "__main__":
     # run on each dylib where it is born (release-binaries.yml).
     if sys.argv[1:2] == ["--mac-floor"]:
         sys.exit(mac_floor_cli(sys.argv[2:]))
+    # --android-check FILE...: the same Android checks main() enforces, for
+    # tools/build-android.sh to run on each library where it is born.
+    if sys.argv[1:2] == ["--android-check"]:
+        sys.exit(android_check_cli(sys.argv[2:]))
     sys.exit(main(sys.argv))
