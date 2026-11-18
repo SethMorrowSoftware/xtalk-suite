@@ -64,7 +64,13 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
 - **CA certificates**: Linux probes the common bundle paths once (`linux_ca_bundle`);
   Windows and macOS ask for the native store (macOS through curl's `USE_APPLE_SECTRUST`:
   OpenSSL alone cannot see the Keychain). `caFile` overrides. No CA path from the build
-  machine is compiled in (`CURL_CA_BUNDLE`/`CURL_CA_PATH` are `none`).
+  machine is compiled in (`CURL_CA_BUNDLE`/`CURL_CA_PATH` are `none`). Android has no bundle
+  file: `android_ca_store` reads the system store's folder once
+  (`/apex/com.android.conscrypt/cacerts`, else `/system/etc/security/cacerts`) and every
+  request gets it as a `CURLOPT_CAINFO_BLOB`; a `caFile` clears the blob for that request
+  (`set_ca_file`: curl would otherwise load both), and `cux_version_string` ends with the
+  count. User-added certificates are not read. Built for Android 2026-11-18; verified
+  statically; needs its first run on an Android (the smoke test asserts a non-empty store).
 - **Release builds** (the suite's `release-binaries.yml`): 64-bit Linux and the mac slices
   link a pinned static OpenSSL 3.5.9 (no `libssl.so.3` needed); 32-bit Linux links the
   system's, as datachannelxt does; Windows uses Schannel and the static CRT (`/MT`), so

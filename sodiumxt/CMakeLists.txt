@@ -113,6 +113,31 @@ else()
         list(APPEND _sodium_configure --without-pthreads --disable-ssp --disable-asm --disable-pie
                                       "CFLAGS=-Os -g0 -ffile-prefix-map=${_sodium_prefix}=libsodium")
     endif()
+    if(ANDROID)
+        # The Android build (<arch>-android, 2026-11-18), configured with the
+        # NDK's own toolchain file (build/cmake/android.toolchain.cmake, with
+        # ANDROID_ABI and ANDROID_PLATFORM). That file sets the compiler for
+        # THIS project only; libsodium's configure would otherwise find the
+        # build machine's cc and make a host archive the Android link then
+        # refuses ("incompatible with aarch64linux"). So hand it the same
+        # clang with the same target (which carries the API level) and
+        # sysroot, and the triple as --host so it knows it is cross-compiling
+        # and runs none of what it builds. No -march of our own: each ABI's
+        # baseline is what every device of that ABI has, and libsodium picks
+        # its faster code at run time (sodium_runtime_has_*), as on desktop.
+        set(_sodium_android_cc "${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET}")
+        if(CMAKE_SYSROOT)
+            string(APPEND _sodium_android_cc " --sysroot=${CMAKE_SYSROOT}")
+        endif()
+        string(REGEX REPLACE "[0-9]+$" "" _sodium_android_host "${CMAKE_C_COMPILER_TARGET}")
+        list(APPEND _sodium_configure "--host=${_sodium_android_host}"
+                                      "CC=${_sodium_android_cc}"
+                                      "AR=${CMAKE_AR}" "RANLIB=${CMAKE_RANLIB}"
+                                      # The prefix map keeps the build folder's
+                                      # path out of libsodium's assertion
+                                      # messages (as the web build does).
+                                      "CFLAGS=-Os -ffile-prefix-map=${_sodium_prefix}=libsodium")
+    endif()
     if(SODIUMXT_LIBSODIUM_CFLAGS)
         list(APPEND _sodium_configure "CFLAGS=${SODIUMXT_LIBSODIUM_CFLAGS}")
     endif()
@@ -336,6 +361,22 @@ elseif(WIN32)
         set(_sxt_default_id "x86_64-win32")
     else()
         set(_sxt_default_id "x86-win32")
+    endif()
+elseif(ANDROID)
+    # Android's four ABIs, by the names OXT-Beyond's Android builder reads
+    # (code/<arch>-android/, its kAndroidArchitectures). Before the Linux
+    # test on purpose: an Android target is not a Linux one here, whatever
+    # a toolchain file calls the system.
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(_sxt_default_id "arm64-android")
+    elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+        set(_sxt_default_id "armv7-android")
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+        set(_sxt_default_id "x86_64-android")
+    elseif(ANDROID_ABI STREQUAL "x86")
+        set(_sxt_default_id "x86-android")
+    else()
+        set(_sxt_default_id "")
     endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # 64-bit ARM (Raspberry Pi 3/4/5 on a 64-bit OS, the ubuntu-24.04-arm
