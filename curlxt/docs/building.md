@@ -14,8 +14,9 @@ and libssh2 1.11.1 are fetched as pinned release tarballs (SHA256-checked) and b
   linked statically (`/MT`).
 - **Android:** built by the suite's `tools/build-android.sh curlxt <abi>-android` (the pinned
   NDK, API 21, a static OpenSSL 3.5.9 for the ABI). Certificates come from the system store's
-  folder, read into memory once; there is no CA file on Android. Built 2026-11-18; not yet run
-  on an Android system.
+  folder, read into memory once; there is no CA file on Android. Built 2026-11-18; the smoke
+  test ran that day on an Android 5.0 emulator for the two x86 ABIs (the suite's release
+  workflow), the ARM libraries are built and not run.
 
 The committed release libraries come from the suite's `release-binaries.yml` dispatch: a
 static pinned OpenSSL 3.5.9 on 64-bit Linux (manylinux_2_28, glibc 2.28) and in both mac

@@ -17,7 +17,9 @@
 #   * The exit status comes back in a marker line, not from `adb shell`.
 #     adb carries a command's exit status only through its shell protocol,
 #     which arrived with Android 7.0; before it, adbd reports 0 whatever the
-#     command returned (DOCUMENTED, not yet observed here). The release lane
+#     command returned (DOCUMENTED; the 2026-11-18 run read every status from
+#     the marker on a real API 21 device, all of them 0, so what adb itself
+#     returns for a failing test there is still not observed). The release lane
 #     boots an API 21 emulator, the floor these libraries are built for, so
 #     trusting adb's status would pass every failing test on exactly the
 #     oldest system. No marker at all (the device went away, the shell died)

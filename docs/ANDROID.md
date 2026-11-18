@@ -1,6 +1,6 @@
 # Android
 
-What the suite has for Android, how it is built and checked, and what nobody has run yet.
+What the suite has for Android, how it is built and checked, what has run and what has not.
 Started 2026-11-18. Every claim here is one of three kinds, and says which: **run** (a test
 executed on an Android system), **checked** (read from the built file by a tool), or **read**
 (taken from source and not observed). Open work is in [WORK-PLAN.md](WORK-PLAN.md), sections 1.2
@@ -11,14 +11,16 @@ and 1.3; this page keeps status and method.
 All seven native members (sodiumxt, enetxt, box2dxt, coinxt, curlxt, datachannelxt, torrentxt)
 build for the four Android ABIs with one script, `tools/build-android.sh`, and the release
 workflow has an `android` job that calls it. Each built library is checked as an Android library
-(ABI, API level, what it needs at load time, 16 KB alignment, no text relocations). On 2026-11-18
-all twenty-eight libraries were built with the pinned NDK on a development machine and passed
-those checks and the binary-freshness gate's export and ABI-pin legs. **No Android library is
-committed yet**: they arrive by a `release-binaries.yml` dispatch, like every other platform's
-(suite rule 5). **No test of any member has run on an Android system yet**: the workflow's x86
-rows run them on an emulator, and that job's first run is still owed. **No OXT engine on Android
-has loaded any of them.** Until those happen the whole of this page is: built and verified
-statically; needs a release dispatch, then an OXT pass on Android.
+(ABI, API level, what it needs at load time, 16 KB alignment, no text relocations). **The job has
+run once**: on 2026-11-18, run 44379162842 from 7364c0f (`lanes: android`,
+`commit_mode: none`), all four rows green on the first dispatch. In its two x86 rows **every
+member's own tests ran on an Android 5.0 x86_64 emulator and passed**, for `x86_64-android` and
+`x86-android` (the record is below).
+The fourteen ARM libraries were built and checked in that run and **not run**. **No Android
+library is committed yet**: that run committed nothing, and they arrive by a dispatch that does,
+like every other platform's (suite rule 5). **No OXT engine on Android has loaded any of them.**
+So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
+The ARM libraries are: built and verified statically; needs an OXT pass on Android.
 
 ## The four platform ids
 
@@ -106,6 +108,19 @@ libraries are built for, on a real Android libc, loader and certificate store. I
 runs 32-bit x86 programs too, so it serves both x86 rows. The job fails an emulator row in which
 any member's tests did not run.
 
+**The record, 2026-11-18** (run 44379162842 from 7364c0f, read from the two emulator rows'
+logs). The boot step passed, and `tools/android-emulator.sh` fails it unless the device reports
+API 21 (its own line was not read back for this record). On the emulator, for each of
+`x86_64-android` and `x86-android`: box2dxt's smoke test (304 checks); coinxt's self-test (hashes,
+secp256k1, BIP-32/39, BIP-340/341); curlxt's smoke test (98 checks), whose shim read 157
+certificates from the emulator's system store; datachannelxt's three tests, the smoke test over a
+live libdatachannel loopback; torrentxt's four tests, `rp1_integration_test` delivering a message
+between two sessions on loopback. sodiumxt's and enetxt's tests ran too: the job counts the
+members whose line says `tests RUN on` and fails a row that is short of all seven, and both rows
+passed that count (their own output was not read back for this record). What the run does NOT
+show: a FAILING test on a real device. Every status the runner read from its marker line was 0,
+so the path a failure takes is still held only by `tools/test-android-run.py`'s fake adb.
+
 Not run anywhere yet: any ARM library; any library inside an app; any `.lcb` binding on an Android
 engine.
 
@@ -113,11 +128,11 @@ engine.
 
 | Member | Difference | State |
 |---|---|---|
-| curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | built; the smoke test asserts a non-empty store, first run owed |
-| coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | built; self-test first run owed |
-| torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | built; tests first run owed |
-| datachannelxt, enetxt | None in the library. | built; tests first run owed |
-| sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | built; tests first run owed |
+| curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | tests run on the emulator 2026-11-18 (both x86 ABIs): 157 certificates read from its store. ARM: built, not run |
+| coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
+| torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
+| datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
+| sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
 | nostrxt (script) | Pure script over coinxt, sodiumxt and the engine's sockets. | not examined on Android |
 | riptide, nocloud, holde-em | Their windows are laid out for a 1200 x 640 desktop card. | no phone layout |
@@ -128,7 +143,8 @@ standalone setting in the IDE).
 ## Landing the libraries
 
 1. Dispatch `release-binaries.yml` with `lanes: android` on the branch that holds this page's
-   tooling. Every row must be green: the two emulator rows with every member's tests run.
+   tooling. Every row must be green: the two emulator rows with every member's tests run. (Done
+   once with `commit_mode: none`, 2026-11-18; the dispatch that commits runs the rows again.)
 2. With `commit_mode` other than `none`, the commit job installs the twenty-eight libraries,
    refreshes each `MANIFEST.sha256`, and runs the gates with `--installing`.
 3. In the next change, add the four ids to each member's `ships` row in
