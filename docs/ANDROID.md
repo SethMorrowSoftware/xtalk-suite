@@ -134,11 +134,17 @@ engine.
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
-| nostrxt (script) | Pure script over coinxt, sodiumxt and the engine's sockets. | not examined on Android |
+| nostrxt (script) | Pure script over coinxt and sodiumxt (both built for Android) and the engine's sockets. Its relay layer opens secure sockets, so an app needs the engine's SSL library in the package (the builder's `android,include revsecurity` setting) and the Internet permission ticked. Neither library file calls anything a desktop alone has (read 2026-11-18: no `shell`, no `open process`, no fixed path). | read, not run: verified statically; needs an OXT pass on Android |
 | riptide, nocloud, holde-em | Their windows are laid out for a 1200 x 640 desktop card. | no phone layout |
 
-Every native extension that opens a socket needs the app to hold Android's INTERNET permission (a
-standalone setting in the IDE).
+Every native extension that opens a socket needs the app to hold Android's INTERNET permission.
+The four that do (enetxt, curlxt, datachannelxt, torrentxt) declare it in their binding,
+`metadata android.permissions is "INTERNET"`, the key OXT-Beyond's standalone builder reads from
+each extension an app includes and writes into the app's manifest (read in its
+`ide-support/revsblibrary.livecodescript`, 2026-11-18; not observed: verified statically; needs an
+OXT pass on Android). `tools/test-build-android.py` holds the four to that line and the other
+three to none. The script members ride the engine's own sockets, so an app that uses onionxt or
+nostrxt alone still ticks Internet in the IDE's standalone settings.
 
 ## Landing the libraries
 

@@ -16,6 +16,11 @@ stopped at a table that did not know the id). So the tables are compared
 here, on every push, and a new native member or ABI that reaches one of them
 fails until it reaches all.
 
+It also holds the one line an Android APP needs from a binding: the four
+members that open sockets declare `metadata android.permissions is
+"INTERNET"`, which OXT's standalone builder turns into the app's permission,
+and the other three declare none.
+
 The pins are the other half: OpenSSL and Boost are pinned in the workflow's
 desktop lanes and again in the script, and a bump in one place must not
 leave Android linking the old version (root CLAUDE.md: hand-copied numbers
@@ -38,6 +43,10 @@ ROOT = os.path.dirname(HERE)
 SCRIPT = os.path.join(HERE, "build-android.sh")
 WORKFLOW = os.path.join(ROOT, ".github", "workflows", "release-binaries.yml")
 TAG = "test-build-android"
+# The native members whose library opens a socket (ENet's UDP hosts, libcurl,
+# libdatachannel's ICE and SCTP, libtorrent's listeners and DHT). The other
+# three (sodiumxt, coinxt, box2dxt) compute and never touch the network.
+NETWORK_MEMBERS = ("enetxt", "curlxt", "datachannelxt", "torrentxt")
 FAILURES = []
 
 
@@ -133,6 +142,32 @@ def main():
         with open(packer, encoding="utf-8") as fh:
             text = fh.read()
         check("android" in text, f"{member}'s packager knows the Android ids")
+
+    # The INTERNET permission. Android gives a process no socket without it,
+    # and OXT's standalone builder takes it from an included extension's
+    # `metadata android.permissions` (ide-support/revsblibrary: it reads the
+    # extension's "android" property and sets the app's permissions from
+    # it). So each member that opens a socket declares it, exactly once, and
+    # a member that opens none declares nothing: a permission that appears
+    # in a crypto or physics library is a question for a reviewer, not a
+    # default. WHICH members open sockets is this table, by hand; nothing
+    # in a compiler-free gate can derive it.
+    for member in native:
+        folder = os.path.join(ROOT, member, "src")
+        lcbs = [f for f in sorted(os.listdir(folder)) if f.endswith(".lcb")]
+        lines = []
+        for name in lcbs:
+            with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                lines += [l.strip() for l in fh
+                          if re.match(r"\s*metadata\s+android\.", l)]
+        want = (['metadata android.permissions is "INTERNET"']
+                if member in NETWORK_MEMBERS else [])
+        check(bool(lcbs) and lines == want,
+              f"{member}'s binding declares " + ("the INTERNET permission, "
+              "once" if want else "no Android permission"), (lcbs, lines))
+    check(set(NETWORK_MEMBERS) <= set(native),
+          "every member in NETWORK_MEMBERS is a native member",
+          NETWORK_MEMBERS)
 
     # The workflow's Android job: one row per id, emulator rows exactly the
     # x86 pair (the ABIs an x86_64 emulator runs), which is what the
