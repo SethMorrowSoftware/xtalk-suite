@@ -79,6 +79,20 @@
 # not exist anywhere: notarization (Apple Developer credentials CI does not
 # hold) - the dylibs ship with the linker's ad-hoc signature only, and the
 # installer's refusals keep holding the line for hand-assembled bundles.
+#
+# ANDROID LANES SINCE 2026-11-18. The `android` job builds all seven native
+# members for the four Android ABIs OXT-Beyond's Android builder packs
+# (arm64-android, armv7-android, x86_64-android, x86-android). The recipe is
+# NOT spelled out here row by row as the desktop lanes are: one toolchain,
+# the NDK, builds every ABI from one Linux runner, so it lives in
+# tools/build-android.sh (the pins, the flags, the checks) and the job only
+# calls it - which also means a person with the NDK builds exactly what this
+# job builds. The two x86 ABIs RUN each member's tests on an Android 5.0
+# emulator (API 21, the floor the libraries are built for); the two ARM ABIs
+# are built and statically checked and NOT run, because a hosted runner
+# cannot run an ARM Android at any useful speed, and the job says so in its
+# summary rather than reading as tested. The `lanes` input runs the Android
+# job alone, or leaves it out.
 name: release binaries
 
 on:
@@ -98,6 +112,12 @@ on:
       members:
         description: "Members whose libraries to INSTALL and commit, space-separated (e.g. 'curlxt'), or 'all'. Every lane still builds and tests; the other members' libraries are left as committed."
         type: string
+        default: all
+        required: false
+      lanes:
+        description: "Which lanes to run: 'all', 'desktop' (everything but Android) or 'android' (the Android job alone). A lane left out is SKIPPED visibly, and the commit job installs what the lanes that ran produced; the committed libraries of the others are left as they are."
+        type: choice
+        options: [all, desktop, android]
         default: all
         required: false
       mac_lipo:
@@ -149,6 +169,9 @@ jobs:
   # system, and it must not diverge from what those lanes produce.
   cmake-members:
     name: ${{ matrix.member }} ${{ matrix.platform_id }}
+    # Left out by lanes=android (a run that only builds the Android
+    # libraries); the commit job below accepts that skip and no other.
+    if: github.event.inputs.lanes != 'android'
     strategy:
       fail-fast: false
       matrix:
@@ -812,6 +835,7 @@ jobs:
   # is native Linux, which build-all already exercises.
   coinxt:
     name: coinxt ${{ matrix.platform_id }}
+    if: github.event.inputs.lanes != 'android'
     strategy:
       fail-fast: false
       matrix:
@@ -1013,7 +1037,7 @@ jobs:
   # refusing a FAILED one (a broken build).
   mac-lipo:
     name: ${{ matrix.member }} universal-mac (two slices + lipo)
-    if: github.event.inputs.mac_lipo != 'false'
+    if: github.event.inputs.mac_lipo != 'false' && github.event.inputs.lanes != 'android'
     strategy:
       fail-fast: false
       matrix:
@@ -1156,9 +1180,143 @@ jobs:
           path: ${{ matrix.member }}/src/code/universal-mac/
           if-no-files-found: error
 
+  # ------------------------------------------------------------------- Android
+  # All seven native members, one job per Android ABI, each calling
+  # tools/build-android.sh once per member. Per ABI rather than per member
+  # and ABI: the three OpenSSL members share one static OpenSSL per ABI (four
+  # builds of it instead of twelve), the x86 ABIs share one emulator boot per
+  # job, and the queue holds four jobs instead of twenty-eight.
+  #
+  # WHAT IS RUN AND WHAT IS ONLY BUILT. The x86_64 and x86 rows boot an
+  # Android 5.0 x86_64 emulator (tools/android-emulator.sh; its 64-bit
+  # system runs 32-bit x86 programs too) and every member's own tests run on
+  # it through tools/android-run.sh: the libraries' floor, on a real
+  # Android, with Android's libc, loader and certificate store. The arm64
+  # and armv7 rows have no device: their libraries are built by the same
+  # recipe from the same source, pass the same static checks (the ABI, API
+  # 21, bionic's libraries only, 16 KB alignment, no text relocations), and
+  # their tests are BUILT, NOT RUN. The step summary states which, per
+  # member, from build-android.sh's own last line - and the last step fails
+  # an emulator row in which any member's tests did not run.
+  android:
+    name: android ${{ matrix.platform_id }}
+    if: github.event.inputs.lanes != 'desktop'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_id: arm64-android
+          - platform_id: armv7-android
+          - platform_id: x86_64-android
+            emulator: "1"
+          - platform_id: x86-android
+            emulator: "1"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # The NDK revision is build-android.sh's pin, read from the script so
+      # the two cannot disagree; the runner's SDK holds it or sdkmanager
+      # installs it. Ninja is the generator the script asks CMake for.
+      - name: Set up the pinned NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk=$(bash tools/build-android.sh --pins | sed -n 's/^ndk //p')
+          [ -n "$ndk" ] || { echo "::error::build-android.sh --pins names no NDK"; exit 1; }
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          [ -d "$sdk" ] || { echo "::error::no Android SDK on the runner (ANDROID_HOME)"; exit 1; }
+          if [ ! -f "$sdk/ndk/$ndk/source.properties" ]; then
+            sm="$sdk/cmdline-tools/latest/bin/sdkmanager"
+            (yes || true) | "$sm" --licenses > /dev/null
+            "$sm" --install "ndk;$ndk" > "$RUNNER_TEMP/sdkmanager.log" 2>&1 ||
+              { tail -40 "$RUNNER_TEMP/sdkmanager.log"; exit 1; }
+          fi
+          sed -n 's/^Pkg\.Revision *= *//p' "$sdk/ndk/$ndk/source.properties"
+          command -v ninja > /dev/null || { sudo apt-get update && sudo apt-get install -y ninja-build; }
+          {
+            echo "ANDROID_HOME=$sdk"
+            echo "ANDROID_NDK_HOME=$sdk/ndk/$ndk"
+            echo "ADB=$sdk/platform-tools/adb"
+            echo "XTALK_ANDROID_WORK=$RUNNER_TEMP/android-work"
+          } >> "$GITHUB_ENV"
+
+      - name: Boot the Android 5.0 emulator (the x86 ABIs)
+        if: matrix.emulator
+        shell: bash
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          bash tools/android-emulator.sh start | tee "$RUNNER_TEMP/emulator.txt"
+          serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
+          [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
+          echo "XTALK_ANDROID_SERIAL=$serial" >> "$GITHUB_ENV"
+
+      # Every member, in the script's own order (its --list): the light ones
+      # first, so a toolchain problem shows in the first minute and not after
+      # OpenSSL. A member that fails stops the row; the commit job needs
+      # every row green.
+      - name: Build every member (and run its tests on the emulator rows)
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/android-summary.txt"
+          for member in $(bash tools/build-android.sh --list | sed -n 's/^members: *//p'); do
+            echo "::group::$member ${{ matrix.platform_id }}"
+            bash tools/build-android.sh "$member" "${{ matrix.platform_id }}" 2>&1 | tee "$RUNNER_TEMP/android-$member.log"
+            echo "::endgroup::"
+            tail -n 1 "$RUNNER_TEMP/android-$member.log" | tee -a "$RUNNER_TEMP/android-summary.txt"
+          done
+
+      # Built is not run, and the run's front page must not let one read as
+      # the other. Every member's last line says which; an emulator row in
+      # which any of them was not run is a failed row.
+      - name: Say what was run
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          summary="$RUNNER_TEMP/android-summary.txt"
+          {
+            echo "### ${{ matrix.platform_id }}"
+            echo
+            if [ -s "$summary" ]; then sed 's/^== build-android: /- /; s/ ==$//' "$summary"; else echo "- nothing was built"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${{ matrix.emulator }}" ]; then
+            want=$(bash tools/build-android.sh --list | sed -n 's/^members: *//p' | wc -w)
+            ran=$(grep -c 'tests RUN on ' "$summary" || true)
+            if [ "$ran" != "$want" ]; then
+              echo "::error::tests ran for $ran of $want members on the emulator"
+              exit 1
+            fi
+          fi
+
+      - name: Stage the libraries the way the bundle lays them out
+        shell: bash
+        run: |
+          set -euo pipefail
+          for member in $(bash tools/build-android.sh --list | sed -n 's/^members: *//p'); do
+            mkdir -p "stage/$member/${{ matrix.platform_id }}"
+            cp "$member/src/code/${{ matrix.platform_id }}/$member.so" "stage/$member/${{ matrix.platform_id }}/"
+          done
+          find stage -type f | sort
+
+      # One artifact per ABI, already in the bundle's <member>/<platform-id>/
+      # layout (the desktop artifacts are one per member and platform, named
+      # for both; the bundle job below takes either).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.platform_id }}
+          path: stage/
+          if-no-files-found: error
+
   bundle:
     name: collect one bundle
-    needs: [cmake-members, coinxt, kat-windows, mac-lipo]
+    needs: [cmake-members, coinxt, kat-windows, mac-lipo, android]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -1166,6 +1324,12 @@ jobs:
         with:
           pattern: bundle-*
           path: staged
+      # The Android job's artifacts, one per ABI, each already laid out as
+      # <member>/<platform-id>/.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: android-*
+          path: staged-android
       - name: Lay the bundle out the way the installer expects
         shell: bash
         run: |
@@ -1175,12 +1339,19 @@ jobs:
           # <member>/<platform_id>/ from that so the local installer needs no
           # mapping table of its own.
           for d in staged/bundle-*; do
+            # No desktop lane ran (lanes=android): the glob is then its own
+            # text, not a folder.
+            [ -d "$d" ] || continue
             base=$(basename "$d")
             rest=${base#bundle-}
             member=${rest%%-*}
             platform=${rest#*-}
             mkdir -p "bundle/$member/$platform"
             cp -r "$d"/. "bundle/$member/$platform/"
+          done
+          for d in staged-android/android-*; do
+            [ -d "$d" ] || continue
+            cp -r "$d"/. bundle/
           done
           find bundle -type f | sort
       - uses: actions/upload-artifact@v4
@@ -1199,7 +1370,7 @@ jobs:
   # is worse than no release, because the missing one looks deliberate afterwards.
   commit-binaries:
     name: install into each extension and commit
-    needs: [cmake-members, coinxt, kat-windows, mac-lipo, bundle]
+    needs: [cmake-members, coinxt, kat-windows, mac-lipo, android, bundle]
     # mac-lipo alone may be SKIPPED (the mac_lipo input is a deliberate,
     # visible choice, and the bundle then simply carries no torrentxt/
     # datachannelxt mac dylib to install); a FAILED mac-lipo still refuses
@@ -1210,13 +1381,24 @@ jobs:
     # explicit skipped-is-fine clause below never got to answer (run
     # 37413026408, 2026-10-06). The per-need success checks still refuse a
     # failed or cancelled lane.
+    #
+    # The `lanes` input is the same kind of choice (2026-11-18): a SKIPPED
+    # desktop lane is accepted only when lanes=android asked for it, and a
+    # skipped Android job only when lanes=desktop did. Any other skip (a
+    # need that failed upstream skips its dependants) still refuses the
+    # commit.
     if: >-
       !cancelled() &&
       github.event.inputs.commit_mode != 'none' &&
-      needs.cmake-members.result == 'success' &&
-      needs.coinxt.result == 'success' &&
-      needs.kat-windows.result == 'success' &&
+      (needs.cmake-members.result == 'success' ||
+       (needs.cmake-members.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
+      (needs.coinxt.result == 'success' ||
+       (needs.coinxt.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
+      (needs.kat-windows.result == 'success' ||
+       (needs.kat-windows.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
       (needs.mac-lipo.result == 'success' || needs.mac-lipo.result == 'skipped') &&
+      (needs.android.result == 'success' ||
+       (needs.android.result == 'skipped' && github.event.inputs.lanes == 'desktop')) &&
       needs.bundle.result == 'success'
     runs-on: ubuntu-24.04
     permissions:

@@ -13,6 +13,7 @@ front door; the root [CLAUDE.md](../CLAUDE.md) is the working guide (rules, gate
 | pick up open work, in code or on an engine | [WORK-PLAN.md](WORK-PLAN.md) |
 | make, or look up, a call only the owner can make | [OPEN-DECISIONS.md](OPEN-DECISIONS.md) |
 | wrap a new native library for OXT | [BINDING-PLAYBOOK.md](BINDING-PLAYBOOK.md) |
+| build, check or land the Android libraries, or ask what has run on Android | [ANDROID.md](ANDROID.md) |
 | work on the anonymous (Tor) transport of QuickShare or DHT Channels | [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) |
 | publish a member, port a change made in its repository back here, or add or remove a member | [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md) |
 | build on Riptide, or interoperate with it | [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) (design), [RIPTIDE-PROTOCOL.md](RIPTIDE-PROTOCOL.md) (bytes) |
@@ -26,6 +27,7 @@ front door; the root [CLAUDE.md](../CLAUDE.md) is the working guide (rules, gate
 - [WORK-PLAN.md](WORK-PLAN.md): the one live list of open work, per member and suite-wide - coding work, engine work (which session, what green looks like, which labels flip) and owner calls.
 - [OPEN-DECISIONS.md](OPEN-DECISIONS.md): the owner decision log, D-01 onward, one row per decision (outcome, date, where it is recorded), plus the brief of any decision still open.
 - [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md): publishing every member into its own repository while development stays here (live since 2026-09-23) - the model, setup, porting a change back, the sibling layout, and what a departing member must be removed from.
+- [ANDROID.md](ANDROID.md): the native members on Android (started 2026-11-18) - the four platform ids, the one build script and its pins, what is checked on every library, what is run on an emulator and what is only built, what differs per member, and how the libraries land.
 - [BINDING-PLAYBOOK.md](BINDING-PLAYBOOK.md): wrapping a native C/C++ library for OXT the way the native members do - the house pattern, the three rules, the FFI contract, handles and records, threading, toolchain traps, the definition of done.
 - [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), titled "Model C - the anonymous transport": the optional Tor onion path of QuickShare and DHT Channels (design, threat model, onboarding, the VERIFY register, decisions); code cites its section numbers.
 - [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md): the design authority for Riptide Social - rails, rules, the security model, the phase roadmap with dated status, decisions; code cites its section numbers.
