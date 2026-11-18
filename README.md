@@ -155,8 +155,9 @@ macOS dylibs are universal (arm64 + x86_64) and unsigned.
 library is checked as an Android library (ABI, API 21, Android's own libraries only, 16 KB
 alignment). Every member's own tests ran on an Android 5.0 emulator for the two x86 ABIs on
 2026-11-18, in the release workflow's first Android run; the ARM libraries are built and checked,
-not run. No Android library is committed yet (they arrive by a release dispatch), and no OXT
-engine on Android has loaded one: needs a release dispatch, then an OXT pass on Android.
+not run. The twenty-eight libraries were committed the same day by a second release run (each
+member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
+on Android.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 

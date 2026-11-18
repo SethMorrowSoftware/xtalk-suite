@@ -37,6 +37,12 @@ MAC, never a way to encrypt bytes - the argued exception in `docs/security.md`.)
   install separately, no `LD_LIBRARY_PATH` or `sudo`. A `"SodiumXT ABI mismatch ...
   Reinstall the packaged extension."` error means the package was built from a stale tree;
   repackage from the current one.
+- **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
+  `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by
+  the suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its
+  native tests ran on an Android 5.0 emulator for the two x86 ids; the two ARM libraries are
+  built and statically checked, not run, and no OXT engine on Android has loaded any of the
+  four: verified statically; needs an OXT pass on Android.
 
 ## Install
 

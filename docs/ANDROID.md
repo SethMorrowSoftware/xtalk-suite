@@ -12,13 +12,15 @@ All seven native members (sodiumxt, enetxt, box2dxt, coinxt, curlxt, datachannel
 build for the four Android ABIs with one script, `tools/build-android.sh`, and the release
 workflow has an `android` job that calls it. Each built library is checked as an Android library
 (ABI, API level, what it needs at load time, 16 KB alignment, no text relocations). **The job has
-run once**: on 2026-11-18, run 44379162842 from 7364c0f (`lanes: android`,
-`commit_mode: none`), all four rows green on the first dispatch. In its two x86 rows **every
-member's own tests ran on an Android 5.0 x86_64 emulator and passed**, for `x86_64-android` and
-`x86-android` (the record is below).
-The fourteen ARM libraries were built and checked in that run and **not run**. **No Android
-library is committed yet**: that run committed nothing, and they arrive by a dispatch that does,
-like every other platform's (suite rule 5). **No OXT engine on Android has loaded any of them.**
+run twice**, both on 2026-11-18 with `lanes: android`, all four rows green both times: run
+44379162842 from 7364c0f (`commit_mode: none`), and run 44391791349 from 17b1f93
+(`commit_mode: branch`), which **committed the twenty-eight libraries** (commit 5aa3ad4) after
+the installer's checks and the whole gate set passed over them. In each run's two x86 rows
+**every member's own tests ran on an Android 5.0 x86_64 emulator and passed**, for
+`x86_64-android` and `x86-android` (the record is below); a row builds, tests and uploads in one
+job, so the fourteen committed x86 libraries are the files the second run tested.
+The fourteen ARM libraries were built and checked in both runs and **not run**. **No OXT engine
+on Android has loaded any of the twenty-eight.**
 So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
 The ARM libraries are: built and verified statically; needs an OXT pass on Android.
 
@@ -121,6 +123,15 @@ passed that count (their own output was not read back for this record). What the
 show: a FAILING test on a real device. Every status the runner read from its marker line was 0,
 so the path a failure takes is still held only by `tools/test-android-run.py`'s fake adb.
 
+**The landing, 2026-11-18** (run 44391791349 from 17b1f93, `commit_mode: branch`; commit
+5aa3ad4). All four rows green again, the two emulator rows past the job's count of seven members
+whose tests ran (the tests' own output was not read back a second time). The commit job installed
+twenty-eight new libraries, four per member, each through
+`tools/install-release-binaries.py`'s Android checks, added four lines to each member's
+`src/code/MANIFEST.sha256`, and ran the whole gate set with `--installing` before it pushed. The
+change after it added the four ids to every member's `ships` row, so the freshness gate now
+demands all of them.
+
 Not run anywhere yet: any ARM library; any library inside an app; any `.lcb` binding on an Android
 engine.
 
@@ -148,14 +159,19 @@ nostrxt alone still ticks Internet in the IDE's standalone settings.
 
 ## Landing the libraries
 
+Steps 1 to 3 were done on 2026-11-18; they stay here as the procedure for a rebuild (a moved pin,
+a shim change), which repeats 1 and 2.
+
 1. Dispatch `release-binaries.yml` with `lanes: android` on the branch that holds this page's
    tooling. Every row must be green: the two emulator rows with every member's tests run. (Done
-   once with `commit_mode: none`, 2026-11-18; the dispatch that commits runs the rows again.)
+   first with `commit_mode: none`, run 44379162842; the dispatch that commits runs the rows again.)
 2. With `commit_mode` other than `none`, the commit job installs the twenty-eight libraries,
-   refreshes each `MANIFEST.sha256`, and runs the gates with `--installing`.
+   refreshes each `MANIFEST.sha256`, and runs the gates with `--installing`. (Done: run
+   44391791349, commit 5aa3ad4.)
 3. In the next change, add the four ids to each member's `ships` row in
    `tools/check-binary-freshness.py` (the gate names the edit), and replace this page's status
-   paragraph with the run's record.
-4. Publishing carries each member's `src/code/<abi>-android/` to its repository. OXT-Beyond then
-   pins them in its `tools/oxt/xtalk-extensions.json`, and its Android builder packs them into an
-   app, where the first engine load can be observed.
+   paragraph with the run's record. (Done in the change that follows 5aa3ad4. A first landing
+   only: once the ids are in `ships`, a rebuild needs no `--installing` allowance.)
+4. STILL OWED. Publishing carries each member's `src/code/<abi>-android/` to its repository when
+   this reaches `main`. OXT-Beyond then pins them in its `tools/oxt/xtalk-extensions.json`, and
+   its Android builder packs them into an app, where the first engine load can be observed.

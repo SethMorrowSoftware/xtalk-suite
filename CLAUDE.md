@@ -369,10 +369,12 @@ worse than no gate, because it answers the question nobody asks twice.
   NOT run, and every output says which. Android is a SET in the tables that demand platforms (the
   package builder, box2dxt's packager): all four libraries or none. `docs/ANDROID.md` holds the
   status. The job first ran on 2026-11-18 (run 44379162842 from 7364c0f, `commit_mode: none`):
-  all four rows green, every member's tests run on the emulator for both x86 ABIs. Nothing is
-  committed yet, and no ARM library and no engine on Android has run any of them. The four
-  members that open sockets declare `metadata android.permissions is "INTERNET"` in their `.lcb`,
-  which OXT-Beyond's standalone builder writes into an app's manifest (verified statically).
+  all four rows green, every member's tests run on the emulator for both x86 ABIs. The same day
+  run 44391791349 from 17b1f93 (green again) committed the twenty-eight libraries, commit
+  5aa3ad4, and every member's `ships` row names the four ids since. No ARM library and no engine
+  on Android has run any of them. The four members that open sockets declare
+  `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
+  builder writes into an app's manifest (verified statically).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
