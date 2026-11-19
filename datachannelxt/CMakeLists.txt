@@ -505,7 +505,11 @@ if(DATACHANNELXT_BUILD_TESTS)
         add_executable(record_handle_test "${_rht_src}")
         target_include_directories(record_handle_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(record_handle_test PRIVATE datachannelxt_flags)
-        if(NOT MSVC AND DATACHANNELXT_SANITIZE STREQUAL "")
+        # Not on Android: the NDK's ASan runtime is a shared library that would
+        # have to be pushed to the device beside the test, and the Android lane
+        # pushes one executable. The test runs there plain; the sanitized gate
+        # is the gcc ASan/UBSan lane of native-datachannelxt.yml.
+        if(NOT MSVC AND NOT ANDROID AND DATACHANNELXT_SANITIZE STREQUAL "")
             target_compile_options(record_handle_test PRIVATE
                 -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
             target_link_options(record_handle_test PRIVATE -fsanitize=address,undefined)

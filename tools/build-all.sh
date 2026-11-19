@@ -723,6 +723,24 @@ if [ -f tools/install-release-binaries.py ]; then
   echo "== suite: tools/install-release-binaries.py --selftest =="
   python3 tools/install-release-binaries.py --selftest
 fi
+# Android (2026-11-18). Neither needs an NDK or a device, which is the point:
+# what CAN be held on every push is held here, because the build itself only
+# runs when someone dispatches release-binaries.yml, and a mistake found there
+# is found at the most expensive place. test-build-android.py compares every
+# table that names an Android platform id (the build script, the installer,
+# the freshness gate, the package builder, the packagers, the workflow's job)
+# and the script's OpenSSL and Boost pins with the desktop lanes', and drives
+# the script's refusals. test-android-run.py drives tools/android-run.sh
+# through a fake adb that always returns 0, as Android 5.0's does: a failing
+# test must still fail the lane.
+if [ -f tools/test-build-android.py ]; then
+  echo "== suite: tools/test-build-android.py =="
+  python3 tools/test-build-android.py
+fi
+if [ -f tools/test-android-run.py ]; then
+  echo "== suite: tools/test-android-run.py =="
+  python3 tools/test-android-run.py
+fi
 
 if [ "$GATES_ONLY" = 1 ]; then
   echo "All static gates passed."

@@ -182,6 +182,12 @@ static std::string temp_path(const char *name) {
 #if defined(_WIN32)
     const char *d = std::getenv("TEMP");
     return std::string(d ? d : ".") + "\\" + name;
+#elif defined(__ANDROID__)
+    /* Android has no /tmp. The suite's tools/android-run.sh runs the test
+     * with TMPDIR at its own folder under /data/local/tmp, the one place
+     * the shell user may write. */
+    const char *d = std::getenv("TMPDIR");
+    return std::string(d ? d : "/data/local/tmp") + "/" + name;
 #else
     return std::string("/tmp/") + name;
 #endif
@@ -224,6 +230,23 @@ static void test_lifecycle() {
     CHECK(n > 0 && std::strstr(v, "libcurl/8.22.0") != nullptr, "version names the pinned libcurl");
     CHECK(std::strstr(v, "libssh2") != nullptr, "version names libssh2 (SFTP)");
     CHECK(cux_version_string(v, 3) < 0, "too-small buffer asks for more");
+#if defined(__ANDROID__)
+    {
+        /* The default CA store (apply_default_ca in the shim): on Android
+         * it is read out of the system's certificate folder, and the count
+         * the version string reports is the one thing about it this test
+         * can see without a TLS server. None read means every verified
+         * HTTPS transfer on this device would fail. */
+        CHECK(cux_version_string(v, sizeof v) > 0, "version string, read again");
+        const char *at = std::strstr(v, "Android CA store: ");
+        CHECK(at != nullptr, "version names the Android CA store");
+        int count = at ? std::atoi(at + std::strlen("Android CA store: ")) : 0;
+        std::printf("  Android CA store: %d certificates\n", count);
+        CHECK(count > 0, "the Android system CA store was read (at least one certificate)");
+    }
+#else
+    CHECK(std::strstr(v, "Android CA store") == nullptr, "no Android text in a desktop version string");
+#endif
 }
 
 static void test_get() {

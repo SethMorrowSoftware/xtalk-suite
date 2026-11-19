@@ -87,6 +87,15 @@
  * browser's CSPRNG (Emscripten's libc declares getrandom but does not
  * define it). */
 #include <unistd.h>
+#elif defined(__ANDROID__)
+/* Android (the <arch>-android libraries, 2026-11-18), and BEFORE the Linux
+ * test because Android's compilers define __linux__ too. Its libc declares
+ * getrandom() only from API 28 (Android 9), and these libraries are built
+ * for API 21 as OXT-Beyond's Android engine is, so the Linux branch does not
+ * compile here. arc4random_buf has been in Android's libc at every API
+ * level: a ChaCha20 generator seeded from the kernel, the call Android's own
+ * documentation names for this. */
+#include <stdlib.h> /* arc4random_buf: cannot fail, by contract */
 #elif defined(__linux__)
 #include <errno.h>
 #include <sys/random.h> /* getrandom(2); glibc 2.25+, our documented floor */
@@ -377,7 +386,7 @@ static int cnx_entropy_fill(unsigned char *buf, size_t len) {
     off += n;
   }
   return 1;
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)
   /* getrandom() can return a SHORT read when interrupted, so loop rather than
    * assume; EINTR before the pool is initialised is the one retryable error. */
   size_t off = 0;

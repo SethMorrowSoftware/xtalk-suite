@@ -146,6 +146,13 @@ script logic is EXECUTED by `check-script-vectors.py`, `check-wallet-vectors.py`
 
 The dated records are in [CLAUDE.md](CLAUDE.md), "As-built notes"; this is the summary.
 
+**Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
+`armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
+suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its self-test
+ran on an Android 5.0 emulator for the two x86 ids; the two ARM libraries are built and statically
+checked, not run, and no OXT engine on Android has loaded any of the four: verified statically;
+needs an OXT pass on Android.
+
 - **Engine passes of the library:** 2026-08-08 (phase 1, the hash surface); 2026-08-10 (phases 2-4,
   207/207); 2026-08-12 (phase 5, 230/230, Windows x64); 2026-08-17 (WIF, ABI 5 and the ABI 6
   BIP-340 / BIP-341 surface, 278/278, Windows x86_64, OXT 9.6.3); 2026-08-24 (the BIP-341 sighash and

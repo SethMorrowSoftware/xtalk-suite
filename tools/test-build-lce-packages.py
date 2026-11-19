@@ -70,6 +70,10 @@ def test_check(tmp):
     refuses(tmp, 'an unknown platform folder',
             [e if not e[0].startswith('code/') else ('code/x86_64-plan9/x.so', e[1]) for e in GOOD_LCB],
             'code/<platform-id>')
+    android = [('code/%s/x.so' % p, b'\x7fELF') for p in lce.ANDROID]
+    expect('check passes an LCB package with all four Android libraries',
+           lce.check_packages([make(tmp, 'c.lce', GOOD_LCB + android)]) == [])
+    refuses(tmp, 'Android libraries for three ABIs of four', GOOD_LCB + android[:3], 'all four, or none')
     refuses(tmp, 'a script library without its script line',
             GOOD_LCS[:2] + [('xlib.livecodescript', b'on a\nend a\n')], 'script "<name>"')
     refuses(tmp, 'a script library named unlike its manifest',
@@ -103,6 +107,27 @@ def test_table():
         row['stack'] = 'bad.name'
         expect('table sees a stack name with a dot', any('without dots' in p for p in lce.check_table()))
         lce.PACKAGES[:] = copy.deepcopy(saved)
+        # Android is all four ABIs or none: `libraries` answering with one
+        # (as a tree holding a single <abi>-android folder would) must be
+        # refused, and with all four accepted
+        # (whatever the tree holds: its own Android libraries are taken out
+        # of the answer first, so this reads the same before and after a
+        # release dispatch lands them)
+        real = lce.libraries
+        desktop = lambda row: [e for e in real(row) if e[0] not in lce.ANDROID]
+        try:
+            lce.libraries = lambda row: desktop(row) + [('arm64-android', 'x.so')]
+            expect('table sees Android libraries for one ABI only',
+                   any('all four, or none' in p for p in lce.check_table()))
+            lce.libraries = lambda row: desktop(row) + [(p, 'x.so') for p in lce.ANDROID[:3]]
+            expect('table sees Android libraries for three ABIs of four',
+                   any('none for x86-android' in p for p in lce.check_table()))
+            lce.libraries = lambda row: desktop(row) + [(p, 'x.so') for p in lce.ANDROID]
+            expect('table holds with all four Android libraries', lce.check_table() == [])
+            lce.libraries = desktop
+            expect('table holds with no Android library', lce.check_table() == [])
+        finally:
+            lce.libraries = real
         lce.PACKAGES.append(copy.deepcopy(saved[0]))
         expect('table sees an id used twice', any('twice' in p for p in lce.check_table()))
     finally:

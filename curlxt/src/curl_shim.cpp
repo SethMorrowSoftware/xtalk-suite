@@ -52,6 +52,9 @@
 #if defined(_WIN32)
 #  include <windows.h>
 #endif
+#if defined(__ANDROID__)
+#  include <dirent.h>
+#endif
 
 namespace {
 
@@ -261,14 +264,120 @@ const std::string &linux_ca_bundle() {
     return found;
 }
 
+#if defined(__ANDROID__)
+/* Android's trusted roots (the <arch>-android libraries, 2026-11-18). There
+ * is no bundle file on Android and no store OpenSSL can read in place: the
+ * system keeps one PEM file per certificate, named for the OLD (MD5)
+ * subject hash, which OpenSSL 1.0 and later do not look up, so pointing
+ * CURLOPT_CAPATH at the folder finds nothing. The files themselves are
+ * plain PEM, so they are read once into one blob and handed to libcurl as
+ * CURLOPT_CAINFO_BLOB. Android 14 moved the store into the Conscrypt module
+ * (so that a system update can change it); the first folder that yields a
+ * certificate is the one in use, and before Android 14 that is the second.
+ * Only the system's own roots: the certificates a user adds are kept
+ * elsewhere and are not read here (Android's own TLS has not trusted them
+ * for apps by default since Android 7). Empty means no folder could be read, and then, as on a
+ * Linux with no bundle, curl is left with none and a verified transfer
+ * fails rather than going unverified. */
+struct AndroidCaStore {
+    std::string pem;
+    int count = 0;
+};
+
+const AndroidCaStore &android_ca_store() {
+    static AndroidCaStore store;
+    static bool probed = false;
+    if (!probed) {
+        probed = true;
+        static const char *const folders[] = {
+            "/apex/com.android.conscrypt/cacerts",  /* Android 14 and later */
+            "/system/etc/security/cacerts",         /* every Android before */
+        };
+        static const char kBegin[] = "-----BEGIN CERTIFICATE-----";
+        static const char kEnd[] = "-----END CERTIFICATE-----";
+        for (const char *folder : folders) {
+            DIR *d = opendir(folder);
+            if (!d) continue;
+            while (struct dirent *entry = readdir(d)) {
+                if (entry->d_name[0] == '.') continue;
+                std::string path = std::string(folder) + "/" + entry->d_name;
+                FILE *f = std::fopen(path.c_str(), "rb");
+                if (!f) continue;
+                std::string text;
+                char buf[4096];
+                size_t n;
+                /* A certificate is a few kilobytes; anything far larger in
+                 * this folder is not one, and is not read to its end. */
+                while (text.size() < (1u << 20) && (n = std::fread(buf, 1, sizeof buf, f)) > 0)
+                    text.append(buf, n);
+                std::fclose(f);
+                /* Only the PEM block: the system's files carry the decoded
+                 * text of the certificate after it. */
+                size_t from = text.find(kBegin);
+                size_t to = from == std::string::npos ? from : text.find(kEnd, from);
+                if (to == std::string::npos) continue;
+                store.pem.append(text, from, to + sizeof kEnd - 1 - from);
+                store.pem.push_back('\n');
+                ++store.count;
+            }
+            closedir(d);
+            if (store.count > 0) break;
+        }
+    }
+    return store;
+}
+#endif
+
 void apply_default_ca(CURL *easy) {
-#if defined(__linux__)
+#if defined(__ANDROID__)
+    /* Before the Linux branch: Android's compilers define __linux__ too,
+     * and none of a Linux system's bundle paths exists there. NOCOPY, since
+     * the store lives as long as the process does. */
+    const AndroidCaStore &store = android_ca_store();
+    if (store.count > 0) {
+        struct curl_blob blob;
+        blob.data = const_cast<char *>(store.pem.data());
+        blob.len = store.pem.size();
+        blob.flags = CURL_BLOB_NOCOPY;
+        curl_easy_setopt(easy, CURLOPT_CAINFO_BLOB, &blob);
+    }
+#elif defined(__linux__)
     const std::string &ca = linux_ca_bundle();
     if (!ca.empty()) curl_easy_setopt(easy, CURLOPT_CAINFO, ca.c_str());
 #else
     /* Windows (Schannel) and macOS read the system store natively; asking
      * for it explicitly is harmless where it is already the default. */
     curl_easy_setopt(easy, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NATIVE_CA));
+#endif
+}
+
+/* CUO_CA_FILE, hoisted out of its guard body for the directive (MSVC C2121).
+ * Everywhere the caller's file, or none for an empty value, becomes
+ * CURLOPT_CAINFO, as it always has. On Android the default store is a blob
+ * (apply_default_ca), and libcurl reads a blob in preference to a file: so
+ * a caller's file takes the blob's place, and an empty value brings the
+ * system's store back, as it leaves it in place on Windows and macOS. */
+CURLcode set_ca_file(CURL *easy, const char *path) {
+    CURLcode rc = curl_easy_setopt(easy, CURLOPT_CAINFO, *path ? path : nullptr);
+#if defined(__ANDROID__)
+    if (rc == CURLE_OK) {
+        if (*path) rc = curl_easy_setopt(easy, CURLOPT_CAINFO_BLOB, nullptr);
+        else apply_default_ca(easy);
+    }
+#endif
+    return rc;
+}
+
+/* What cux_version_string adds on Android, and nothing anywhere else: how
+ * many of the system's certificates the default store holds. It is the one
+ * fact about that store a caller can see without a server to connect to, so
+ * it is what the smoke test asserts on a device, and what a person reads
+ * when HTTPS fails on a phone. */
+std::string platform_version_suffix() {
+#if defined(__ANDROID__)
+    return "; Android CA store: " + std::to_string(android_ca_store().count) + " certificates";
+#else
+    return std::string();
 #endif
 }
 
@@ -434,7 +543,8 @@ CUX_API int CUX_CALL cux_cleanup(void) {
 
 CUX_API int CUX_CALL cux_version_string(char *out, int cap) {
     CUX_GUARD_INT(CUX_ERR_THROWN,
-        std::string v = "curlxt ABI " + std::to_string(CUX_ABI_VERSION) + "; " + curl_version();
+        std::string v = "curlxt ABI " + std::to_string(CUX_ABI_VERSION) + "; " + curl_version()
+                        + platform_version_suffix();
         return copy_out(v, out, cap);
     )
 }
@@ -558,7 +668,7 @@ CUX_API int CUX_CALL cux_set_text(int h, int option, const char *value) {
         case CUO_USERNAME:        rc = curl_easy_setopt(e, CURLOPT_USERNAME, v); break;
         case CUO_PASSWORD:        rc = curl_easy_setopt(e, CURLOPT_PASSWORD, v); break;
         case CUO_PROXY:           rc = curl_easy_setopt(e, CURLOPT_PROXY, v); break;
-        case CUO_CA_FILE:         rc = curl_easy_setopt(e, CURLOPT_CAINFO, *v ? v : nullptr); break;
+        case CUO_CA_FILE:         rc = set_ca_file(e, v); break;
         case CUO_OUTPUT_FILE:     r->output_path = v; break;
         case CUO_INPUT_FILE:      r->input_path = v; break;
         case CUO_MAIL_FROM:       rc = curl_easy_setopt(e, CURLOPT_MAIL_FROM, v); break;

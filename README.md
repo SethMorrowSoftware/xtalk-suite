@@ -150,6 +150,17 @@ rather than the 2.0.11 and 3.5.9 the other platforms pin; libsodium is 1.0.22 ev
 datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34. The
 macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
+**Android (started 2026-11-18).** All seven native members build for `arm64-android`,
+`armv7-android`, `x86_64-android` and `x86-android` with `tools/build-android.sh`, and each built
+library is checked as an Android library (ABI, API 21, Android's own libraries only, 16 KB
+alignment). Every member's own tests ran on an Android 5.0 emulator for the two x86 ABIs on
+2026-11-18, in the release workflow's first Android run; the ARM libraries are built and checked,
+not run. The twenty-eight libraries were committed the same day by a second release run (each
+member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
+on Android.
+[docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
+Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
+
 ### The suite paste, run by run
 
 `tests/suite-selftest.livecodescript` runs the whole suite from one paste (below). Its dated runs:
@@ -276,6 +287,9 @@ blocks, the gates and the generators. CI runs only from the root:
   never commits a binary.
 - **`release-binaries.yml`**: a manual dispatch that builds every native member for every platform
   (universal, unsigned macOS dylibs included), checks each library, runs the gates and commits.
+  Since 2026-11-18 its `android` job builds all seven for the four Android ABIs through
+  `tools/build-android.sh` and runs their tests on an Android 5.0 emulator for the two x86 ABIs
+  ([docs/ANDROID.md](docs/ANDROID.md)).
 - **`publish-members.yml`**: once the gates pass on `main`, replays each member's changes into its
   own repository, fast-forward only; contributions made there are ported back here.
 

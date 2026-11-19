@@ -108,7 +108,8 @@ LAW here, not carried-for-later. Change nothing without a very good reason.
   `random_buffer` to abort". `vendor/ecdsa.c` calls it on EVERY curve op (Z randomization, inversion blinding):
   side-channel countermeasures, not nonces. Abort kills the host at the first `cxPublicKey`; a constant hangs
   `generate_k_random` or deletes the countermeasure. The entropy comes from `getrandom` / `BCryptGenRandom` /
-  `arc4random_buf` and fails closed (`CNX_ERR_ENTROPY`; `abort()` only where upstream's void signature leaves no
+  `arc4random_buf` (macOS, and Android since 2026-11-18: bionic has no `getrandom` before API 28 and the library
+  targets API 21) and fails closed (`CNX_ERR_ENTROPY`; `abort()` only where upstream's void signature leaves no
   choice; an unknown platform is a compile error). It cancels algebraically: `coin-kat.py` signs one input 32 times
   and requires one answer. Fresh keys are the caller's (`cxNewSeckey` validates 32 caller-supplied bytes).
 - **The libsecp256k1 context is re-randomized before every secret-key operation**; one that cannot be randomized is

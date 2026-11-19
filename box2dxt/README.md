@@ -113,6 +113,13 @@ dylib is byte-identical to what both release dispatches built (2026-08-27 and
 2026-09-12: the installer reported it unchanged, so git shows no commit for
 it); no Mac has loaded it.
 
+**Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
+`armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
+suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
+ran on an Android 5.0 emulator for the two x86 ids; the two ARM libraries are built and statically
+checked, not run, and no OXT engine on Android has loaded any of the four: verified statically;
+needs an OXT pass on Android.
+
 ## Contributing
 
 The Kit is the single source of truth: after editing

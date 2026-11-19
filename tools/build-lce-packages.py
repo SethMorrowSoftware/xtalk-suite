@@ -96,6 +96,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The platforms the members commit libraries for (src/code/<id>/), in
 # Beyond's builder's order
 PLATFORMS = ('x86_64-win32', 'x86-win32', 'x86_64-linux', 'x86-linux', 'arm64-linux', 'universal-mac')
+# Android (2026-11-18), one per ABI Beyond's Android builder packs. A set,
+# not four platforms: a member has all four libraries or none (a package with
+# three would build an app that fails to load on the fourth kind of device,
+# and only there), and "none" is allowed because a member's first Android
+# libraries arrive by their own release dispatch, after this table knows the
+# ids. A package carries them when the member does
+ANDROID = ('arm64-android', 'armv7-android', 'x86_64-android', 'x86-android')
 WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win32', ('x86', 0x14c))])
 
 # DLLs every supported Windows has (Beyond's builder's SYSTEM_DLLS):
@@ -325,7 +332,7 @@ def libraries(row):
     """[(platform id, path on disk)] of an LCB row's committed libraries."""
     code = member_path(row['member'], 'src/code')
     found = []
-    for platform in PLATFORMS:
+    for platform in PLATFORMS + ANDROID:
         folder = os.path.join(code, platform)
         if not os.path.isdir(folder):
             continue
@@ -417,6 +424,10 @@ def check_table():
                 missing = [p for p in PLATFORMS if p not in have]
                 if missing:
                     raise Problem('%s: no committed library for %s' % (where, ', '.join(missing)))
+                missing = [p for p in ANDROID if p not in have]
+                if missing and len(missing) != len(ANDROID):
+                    raise Problem('%s: Android libraries for some ABIs only, none for %s (all four, or none)'
+                                  % (where, ', '.join(missing)))
                 for platform, lib in libs:
                     if platform in WINDOWS:
                         for dll in runtime_needs(platform, lib):
@@ -748,8 +759,12 @@ def check_packages(paths):
                     for n in names:
                         if n.startswith('code/'):
                             parts = n.split('/')
-                            if len(parts) != 3 or parts[1] not in PLATFORMS:
+                            if len(parts) != 3 or parts[1] not in PLATFORMS + ANDROID:
                                 raise Problem('%s: %s is not code/<platform-id>/<file>' % (where, n))
+                    android = {n.split('/')[1] for n in names if n.startswith('code/')} & set(ANDROID)
+                    if android and android != set(ANDROID):
+                        raise Problem('%s: Android libraries for some ABIs only (%s): all four, or none'
+                                      % (where, ', '.join(sorted(android))))
                 elif lcs:
                     if len(lcs) != 1:
                         raise Problem('%s: %d script stacks at the root, expected one' % (where, len(lcs)))

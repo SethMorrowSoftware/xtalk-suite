@@ -76,7 +76,8 @@ OBSERVED, INFERRED, DOCUMENTED or UNEVIDENCED; read it before an engine session,
 `docs/OXT-PASS-RUNBOOK.md` (how to run an engine session and what is still owed on one);
 `docs/WORK-PLAN.md` (ALL open work: member docs keep a one-line status and honesty labels, not
 to-do lists); `docs/OPEN-DECISIONS.md` (owner decisions D-01 onward); `docs/MEMBER-REPO-SPLIT.md`
-(publishing, porting back, removing a member); `docs/README.md` (the index of the rest).
+(publishing, porting back, removing a member); `docs/ANDROID.md` (the Android libraries: method
+and status); `docs/README.md` (the index of the rest).
 
 ## Carried blocks: one master, verbatim copies, a drift gate
 
@@ -355,6 +356,25 @@ worse than no gate, because it answers the question nobody asks twice.
   refuses a library only for a missing import, never for its tag: built with no target (so for
   the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
   macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
+- **Android (2026-11-18).** `tools/build-android.sh <member> <abi>-android` is the WHOLE recipe
+  for the seven native members on `arm64-android`, `armv7-android`, `x86_64-android` and
+  `x86-android`: the NDK revision OXT-Beyond pins, API 21, libc++ inside each library, the desktop
+  lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
+  names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
+  leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each
+  library to the ABI, the API floor, Android's own libraries in `DT_NEEDED` and 16 KB alignment,
+  where it is built and again before it lands. Tests RUN on an Android 5.0 x86_64 emulator
+  (`tools/android-emulator.sh`, through `tools/android-run.sh`, which takes a test's exit status
+  from a marker line because old adb reports 0) for the two x86 ABIs only; the ARM ABIs are built,
+  NOT run, and every output says which. Android is a SET in the tables that demand platforms (the
+  package builder, box2dxt's packager): all four libraries or none. `docs/ANDROID.md` holds the
+  status. The job first ran on 2026-11-18 (run 44379162842 from 7364c0f, `commit_mode: none`):
+  all four rows green, every member's tests run on the emulator for both x86 ABIs. The same day
+  run 44391791349 from 17b1f93 (green again) committed the twenty-eight libraries, commit
+  5aa3ad4, and every member's `ships` row names the four ids since. No ARM library and no engine
+  on Android has run any of them. The four members that open sockets declare
+  `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
+  builder writes into an app's manifest (verified statically).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

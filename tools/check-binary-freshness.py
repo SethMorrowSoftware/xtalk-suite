@@ -224,7 +224,9 @@ MEMBERS = [
         "lcb": ["sodiumxt/src/sodium.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
-                  "wasm32-emscripten"],
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "sodiumxt/src/sodium_shim.c",
         "prefix": "sxt_",
         "abi_header": "sodiumxt/src/sodium_shim.h",
@@ -246,7 +248,9 @@ MEMBERS = [
         # universal-mac held only a "macOS build pending" README until release
         # run 12 (2026-08-27) landed the first universal dylib; declared since.
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "torrentxt/src/torrent_shim.cpp",
         "prefix": "btx_",
         "abi_header": "torrentxt/src/btx_abi.h",
@@ -284,7 +288,9 @@ MEMBERS = [
         "lib": "enetxt",
         "lcb": ["enetxt/src/enet.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "enetxt/src/enet_shim.cpp",
         "prefix": "enx_",
         "abi_header": "enetxt/src/enx_abi.h",
@@ -299,7 +305,9 @@ MEMBERS = [
         # Joined 2026-11-14 with none committed; the first release-binaries
         # dispatch (run 43635436132, commit 6edff95) landed all six.
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "curlxt/src/curl_shim.cpp",
         "prefix": "cux_",
         "abi_header": "curlxt/src/cux_abi.h",
@@ -316,7 +324,9 @@ MEMBERS = [
         "lcb": ["datachannelxt/src/datachannel.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
-                  "wasm32-emscripten"],
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "datachannelxt/src/datachannel_shim.cpp",
         "prefix": "dcx_",
         "abi_header": "datachannelxt/src/dcx_abi.h",
@@ -352,7 +362,9 @@ MEMBERS = [
         "lcb": ["box2dxt/src/box2dxt.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
-                  "wasm32-emscripten"],
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "box2dxt/src/box2d_lc.c",
         "prefix": "b2lc_",
         # box2dxt keeps its ABI define in the shim itself, not a separate
@@ -382,7 +394,9 @@ MEMBERS = [
         "lcb": ["coinxt/src/coinxt.lcb"],
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
-                  "wasm32-emscripten"],
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         # coinxt is the one member whose shim lives under native/, not src/.
         "shim": "coinxt/native/coinxt.c",
         "prefix": "cnx_",
@@ -406,6 +420,19 @@ PLATFORMS = {
     "x86-linux": ("so", "elf"),
     "x86_64-linux": ("so", "elf"),
     "arm64-linux": ("so", "elf"),
+    # Android (added 2026-11-18), one id per ABI the OXT-Beyond standalone
+    # builder packs (armv7, arm64, x86, x86_64: it copies
+    # code/<arch>-android/<lib>.so into the APK as lib<lib>.so). ELF like the
+    # Linux rows and read by the same reader; what makes a library ANDROID's
+    # (the API level in its .note.android.ident, bionic's libraries and no
+    # others in DT_NEEDED, 16 KB load alignment on the 64-bit ABIs) is
+    # tools/install-release-binaries.py's question, asked where a library
+    # enters the tree. Built by tools/build-android.sh; nothing on this host
+    # loads one, so their ABI pins are decoded and never loader-confirmed.
+    "arm64-android": ("so", "elf"),
+    "armv7-android": ("so", "elf"),
+    "x86_64-android": ("so", "elf"),
+    "x86-android": ("so", "elf"),
     "x86-win32": ("dll", "pe"),
     "x86_64-win32": ("dll", "pe"),
     "universal-mac": ("dylib", "macho"),
@@ -722,23 +749,38 @@ def read_elf(path):
         exports.add(name)
         addresses[name] = st_value
 
+    machine = ELF_MACHINES.get(u16(18), "e_machine %#x" % u16(18))
+
     def code_at(name, count=16):
         vaddr = addresses.get(name)
         if vaddr is None:
             return None
+        if machine == "armv7":
+            # A 32-bit ARM function symbol carries its INSTRUCTION SET in bit
+            # 0 of st_value (set: Thumb), not in the address: the code starts
+            # at the even address either way. Read with the bit left on, a
+            # Thumb function comes back one byte late, which is how the first
+            # armv7-android survey read `b5 6f 46 ..` for `80 b5 6f 46 ..`.
+            vaddr &= ~1
         offset = vaddr_to_offset(vaddr)
         if offset is None:
             return None
         return image[offset:offset + count]
 
+    def thumb(name):
+        """True when `name` is a Thumb function of a 32-bit ARM library."""
+        return machine == "armv7" and bool(addresses.get(name, 0) & 1)
+
     # e_machine, so decode_abi reads an AArch64 library (arm64-linux, added
-    # 2026-10-06) with the AArch64 decoder instead of the x86 one.
-    code_at.machine = ELF_MACHINES.get(u16(18), "e_machine %#x" % u16(18))
+    # 2026-10-06) with the AArch64 decoder instead of the x86 one, and a
+    # 32-bit ARM one (armv7-android, 2026-11-18) with its own.
+    code_at.machine = machine
+    code_at.thumb = thumb
 
     return exports, code_at
 
 
-ELF_MACHINES = {0x03: "x86", 0x3E: "x86_64", 0xB7: "arm64"}
+ELF_MACHINES = {0x03: "x86", 0x28: "armv7", 0x3E: "x86_64", 0xB7: "arm64"}
 
 
 # COFF Machine values this file reads (winnt.h IMAGE_FILE_MACHINE_*). The
@@ -1517,6 +1559,15 @@ ENDBR = (b"\xf3\x0f\x1e\xfa", b"\xf3\x0f\x1e\xfb")
 # the `ret`.
 FRAME_X86_64 = b"\x55\x48\x89\xe5"
 
+# `push ebp ; mov ebp, esp ; and esp, -4` and its epilogue `mov esp, ebp ;
+# pop ebp ; ret`: the frame the Android NDK's clang gives a 32-bit x86
+# function under the NDK's CMake toolchain, which keeps the frame pointer
+# (-fno-omit-frame-pointer, for the platform's unwinder) and realigns the
+# stack. The realignment is `83 e4 fc` exactly: a different mask is a
+# different function shape and reads None.
+FRAME_X86_ANDROID = b"\x55\x89\xe5\x83\xe4\xfc"
+LEAVE_X86_ANDROID = b"\x89\xec\x5d\xc3"
+
 
 def decode_return_constant(code):
     """`[endbr] mov eax, imm32 ; ret` -> imm32, else None.
@@ -1540,6 +1591,13 @@ def decode_return_constant(code):
     check - measured on both committed dylibs' x86_64 slices). It is still an
     exact instruction sequence with nothing variable but the immediate, not a
     scan; a /GS-style prologue still returns None.
+
+    A third was ADDED 2026-11-18 with the Android rows: `push ebp ; mov ebp,
+    esp ; and esp,-4 ; mov eax, imm32 ; mov esp,ebp ; pop ebp ; ret`, what the
+    NDK's clang emits for x86-android under the NDK's CMake toolchain
+    (measured on the six CMake members' builds; coinxt, built by its own
+    build.sh without that toolchain's flags, is the plain leaf there). The
+    same bargain: every byte fixed but the immediate.
     """
     if code is None:
         return None
@@ -1550,6 +1608,10 @@ def decode_return_constant(code):
             and code[start + 4] == 0xB8 and code[start + 9] == 0x5D
             and code[start + 10] == 0xC3):
         return struct.unpack_from("<I", code, start + 5)[0]
+    if (code[start:start + 6] == FRAME_X86_ANDROID and len(code) >= start + 15
+            and code[start + 6] == 0xB8
+            and code[start + 11:start + 15] == LEAVE_X86_ANDROID):
+        return struct.unpack_from("<I", code, start + 7)[0]
     return None
 
 
@@ -1582,6 +1644,47 @@ def decode_return_constant_arm64(code):
             return (insn >> 5) & 0xFFFF
         if nxt != NOP_ARM64:
             return None
+    return None
+
+
+# 32-bit ARM (armv7-android, added 2026-11-18). Two instruction sets, and the
+# symbol says which (read_elf's `thumb`), so each shape is tried only on the
+# code it could be: the NDK's CMake toolchain builds Thumb-2 (six members),
+# coinxt's own build.sh builds ARM.
+#
+#   Thumb: push {r7, lr} ; mov r7, sp ; movs r0, #imm8 ; pop {r7, pc}
+#   ARM:   push {r11, lr} ; mov r11, sp ; mov r0, #imm8 ; pop {r11, pc}
+#
+# Both keep a frame for a leaf (the NDK asks for one, for the platform's
+# unwinder), so neither is the two-instruction leaf of the other
+# architectures; both are still exact sequences with one variable byte.
+THUMB_FRAME = b"\x80\xb5\x6f\x46"            # b580 466f
+THUMB_LEAVE = b"\x80\xbd"                    # bd80
+ARM_FRAME = b"\x00\x48\x2d\xe9\x0d\xb0\xa0\xe1"   # e92d4800 e1a0b00d
+ARM_LEAVE = b"\x00\x88\xbd\xe8"              # e8bd8800
+
+
+def decode_return_constant_armv7(code, thumb):
+    """The framed constant return of a 32-bit ARM function -> imm8, else None.
+
+    `thumb` is the symbol's own bit 0, never a guess from the bytes: the same
+    four bytes are different instructions in the two sets, and a decoder that
+    tried both would read an ARM function as Thumb whenever the bytes
+    happened to fit. The immediates are the plain 8-bit forms only (Thumb
+    `movs r0, #imm8` is 0x20NN; ARM `mov r0, #imm8` with a zero rotation is
+    0xE3A000NN), which bounds the ABI numbers this reads at 255 - a member
+    that gets there has its shape refused by name, not misread.
+    """
+    if code is None:
+        return None
+    if thumb:
+        if (len(code) >= 8 and code[:4] == THUMB_FRAME and code[5] == 0x20
+                and code[6:8] == THUMB_LEAVE):
+            return code[4]
+        return None
+    if (len(code) >= 16 and code[:8] == ARM_FRAME
+            and code[9:12] == b"\x00\xa0\xe3" and code[12:16] == ARM_LEAVE):
+        return code[8]
     return None
 
 
@@ -1921,6 +2024,14 @@ def decode_abi(fmt, code_at, symbol):
         if decoded is not None:
             return decoded, "leaf", None
         return None, None, "does not begin `MOVZ w0, #imm16 ; ret`"
+    if fmt == "elf" and getattr(code_at, "machine", None) == "armv7":
+        thumb = code_at.thumb(symbol)
+        decoded = decode_return_constant_armv7(code_at(symbol, 24), thumb)
+        if decoded is not None:
+            return decoded, "leaf", None
+        return None, None, ("is not the framed %s constant return `push ; "
+                            "mov ; mov r0, #imm8 ; pop`"
+                            % ("Thumb" if thumb else "ARM"))
     decoded = decode_return_constant(code_at(symbol, 24))
     if decoded is not None:
         return decoded, "leaf", None

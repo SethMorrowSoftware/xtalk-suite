@@ -211,7 +211,102 @@ LEAF_VECTORS = [
     ("push rbp ; mov rbp,rsp ; mov eax ; pop rbp ; ret (mac x86_64)", "x86",
      "55 48 89 e5 b8 0b 00 00 00 5d c3", 11),
     ("MOVZ w0 ; RET (mac arm64)", "arm64", "20 00 80 52 c0 03 5f d6", 1),
+    # The Android classes (2026-11-18), recorded from tools/build-android.sh
+    # builds with the pinned NDK: sodiumxt's x86 and armv7 (the NDK's CMake
+    # toolchain: a kept frame, Thumb-2) and coinxt's armv7 (its own build.sh:
+    # ARM). arm64-android and x86_64-android are the two-instruction leaves
+    # above, and coinxt's x86-android the first one.
+    ("push ebp ; mov ebp,esp ; and esp,-4 ; mov eax ; mov esp,ebp ; pop ebp "
+     "; ret (x86 Android)", "x86",
+     "55 89 e5 83 e4 fc b8 0a 00 00 00 89 ec 5d c3", 10),
+    ("push {r7,lr} ; mov r7,sp ; movs r0 ; pop {r7,pc} (armv7 Android, "
+     "Thumb)", "thumb", "80 b5 6f 46 0a 20 80 bd", 10),
+    ("push {r11,lr} ; mov r11,sp ; mov r0 ; pop {r11,pc} (armv7 Android, "
+     "ARM)", "arm", "00 48 2d e9 0d b0 a0 e1 07 00 a0 e3 00 88 bd e8", 7),
 ]
+
+# Near misses of the Android shapes: (label, kind, hex). Each differs from a
+# recorded vector in one instruction that could change what r0 / eax holds at
+# the return (or in which instruction set the bytes are read), so each must
+# read None: these decoders have no "close enough".
+LEAF_REFUSALS = [
+    ("x86 Android with a 16-byte realignment (and esp,-16)", "x86",
+     "55 89 e5 83 e4 f0 b8 0a 00 00 00 89 ec 5d c3"),
+    ("x86 Android with no `mov esp, ebp` before the pop", "x86",
+     "55 89 e5 83 e4 fc b8 0a 00 00 00 90 90 5d c3"),
+    ("x86 Android returning through `ret 4`", "x86",
+     "55 89 e5 83 e4 fc b8 0a 00 00 00 89 ec 5d c2 04 00"),
+    ("Thumb bytes read as ARM", "arm", "80 b5 6f 46 0a 20 80 bd"),
+    ("ARM bytes read as Thumb", "thumb",
+     "00 48 2d e9 0d b0 a0 e1 07 00 a0 e3 00 88 bd e8"),
+    ("Thumb `movs r1, #10` (the wrong register)", "thumb",
+     "80 b5 6f 46 0a 21 80 bd"),
+    ("Thumb with an instruction between the movs and the pop", "thumb",
+     "80 b5 6f 46 0a 20 01 30 80 bd"),
+    ("Thumb with no frame (movs r0 ; bx lr)", "thumb", "0a 20 70 47"),
+    ("ARM `mov r0, #7` with a rotation (so not 7)", "arm",
+     "00 48 2d e9 0d b0 a0 e1 07 04 a0 e3 00 88 bd e8"),
+    ("ARM `mvn r0, #7`", "arm",
+     "00 48 2d e9 0d b0 a0 e1 07 00 e0 e3 00 88 bd e8"),
+    ("ARM popping {r11, lr} and not returning", "arm",
+     "00 48 2d e9 0d b0 a0 e1 07 00 a0 e3 00 48 bd e8"),
+]
+
+
+def decode_leaf(kind, code):
+    """One leaf decoder, called directly (never through decode_abi)."""
+    if kind == "arm64":
+        return GATE.decode_return_constant_arm64(code)
+    if kind in ("thumb", "arm"):
+        return GATE.decode_return_constant_armv7(code, kind == "thumb")
+    return GATE.decode_return_constant(code)
+
+
+def armv7_elf(code, thumb, symbol="t_abi_version"):
+    """A 32-bit ARM ELF read_elf can walk, exporting `symbol` over `code`.
+
+    The smallest file with what read_elf reads: one PT_LOAD over the whole
+    file (so an address is its offset), .dynsym, .dynstr and .shstrtab. The
+    symbol's value is the code's EVEN address with bit 0 set when `thumb`,
+    which is how a 32-bit ARM symbol says which instruction set it is in; a
+    reader that leaves the bit on reads the function one byte late."""
+    ehsize, phsize, shsize = 52, 32, 40
+    code_off = ehsize + phsize                       # 84: even
+    dynstr = b"\0" + symbol.encode("ascii") + b"\0"
+    dynstr_off = code_off + len(code) + (-len(code) % 4)
+    dynsym_off = dynstr_off + len(dynstr) + (-len(dynstr) % 4)
+    # STB_GLOBAL << 4 | STT_FUNC, defined in section 1.
+    dynsym = bytes(16) + struct.pack("<IIIBBH", 1, code_off | (1 if thumb else 0),
+                                     len(code), 0x12, 0, 1)
+    shstr = b"\0.dynsym\0.dynstr\0.shstrtab\0"
+    shstr_off = dynsym_off + len(dynsym)
+    sh_off = shstr_off + len(shstr) + (-len(shstr) % 4)
+
+    def shdr(name, sh_type, offset, size, link=0, entsize=0):
+        return struct.pack("<IIIIIIIIII", name, sh_type, 2, offset, offset,
+                           size, link, 0, 4, entsize)
+
+    sections = (bytes(shsize)
+                + shdr(1, 11, dynsym_off, len(dynsym), link=2, entsize=16)
+                + shdr(9, 3, dynstr_off, len(dynstr))
+                + shdr(17, 3, shstr_off, len(shstr)))
+    total = sh_off + len(sections)
+    head = bytearray(ehsize)
+    head[0:4] = b"\x7fELF"
+    head[4], head[5], head[6] = 1, 1, 1
+    struct.pack_into("<HH", head, 16, 3, 0x28)       # ET_DYN, EM_ARM
+    struct.pack_into("<II", head, 28, ehsize, sh_off)
+    struct.pack_into("<HHHHHH", head, 40, ehsize, phsize, 1, shsize, 4, 3)
+    phdr = struct.pack("<IIIIIIII", 1, 0, 0, 0, total, total, 5, 4096)
+    image = bytearray(total)
+    image[0:ehsize] = head
+    image[ehsize:ehsize + phsize] = phdr
+    image[code_off:code_off + len(code)] = code
+    image[dynstr_off:dynstr_off + len(dynstr)] = dynstr
+    image[dynsym_off:dynsym_off + len(dynsym)] = dynsym
+    image[shstr_off:shstr_off + len(shstr)] = shstr
+    image[sh_off:] = sections
+    return bytes(image)
 
 
 class VectorMemory:
@@ -799,10 +894,7 @@ def main():
           f"{tx64['value']} ({why})")
     for label, kind, hexs, value in LEAF_VECTORS:
         code = bytes.fromhex(hexs) + b"\xcc" * 16
-        if kind == "arm64":
-            got = GATE.decode_return_constant_arm64(code)
-        else:
-            got = GATE.decode_return_constant(code)
+        got = decode_leaf(kind, code)
         check(got == value, f"leaf class {label}: decodes to {got}, not "
               f"{value}")
         # The guarded decoder must refuse a leaf outright: the gate tries the
@@ -812,9 +904,48 @@ def main():
                             "write": [(0x9000, 0xA000)]})
         check(decode(mem, 0x1000)[0] is None,
               f"leaf class {label}: the guarded decoder accepted a leaf")
+    for label, kind, hexs in LEAF_REFUSALS:
+        got = decode_leaf(kind, bytes.fromhex(hexs) + b"\xcc" * 16)
+        check(got is None, f"NEAR MISS ACCEPTED: {label} -> {got}")
+    # The instruction set of a 32-bit ARM function is its SYMBOL's bit 0, so
+    # the two armv7 vectors go through the real reader too: a Thumb symbol
+    # reads from the even address and decodes, and the same bytes under the
+    # other set's symbol are refused by name, never read as the other shape.
+    armv7 = [(k, bytes.fromhex(h), v) for _l, k, h, v in LEAF_VECTORS
+             if k in ("thumb", "arm")]
+    check(len(armv7) == 2, "LEAF_VECTORS no longer holds one Thumb and one "
+          "ARM vector, so the armv7 reader check below checks nothing")
+    with tempfile.TemporaryDirectory(prefix="test-binary-freshness-") as tmp:
+        for kind, code, value in armv7:
+            for as_thumb in (True, False):
+                path = os.path.join(tmp, f"{kind}-{as_thumb}.so")
+                with open(path, "wb") as fh:
+                    fh.write(armv7_elf(code, as_thumb))
+                _exports, code_at = GATE.read_elf(path)
+                check(code_at.machine == "armv7" and
+                      code_at.thumb("t_abi_version") == as_thumb and
+                      code_at("t_abi_version", len(code)) == code,
+                      f"armv7 {kind} vector under a "
+                      f"{'Thumb' if as_thumb else 'ARM'} symbol: read_elf "
+                      f"did not return the function's own bytes (the Thumb "
+                      f"bit must be cleared from the address, and reported)")
+                got, shape, why = GATE.decode_abi("elf", code_at,
+                                                  "t_abi_version")
+                if as_thumb == (kind == "thumb"):
+                    check(got == value and shape == "leaf",
+                          f"armv7 {kind} vector through read_elf and "
+                          f"decode_abi: {got} ({shape}, {why}), not {value}")
+                else:
+                    check(got is None and
+                          ("Thumb" if as_thumb else "ARM") in (why or ""),
+                          f"armv7 {kind} vector under the OTHER instruction "
+                          f"set's symbol was not refused by name: {got} "
+                          f"({why})")
     print(f"{TAG}: leg 1 - {len(VECTORS)} recorded guarded vectors, the "
           f"synthesized longest x64 shape and {len(LEAF_VECTORS)} leaf "
-          f"classes decode to their recorded values")
+          f"classes decode to their recorded values; {len(LEAF_REFUSALS)} "
+          f"near misses of the Android shapes read nothing; the armv7 pair "
+          f"read through the ELF reader under each instruction set's symbol")
 
     # Leg 2.
     cases = named_mutants()
@@ -864,6 +995,12 @@ def main():
         if fmt == "elf" and getattr(code_at, "machine", None) == "arm64":
             before = GATE.decode_return_constant_arm64(
                 code_at(member["abi_symbol"], 24))
+        elif fmt == "elf" and getattr(code_at, "machine", None) == "armv7":
+            # armv7-android (2026-11-18): the same reasoning, with the
+            # instruction set taken from the symbol.
+            before = GATE.decode_return_constant_armv7(
+                code_at(member["abi_symbol"], 24),
+                code_at.thumb(member["abi_symbol"]))
         else:
             before = GATE.decode_return_constant(
                 code_at(member["abi_symbol"], 24))

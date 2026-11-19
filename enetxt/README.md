@@ -85,6 +85,14 @@ Install through the Extension Manager and the engine resolves the `c:enetxt>` bi
 hand-built mac library must carry both slices, because the suite's installer refuses a thin
 Mach-O under `universal-mac` ([docs/building.md](docs/building.md)).
 
+**Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
+`armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
+suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its native
+tests ran on an Android 5.0 emulator for the two x86 ids; the two ARM libraries are built and
+statically checked, not run, and no OXT engine on Android has loaded any of the four: verified
+statically; needs an OXT pass on Android. The `.lcb` declares Android's INTERNET permission, which
+OXT-Beyond's standalone builder adds to an app that includes this extension.
+
 One rule the app must follow: **call `enDeinitialize` before quitting** (e.g. on
 `closeStack`), written bare in statement position. There is no automatic unload hook.
 Call it only for an `enInitialize` this stack made that returned 0: the count belongs to

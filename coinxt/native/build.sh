@@ -19,6 +19,8 @@
 #         sh native/build.sh pack             # the SHIPPED library into src/code/
 #         sh native/build.sh pack x86-linux   # ... for an explicit platform id
 #                                             # (REQUIRED for any cross build)
+#         sh native/build.sh selftest <file>  # the self-test alone, built with
+#                                             # $CC and not run (cross builds)
 #         sh native/build.sh web              # src/code/wasm32-emscripten/coinxt.a
 #                                             # for OXT-Beyond's web IDE, tested
 #                                             # under node (needs Emscripten)
@@ -528,7 +530,21 @@ int main(void) {
     keys[0] = 0x02; for (i = 1; i < 33; i++) keys[i] = 0xff;
     if (cnx_pubkey_combine(keys, 33, sum, 33) != -4) { printf("combine off-curve guard FAIL\n"); return 1; }
   }
-  printf("cnx_selftest: OK (ASan/UBSan clean, hashes + secp256k1 + BIP-32/39 + memzero"
+  /* Says what THIS build was: the same source is the `asan` lane's (built
+   * with the sanitizers), and the `selftest` and `web` builds' (built
+   * without), and a run without them must not print that it was clean
+   * under them. */
+#if defined(__SANITIZE_ADDRESS__)
+#define CNX_SELFTEST_HOW "ASan/UBSan clean"
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define CNX_SELFTEST_HOW "ASan/UBSan clean"
+#endif
+#endif
+#ifndef CNX_SELFTEST_HOW
+#define CNX_SELFTEST_HOW "built without sanitizers"
+#endif
+  printf("cnx_selftest: OK (" CNX_SELFTEST_HOW ", hashes + secp256k1 + BIP-32/39 + memzero"
          " + BIP-340/341 + combine)\n");
   return 0;
 }
@@ -739,6 +755,26 @@ case "${1:-lib}" in
     "$tmp/cnx_selftest"
     rm -rf "$tmp"
     ;;
+  selftest)
+    # sh native/build.sh selftest <output>: the same self-test as `asan`,
+    # built with $CC and WITHOUT sanitizers into the file named, and not
+    # run. For a cross build, whose executable this machine cannot run and
+    # whose toolchain may carry no sanitizer runtime the target has: the
+    # suite's tools/build-android.sh builds it for each Android ABI and runs
+    # it on a device (2026-11-18). `asan` stays the host's memory gate.
+    if [ $# -lt 2 ]; then
+      echo "usage: sh build.sh selftest <output file>" >&2
+      exit 2
+    fi
+    CC_TOOL="${CC:-cc}"
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    selftest_source > "$tmp/selftest.c"
+    secp_objs=$(compile_secp "$tmp" "$CC_TOOL")
+    $CC_TOOL -O2 $warn $secp_cppflags $inc "$tmp/selftest.c" \
+       "$here/coinxt.c" $vendor_src $secp_objs -o "$2"
+    echo "built $2"
+    ;;
   web)
     # The web build: wasm32-emscripten (2026-10-21). A browser loads no
     # library, so for OXT-Beyond's web IDE the shim is linked INTO the engine,
@@ -817,7 +853,7 @@ case "${1:-lib}" in
     echo "built $dir/coinxt.a ($count symbols in coinxt_web_exports)"
     ;;
   *)
-    echo "usage: sh build.sh [lib|asan|pack|web]" >&2
+    echo "usage: sh build.sh [lib|asan|pack|selftest|web]" >&2
     exit 2
     ;;
 esac

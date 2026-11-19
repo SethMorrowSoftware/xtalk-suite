@@ -31,7 +31,10 @@ import shutil
 import sys
 
 
-PLATFORM_SUFFIX = {"linux": ".so", "win32": ".dll", "mac": ".dylib"}
+# "android" (2026-11-18): the four <abi>-android ids, built and placed by the
+# suite's tools/build-android.sh; here so --platform-id accepts them too.
+PLATFORM_SUFFIX = {"linux": ".so", "android": ".so", "win32": ".dll",
+                   "mac": ".dylib"}
 
 # The provenance manifest that records the SHA256 of every committed native blob
 # under src/code/. It lets a consumer (and the CI verify-binaries job) confirm a
@@ -80,6 +83,8 @@ def default_platform_id():
 def os_from_platform_id(platform_id):
     if platform_id.endswith("-linux"):
         return "linux"
+    if platform_id.endswith("-android"):
+        return "android"
     if platform_id.endswith("-win32"):
         return "win32"
     if platform_id.endswith("-mac"):
@@ -120,7 +125,9 @@ def write_manifest(repo_root):
         blob_dir = os.path.join(code_dir, platform_id)
         if not os.path.isdir(blob_dir):
             continue
-        for suffix in PLATFORM_SUFFIX.values():
+        # Each suffix ONCE: two OS tokens share ".so" (linux, android), and
+        # walking the values as they stand would record such a blob twice.
+        for suffix in sorted(set(PLATFORM_SUFFIX.values())):
             blob = os.path.join(blob_dir, f"sodiumxt{suffix}")
             if os.path.isfile(blob):
                 rel = os.path.join(platform_id, f"sodiumxt{suffix}")
