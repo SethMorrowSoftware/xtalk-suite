@@ -823,11 +823,20 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   the platforms in `check-binary-freshness.py`'s `ships` row.
 - Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
+- WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
+  as new handlers only (`cuWs*` in the binding, `cuWsOpen` and its messages in the helpers).
+  Records: the smoke test's WebSocket sections against a server it runs itself, clean
+  under ASan/UBSan, and a headless run of the helpers' calls over the built library
+  against `ws://` and `wss://` servers, in its gates. No engine has opened a socket:
+  verified statically; needs an OXT pass (row 3). curlxt has no web archive, so none of
+  it reaches an HTML5 standalone.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
+| 3 | WebSockets on an engine: `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
+| 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
 
 ### 2.10 box3dxt
 

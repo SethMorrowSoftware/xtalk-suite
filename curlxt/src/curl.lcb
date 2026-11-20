@@ -1,6 +1,6 @@
 /**
-Bindings to libcurl: HTTP and HTTPS, FTP and FTPS, SFTP and SCP, and SMTP
-mail, for OpenXTalk.
+Bindings to libcurl: HTTP and HTTPS, FTP and FTPS, SFTP and SCP, SMTP
+mail, and WebSockets, for OpenXTalk.
 
 curlxt wraps libcurl 8.22.0 (with libssh2 1.11.1 for SFTP). A request is
 an integer handle: make one with <cuRequestNew>, set its headers, options
@@ -16,6 +16,13 @@ while <cuPoll> or <cuWait> runs. The curlHelpers library (cuStartPolling)
 runs the timer for you and sends your callback when a request ends, and the
 tsNet library gives scripts written for LiveCode's tsNet external the same
 calls, built on this one.
+
+A WebSocket (ws:// or wss://) is a request handle too. Make one with
+<cuWsNew>, start it with <cuStart>, and once it is open send with
+<cuWsSendText> or <cuWsSendData> and read what has arrived with
+<cuWsReadText> or <cuWsRead>. It moves while <cuWsPoll> (or <cuPoll>)
+runs. The curlHelpers library (cuWsOpen) does all of that and sends your
+handler a message for each thing that happens.
 
 Call <cuInitialize> once at startup and <cuCleanup> once at quit.
 
@@ -51,7 +58,7 @@ library org.openxtalk.library.curl
 
 use com.livecode.foreign
 
-metadata version is "0.1.0"
+metadata version is "0.2.0"
 metadata author is "Seth Morrow Software"
 metadata title is "curlxt"
 
@@ -67,7 +74,7 @@ metadata android.permissions is "INTERNET"
 -- ===================================================================== --
 
 -- Must equal CUX_ABI_VERSION in src/cux_abi.h; _checkABI() throws on skew.
-constant kABIVersion is 1
+constant kABIVersion is 2
 
 -- kMCStringEncodingUTF8, the engine's own enum value.
 constant kEncodingUtf8 is 4
@@ -95,6 +102,7 @@ constant kOptMaxBodyBytes is 11
 constant kOptHttpVersion is 12
 constant kOptDnsCacheSeconds is 13
 constant kOptCreateDirs is 14
+constant kOptWsCloseTimeoutMs is 15
 
 constant kOptUsername is 101
 constant kOptPassword is 102
@@ -125,12 +133,37 @@ constant kInfoTotalTime is 8
 constant kInfoRedirectCount is 9
 constant kInfoBodySize is 10
 constant kInfoCancelled is 11
+constant kInfoWsState is 12
+constant kInfoWsMessages is 13
+constant kInfoWsNextType is 14
+constant kInfoWsNextSize is 15
+constant kInfoWsCloseCode is 16
+constant kInfoWsQueuedBytes is 17
+constant kInfoWsPongs is 18
 
 constant kTextHeaders is 1
 constant kTextError is 2
 constant kTextEffectiveUrl is 3
 constant kTextContentType is 4
 constant kTextMethod is 5
+constant kTextWsCloseReason is 6
+
+-- WebSockets (ABI 2): the states cuInfo(h, "wsState") answers, the message
+-- kinds, and the close codes the shim itself reports.
+constant kWsConnecting is 1
+constant kWsOpen is 2
+constant kWsClosing is 3
+constant kWsClosed is 4
+
+constant kWsKindText is 1
+constant kWsKindBinary is 2
+constant kWsKindPing is 3
+constant kWsKindPong is 4
+
+constant kWsCodeNormal is 1000
+constant kWsCodeNoStatus is 1005
+constant kWsCodeAbnormal is 1006
+constant kWsCodeTooBig is 1009
 
 -- ===================================================================== --
 --  Module state: the reusable scratch buffer
@@ -167,9 +200,17 @@ private foreign handler _cux_text(in pReq as CInt, in pField as CInt, in pOut as
 private foreign handler _cux_body(in pReq as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_body!cdecl"
 private foreign handler _cux_live_count() returns CInt binds to "c:curlxt>cux_live_count!cdecl"
 
+private foreign handler _cux_ws_new(in pUrl as ZStringUTF8) returns CInt binds to "c:curlxt>cux_ws_new!cdecl"
+private foreign handler _cux_ws_send(in pReq as CInt, in pKind as CInt, in pBytes as Pointer, in pLen as CInt) returns CInt binds to "c:curlxt>cux_ws_send!cdecl"
+private foreign handler _cux_ws_close(in pReq as CInt, in pCode as CInt, in pReason as ZStringUTF8) returns CInt binds to "c:curlxt>cux_ws_close!cdecl"
+private foreign handler _cux_ws_read(in pReq as CInt, in pOut as Pointer, in pCap as CInt) returns CInt binds to "c:curlxt>cux_ws_read!cdecl"
+private foreign handler _cux_ws_poll() returns CInt binds to "c:curlxt>cux_ws_poll!cdecl"
+private foreign handler _cux_ws_wait(in pReq as CInt, in pTimeoutMs as CInt) returns CInt binds to "c:curlxt>cux_ws_wait!cdecl"
+
 -- ===================================================================== --
 --  Engine Foundation <builtin> foreign handlers (resolve by NAME: no `_`)
 -- ===================================================================== --
+private foreign handler MCStringEncode(in pString as String, in pEncoding as CInt, in pIsExternalRep as CBool, out rData as Data) returns CBool binds to "<builtin>"
 private foreign handler MCStringDecode(in pData as Data, in pEncoding as CInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
 private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
 private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
@@ -299,6 +340,8 @@ private handler _optionId(in pName as String) returns Integer
       return kOptDnsCacheSeconds
    else if pName is "createDirs" then
       return kOptCreateDirs
+   else if pName is "wsCloseTimeout" then
+      return kOptWsCloseTimeoutMs
    else if pName is "username" then
       return kOptUsername
    else if pName is "password" then
@@ -360,6 +403,20 @@ private handler _infoId(in pName as String) returns Integer
       return kInfoBodySize
    else if pName is "cancelled" then
       return kInfoCancelled
+   else if pName is "wsState" then
+      return kInfoWsState
+   else if pName is "wsMessages" then
+      return kInfoWsMessages
+   else if pName is "wsNextType" then
+      return kInfoWsNextType
+   else if pName is "wsNextSize" then
+      return kInfoWsNextSize
+   else if pName is "wsCloseCode" then
+      return kInfoWsCloseCode
+   else if pName is "wsQueuedBytes" then
+      return kInfoWsQueuedBytes
+   else if pName is "wsPongs" then
+      return kInfoWsPongs
    end if
    return 0
 end handler
@@ -375,6 +432,8 @@ private handler _textId(in pName as String) returns Integer
       return kTextContentType
    else if pName is "method" then
       return kTextMethod
+   else if pName is "wsCloseReason" then
+      return kTextWsCloseReason
    end if
    return 0
 end handler
@@ -547,7 +606,8 @@ pName: timeout (ms, whole transfer), connectTimeout (ms), followRedirects
 lowSpeedLimit (bytes a second), lowSpeedTime (seconds), useSsl (0 none,
 1 try, 2 control, 3 all), ftpPassive (0 or 1), maxBodyBytes (0 = no cap),
 httpVersion (0 default, 1 is 1.0, 2 is 1.1), dnsCacheSeconds, createDirs
-(0 or 1).
+(0 or 1), wsCloseTimeout (ms a WebSocket waits for the other side to
+answer a close; 5000 unless set, 0 = no limit).
 pValue: The value.
 
 Returns: 0, or a negative error (an unknown name included).
@@ -747,7 +807,11 @@ pRequest: A request handle.
 pName: state (0 new, 1 running, 2 ended), result (0 = success, a libcurl
 error number, 1000 = cancelled, -1 while running), responseCode, bytesDown,
 bytesUp, lengthDown and lengthUp (-1 = not known), totalTime (seconds),
-redirectCount, bodySize, cancelled (0 or 1).
+redirectCount, bodySize, cancelled (0 or 1). For a WebSocket also wsState
+(1 connecting, 2 open, 3 closing, 4 closed; 0 = not a WebSocket),
+wsMessages (messages waiting to be read), wsNextType (1 text, 2 binary,
+0 = none waiting), wsNextSize (bytes), wsCloseCode, wsQueuedBytes (sent
+by script, not yet on the wire), wsPongs (pongs received).
 
 Returns: The number, or -1 for a stale handle or an unknown name.
 
@@ -766,7 +830,7 @@ Summary: A piece of text about a request.
 
 pRequest: A request handle.
 pName: headers (the final response's header block), error, effectiveUrl,
-contentType, method.
+contentType, method, wsCloseReason (the reason a WebSocket's close gave).
 
 Returns: The text, decoded from UTF-8, or empty.
 
@@ -846,6 +910,273 @@ public handler cuLiveCount() returns Integer
    variable tR as Integer
    unsafe
       put _cux_live_count() into tR
+   end unsafe
+   return tR
+end handler
+
+-- ===================================================================== --
+--  Public API: WebSockets (ABI 2). Verified statically; needs an OXT pass.
+-- ===================================================================== --
+
+-- One message out: the bytes of pData as a frame of kind pKind.
+private handler _wsSend(in pSocket as Integer, in pKind as Integer, in pData as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the number of bytes in pData into tLen
+   if tLen is 0 then
+      _ensureScratch(kScratchCap)
+      unsafe
+         put _cux_ws_send(pSocket, pKind, sScratchPtr, 0) into tR
+      end unsafe
+      return tR
+   end if
+   unsafe
+      put MCDataGetBytePtr(pData) into tPtr
+      put _cux_ws_send(pSocket, pKind, tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Make a new WebSocket.
+
+pURL: The address, starting with ws:// or wss:// (wss is the secure kind).
+
+Returns: A socket handle, or 0 if it could not be made (see <cuLastError>).
+
+Example:
+put cuWsNew("wss://example.com/chat") into tSocket
+get cuSetHeader(tSocket, "Sec-WebSocket-Protocol: chat")
+get cuStart(tSocket)
+
+Description:
+A WebSocket is a request handle: set its headers with <cuSetHeader> and
+its options with <cuSetOption> and <cuSetTextOption> (caFile, proxy,
+verifyPeer, connectTimeout and the rest apply), then start it with
+<cuStart>. The timeout option is the longest the connection may take to
+open; it does not limit how long the socket then stays open. It connects
+while <cuWsPoll> or <cuPoll> is called, or under <cuWsWait>. Ask
+<cuInfo>(tSocket, "wsState") where it is: 1 connecting, 2 open,
+3 closing, 4 closed. Release it with <cuFree>.
+
+<cuPoll> never lists a WebSocket.
+
+References: cuStart (handler), cuWsSendText (handler), cuWsRead (handler), cuWsClose (handler), cuWsPoll (handler), cuFree (handler)
+*/
+public handler cuWsNew(in pURL as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_ws_new(pURL) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Send a text message on a WebSocket.
+
+pSocket: An open socket from <cuWsNew>.
+pText: The text. It is sent as UTF-8.
+
+Returns: 0, or a negative error: -4 when the socket is not open, or when
+the other side has stopped reading and too much is already waiting.
+
+Description:
+The whole message is taken at once. What the network does not accept
+straight away goes out as <cuWsPoll> runs; <cuInfo>(pSocket,
+"wsQueuedBytes") says how much is still waiting.
+
+References: cuWsSendData (handler), cuWsReadText (handler)
+*/
+public handler cuWsSendText(in pSocket as Integer, in pText as String) returns Integer
+   variable tData as Data
+   variable tOk as Boolean
+   put the empty data into tData
+   put false into tOk
+   unsafe
+      put MCStringEncode(pText, kEncodingUtf8, false, tData) into tOk
+   end unsafe
+   if not tOk then
+      return -3
+   end if
+   return _wsSend(pSocket, kWsKindText, tData)
+end handler
+
+/**
+Summary: Send a binary message on a WebSocket.
+
+pSocket: An open socket from <cuWsNew>.
+pData: The bytes.
+
+Returns: 0, or a negative error, as for <cuWsSendText>.
+
+References: cuWsSendText (handler), cuWsRead (handler)
+*/
+public handler cuWsSendData(in pSocket as Integer, in pData as Data) returns Integer
+   return _wsSend(pSocket, kWsKindBinary, pData)
+end handler
+
+/**
+Summary: Send a ping on a WebSocket, to check the other side is there.
+
+pSocket: An open socket from <cuWsNew>.
+pData: Up to 125 bytes to send with it, or empty.
+
+Returns: 0, or a negative error.
+
+Description:
+The other side answers a ping with a pong. <cuInfo>(pSocket, "wsPongs")
+counts the pongs received. Pings FROM the other side are answered for
+you.
+
+References: cuWsNew (handler), cuInfo (handler)
+*/
+public handler cuWsPing(in pSocket as Integer, in pData as Data) returns Integer
+   return _wsSend(pSocket, kWsKindPing, pData)
+end handler
+
+/**
+Summary: Close a WebSocket politely.
+
+pSocket: A socket from <cuWsNew>.
+pCode: The close code: 1000 for a normal close, 1001, a code of your own
+from 3000 to 4999, or 0 for none.
+pReason: A short reason (up to 123 bytes), or empty.
+
+Returns: 0, or a negative error.
+
+Description:
+The socket tells the other side it is closing (wsState 3) and is closed
+(wsState 4) when the other side answers, or when the wsCloseTimeout
+option runs out. Messages that arrive meanwhile can still be read.
+Closing a closed socket does nothing. To drop a socket at once, without
+telling the other side, use <cuCancel>.
+
+References: cuWsNew (handler), cuCancel (handler), cuFree (handler)
+*/
+public handler cuWsClose(in pSocket as Integer, in pCode as Integer, in pReason as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_ws_close(pSocket, pCode, pReason) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Take the next message a WebSocket received, as bytes.
+
+pSocket: A socket from <cuWsNew>.
+
+Returns: The bytes of the oldest waiting message, or empty.
+
+Description:
+A message can itself be empty, so ask <cuInfo>(pSocket, "wsMessages")
+how many are waiting before reading, and <cuInfo>(pSocket, "wsNextType")
+whether the next one is text (1) or binary (2). A message split into
+pieces on the way arrives here whole. Messages that arrived before a
+socket closed can be read after it.
+
+References: cuWsReadText (handler), cuWsPoll (handler), cuInfo (handler)
+*/
+public handler cuWsRead(in pSocket as Integer) returns Data
+   variable tSize as Number
+   variable tWaiting as Number
+   variable tCount as Integer
+   variable tPtr as Pointer
+   variable tOk as Boolean
+   variable tData as Data
+   unsafe
+      put _cux_info(pSocket, kInfoWsMessages) into tWaiting
+      put _cux_info(pSocket, kInfoWsNextSize) into tSize
+   end unsafe
+   if tWaiting < 1 then
+      return the empty data
+   end if
+   if tSize < 1 then
+      -- an empty message: take it off the queue
+      _ensureScratch(kScratchCap)
+      unsafe
+         put _cux_ws_read(pSocket, sScratchPtr, sScratchCap) into tCount
+      end unsafe
+      return the empty data
+   end if
+   -- A block of its own, freed before returning (as cuBody does).
+   put false into tOk
+   unsafe
+      put MCMemoryAllocate(tSize, tPtr) into tOk
+   end unsafe
+   if not tOk then
+      throw "curlxt: failed to allocate a buffer for the WebSocket message."
+   end if
+   unsafe
+      put _cux_ws_read(pSocket, tPtr, tSize) into tCount
+   end unsafe
+   put _bufToData(tPtr, tCount) into tData
+   unsafe
+      MCMemoryDeallocate(tPtr)
+   end unsafe
+   return tData
+end handler
+
+/**
+Summary: Take the next message a WebSocket received, as text.
+
+pSocket: A socket from <cuWsNew>.
+
+Returns: The oldest waiting message, decoded from UTF-8, or empty.
+
+Description:
+Use it for text messages (wsNextType 1); read a binary one with
+<cuWsRead>.
+
+References: cuWsRead (handler), cuWsSendText (handler)
+*/
+public handler cuWsReadText(in pSocket as Integer) returns String
+   return _decodeUtf8(cuWsRead(pSocket))
+end handler
+
+/**
+Summary: Move every WebSocket (and every request) along.
+
+Returns: How many received messages are waiting to be read, over every
+socket, or a negative error.
+
+Description:
+Call <cuWsPoll> on a timer while a socket is in use: nothing is sent or
+received between calls. Unlike <cuPoll> it reports no finished requests
+and takes none off <cuPoll>'s list, so it is safe to call beside the
+curlHelpers or tsNet libraries. The curlHelpers library (cuWsOpen) runs
+the timer for you.
+
+References: cuPoll (handler), cuWsWait (handler)
+*/
+public handler cuWsPoll() returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_ws_poll() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Wait until something happens on a WebSocket.
+
+pSocket: A started socket from <cuWsNew>.
+pTimeoutMs: The longest to wait, in milliseconds; -1 waits without limit.
+
+Returns: 1 when a message is waiting, the socket has closed, or a
+connecting socket has opened; 0 when the wait ran out; or a negative
+error.
+
+Description:
+The script pauses while it waits. Other sockets and requests move too.
+
+References: cuWsPoll (handler), cuWsRead (handler)
+*/
+public handler cuWsWait(in pSocket as Integer, in pTimeoutMs as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cux_ws_wait(pSocket, pTimeoutMs) into tR
    end unsafe
    return tR
 end handler

@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **curlxt** binds libcurl 8.22.0 (with libssh2 1.11.1 for SFTP/SCP) for OXT: libcurl and
 libssh2 (static, PIC, FetchContent from pinned release tarballs with SHA256) -> the C++ shim
-`src/curl_shim.cpp` (exports `cux_*`, **ABI 1**: `CUX_ABI_VERSION` in `src/cux_abi.h` equals
+`src/curl_shim.cpp` (exports `cux_*`, **ABI 2**: `CUX_ABI_VERSION` in `src/cux_abi.h` equals
 `kABIVersion` in `src/curl.lcb`) -> ONE library `curlxt.{so,dll,dylib}` (bare token) -> the
 LCB binding `src/curl.lcb` (`org.openxtalk.library.curl`, public `cu*`) -> the helpers
 `src/curl-helpers.livecodescript` (stack `curlHelpers`, public `cu*`) -> the tsNet calls
@@ -77,6 +77,28 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   link a pinned static OpenSSL 3.5.9 (no `libssl.so.3` needed); 32-bit Linux links the
   system's, as datachannelxt does; Windows uses Schannel and the static CRT (`/MT`), so
   `curlxt.dll` needs no Visual C++ Redistributable.
+- **WebSockets (ABI 2, 2026-11-20)** use libcurl's own support, no new library. A socket is a
+  Request made by `cux_ws_new` (`CURLOPT_CONNECT_ONLY` 2): the multi handle drives the upgrade,
+  and the handle then STAYS in the multi handle (libcurl's rule for a connect-only handle in
+  use) while `ws_service`, called by `pump()` for every live socket, writes the send queue with
+  `curl_ws_send` and reads whole messages with `curl_ws_recv`. What holds it together:
+  - **A socket is never listed by `cux_poll`** (`quiet` from birth): that list is consumed by
+    its reader, so a handle the helpers' timer does not know would be lost. State is read
+    (`wsState`), and `cux_ws_poll` pumps without consuming the list. `cux_wait` refuses a socket.
+  - **Whole messages only.** Fragments are reassembled; a message crosses into script once
+    (`cux_ws_read`, into a block of its exact size, like `cux_body`).
+  - **Both queues are bounded.** Reading stops at 4 MiB (or 4096 messages) unread, so TCP slows
+    the peer; `cux_ws_send` refuses past 16 MiB unsent. `maxBodyBytes` caps one message (close
+    1009, result 23).
+  - **Three things libcurl 8.22 does not do, done in the shim, each measured:** it holds its
+    automatic pong until the next frame (so `CURLWS_NOAUTOPONG`, and `ws_service` answers pings,
+    after the frame at the head of the queue, never inside it); it does not answer a close
+    (`ws_got_close` echoes it); and it applies no timeout to the wait for the upgrade's answer
+    (`timeout` and `connectTimeout` are kept on the shim's own clock, and `timeout` is never
+    given to libcurl for a socket: it bounds the opening, not the socket's life).
+  - **`closed` is one state for every ending**, told apart by `result` (0 a close, a CURLcode a
+    failure, 1000 cancelled) and `wsCloseCode` (the peer's, 1005 none, 1006 no close frame,
+    0 never opened). The helpers send "open" only to a socket whose upgrade answered 101.
 - **Only `cux_*` is exported**: `src/curlxt.map` for GNU ld and a derived
   `-exported_symbols_list` for ld64.
 
@@ -89,3 +111,9 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    `check-script-vectors.py` models `@` only for the calls it makes itself.
 3. **`return X for error` does not put a reason in `the result` as text**; the helpers keep the
    last reason in `cuHelpersError()` instead.
+4. **No handler-shaped line inside a `/** */` block** (a precaution, not a measured failure):
+   an example line starting `on name ...` at column 0 could be read as a handler by a tool
+   that splits a script by handlers. Describe the handler in a sentence, as `cuRequestAsync`'s
+   block does; the README can show it in full.
+5. **The WebSocket test servers answer ANY request with an upgrade.** Point an ordinary request
+   at the HTTP server (`base`), never at the WebSocket one.

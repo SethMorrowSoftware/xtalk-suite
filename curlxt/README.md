@@ -1,7 +1,7 @@
 # curlxt
 
-**libcurl - HTTP(S), FTP(S), SFTP, SCP and SMTP(S) - for OpenXTalk / the xTalk family, with
-the tsNet calls for stacks written for LiveCode's tsNet external.**
+**libcurl - HTTP(S), FTP(S), SFTP, SCP, SMTP(S) and WebSockets - for OpenXTalk / the xTalk
+family, with the tsNet calls for stacks written for LiveCode's tsNet external.**
 
 LiveCode Indy and Business shipped tsNet, a closed-source libcurl external, from 8.1 onward.
 Community never had it, so OpenXTalk never had it either: a stack that calls `tsNetGet` or
@@ -12,7 +12,7 @@ library over the engine's sockets (HTTP/1.1 and FTP, no SFTP, no SMTP). curlxt b
 
 ```
 libcurl 8.22.0 + libssh2 1.11.1 (static)       the transfers
-   |- C++ shim   src/curl_shim.cpp  ->  curlxt.{so,dll,dylib}     (ABI: cux_*, v1)
+   |- C++ shim   src/curl_shim.cpp  ->  curlxt.{so,dll,dylib}     (ABI: cux_*, v2)
         |- LCB binding  src/curl.lcb        (org.openxtalk.library.curl; public cu*)
              |- src/curl-helpers.livecodescript   (the pump and everyday calls; cu*)
                   |- src/tsnet.livecodescript     (the tsNet calls, by name; tsNet*)
@@ -39,9 +39,16 @@ handler: `get url`, `put ... into url` and `load url` behave exactly as they did
   request ends (`cuRequestAsync`).
 - **Large transfers stay native.** `outputFile` downloads straight to a file and
   `inputFile` uploads straight from one, so the bytes never cross into script.
-- **Protocols:** http, https, ftp, ftps, sftp, scp, smtp, smtps (ws/wss are built in for a
-  later API). Every other libcurl protocol is compiled out and refused at run time, so a
-  redirect cannot reach `file://`.
+- **WebSockets (`ws://` and `wss://`), since 2026-11-20.** A socket is a request handle too:
+  `cuWsNew`, the same headers and options (a subprotocol, a token, `caFile`, a proxy),
+  `cuStart`. Then `cuWsSendText` / `cuWsSendData` and `cuWsReadText` / `cuWsRead`, whole
+  messages both ways (fragments are put back together, pings are answered), and `cuWsClose`
+  for the polite ending. The helpers' `cuWsOpen` runs it on the timer and sends your handler
+  "open", "text", "binary" and "closed". It uses libcurl's own WebSocket support: no new
+  library.
+- **Protocols:** http, https, ftp, ftps, sftp, scp, smtp, smtps, ws, wss. Every other
+  libcurl protocol is compiled out and refused at run time, so a redirect cannot reach
+  `file://`.
 - **The family's rules.** No thread of its own and no callback into script (rule 1), an
   exception firewall on every export (rule 2), large payloads kept native (rule 3),
   generation-tagged handles (rule 4).
@@ -62,6 +69,26 @@ on pageArrived pRequest
 end pageArrived
 ```
 
+A WebSocket, with the helpers running the timer:
+
+```livecodescript
+put cuWsOpen("wss://example.com/chat", empty, empty, the long id of me, "chatEvent") into sSocket
+
+on chatEvent pSocket, pWhat, pValue
+   switch pWhat
+      case "open"
+         get cuWsSendText(pSocket, "hello")
+         break
+      case "text"
+         put pValue & return after field "Log"
+         break
+      case "closed"                          -- always arrives, once; pValue is the close code
+         get cuFree(pSocket)
+         break
+   end switch
+end chatEvent
+```
+
 And a tsNet-era script runs as written once the tsNet library is in use:
 
 ```livecodescript
@@ -73,11 +100,21 @@ if tData begins with "tsneterr:" then answer tData
 
 ## Status
 
-The shim and its smoke test are verified natively (the whole exported surface against a
-loopback HTTP server, clean under ASan/UBSan). The helpers and the tsNet layer RUN headlessly
-over the built library against loopback HTTP and SMTP servers (`tools/check-script-vectors.py`,
+The shim and its smoke test are verified natively (the whole exported surface against loopback
+HTTP and WebSocket servers, clean under ASan/UBSan). The helpers and the tsNet layer RUN headlessly
+over the built library against loopback HTTP, SMTP and WebSocket servers (`tools/check-script-vectors.py`,
 on the family's interpreter). The binaries for all six platforms come from the suite's
 release-binaries dispatch (2026-11-14, rebuilt 2026-11-15 with the file-download fixes).
+
+**WebSockets (2026-11-20, ABI 2).** Added on libcurl's own WebSocket support, as new handlers
+only: every handler, option, number and result that existed before is as it was, `cuPoll` never
+lists a socket, and a stack that opens none sees no difference. The smoke test drives the six new
+exports against a WebSocket server it runs itself (clean under ASan/UBSan), and the helpers' calls
+run headlessly over the built library against `ws://` and, with a certificate made for the run,
+`wss://` servers. No engine has opened a socket yet: verified statically; needs an OXT pass. The
+ABI number moved from 1 to 2, so the `.lcb` and the native library must come from the same build,
+as always. There is no web (Emscripten) build of curlxt, so none of this reaches an HTML5
+standalone; a browser has its own WebSocket.
 
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
