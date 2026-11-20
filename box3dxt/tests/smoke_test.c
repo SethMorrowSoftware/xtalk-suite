@@ -1940,6 +1940,31 @@ static void test_model(void)
     b3x_world_destroy(w);
 }
 
+/* ------------------------------------------------------------------ */
+/* What b3x_last_error promises, pinned after the first IDE run (2026-11-20)
+ * read the docs as promising more: a refused CREATE sets it, dead handle
+ * included; a create that works clears it; a getter or an action handed a
+ * dead handle is silent and leaves it as it was. */
+static void test_last_error(void)
+{
+    int w = b3x_world_create(0, -10, 0, 1);
+    int b = b3x_body_create(w, 2, 0, 1, 0);
+    CHECK(b > 0 && b3x_last_error()[0] == 0, "a create that works leaves no error");
+    CHECK(b3x_shape_add_sphere(b, 0, 0, 0, 0.0, 1, 0.5, 0) == 0 && b3x_last_error()[0] != 0, "a refused create says why: %s", b3x_last_error());
+    char kept[160];
+    snprintf(kept, sizeof kept, "%s", b3x_last_error());
+    b3x_body_destroy(b);
+    CHECK(b3x_body_position(b)[0] == 0 && b3x_body_y(b) == 0.0 && strcmp(b3x_last_error(), kept) == 0, "a getter on a dead body is silent: '%s'", b3x_last_error());
+    b3x_body_set_position(b, 1, 2, 3);
+    b3x_world_step(0, 1.0 / 60.0, 4);
+    CHECK(strcmp(b3x_last_error(), kept) == 0, "an action on a dead handle is silent: '%s'", b3x_last_error());
+    CHECK(b3x_shape_add_sphere(b, 0, 0, 0, 0.5, 1, 0.5, 0) == 0 && strcmp(b3x_last_error(), "not a body") == 0, "a create on a dead body says so: '%s'", b3x_last_error());
+    CHECK(b3x_body_create(0, 2, 0, 0, 0) == 0 && strcmp(b3x_last_error(), "not a world") == 0, "a create in no world says so: '%s'", b3x_last_error());
+    int again = b3x_body_create(w, 2, 0, 1, 0);
+    CHECK(again > 0 && b3x_last_error()[0] == 0, "the next create that works clears it");
+    b3x_world_destroy(w);
+}
+
 int main(void)
 {
     test_library();
@@ -1953,6 +1978,7 @@ int main(void)
     test_locale();
     test_stress();
     test_model();
+    test_last_error();
     CHECK(b3x_text_length("") == 0 && b3x_text_length(NULL) == 0 && b3x_text_length(b3x_library_version()) == (int)strlen(b3x_library_version()),
           "the text length the binding copies by");
     int assertsElsewhere = b3x_assert_count();
