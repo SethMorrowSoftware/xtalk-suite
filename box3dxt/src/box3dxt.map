@@ -1,0 +1,15 @@
+/* box3dxt.map - the linker version script for the shipped shared library.
+ *
+ * box3dxt statically links Box3D. Box3D compiles with hidden visibility, so
+ * its b3* functions would not be exported anyway; this script makes that a
+ * decision instead of a default (the enetxt lesson, release run 10,
+ * 2026-08-26: a vendored library's symbols leaked from a dylib and could
+ * interpose on another extension's copy). It keeps only b3x_*, which is all
+ * the .lcb binds by name; CMakeLists.txt gives ld64 the same pattern.
+ */
+{
+    global:
+        b3x_*;
+    local:
+        *;
+};

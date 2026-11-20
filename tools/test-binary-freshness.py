@@ -1093,6 +1093,27 @@ def main():
         check(not any(rel in s for s in abi_skips),
               f"{rel}: decoded here, but the gate SKIPs its ABI pin")
 
+    # The not-yet-shipped allowance (2026-11-20) is the EMPTY row over an
+    # EMPTY tree and nothing wider: a member that ships libraries, handed an
+    # emptied `ships` row, must still fail for every platform it gained and
+    # must never be excused as "ships no library yet".
+    shipping = next(m for m in GATE.MEMBERS if m["ships"])
+    emptied = dict(shipping, ships=[])
+    problems, skips, notes = [], [], []
+    stats = {"libs": 0, "binds": 0, "distinct": 0, "abi": 0, "confirmed": 0,
+             "mac": 0, "guarded": 0}
+    was_installing, GATE.INSTALLING = GATE.INSTALLING, False
+    try:
+        GATE.check_member(emptied, problems, skips, notes, stats)
+    finally:
+        GATE.INSTALLING = was_installing
+    check(any("row does not declare" in p for p in problems),
+          f"{shipping['name']} with an emptied `ships` row was not refused "
+          f"for the libraries it holds: {problems[:2]}")
+    check(not any("ships no library yet" in s for s in skips),
+          f"{shipping['name']} holds libraries and was excused as not yet "
+          f"shipping: {[s for s in skips if 'ships no library' in s]}")
+
     # A guarded DLL whose value disagrees with its header is a FAILURE.
     if guarded_live:
         member, plat, path, code_at, value = guarded_live[0]

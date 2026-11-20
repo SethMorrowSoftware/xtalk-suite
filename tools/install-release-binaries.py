@@ -129,8 +129,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # CURLXT JOINED 2026-11-14 with its release-binaries.yml rows in the same
 # change, and with no library committed: its first dispatch CREATES its
 # src/code/MANIFEST.sha256 entries through the leg below.
+#
+# BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
+# library committed, its manifest created by its first dispatch.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt")
+           "curlxt", "box3dxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 

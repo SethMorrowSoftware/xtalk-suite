@@ -357,6 +357,26 @@ MEMBERS = [
         },
     },
     {
+        "name": "box3dxt",
+        "lib": "box3dxt",
+        "lcb": ["box3dxt/src/box3dxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands box3dxt's
+        # libraries (joined 2026-11-20 with none committed): that run's
+        # --installing tolerates each gained platform, and the change after it
+        # lists them here, exactly as this row's gained-platform failure says.
+        "ships": [],
+        "shim": "box3dxt/src/box3d_shim.c",
+        "prefix": "b3x_",
+        # Like box2dxt, the ABI define lives in the shim itself.
+        "abi_header": "box3dxt/src/box3d_shim.c",
+        "abi_define": "B3X_ABI_VERSION",
+        "abi_symbol": "b3x_abi_version",
+        # src/box3dxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export b3x_* and nothing else; Box3D is linked in with
+        # hidden visibility (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],
@@ -2599,7 +2619,17 @@ def check_member(member, problems, skips, notes, stats):
                 f"tolerates exactly this state for the one run that creates "
                 f"it.)")
 
-    if checked_here == 0:
+    if checked_here == 0 and not member["ships"] and not found:
+        # A member that has JOINED AND NOT YET SHIPPED (box3dxt, 2026-11-20;
+        # curlxt for its first hours): its row declares no platform and the
+        # tree holds no library, so there is nothing a check could have read.
+        # That is a stated state, not a vacuous pass - and it cannot hide a
+        # loss, because the first library to land makes `found` non-empty and
+        # the gained-platform failure above then demands its `ships` entry.
+        # Said out loud so the row never reads as covered.
+        skips.append(f"{name}: ships no library yet (its `ships` row is "
+                     f"empty and src/code/ holds none) - nothing to check")
+    elif checked_here == 0:
         problems.append(f"{name}: no committed library was actually checked - "
                         f"this member's row is passing vacuously")
 
