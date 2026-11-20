@@ -17,9 +17,32 @@ slice of time, and read back where everything is. This page is what to know befo
   locale. `b3BodyX`, `b3BodyY` and `b3BodyZ` exist for when one number is all you want.
 - **Every parameter is typed.** A number parameter must be given a number: empty is an
   engine error at the call, before box3dxt sees it. Pass 0, not empty.
-- **Nothing throws.** A call with a bad argument does nothing, returns 0 or empty, and
-  `b3LastError()` says why. The one exception is a native library from a different release
-  than the binding: the first call throws and names the ABI it needs.
+- **Nothing throws.** A call the library refuses does nothing and returns 0 or empty. A
+  CREATE that is refused (a world, body, shape or joint: a size out of range, a body too
+  heavy, a dead handle to build on) leaves the reason in `b3LastError()`, and a create that
+  succeeds clears it. A getter or an action given a dead handle is refused silently: it
+  answers 0 or empty and `b3LastError()` keeps whatever it held (observed 2026-11-20). So
+  read `b3LastError()` straight after the create you are asking about, and ask
+  `b3BodyIsValid` (or the world, shape or joint form) about a handle. The one exception to
+  "nothing throws" is a native library from a different release than the binding: the
+  first call throws and names the ABI it needs.
+
+## Trying a built library in the IDE without installing it
+
+An installed extension needs none of this: the IDE maps its library itself. To try a library
+you have just built, compile the binding, put the library beside it under
+`code/<platform id>/`, and say three lines in the Message Box (the paths are examples):
+
+```
+load extension from file "/home/me/b3/module.lcm" with resource path "/home/me/b3"
+set the revLibraryMapping["box3dxt"] to "/home/me/b3/code/x86_64-linux/box3dxt"
+put b3LibraryVersion()
+```
+
+The second line is the one that is easy to miss. Without it the module loads and the first
+`b3` call fails with `unable to load foreign library 'box3dxt'`: `load extension` alone does
+not tell the engine where the library is (observed on OXT-Beyond's Linux IDE, 2026-11-20).
+The mapping is the library's path WITHOUT its extension, and it lasts until the IDE quits.
 
 ## A frame loop
 
