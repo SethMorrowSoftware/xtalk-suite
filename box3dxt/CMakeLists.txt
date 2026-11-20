@@ -97,6 +97,14 @@ if(TARGET box3d)
     set_target_properties(box3d PROPERTIES COMPILE_WARNING_AS_ERROR OFF)
 endif()
 
+# 32-bit MSVC lacks two 64-bit intrinsics Box3D calls under _MSC_VER; the
+# header supplies them (src/box3d_msvc32.h says why and how). Forced into
+# Box3D's sources only, and only for that compiler.
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4 AND TARGET box3d)
+    target_compile_options(box3d PRIVATE
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/box3d_msvc32.h")
+endif()
+
 # Under the sanitizers, Box3D alone is excused UBSan's ALIGNMENT check, and
 # nothing else. Its SSE2 loader reads three floats with _mm_load_sd through a
 # float pointer (simd_sse2.h b3LoadV, met from b3QueryMesh on 2026-11-20): a
