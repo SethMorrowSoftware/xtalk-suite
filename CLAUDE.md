@@ -9,14 +9,16 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Thirteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Fourteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
-  calls by name over it; joined 2026-11-14) and box3dxt (Box3D, 3D rigid-body physics; joined
-  2026-11-20 with no committed library yet).
+  calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics; joined
+  2026-11-20 with no committed library yet) and audioxt (miniaudio: mixing, streaming, 3D sound
+  and microphone capture, beside the engine's own `play`; joined 2026-11-20, no committed
+  library yet).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -325,7 +327,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

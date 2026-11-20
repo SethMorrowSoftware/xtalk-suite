@@ -854,6 +854,36 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
+### 2.11 audioxt
+
+- Joined 2026-11-20: miniaudio 0.11.26 (one header, fetched at a commit and held to a
+  SHA-256) behind the `aux_*` C shim (ABI 1) and the `au*` binding, whose names are
+  mechanical. Additive: the engine's `play` and player object are untouched. Records: the
+  shim's smoke test and random-call test, clean under ASan/UBSan and TSan, also as
+  WebAssembly under node; `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server
+  engine over a locally built library (2026-11-20), through miniaudio's silent device; and
+  the web archive playing and recording in headless Chromium (`tests/web/`, the same day).
+  Its native lane repeats all three on every change. No machine with a sound card and no
+  desktop IDE has run it, and nobody has heard it: for everything beyond those runs it is
+  verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt audioxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: audioxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass, with ears: install the extension, `auLibraryVersion()`, the README's music-and-click stack, a tone, a clone played several times at once, and a microphone recorded to a WAV and played back, on Windows, Linux and a Mac | S1, after #1 | - | each is HEARD and answers as `audioxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | a tone is heard in the web IDE after one click |
+| 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
+| 7 | A demo stack in the kit's look: a small mixer with a level meter, a beat on the sample clock and a voice memo | coding | - | a paste-and-run example in `audioxt/examples/` |
+| 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
+| 9 | The suite board at row pitch 27: fifteen rows clear the members caption by two pixels | S1 | 48 | the rows do not touch on an engine |
+
 ---
 
 ## 3. The apps

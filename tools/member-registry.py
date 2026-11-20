@@ -78,7 +78,7 @@ class Member(object):
         return os.path.join(ROOT, self.name)
 
 
-# The order is the order every generated document lists them in: the ten
+# The order is the order every generated document lists them in: the eleven
 # extensions first (native before pure-script, as the root README's table
 # has them), then the three apps.
 MEMBERS = [
@@ -122,6 +122,11 @@ MEMBERS = [
            # Its gates read its own files only: no sibling beside it.
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository is "
+                       "created empty for the suite to publish into"),
+    Member("audioxt", "audioxt", "extension", OWNER + "/audioxt",
+           # Its gates read its own files only: no sibling beside it.
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
                        "created empty for the suite to publish into"),
     Member("coinxt", "CoinXT", "extension", OWNER + "/CoinXT",
            native=True,

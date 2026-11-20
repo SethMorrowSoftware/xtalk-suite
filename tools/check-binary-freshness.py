@@ -377,6 +377,25 @@ MEMBERS = [
         "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
+        "name": "audioxt",
+        "lib": "audioxt",
+        "lcb": ["audioxt/src/audioxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands audioxt's
+        # libraries (joined 2026-11-20 with none committed), as box3dxt's
+        # row above was.
+        "ships": [],
+        "shim": "audioxt/src/audio_shim.c",
+        "prefix": "aux_",
+        "abi_header": "audioxt/src/audio_shim.c",
+        "abi_define": "AUX_ABI_VERSION",
+        "abi_symbol": "aux_abi_version",
+        # src/audioxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export aux_* and nothing else; miniaudio is compiled into
+        # the shim's one translation unit with hidden visibility (measured
+        # on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],
