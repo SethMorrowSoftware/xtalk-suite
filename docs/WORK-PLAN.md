@@ -852,7 +852,45 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
+| 7 | The suite board at its new row pitch (27 since render3dxt joined the same day; 29 for some hours before): fifteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
+
+### 2.11 render3dxt
+
+- Joined 2026-11-20, beside box3dxt: a software 3D renderer of this suite's own (textured,
+  lit, multi-threaded) behind the `r3x_*` C shim (ABI 1) and the `r3*` binding, whose names
+  are mechanical; stb_image and fast_obj are compiled in at pinned commits. Records: the
+  shim's smoke test (pictures checked by reading pixels back) and random-call test, clean
+  under ASan/UBSan and under TSan, also as a 32-bit build and as WebAssembly under node; and
+  three tests on OXT-Beyond's headless Linux server engine over locally built libraries
+  (2026-11-20), which its native lane repeats on every change: the binding alone
+  (`tests/engine-selftest.lc`), a Box3D simulation drawn with box3dxt beside it
+  (`tests/engine-interop.lc`), and its demo stack opened and driven by message
+  (`tests/engine-demo.lc`). No desktop IDE has loaded it and no picture of it has been seen
+  on a screen through an engine: beyond those server runs it is verified statically; needs
+  an OXT pass.
+- The contract with box3dxt (world, transform text, move lines, camera text, picture
+  coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
+  smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
+  test, so a box3dxt change to one of those texts shows red in render3dxt's lane only when
+  render3dxt next changes (#7).
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/render3dxt` was created empty by the owner on 2026-11-20;
+  a publish-members run adopts it (`--adopt render3dxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows; on Windows, Linux and a Mac | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
+| 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
+| 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's render3dxt row has a pill and a Run |
+| 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
+| 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
+| 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
+| 10 | The suite board at row pitch 27: fifteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
 ---
 

@@ -62,6 +62,10 @@ ADOPTERS = [
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
+    # render3dxt's Box3D-driven picture (2026-11-20): the kit's chrome round
+    # one image the stack itself builds
+    os.path.join("render3dxt", "examples",
+                 "render3d-physics-demo.livecodescript"),
     # the suite paste's hand-written half: it wears the demos' look since D-23
     # (2026-09-24) and keeps the harness scaffold for its report plumbing
     os.path.join("tests", "suite-selftest.core.livecodescript"),

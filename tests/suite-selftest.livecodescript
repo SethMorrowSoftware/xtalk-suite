@@ -280,24 +280,27 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-14b8fb61c1f6"
+constant kSuUiVersion = "suite-board-d9b8b974327c"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,coinxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,CoinXT,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,render3dxt,coinxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,render3dxt,CoinXT,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a row with a caption, and no pill or Run.
-constant kSuNoHarness = "box3dxt,curlxt,nocloud"
+constant kSuNoHarness = "box3dxt,curlxt,nocloud,render3dxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
 -- next row's (+36), and the last row ends at 538. box3dxt made the fourteenth
 -- (2026-11-20): at 31 its last row ended at 569, past the caption; at 29 a
 -- row's controls still clear the next row's (+34), and the last row ends at
--- 543. Verified statically; the board at this pitch needs an OXT pass.
+-- 543. render3dxt made the fifteenth the same day: at 29 its last row ended
+-- at 572, past the caption again; at 27 a row's controls still clear the
+-- next row's (+32), and the last row ends at 544. Verified statically; the
+-- board at this pitch needs an OXT pass.
 constant kSuRowTop = 136
-constant kSuRowStep = 29
+constant kSuRowStep = 27
 -- Every control this script names, DERIVED by tools/check-demo-control-lists.py
 -- (--write regenerates it; the gate fails a stale copy). The boot self-check
 -- asserts each one exists.

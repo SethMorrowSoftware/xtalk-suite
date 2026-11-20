@@ -201,6 +201,11 @@ NO_HARNESS = {
                "its native smoke and fuzz tests (ASan/UBSan) and its own "
                "engine self-test on the headless server engine run in its "
                "native lane (box3dxt/tests/engine-selftest.lc)",
+    "render3dxt": "joined 2026-11-20 with no in-engine harness in the paste "
+                  "yet; its native smoke and fuzz tests (ASan/UBSan, TSan) "
+                  "and its two engine tests on the headless server engine "
+                  "run in its native lane "
+                  "(render3dxt/tests/engine-selftest.lc, engine-interop.lc)",
     "curlxt": "joined 2026-11-14 with no in-engine harness yet; its native "
               "smoke test (90 checks, ASan/UBSan) and a headless run of both "
               "script layers over the built library against loopback HTTP "

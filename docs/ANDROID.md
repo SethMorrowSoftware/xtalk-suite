@@ -24,7 +24,10 @@ on Android has loaded any of the twenty-eight.**
 **box3dxt joined on 2026-11-20**, after both runs: `tools/build-android.sh` names it as an eighth
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change, and none of its Android libraries
-is committed yet. The counts in this page's dated records are of the seven members of those runs.
+is committed yet. **render3dxt joined the same day** as a ninth, the same way
+(`native-render3dxt.yml`); its tests carry their model and picture files inside them, so they
+run from the folder the emulator is handed. The counts in this page's dated records are of the
+seven members of those runs.
 So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
 The ARM libraries are: built and verified statically; needs an OXT pass on Android.
 
@@ -148,6 +151,7 @@ engine.
 | torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built and tested by its own lane, not yet by a release run; no library committed |
+| render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
 | nostrxt (script) | Pure script over coinxt and sodiumxt (both built for Android) and the engine's sockets. Its relay layer opens secure sockets, so an app needs the engine's SSL library in the package (the builder's `android,include revsecurity` setting) and the Internet permission ticked. Neither library file calls anything a desktop alone has (read 2026-11-18: no `shell`, no `open process`, no fixed path). | read, not run: verified statically; needs an OXT pass on Android |

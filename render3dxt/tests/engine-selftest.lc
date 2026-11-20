@@ -1,0 +1,485 @@
+<?lc
+-- engine-selftest.lc - render3dxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   render3dxt.lcm, compiled from src/render3dxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../render3dxt for .../render3dxt.so)
+--   run from the member root: the model and picture files are tests/assets/.
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int, a
+-- C string as text, text and bytes going IN, and the picture coming OUT as
+-- binary data a script can set as imageData), and that a scene built from
+-- SCRIPT draws. Two halves:
+--
+--   the SCENES, written by hand;
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros and
+--     empties. Those are safe by the binding's contract (a 0 handle is a
+--     no-op), so a call that throws or kills the engine here is a binding
+--     that does not match its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web. It runs the Linux x86-64 library on the Linux x86-64 server engine.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=render3dxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- "r,g,b" of pixel pX,pY (from 0) of a picture pWidth wide
+function pixelOf pData, pWidth, pX, pY
+   local tAt
+   put (pY * pWidth + pX) * 4 into tAt
+   return byteToNum(byte tAt + 2 of pData) & comma & byteToNum(byte tAt + 3 of pData) & comma & byteToNum(byte tAt + 4 of pData)
+end pixelOf
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", r3ABIVersion() is 1, r3ABIVersion()
+   check "version text", r3LibraryVersion() begins with "render3dxt " and r3LibraryVersion() contains "ABI 1", r3LibraryVersion()
+   check "live counts are six items", the number of items of r3LiveCounts() is 6, r3LiveCounts()
+   r3SetThreadCount 2
+   check "thread count", r3ThreadCount() is 2, r3ThreadCount()
+end testLibrary
+
+command testPicture
+   local tScene, tData, tBox, tNode, tRed
+   put r3SceneCreate() into tScene
+   check "scene created", tScene > 0 and r3SceneIsValid(tScene) is true, tScene && r3LastError()
+   check "camera text", r3SceneCamera(tScene) is "0,2,8,0,0,0,50", r3SceneCamera(tScene)
+   put r3SceneRender(tScene, 64, 48) into tData
+   check "the picture is width * height * 4 bytes", the number of bytes of tData is 64 * 48 * 4, the number of bytes of tData
+   check "the frame length agrees", r3SceneFrameLength(tScene) is 64 * 48 * 4, r3SceneFrameLength(tScene)
+   check "byte 1 of a pixel is 0 (imageData)", byteToNum(byte 1 of tData) is 0, byteToNum(byte 1 of tData)
+   check "an empty scene is background", pixelOf(tData, 64, 32, 24) is "31,33,41", pixelOf(tData, 64, 32, 24)
+   check "the last picture again", r3SceneFrame(tScene) is tData, the number of bytes of r3SceneFrame(tScene)
+
+   put r3MeshBox(0.5, 0.5, 0.5) into tBox
+   put r3MaterialCreate(255, 0, 0) into tRed
+   r3MaterialSetUnlit tRed, true
+   check "Boolean in, Boolean out (true)", r3MaterialIsUnlit(tRed) is true, r3MaterialIsUnlit(tRed)
+   put r3NodeCreate(tScene, tBox) into tNode
+   r3NodeSetMaterial tNode, tRed
+   r3SceneSetCamera tScene, 0, 0, 5, 0, 0, 0, 50
+   put r3SceneRender(tScene, 64, 48) into tData
+   check "a red box at the centre", pixelOf(tData, 64, 32, 24) is "255,0,0", pixelOf(tData, 64, 32, 24)
+   check "background at the corner", pixelOf(tData, 64, 1, 1) is "31,33,41", pixelOf(tData, 64, 1, 1)
+   check "stats are three items", the number of items of r3SceneStats(tScene) is 3 and item 1 of r3SceneStats(tScene) >= 2, r3SceneStats(tScene)
+   r3MaterialSetUnlit tRed, false
+   check "Boolean in, Boolean out (false)", r3MaterialIsUnlit(tRed) is false, r3MaterialIsUnlit(tRed)
+   put r3SceneRender(tScene, 64, 48) into tData
+   check "lit, it is a darker red", item 1 of pixelOf(tData, 64, 32, 24) < 255 and item 1 of pixelOf(tData, 64, 32, 24) > 60 \
+         and item 2 of pixelOf(tData, 64, 32, 24) is 0, pixelOf(tData, 64, 32, 24)
+
+   -- the camera contract shared with box3dxt
+   check "the target projects to the centre at its depth", r3SceneProject(tScene, 200, 100, 0, 0, 0) is "100,50,5", r3SceneProject(tScene, 200, 100, 0, 0, 0)
+   check "a ray is six items", the number of items of r3SceneRay(tScene, 200, 100, 100, 50) is 6 \
+         and near(item 6 of r3SceneRay(tScene, 200, 100, 100, 50), -1, 0.000001), r3SceneRay(tScene, 200, 100, 100, 50)
+   check "pick the box", r3ScenePick(tScene, 64, 48, 32, 24) is tNode, r3ScenePick(tScene, 64, 48, 32, 24)
+   check "hit text", near(item 4 of r3HitText(), 4.5, 0.0001) and near(item 3 of r3HitText(), 0.5, 0.0001), r3HitText()
+   check "pick nothing", r3ScenePick(tScene, 64, 48, 1, 1) is 0 and r3HitText() is empty, r3HitText()
+   r3SceneSetCameraText tScene, "0,10,0,0,0,0,60"
+   check "looking down, -z is up the picture", item 2 of r3SceneProject(tScene, 100, 100, 0, 0, -1) < 50, r3SceneProject(tScene, 100, 100, 0, 0, -1)
+
+   -- transforms as box3dxt gives them
+   r3NodeSetTransformText tNode, "1,2,3,0,0,0,1"
+   check "transform text in and out", r3NodeTransform(tNode) is "1,2,3,0,0,0,1", r3NodeTransform(tNode)
+   r3NodeSetTag tNode, 42
+   check "apply b3MovesText lines", r3SceneApplyMoves(tScene, "42,4,5,6,0,0,0,1,0" & return & "7,0,0,0,0,0,0,1,1") is 1 \
+         and r3NodePosition(tNode) is "4,5,6", r3NodePosition(tNode) && r3LastError()
+   check "a bad move line is refused by name", r3SceneApplyMoves(tScene, "42,x") is 0 and r3LastError() contains "line 1", r3LastError()
+
+   -- refusals: 0 or empty back, an explanation, no throw
+   check "a refused render is empty", r3SceneRender(tScene, 0, 48) is empty and r3LastError() is not empty, r3LastError()
+   check "a stale scene draws nothing", r3SceneRender(0, 8, 8) is empty and r3SceneFrame(0) is empty, r3LastError()
+   r3SceneDestroy tScene
+   check "the scene and its node are gone", r3SceneIsValid(tScene) is false and r3NodeIsValid(tNode) is false, r3LiveCounts()
+   r3MeshDestroy tBox
+   r3MaterialDestroy tRed
+end testPicture
+
+command testTexturesAndModels
+   local tScene, tTex, tData, tMat, tPlane, tNode, tImage, tCube, tPng, tObj, tMtl, tParsed
+   put r3SceneCreate() into tScene
+   r3SceneSetCamera tScene, 0, 10, 0, 0, 0, 0, 40
+   put r3MeshPlane(3, 3, 1, 1) into tPlane
+   put r3MaterialCreate(255, 255, 255) into tMat
+   r3MaterialSetUnlit tMat, true
+   put r3NodeCreate(tScene, tPlane) into tNode
+   r3NodeSetMaterial tNode, tMat
+
+   -- a file path IN (text), decoded natively
+   put r3TextureLoad("tests/assets/quadrants.png") into tTex
+   check "a PNG loaded by path", tTex > 0 and r3TextureWidth(tTex) is 4 and r3TextureHeight(tTex) is 4, tTex && r3LastError()
+   r3TextureSetSmooth tTex, false
+   r3MaterialSetTexture tMat, tTex
+   put r3SceneRender(tScene, 100, 100) into tData
+   check "its four quadrants, drawn", pixelOf(tData, 100, 35, 35) is "255,0,0" and pixelOf(tData, 100, 65, 35) is "0,255,0" \
+         and pixelOf(tData, 100, 35, 65) is "0,0,255" and pixelOf(tData, 100, 65, 65) is "255,255,255", \
+         pixelOf(tData, 100, 35, 35) && pixelOf(tData, 100, 65, 35) && pixelOf(tData, 100, 35, 65) && pixelOf(tData, 100, 65, 65)
+   check "a missing file is refused, not thrown", r3TextureLoad("tests/assets/none.png") is 0 and r3LastError() is not empty, r3LastError()
+
+   -- bytes IN: the file's contents as binary data
+   put url ("binfile:tests/assets/quadrants.png") into tPng
+   check "the test can read its asset", the number of bytes of tPng > 20, the result
+   check "a PNG decoded from bytes", r3TextureWidth(r3TextureDecode(tPng)) is 4, r3LastError()
+   check "bytes that are no picture are refused", r3TextureDecode("not a picture") is 0, r3LastError()
+
+   -- bytes IN: imageData made by script (0,R,G,B a pixel): blue then yellow
+   put numToByte(0) & numToByte(0) & numToByte(0) & numToByte(255) & numToByte(0) & numToByte(255) & numToByte(255) & numToByte(0) into tImage
+   put r3TextureFromImageData(tImage, 2, 1) into tTex
+   check "a texture from imageData", r3TextureWidth(tTex) is 2 and r3TextureHeight(tTex) is 1, r3LastError()
+   r3TextureSetSmooth tTex, false
+   r3MaterialSetTexture tMat, tTex
+   put r3SceneRender(tScene, 100, 100) into tData
+   check "imageData's byte order", pixelOf(tData, 100, 30, 50) is "0,0,255" and pixelOf(tData, 100, 70, 50) is "255,255,0", \
+         pixelOf(tData, 100, 30, 50) && pixelOf(tData, 100, 70, 50)
+   check "short imageData is refused", r3TextureFromImageData(tImage, 3, 1) is 0 and r3LastError() is not empty, r3LastError()
+   check "a checker", r3TextureWidth(r3TextureChecker(64, 8, 255, 255, 255, 0, 0, 0)) is 64, r3LastError()
+
+   -- a model file with its material file and texture
+   put r3MeshLoadObj("tests/assets/cube.obj") into tCube
+   check "an OBJ loaded by path", tCube > 0 and r3MeshTriangleCount(tCube) is 12 and r3MeshSlotCount(tCube) is 2, tCube && r3LastError()
+   check "its material names come back as text", r3MeshSlotName(tCube, 1) is "front" and r3MeshSlotTextureName(tCube, 1) is "quadrants.png", \
+         r3MeshSlotName(tCube, 1) && r3MeshSlotTextureName(tCube, 1)
+   check "its texture was loaded", r3MaterialTexture(r3MeshSlotMaterial(tCube, 1)) > 0, r3LastError()
+   check "its bounds", r3MeshBounds(tCube) is "-0.5,-0.5,-0.5,0.5,0.5,0.5", r3MeshBounds(tCube)
+   r3TextureSetSmooth r3MaterialTexture(r3MeshSlotMaterial(tCube, 1)), false
+   r3MaterialSetUnlit r3MeshSlotMaterial(tCube, 1), true
+   r3NodeSetMesh tNode, tCube
+   r3NodeSetMaterial tNode, 0
+   r3SceneSetCamera tScene, 0, 0, 3, 0, 0, 0, 50
+   put r3SceneRender(tScene, 100, 100) into tData
+   check "the model's textured face, drawn", pixelOf(tData, 100, 40, 40) is "255,0,0" and pixelOf(tData, 100, 60, 60) is "255,255,255", \
+         pixelOf(tData, 100, 40, 40) && pixelOf(tData, 100, 60, 60)
+   check "a model with a bad index is refused", r3MeshLoadObj("tests/assets/bad-index.obj") is 0 and r3LastError() contains "does not exist", r3LastError()
+
+   -- a model as text (two long texts IN)
+   put url ("file:tests/assets/cube.obj") into tObj
+   put url ("file:tests/assets/cube.mtl") into tMtl
+   put r3MeshParseObj(tObj, tMtl) into tParsed
+   check "an OBJ parsed from text", r3MeshTriangleCount(tParsed) is 12 and r3MeshSlotName(tParsed, 2) is "rest", r3LastError()
+   check "a mesh from triangle text", r3MeshTriangleCount(r3MeshFromTrianglesText("0,0,0,1,0,0,0,1,0" & return & "0,0,1,1,0,1,0,1,1")) is 2, r3LastError()
+
+   -- a 640 x 480 frame of a lit, textured, many-triangle scene: the time, for the log
+   local tBall, tI, tN
+   put r3MeshSphere(0.5, 32, 16) into tBall
+   r3SceneSetCamera tScene, 0, 3, 9, 0, 0, 0, 50
+   repeat with tI = 0 to 99
+      put r3NodeCreate(tScene, tBall) into tN
+      r3NodeSetPosition tN, (tI mod 10) - 4.5, 0, 2 - (tI div 10)
+   end repeat
+   put r3SceneRender(tScene, 640, 480) into tData
+   check "a 640 x 480 frame", the number of bytes of tData is 640 * 480 * 4, the number of bytes of tData
+   put "INFO a 640 x 480 frame of" && item 1 of r3SceneStats(tScene) && "triangles took" && item 3 of r3SceneStats(tScene) && "ms on" && r3ThreadCount() && "threads" & return
+   r3SceneDestroy tScene
+end testTexturesAndModels
+
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/render3dxt.lcb, in file order, called once with
+-- zeros (false for a Boolean, empty for text and bytes). One try for the lot:
+-- tName is the call that was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "r3ABIVersion" into tName
+      get r3ABIVersion()
+      put "r3LibraryVersion" into tName
+      get r3LibraryVersion()
+      put "r3LastError" into tName
+      get r3LastError()
+      put "r3LiveCounts" into tName
+      get r3LiveCounts()
+      put "r3TextureLoad" into tName
+      get r3TextureLoad(empty)
+      put "r3TextureDecode" into tName
+      get r3TextureDecode(empty)
+      put "r3TextureFromImageData" into tName
+      get r3TextureFromImageData(empty, 0, 0)
+      put "r3TextureChecker" into tName
+      get r3TextureChecker(0, 0, 0, 0, 0, 0, 0, 0)
+      put "r3TextureDestroy" into tName
+      r3TextureDestroy 0
+      put "r3TextureIsValid" into tName
+      get r3TextureIsValid(0)
+      put "r3TextureWidth" into tName
+      get r3TextureWidth(0)
+      put "r3TextureHeight" into tName
+      get r3TextureHeight(0)
+      put "r3TextureSetSmooth" into tName
+      r3TextureSetSmooth 0, false
+      put "r3TextureIsSmooth" into tName
+      get r3TextureIsSmooth(0)
+      put "r3TextureSetRepeat" into tName
+      r3TextureSetRepeat 0, false
+      put "r3TextureIsRepeat" into tName
+      get r3TextureIsRepeat(0)
+      put "r3MaterialCreate" into tName
+      get r3MaterialCreate(0, 0, 0)
+      put "r3MaterialDestroy" into tName
+      r3MaterialDestroy 0
+      put "r3MaterialIsValid" into tName
+      get r3MaterialIsValid(0)
+      put "r3MaterialSetColor" into tName
+      r3MaterialSetColor 0, 0, 0, 0
+      put "r3MaterialColor" into tName
+      get r3MaterialColor(0)
+      put "r3MaterialSetTexture" into tName
+      r3MaterialSetTexture 0, 0
+      put "r3MaterialTexture" into tName
+      get r3MaterialTexture(0)
+      put "r3MaterialSetSpecular" into tName
+      r3MaterialSetSpecular 0, 0, 0
+      put "r3MaterialSpecular" into tName
+      get r3MaterialSpecular(0)
+      put "r3MaterialSetEmissive" into tName
+      r3MaterialSetEmissive 0, 0, 0, 0
+      put "r3MaterialSetUnlit" into tName
+      r3MaterialSetUnlit 0, false
+      put "r3MaterialIsUnlit" into tName
+      get r3MaterialIsUnlit(0)
+      put "r3MaterialSetDoubleSided" into tName
+      r3MaterialSetDoubleSided 0, false
+      put "r3MaterialIsDoubleSided" into tName
+      get r3MaterialIsDoubleSided(0)
+      put "r3MaterialSetFlat" into tName
+      r3MaterialSetFlat 0, false
+      put "r3MaterialIsFlat" into tName
+      get r3MaterialIsFlat(0)
+      put "r3MaterialSetCutout" into tName
+      r3MaterialSetCutout 0, false
+      put "r3MaterialIsCutout" into tName
+      get r3MaterialIsCutout(0)
+      put "r3MeshDestroy" into tName
+      r3MeshDestroy 0
+      put "r3MeshIsValid" into tName
+      get r3MeshIsValid(0)
+      put "r3MeshVertexCount" into tName
+      get r3MeshVertexCount(0)
+      put "r3MeshTriangleCount" into tName
+      get r3MeshTriangleCount(0)
+      put "r3MeshBounds" into tName
+      get r3MeshBounds(0)
+      put "r3MeshCreate" into tName
+      get r3MeshCreate()
+      put "r3MeshAddVertex" into tName
+      get r3MeshAddVertex(0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "r3MeshAddTriangle" into tName
+      get r3MeshAddTriangle(0, 0, 0, 0, 0)
+      put "r3MeshComputeNormals" into tName
+      r3MeshComputeNormals 0
+      put "r3MeshSlotCount" into tName
+      get r3MeshSlotCount(0)
+      put "r3MeshSlotMaterial" into tName
+      get r3MeshSlotMaterial(0, 0)
+      put "r3MeshSetSlotMaterial" into tName
+      r3MeshSetSlotMaterial 0, 0, 0
+      put "r3MeshSlotName" into tName
+      get r3MeshSlotName(0, 0)
+      put "r3MeshSlotTextureName" into tName
+      get r3MeshSlotTextureName(0, 0)
+      put "r3MeshBox" into tName
+      get r3MeshBox(0, 0, 0)
+      put "r3MeshPlane" into tName
+      get r3MeshPlane(0, 0, 0, 0)
+      put "r3MeshSphere" into tName
+      get r3MeshSphere(0, 0, 0)
+      put "r3MeshCylinder" into tName
+      get r3MeshCylinder(0, 0, 0)
+      put "r3MeshCapsule" into tName
+      get r3MeshCapsule(0, 0, 0, 0)
+      put "r3MeshFromTrianglesText" into tName
+      get r3MeshFromTrianglesText(empty)
+      put "r3MeshLoadObj" into tName
+      get r3MeshLoadObj(empty)
+      put "r3MeshParseObj" into tName
+      get r3MeshParseObj(empty, empty)
+      put "r3LightCreateDirectional" into tName
+      get r3LightCreateDirectional(0, 0, 0, 0, 0, 0, 0, 0)
+      put "r3SceneCreate" into tName
+      get r3SceneCreate()
+      put "r3SceneDestroy" into tName
+      r3SceneDestroy 0
+      put "r3SceneIsValid" into tName
+      get r3SceneIsValid(0)
+      put "r3SceneSetBackground" into tName
+      r3SceneSetBackground 0, 0, 0, 0
+      put "r3SceneBackground" into tName
+      get r3SceneBackground(0)
+      put "r3SceneSetAmbient" into tName
+      r3SceneSetAmbient 0, 0, 0, 0
+      put "r3SceneAmbient" into tName
+      get r3SceneAmbient(0)
+      put "r3SceneSetFog" into tName
+      r3SceneSetFog 0, 0, 0, 0, 0, 0
+      put "r3SceneSetSupersample" into tName
+      r3SceneSetSupersample 0, 0
+      put "r3SceneSupersample" into tName
+      get r3SceneSupersample(0)
+      put "r3SceneSetCamera" into tName
+      r3SceneSetCamera 0, 0, 0, 0, 0, 0, 0, 0
+      put "r3SceneSetCameraText" into tName
+      r3SceneSetCameraText 0, empty
+      put "r3SceneCamera" into tName
+      get r3SceneCamera(0)
+      put "r3SceneSetClip" into tName
+      r3SceneSetClip 0, 0, 0
+      put "r3SceneClip" into tName
+      get r3SceneClip(0)
+      put "r3SceneProject" into tName
+      get r3SceneProject(0, 0, 0, 0, 0, 0)
+      put "r3SceneRay" into tName
+      get r3SceneRay(0, 0, 0, 0, 0)
+      put "r3LightCreatePoint" into tName
+      get r3LightCreatePoint(0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "r3LightDestroy" into tName
+      r3LightDestroy 0
+      put "r3LightIsValid" into tName
+      get r3LightIsValid(0)
+      put "r3SceneLightCount" into tName
+      get r3SceneLightCount(0)
+      put "r3SceneLight" into tName
+      get r3SceneLight(0, 0)
+      put "r3LightSetColor" into tName
+      r3LightSetColor 0, 0, 0, 0, 0
+      put "r3LightColor" into tName
+      get r3LightColor(0)
+      put "r3LightSetDirection" into tName
+      r3LightSetDirection 0, 0, 0, 0
+      put "r3LightSetPosition" into tName
+      r3LightSetPosition 0, 0, 0, 0
+      put "r3LightVector" into tName
+      get r3LightVector(0)
+      put "r3LightKind" into tName
+      get r3LightKind(0)
+      put "r3LightSetEnabled" into tName
+      r3LightSetEnabled 0, false
+      put "r3LightIsEnabled" into tName
+      get r3LightIsEnabled(0)
+      put "r3NodeCreate" into tName
+      get r3NodeCreate(0, 0)
+      put "r3NodeDestroy" into tName
+      r3NodeDestroy 0
+      put "r3NodeIsValid" into tName
+      get r3NodeIsValid(0)
+      put "r3NodeScene" into tName
+      get r3NodeScene(0)
+      put "r3SceneNodeCount" into tName
+      get r3SceneNodeCount(0)
+      put "r3SceneNode" into tName
+      get r3SceneNode(0, 0)
+      put "r3NodeSetMesh" into tName
+      r3NodeSetMesh 0, 0
+      put "r3NodeMesh" into tName
+      get r3NodeMesh(0)
+      put "r3NodeSetMaterial" into tName
+      r3NodeSetMaterial 0, 0
+      put "r3NodeMaterial" into tName
+      get r3NodeMaterial(0)
+      put "r3NodeSetPosition" into tName
+      r3NodeSetPosition 0, 0, 0, 0
+      put "r3NodeSetRotation" into tName
+      r3NodeSetRotation 0, 0, 0, 0, 0
+      put "r3NodeSetTransform" into tName
+      r3NodeSetTransform 0, 0, 0, 0, 0, 0, 0, 0
+      put "r3NodeSetTransformText" into tName
+      r3NodeSetTransformText 0, empty
+      put "r3NodeSetScale" into tName
+      r3NodeSetScale 0, 0, 0, 0
+      put "r3NodePosition" into tName
+      get r3NodePosition(0)
+      put "r3NodeRotation" into tName
+      get r3NodeRotation(0)
+      put "r3NodeScale" into tName
+      get r3NodeScale(0)
+      put "r3NodeTransform" into tName
+      get r3NodeTransform(0)
+      put "r3NodeSetVisible" into tName
+      r3NodeSetVisible 0, false
+      put "r3NodeIsVisible" into tName
+      get r3NodeIsVisible(0)
+      put "r3NodeSetTag" into tName
+      r3NodeSetTag 0, 0
+      put "r3NodeTag" into tName
+      get r3NodeTag(0)
+      put "r3SceneNodeByTag" into tName
+      get r3SceneNodeByTag(0, 0)
+      put "r3SceneApplyMoves" into tName
+      get r3SceneApplyMoves(0, empty)
+      put "r3SetThreadCount" into tName
+      r3SetThreadCount 0
+      put "r3ThreadCount" into tName
+      get r3ThreadCount()
+      put "r3SceneRender" into tName
+      get r3SceneRender(0, 0, 0)
+      put "r3SceneFrame" into tName
+      get r3SceneFrame(0)
+      put "r3SceneFrameLength" into tName
+      get r3SceneFrameLength(0)
+      put "r3SceneStats" into tName
+      get r3SceneStats(0)
+      put "r3ScenePick" into tName
+      get r3ScenePick(0, 0, 0, 0, 0)
+      put "r3SceneRayCast" into tName
+      get r3SceneRayCast(0, 0, 0, 0, 0, 0, 0)
+      put "r3HitText" into tName
+      get r3HitText()
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 121 public handlers called with zeros, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["render3dxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.renderthreed" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & r3LibraryVersion() & return
+      testLibrary
+      testPicture
+      testTexturesAndModels
+      sweepEveryHandler
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

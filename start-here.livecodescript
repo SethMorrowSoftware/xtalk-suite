@@ -713,6 +713,7 @@ function slRegistry
    put "riptide/examples/riptide-social.livecodescript||sodiumxt AND torrentxt; coinxt for the Nostr rail, and for the onion spelling with a sodiumxt below ABI 7|Two machines to see propagation. SESSION: uses the one torrent session. Self-contained: carries riptide, nostrxt (core + relay), onionxt and onion-httpd.|The capstone: one sealed identity, signed public feeds over the real DHT, private DMs, a LAN device mesh, an onion-only persona, and a Nostr bridge for reach (phases 1-8)." & return after tR
    put "nocloud/src/nocloudquickshare.livecodescript||torrentxt; sodiumxt and onionxt optional (each feature fails closed without its piece)|SESSION: one torrent stack per OXT launch.|The SHIPPED app: No Cloud Quick Share - send any file to anyone, no server, no account, no size limit." & return after tR
    put "nostrxt/examples/nostrxt-demo.livecodescript||the coinxt extension for signing; sodiumxt for key generation; a relay you choose for the live legs|Self-contained: carries nostrxt, its relay layer and its self-test. ws:// mirrors the proven socket idioms; wss:// is engine-unproven.|Nostr from xTalk: generate an identity, sign and verify notes, decode NIP-19 entities, talk to a relay - inbound events verified before display." & return after tR
+   put "render3dxt/examples/render3d-physics-demo.livecodescript||the render3dxt extension (org.openxtalk.library.renderthreed) AND the box3dxt extension (org.openxtalk.library.boxthreed)|Without either extension the window still opens and says which is missing.|A 3D picture in an ordinary image: box3dxt simulates crates, balls and a gem falling, render3dxt draws them textured and lit. Drag to walk round the scene, click a thing to kick it." & return after tR
    put "box2dxt/examples/box2dxt-demo.livecodescript||the box2dxt extension (org.openxtalk.box2dxt)||The physics showcase: scenes for shapes, joints, forces, queries and the Kit's control-backed bodies." & return after tR
    put "box2dxt/examples/box2dxt-platformer.livecodescript||the box2dxt extension||A complete platformer on the b2k game Kit: sprites, input, camera, one-way platforms, hazards - a game, not a widget." & return after tR
    put "box2dxt/examples/box2dxt-slingshot.livecodescript||the box2dxt extension||Knock the towers down: projectile physics, star ratings, level progression." & return after tR
@@ -869,7 +870,7 @@ command slExtProbe
    end if
 end slExtProbe
 
--- The six INSTALLABLE extensions (native-backed .lcb libraries), member
+-- The eight INSTALLABLE extensions (native-backed .lcb libraries), member
 -- token -> module id, each token spelled exactly as the registry's needs
 -- prose spells it. onionxt, nostrxt, riptide and the script HALVES of
 -- coinxt/box2dxt are FILES a demo carries, not extensions, so a row here
@@ -880,7 +881,9 @@ function slExtRegistry
          & "enetxt|org.openxtalk.library.enet" & return \
          & "datachannelxt|org.openxtalk.library.datachannel" & return \
          & "coinxt|org.openxtalk.library.coin" & return \
-         & "box2dxt|org.openxtalk.box2dxt"
+         & "box2dxt|org.openxtalk.box2dxt" & return \
+         & "box3dxt|org.openxtalk.library.boxthreed" & return \
+         & "render3dxt|org.openxtalk.library.renderthreed"
 end slExtRegistry
 
 -- The live half of the card's Needs field: which of the extensions THIS

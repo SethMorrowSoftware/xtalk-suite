@@ -1,0 +1,2589 @@
+/*
+render3dxt.lcb - xTalk Builder (LCB) binding library for render3dxt, a
+                 textured 3D software renderer, via the render3d_shim C shim.
+                 Part of the xTalk Suite for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    set the imageData of image "View" to r3SceneRender(sScene, 640, 480)
+
+Conventions (the shim, src/render3d_shim.c, is where each is enforced; they
+are box3dxt's, so the two libraries read alike):
+  * Handles are integers (0 = invalid). Every handler tolerates a stale or 0
+    handle: getters return 0 or empty, actions do nothing.
+  * NAMES ARE MECHANICAL: the handler for the shim's r3x_node_set_position is
+    r3NodeSetPosition; nothing is renamed by hand. tools/check-lcb-signatures.py
+    holds the bijection (every export bound once, every binding wrapped by the
+    one public handler of that name).
+  * Distances are METRES, y is up, a rotation is a quaternion x y z w, and the
+    camera is eye, target and vertical field of view in degrees: box3dxt's
+    numbers, so a scene it simulates is drawn from them unchanged.
+  * A colour is three numbers, 0 to 255.
+  * A result of several numbers comes back as TEXT, comma-separated, with a
+    "." decimal point in every locale. Text crosses as a Pointer that textOf()
+    copies, never as ZStringNative (the engine frees a returned C string).
+  * Text going IN crosses as ZStringUTF8; bytes going in (a picture file, an
+    imageData) as the Data's own byte pointer and length.
+  * The picture comes OUT as a Data built from the shim's frame buffer by the
+    engine's MCDataCreateWithBytes: one copy, one call across the boundary
+    for a whole frame.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Nothing here throws, bar the ABI check: a refused call returns 0 or empty
+    and r3LastError() says why. A render call in a frame loop must not be
+    able to stop the loop.
+
+The foreign handlers bind to the shared library "render3dxt" (built by
+CMakeLists.txt). Bindings resolve on first use.
+
+The module is org.openxtalk.library.renderthreed, not ...render3dxt:
+lc-compile warns on a digit in a namespace component and the Extension
+Builder runs it with -Werror (box3dxt's gotcha 1).
+*/
+
+/**
+A textured 3D renderer that draws into an image.
+
+A scene holds nodes, lights and a camera. A node is a mesh (a box, a sphere,
+a model loaded from an OBJ file) placed at a position with a rotation and a
+size; a material gives it a colour, a texture and a shine. <r3SceneRender>
+draws the scene and returns the picture, ready to be the imageData of an
+image, so a stack shows 3D with one line in a frame loop. All the drawing is
+done inside the library: thousands of textured triangles take a few
+milliseconds.
+
+Scenes, nodes, meshes, materials, textures and lights are integer handles.
+0 means a call was refused or found nothing, and a stale handle is harmless:
+getters return 0 or empty, actions do nothing. <r3LastError> says why a call
+was refused.
+
+Every distance is in metres with y pointing up, a rotation is a quaternion
+(four numbers x, y, z, w) and a colour is three numbers from 0 to 255. A
+result of several numbers comes back as comma-separated text such as
+"1.5,0,-2", so item 1 of it is x.
+
+The library is made to draw what box3dxt simulates. Positions, rotations
+and the camera are the same numbers in both: give each node the body it
+draws with <r3NodeSetTag>, and after every physics step hand box3dxt's
+b3MovesText() to <r3SceneApplyMoves>.
+
+Tags: Graphics, 3D, Library
+*/
+library org.openxtalk.library.renderthreed
+
+use com.livecode.foreign
+
+-- The engine's own builders, resolved by NAME (so no leading underscore).
+-- MCStringCreateWithBytes: textOf() below. MCDataGetBytePtr and
+-- MCDataGetLength: the read-only bytes of a Data handed in (coinxt's proven
+-- way; a Data's length is the engine's uindex_t, hence CUInt).
+-- MCDataCreateWithBytes: the picture, copied out of the shim's frame buffer.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+foreign handler MCDataGetLength(in pData as Data) returns CUInt binds to "<builtin>"
+foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+
+metadata title is "render3dxt: 3D Renderer for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "A textured 3D renderer that draws into an image: models (OBJ), textures, lights, a camera, picking. Draws what box3dxt simulates."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/render3d_shim.c; tools/check-lcb-signatures.py holds every line to the
+-- C definition it binds (name, return type, each parameter type).
+-- =====================================================================
+private foreign handler _abi_version() returns CInt binds to "c:render3dxt>r3x_abi_version!cdecl"
+private foreign handler _library_version() returns Pointer binds to "c:render3dxt>r3x_library_version!cdecl"
+private foreign handler _last_error() returns Pointer binds to "c:render3dxt>r3x_last_error!cdecl"
+private foreign handler _text_length(in pText as Pointer) returns CInt binds to "c:render3dxt>r3x_text_length!cdecl"
+private foreign handler _live_counts() returns Pointer binds to "c:render3dxt>r3x_live_counts!cdecl"
+private foreign handler _texture_load(in pPath as ZStringUTF8) returns CInt binds to "c:render3dxt>r3x_texture_load!cdecl"
+private foreign handler _texture_decode(in pBytes as Pointer, in pLength as CInt) returns CInt binds to "c:render3dxt>r3x_texture_decode!cdecl"
+private foreign handler _texture_from_image_data(in pBytes as Pointer, in pLength as CInt, in pWidth as CInt, in pHeight as CInt) returns CInt binds to "c:render3dxt>r3x_texture_from_image_data!cdecl"
+private foreign handler _texture_checker(in pSize as CInt, in pCells as CInt, in pR1 as CDouble, in pG1 as CDouble, in pB1 as CDouble, in pR2 as CDouble, in pG2 as CDouble, in pB2 as CDouble) returns CInt binds to "c:render3dxt>r3x_texture_checker!cdecl"
+private foreign handler _texture_destroy(in pTexture as CInt) returns nothing binds to "c:render3dxt>r3x_texture_destroy!cdecl"
+private foreign handler _texture_is_valid(in pTexture as CInt) returns CInt binds to "c:render3dxt>r3x_texture_is_valid!cdecl"
+private foreign handler _texture_width(in pTexture as CInt) returns CInt binds to "c:render3dxt>r3x_texture_width!cdecl"
+private foreign handler _texture_height(in pTexture as CInt) returns CInt binds to "c:render3dxt>r3x_texture_height!cdecl"
+private foreign handler _texture_set_smooth(in pTexture as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_texture_set_smooth!cdecl"
+private foreign handler _texture_is_smooth(in pTexture as CInt) returns CInt binds to "c:render3dxt>r3x_texture_is_smooth!cdecl"
+private foreign handler _texture_set_repeat(in pTexture as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_texture_set_repeat!cdecl"
+private foreign handler _texture_is_repeat(in pTexture as CInt) returns CInt binds to "c:render3dxt>r3x_texture_is_repeat!cdecl"
+private foreign handler _material_create(in pR as CDouble, in pG as CDouble, in pB as CDouble) returns CInt binds to "c:render3dxt>r3x_material_create!cdecl"
+private foreign handler _material_destroy(in pMaterial as CInt) returns nothing binds to "c:render3dxt>r3x_material_destroy!cdecl"
+private foreign handler _material_is_valid(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_is_valid!cdecl"
+private foreign handler _material_set_color(in pMaterial as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble) returns nothing binds to "c:render3dxt>r3x_material_set_color!cdecl"
+private foreign handler _material_color(in pMaterial as CInt) returns Pointer binds to "c:render3dxt>r3x_material_color!cdecl"
+private foreign handler _material_set_texture(in pMaterial as CInt, in pTexture as CInt) returns nothing binds to "c:render3dxt>r3x_material_set_texture!cdecl"
+private foreign handler _material_texture(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_texture!cdecl"
+private foreign handler _material_set_specular(in pMaterial as CInt, in pStrength as CDouble, in pShininess as CDouble) returns nothing binds to "c:render3dxt>r3x_material_set_specular!cdecl"
+private foreign handler _material_specular(in pMaterial as CInt) returns Pointer binds to "c:render3dxt>r3x_material_specular!cdecl"
+private foreign handler _material_set_emissive(in pMaterial as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble) returns nothing binds to "c:render3dxt>r3x_material_set_emissive!cdecl"
+private foreign handler _material_set_unlit(in pMaterial as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_material_set_unlit!cdecl"
+private foreign handler _material_is_unlit(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_is_unlit!cdecl"
+private foreign handler _material_set_double_sided(in pMaterial as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_material_set_double_sided!cdecl"
+private foreign handler _material_is_double_sided(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_is_double_sided!cdecl"
+private foreign handler _material_set_flat(in pMaterial as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_material_set_flat!cdecl"
+private foreign handler _material_is_flat(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_is_flat!cdecl"
+private foreign handler _material_set_cutout(in pMaterial as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_material_set_cutout!cdecl"
+private foreign handler _material_is_cutout(in pMaterial as CInt) returns CInt binds to "c:render3dxt>r3x_material_is_cutout!cdecl"
+private foreign handler _mesh_destroy(in pMesh as CInt) returns nothing binds to "c:render3dxt>r3x_mesh_destroy!cdecl"
+private foreign handler _mesh_is_valid(in pMesh as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_is_valid!cdecl"
+private foreign handler _mesh_vertex_count(in pMesh as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_vertex_count!cdecl"
+private foreign handler _mesh_triangle_count(in pMesh as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_triangle_count!cdecl"
+private foreign handler _mesh_bounds(in pMesh as CInt) returns Pointer binds to "c:render3dxt>r3x_mesh_bounds!cdecl"
+private foreign handler _mesh_create() returns CInt binds to "c:render3dxt>r3x_mesh_create!cdecl"
+private foreign handler _mesh_add_vertex(in pMesh as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble, in pNx as CDouble, in pNy as CDouble, in pNz as CDouble, in pU as CDouble, in pV as CDouble) returns CInt binds to "c:render3dxt>r3x_mesh_add_vertex!cdecl"
+private foreign handler _mesh_add_triangle(in pMesh as CInt, in pA as CInt, in pB as CInt, in pC as CInt, in pSlot as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_add_triangle!cdecl"
+private foreign handler _mesh_compute_normals(in pMesh as CInt) returns nothing binds to "c:render3dxt>r3x_mesh_compute_normals!cdecl"
+private foreign handler _mesh_slot_count(in pMesh as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_slot_count!cdecl"
+private foreign handler _mesh_slot_material(in pMesh as CInt, in pSlot as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_slot_material!cdecl"
+private foreign handler _mesh_set_slot_material(in pMesh as CInt, in pSlot as CInt, in pMaterial as CInt) returns nothing binds to "c:render3dxt>r3x_mesh_set_slot_material!cdecl"
+private foreign handler _mesh_slot_name(in pMesh as CInt, in pSlot as CInt) returns Pointer binds to "c:render3dxt>r3x_mesh_slot_name!cdecl"
+private foreign handler _mesh_slot_texture_name(in pMesh as CInt, in pSlot as CInt) returns Pointer binds to "c:render3dxt>r3x_mesh_slot_texture_name!cdecl"
+private foreign handler _mesh_box(in pHx as CDouble, in pHy as CDouble, in pHz as CDouble) returns CInt binds to "c:render3dxt>r3x_mesh_box!cdecl"
+private foreign handler _mesh_plane(in pHx as CDouble, in pHz as CDouble, in pURepeat as CDouble, in pVRepeat as CDouble) returns CInt binds to "c:render3dxt>r3x_mesh_plane!cdecl"
+private foreign handler _mesh_sphere(in pRadius as CDouble, in pSlices as CInt, in pStacks as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_sphere!cdecl"
+private foreign handler _mesh_cylinder(in pRadius as CDouble, in pHalfHeight as CDouble, in pSlices as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_cylinder!cdecl"
+private foreign handler _mesh_capsule(in pRadius as CDouble, in pHalfHeight as CDouble, in pSlices as CInt, in pStacks as CInt) returns CInt binds to "c:render3dxt>r3x_mesh_capsule!cdecl"
+private foreign handler _mesh_from_triangles_text(in pText as ZStringUTF8) returns CInt binds to "c:render3dxt>r3x_mesh_from_triangles_text!cdecl"
+private foreign handler _mesh_load_obj(in pPath as ZStringUTF8) returns CInt binds to "c:render3dxt>r3x_mesh_load_obj!cdecl"
+private foreign handler _mesh_parse_obj(in pObjText as ZStringUTF8, in pMtlText as ZStringUTF8) returns CInt binds to "c:render3dxt>r3x_mesh_parse_obj!cdecl"
+private foreign handler _light_create_directional(in pScene as CInt, in pDx as CDouble, in pDy as CDouble, in pDz as CDouble, in pR as CDouble, in pG as CDouble, in pB as CDouble, in pIntensity as CDouble) returns CInt binds to "c:render3dxt>r3x_light_create_directional!cdecl"
+private foreign handler _scene_create() returns CInt binds to "c:render3dxt>r3x_scene_create!cdecl"
+private foreign handler _scene_destroy(in pScene as CInt) returns nothing binds to "c:render3dxt>r3x_scene_destroy!cdecl"
+private foreign handler _scene_is_valid(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_is_valid!cdecl"
+private foreign handler _scene_set_background(in pScene as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble) returns nothing binds to "c:render3dxt>r3x_scene_set_background!cdecl"
+private foreign handler _scene_background(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_background!cdecl"
+private foreign handler _scene_set_ambient(in pScene as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble) returns nothing binds to "c:render3dxt>r3x_scene_set_ambient!cdecl"
+private foreign handler _scene_ambient(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_ambient!cdecl"
+private foreign handler _scene_set_fog(in pScene as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble, in pFogNear as CDouble, in pFogFar as CDouble) returns nothing binds to "c:render3dxt>r3x_scene_set_fog!cdecl"
+private foreign handler _scene_set_supersample(in pScene as CInt, in pN as CInt) returns nothing binds to "c:render3dxt>r3x_scene_set_supersample!cdecl"
+private foreign handler _scene_supersample(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_supersample!cdecl"
+private foreign handler _scene_set_camera(in pScene as CInt, in pEx as CDouble, in pEy as CDouble, in pEz as CDouble, in pTx as CDouble, in pTy as CDouble, in pTz as CDouble, in pFov as CDouble) returns nothing binds to "c:render3dxt>r3x_scene_set_camera!cdecl"
+private foreign handler _scene_set_camera_text(in pScene as CInt, in pText as ZStringUTF8) returns nothing binds to "c:render3dxt>r3x_scene_set_camera_text!cdecl"
+private foreign handler _scene_camera(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_camera!cdecl"
+private foreign handler _scene_set_clip(in pScene as CInt, in pNearZ as CDouble, in pFarZ as CDouble) returns nothing binds to "c:render3dxt>r3x_scene_set_clip!cdecl"
+private foreign handler _scene_clip(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_clip!cdecl"
+private foreign handler _scene_project(in pScene as CInt, in pW as CInt, in pH as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns Pointer binds to "c:render3dxt>r3x_scene_project!cdecl"
+private foreign handler _scene_ray(in pScene as CInt, in pW as CInt, in pH as CInt, in pPx as CDouble, in pPy as CDouble) returns Pointer binds to "c:render3dxt>r3x_scene_ray!cdecl"
+private foreign handler _light_create_point(in pScene as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble, in pR as CDouble, in pG as CDouble, in pB as CDouble, in pIntensity as CDouble, in pRange as CDouble) returns CInt binds to "c:render3dxt>r3x_light_create_point!cdecl"
+private foreign handler _light_destroy(in pLight as CInt) returns nothing binds to "c:render3dxt>r3x_light_destroy!cdecl"
+private foreign handler _light_is_valid(in pLight as CInt) returns CInt binds to "c:render3dxt>r3x_light_is_valid!cdecl"
+private foreign handler _scene_light_count(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_light_count!cdecl"
+private foreign handler _scene_light(in pScene as CInt, in pIndex as CInt) returns CInt binds to "c:render3dxt>r3x_scene_light!cdecl"
+private foreign handler _light_set_color(in pLight as CInt, in pR as CDouble, in pG as CDouble, in pB as CDouble, in pIntensity as CDouble) returns nothing binds to "c:render3dxt>r3x_light_set_color!cdecl"
+private foreign handler _light_color(in pLight as CInt) returns Pointer binds to "c:render3dxt>r3x_light_color!cdecl"
+private foreign handler _light_set_direction(in pLight as CInt, in pDx as CDouble, in pDy as CDouble, in pDz as CDouble) returns nothing binds to "c:render3dxt>r3x_light_set_direction!cdecl"
+private foreign handler _light_set_position(in pLight as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:render3dxt>r3x_light_set_position!cdecl"
+private foreign handler _light_vector(in pLight as CInt) returns Pointer binds to "c:render3dxt>r3x_light_vector!cdecl"
+private foreign handler _light_kind(in pLight as CInt) returns CInt binds to "c:render3dxt>r3x_light_kind!cdecl"
+private foreign handler _light_set_enabled(in pLight as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_light_set_enabled!cdecl"
+private foreign handler _light_is_enabled(in pLight as CInt) returns CInt binds to "c:render3dxt>r3x_light_is_enabled!cdecl"
+private foreign handler _node_create(in pScene as CInt, in pMesh as CInt) returns CInt binds to "c:render3dxt>r3x_node_create!cdecl"
+private foreign handler _node_destroy(in pNode as CInt) returns nothing binds to "c:render3dxt>r3x_node_destroy!cdecl"
+private foreign handler _node_is_valid(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_is_valid!cdecl"
+private foreign handler _node_scene(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_scene!cdecl"
+private foreign handler _scene_node_count(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_node_count!cdecl"
+private foreign handler _scene_node(in pScene as CInt, in pIndex as CInt) returns CInt binds to "c:render3dxt>r3x_scene_node!cdecl"
+private foreign handler _node_set_mesh(in pNode as CInt, in pMesh as CInt) returns nothing binds to "c:render3dxt>r3x_node_set_mesh!cdecl"
+private foreign handler _node_mesh(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_mesh!cdecl"
+private foreign handler _node_set_material(in pNode as CInt, in pMaterial as CInt) returns nothing binds to "c:render3dxt>r3x_node_set_material!cdecl"
+private foreign handler _node_material(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_material!cdecl"
+private foreign handler _node_set_position(in pNode as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:render3dxt>r3x_node_set_position!cdecl"
+private foreign handler _node_set_rotation(in pNode as CInt, in pQx as CDouble, in pQy as CDouble, in pQz as CDouble, in pQw as CDouble) returns nothing binds to "c:render3dxt>r3x_node_set_rotation!cdecl"
+private foreign handler _node_set_transform(in pNode as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble, in pQx as CDouble, in pQy as CDouble, in pQz as CDouble, in pQw as CDouble) returns nothing binds to "c:render3dxt>r3x_node_set_transform!cdecl"
+private foreign handler _node_set_transform_text(in pNode as CInt, in pText as ZStringUTF8) returns nothing binds to "c:render3dxt>r3x_node_set_transform_text!cdecl"
+private foreign handler _node_set_scale(in pNode as CInt, in pSx as CDouble, in pSy as CDouble, in pSz as CDouble) returns nothing binds to "c:render3dxt>r3x_node_set_scale!cdecl"
+private foreign handler _node_position(in pNode as CInt) returns Pointer binds to "c:render3dxt>r3x_node_position!cdecl"
+private foreign handler _node_rotation(in pNode as CInt) returns Pointer binds to "c:render3dxt>r3x_node_rotation!cdecl"
+private foreign handler _node_scale(in pNode as CInt) returns Pointer binds to "c:render3dxt>r3x_node_scale!cdecl"
+private foreign handler _node_transform(in pNode as CInt) returns Pointer binds to "c:render3dxt>r3x_node_transform!cdecl"
+private foreign handler _node_set_visible(in pNode as CInt, in pFlag as CInt) returns nothing binds to "c:render3dxt>r3x_node_set_visible!cdecl"
+private foreign handler _node_is_visible(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_is_visible!cdecl"
+private foreign handler _node_set_tag(in pNode as CInt, in pTag as CInt) returns nothing binds to "c:render3dxt>r3x_node_set_tag!cdecl"
+private foreign handler _node_tag(in pNode as CInt) returns CInt binds to "c:render3dxt>r3x_node_tag!cdecl"
+private foreign handler _scene_node_by_tag(in pScene as CInt, in pTag as CInt) returns CInt binds to "c:render3dxt>r3x_scene_node_by_tag!cdecl"
+private foreign handler _scene_apply_moves(in pScene as CInt, in pText as ZStringUTF8) returns CInt binds to "c:render3dxt>r3x_scene_apply_moves!cdecl"
+private foreign handler _set_thread_count(in pN as CInt) returns nothing binds to "c:render3dxt>r3x_set_thread_count!cdecl"
+private foreign handler _thread_count() returns CInt binds to "c:render3dxt>r3x_thread_count!cdecl"
+private foreign handler _scene_render(in pScene as CInt, in pW as CInt, in pH as CInt) returns CInt binds to "c:render3dxt>r3x_scene_render!cdecl"
+private foreign handler _scene_frame(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_frame!cdecl"
+private foreign handler _scene_frame_length(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_frame_length!cdecl"
+private foreign handler _scene_stats(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_stats!cdecl"
+private foreign handler _scene_pick(in pScene as CInt, in pW as CInt, in pH as CInt, in pPx as CDouble, in pPy as CDouble) returns CInt binds to "c:render3dxt>r3x_scene_pick!cdecl"
+private foreign handler _scene_ray_cast(in pScene as CInt, in pOx as CDouble, in pOy as CDouble, in pOz as CDouble, in pDx as CDouble, in pDy as CDouble, in pDz as CDouble) returns CInt binds to "c:render3dxt>r3x_scene_ray_cast!cdecl"
+private foreign handler _hit_text() returns Pointer binds to "c:render3dxt>r3x_hit_text!cdecl"
+
+-- =====================================================================
+-- Helpers
+-- =====================================================================
+
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- the host, not an error message. Asked once, by the calls that make things
+-- (nothing can be drawn before something is made).
+variable sABIChecked as Boolean
+
+private handler checkABI()
+   variable tV as Integer
+   if sABIChecked is true then
+      return
+   end if
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "render3dxt: incompatible native library (this binding needs ABI 1) - update the render3dxt library beside the engine"
+   end if
+   put true into sABIChecked
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative (box3dxt's rule 3). 4 is the engine's
+-- MCStringEncoding value for UTF-8.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- =====================================================================
+-- The public handlers, in the shim's order
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler r3ABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the version of the native library and of the file readers built into it.
+
+Returns: A text such as "render3dxt 0.1.0 ABI 1; stb_image 2.34; fast_obj
+1.3".
+
+Example:
+put r3LibraryVersion()
+
+Description: The first call that reaches the native library. It throws if the
+library beside the engine is from another release than this binding.
+*/
+public handler r3LibraryVersion() returns String
+   variable tR as Pointer
+   checkABI()
+   unsafe
+      put _library_version() into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns why the last call was refused.
+
+Returns: A short text, or empty if the last call was not refused.
+
+Description: A refused call returns 0 or empty and never throws, so a frame
+loop cannot be stopped by a bad number. Ask this straight after the call you
+are unsure of.
+*/
+public handler r3LastError() returns String
+   variable tR as Pointer
+   unsafe
+      put _last_error() into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns how many objects of each kind are alive.
+
+Returns: Six numbers as text, "scenes,nodes,meshes,materials,textures,lights".
+
+Description: For finding a leak: the counts should return to where they were
+once a stack has destroyed what it made.
+*/
+public handler r3LiveCounts() returns String
+   variable tR as Pointer
+   unsafe
+      put _live_counts() into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Loads a picture file as a texture.
+
+pPath: The file's full path.
+
+Returns: A texture handle, or 0 if the file could not be read.
+
+Example:
+put r3TextureLoad(specialFolderPath("resources") & "/crate.png") into sCrate
+
+Description: PNG, JPEG, BMP and TGA files are read, up to 8192 pixels each
+way. A PNG's transparency is kept, for <r3MaterialSetCutout>. Free it with
+<r3TextureDestroy>.
+*/
+public handler r3TextureLoad(in pPath as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _texture_load(pPath) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a texture from the bytes of a picture file.
+
+pBytes: The whole contents of a PNG, JPEG, BMP or TGA file.
+
+Returns: A texture handle, or 0 if the bytes are not a picture.
+
+Example:
+put r3TextureDecode(url ("binfile:" & tPath)) into sCrate
+
+Description: For a picture that is not a file on disk: one kept in a custom
+property, or fetched from a URL. The same formats as <r3TextureLoad>.
+*/
+public handler r3TextureDecode(in pBytes as Data) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   checkABI()
+   unsafe
+      put MCDataGetBytePtr(pBytes) into tPtr
+      put MCDataGetLength(pBytes) into tLen
+      put _texture_decode(tPtr, tLen) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a texture from the imageData of an image.
+
+pBytes: The imageData: four bytes a pixel.
+
+pWidth: The image's width in pixels.
+
+pHeight: The image's height in pixels.
+
+Returns: A texture handle, or 0 if the data is too short.
+
+Example:
+put r3TextureFromImageData(the imageData of image "Crate", the width of image "Crate", the height of image "Crate") into sCrate
+
+Description: Any image the engine can show can be a texture this way. The
+texture is opaque: imageData carries no transparency.
+*/
+public handler r3TextureFromImageData(in pBytes as Data, in pWidth as Integer, in pHeight as Integer) returns Integer
+   variable tR as Integer
+   variable tPtr as Pointer
+   variable tLen as Integer
+   checkABI()
+   unsafe
+      put MCDataGetBytePtr(pBytes) into tPtr
+      put MCDataGetLength(pBytes) into tLen
+      put _texture_from_image_data(tPtr, tLen, pWidth, pHeight) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a checkerboard texture.
+
+pSize: The texture's width and height in pixels, 2 to 2048.
+
+pCells: How many squares across, 1 to pSize.
+
+pR1: The first colour's red, 0 to 255.
+
+pG1: The first colour's green, 0 to 255.
+
+pB1: The first colour's blue, 0 to 255.
+
+pR2: The second colour's red, 0 to 255.
+
+pG2: The second colour's green, 0 to 255.
+
+pB2: The second colour's blue, 0 to 255.
+
+Returns: A texture handle, or 0 if an argument was refused.
+
+Example:
+put r3TextureChecker(256, 8, 240, 240, 240, 60, 90, 160) into sFloorTexture
+
+Description: A texture for a scene that has no picture files: a floor, or a
+way to see an object turn.
+*/
+public handler r3TextureChecker(in pSize as Integer, in pCells as Integer, in pR1 as Number, in pG1 as Number, in pB1 as Number, in pR2 as Number, in pG2 as Number, in pB2 as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _texture_checker(pSize, pCells, pR1, pG1, pB1, pR2, pG2, pB2) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Frees a texture.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Description: A material that used it draws untextured from then on.
+*/
+public handler r3TextureDestroy(in pTexture as Integer) returns nothing
+   unsafe
+      _texture_destroy(pTexture)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a texture handle is alive.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Returns: True if it is.
+*/
+public handler r3TextureIsValid(in pTexture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _texture_is_valid(pTexture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the width of a texture.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Returns: The width in pixels, or 0.
+*/
+public handler r3TextureWidth(in pTexture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _texture_width(pTexture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the height of a texture.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Returns: The height in pixels, or 0.
+*/
+public handler r3TextureHeight(in pTexture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _texture_height(pTexture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Chooses smooth or blocky drawing of a texture.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+pFlag: True for smooth, false for blocky.
+
+Description: Smooth (the default) blends neighbouring pixels of the texture;
+off shows each as a sharp square, the look pixel art wants.
+*/
+public handler r3TextureSetSmooth(in pTexture as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _texture_set_smooth(pTexture, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a texture is drawn smooth.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Returns: True if it is.
+*/
+public handler r3TextureIsSmooth(in pTexture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _texture_is_smooth(pTexture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Chooses whether a texture repeats beyond its edges.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+pFlag: True to repeat, false to stop at the edge.
+
+Description: Repeating (the default) tiles the texture where texture
+coordinates leave 0 to 1; off stretches its edge pixels instead.
+*/
+public handler r3TextureSetRepeat(in pTexture as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _texture_set_repeat(pTexture, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a texture repeats.
+
+pTexture: A texture handle, from <r3TextureLoad> or another of the r3Texture
+makers.
+
+Returns: True if it does.
+*/
+public handler r3TextureIsRepeat(in pTexture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _texture_is_repeat(pTexture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Makes a material of a colour.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+Returns: A material handle, or 0 if a number was refused.
+
+Example:
+put r3MaterialCreate(200, 60, 40) into sBrick
+
+Description: A material says how a surface looks: its colour, its texture, how
+shiny it is. Give it to a node with <r3NodeSetMaterial> or to a slot of a mesh
+with <r3MeshSetSlotMaterial>.
+*/
+public handler r3MaterialCreate(in pR as Number, in pG as Number, in pB as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _material_create(pR, pG, pB) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Frees a material.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Description: Whatever used it is drawn plain white from then on.
+*/
+public handler r3MaterialDestroy(in pMaterial as Integer) returns nothing
+   unsafe
+      _material_destroy(pMaterial)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a material handle is alive.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: True if it is.
+*/
+public handler r3MaterialIsValid(in pMaterial as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _material_is_valid(pMaterial) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets the colour of a material.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+Description: With a texture, the colour tints it; white shows the texture as
+it is.
+*/
+public handler r3MaterialSetColor(in pMaterial as Integer, in pR as Number, in pG as Number, in pB as Number) returns nothing
+   unsafe
+      _material_set_color(pMaterial, pR, pG, pB)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the colour of a material.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: Three numbers as text, "r,g,b", each 0 to 255.
+*/
+public handler r3MaterialColor(in pMaterial as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _material_color(pMaterial) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Gives a material a texture.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pTexture: A texture handle, or 0 for none.
+
+Example:
+r3MaterialSetTexture sBrick, r3TextureLoad(tPath)
+
+Description: The texture is laid over the mesh by the mesh's texture
+coordinates and multiplied by the material's colour.
+*/
+public handler r3MaterialSetTexture(in pMaterial as Integer, in pTexture as Integer) returns nothing
+   unsafe
+      _material_set_texture(pMaterial, pTexture)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the texture of a material.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: The texture handle, or 0 if it has none.
+*/
+public handler r3MaterialTexture(in pMaterial as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _material_texture(pMaterial) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets how shiny a material is.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pStrength: How bright the highlight is, 0 (none) to 1.
+
+pShininess: How tight it is, 1 (broad) to 1000 (a pinpoint).
+
+Description: A highlight appears where a light reflects towards the camera. A
+new material has none.
+*/
+public handler r3MaterialSetSpecular(in pMaterial as Integer, in pStrength as Number, in pShininess as Number) returns nothing
+   unsafe
+      _material_set_specular(pMaterial, pStrength, pShininess)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how shiny a material is.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: Two numbers as text, "strength,shininess".
+*/
+public handler r3MaterialSpecular(in pMaterial as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _material_specular(pMaterial) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Sets the light a material gives off by itself.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+Description: Added to the surface whatever the lights do: a lamp, a screen, a
+glowing sign.
+*/
+public handler r3MaterialSetEmissive(in pMaterial as Integer, in pR as Number, in pG as Number, in pB as Number) returns nothing
+   unsafe
+      _material_set_emissive(pMaterial, pR, pG, pB)
+   end unsafe
+end handler
+
+/**
+Summary: Draws a material at its full colour, ignoring the lights.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pFlag: True to turn it on, false to turn it off.
+
+Description: For a sky, a sign, or a flat drawing style.
+*/
+public handler r3MaterialSetUnlit(in pMaterial as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _material_set_unlit(pMaterial, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a material ignores the lights.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: True if it does.
+*/
+public handler r3MaterialIsUnlit(in pMaterial as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _material_is_unlit(pMaterial) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Draws both faces of a material's triangles.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pFlag: True to turn it on, false to turn it off.
+
+Description: Normally a triangle seen from behind is skipped, which is right
+for a closed object. Turn this on for a sheet seen from both sides: a leaf, a
+flag, a single wall.
+*/
+public handler r3MaterialSetDoubleSided(in pMaterial as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _material_set_double_sided(pMaterial, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether both faces are drawn.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: True if they are.
+*/
+public handler r3MaterialIsDoubleSided(in pMaterial as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _material_is_double_sided(pMaterial) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Lights each triangle as one flat facet.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pFlag: True to turn it on, false to turn it off.
+
+Description: Normally light is blended across a triangle so a sphere looks
+round. Flat shows the facets: the low-polygon look.
+*/
+public handler r3MaterialSetFlat(in pMaterial as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _material_set_flat(pMaterial, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a material is lit in flat facets.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: True if it is.
+*/
+public handler r3MaterialIsFlat(in pMaterial as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _material_is_flat(pMaterial) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Leaves holes where a material's texture is transparent.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+pFlag: True to turn it on, false to turn it off.
+
+Description: A pixel of the texture that is more than half transparent is not
+drawn at all: fences, leaves, a grating.
+*/
+public handler r3MaterialSetCutout(in pMaterial as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _material_set_cutout(pMaterial, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether transparent texture pixels are left out.
+
+pMaterial: A material handle from <r3MaterialCreate>.
+
+Returns: True if they are.
+*/
+public handler r3MaterialIsCutout(in pMaterial as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _material_is_cutout(pMaterial) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Frees a mesh.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Description: A node that used it draws nothing from then on. A mesh loaded
+from a model file takes the materials and textures the file made with it.
+*/
+public handler r3MeshDestroy(in pMesh as Integer) returns nothing
+   unsafe
+      _mesh_destroy(pMesh)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a mesh handle is alive.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Returns: True if it is.
+*/
+public handler r3MeshIsValid(in pMesh as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _mesh_is_valid(pMesh) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many vertices a mesh has.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Returns: The count.
+*/
+public handler r3MeshVertexCount(in pMesh as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_vertex_count(pMesh) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many triangles a mesh has.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Returns: The count.
+*/
+public handler r3MeshTriangleCount(in pMesh as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_triangle_count(pMesh) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the box that just holds a mesh.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Returns: Six numbers as text, "minX,minY,minZ,maxX,maxY,maxZ", in the mesh's
+own frame.
+
+Description: Use it to place a camera so a loaded model fits the picture.
+*/
+public handler r3MeshBounds(in pMesh as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _mesh_bounds(pMesh) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Makes an empty mesh to fill from script.
+
+Returns: A mesh handle.
+
+Example:
+put r3MeshCreate() into tMesh
+get r3MeshAddVertex(tMesh, -1, 0, 0, 0, 0, 1, 0, 1)
+get r3MeshAddVertex(tMesh, 1, 0, 0, 0, 0, 1, 1, 1)
+get r3MeshAddVertex(tMesh, 0, 2, 0, 0, 0, 1, 0.5, 0)
+get r3MeshAddTriangle(tMesh, 1, 2, 3, 1)
+
+Description: Add corners with <r3MeshAddVertex> and faces with
+<r3MeshAddTriangle>.
+*/
+public handler r3MeshCreate() returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_create() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds a corner to a mesh.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+
+pNx: The normal's x.
+
+pNy: The normal's y.
+
+pNz: The normal's z.
+
+pU: The texture coordinate across, 0 at the left edge of the texture.
+
+pV: The texture coordinate down, 0 at the top edge of the texture.
+
+Returns: The new vertex's number, counted from 1, or 0 if refused.
+
+Description: The normal is the direction the surface faces at this corner,
+used for lighting; <r3MeshComputeNormals> can work them out. Texture
+coordinate 0,0 is the top-left corner of the texture and 1,1 the bottom-right.
+*/
+public handler r3MeshAddVertex(in pMesh as Integer, in pX as Number, in pY as Number, in pZ as Number, in pNx as Number, in pNy as Number, in pNz as Number, in pU as Number, in pV as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_add_vertex(pMesh, pX, pY, pZ, pNx, pNy, pNz, pU, pV) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds a triangle to a mesh.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pA: The first corner, a vertex number from <r3MeshAddVertex>.
+
+pB: The second corner.
+
+pC: The third corner.
+
+pSlot: The material slot the triangle uses, 1 to 1024.
+
+Returns: The mesh's triangle count, or 0 if refused.
+
+Description: Name the corners counter-clockwise as seen from the side that
+should be visible.
+*/
+public handler r3MeshAddTriangle(in pMesh as Integer, in pA as Integer, in pB as Integer, in pC as Integer, in pSlot as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_add_triangle(pMesh, pA, pB, pC, pSlot) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Works out smooth normals for a mesh from its triangles.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Description: Each corner gets the average direction of the triangles that
+share it. Call it after the last <r3MeshAddTriangle>.
+*/
+public handler r3MeshComputeNormals(in pMesh as Integer) returns nothing
+   unsafe
+      _mesh_compute_normals(pMesh)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how many material slots a mesh has.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+Returns: The count; 1 for a simple mesh.
+
+Description: A model file with several materials has one slot for each, in the
+order of its material file.
+*/
+public handler r3MeshSlotCount(in pMesh as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_slot_count(pMesh) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the material of one slot of a mesh.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pSlot: The material slot, counted from 1.
+
+Returns: The material handle, or 0 if the slot has none.
+
+Description: A model's own materials can be changed through this handle, for
+example to give one a texture.
+*/
+public handler r3MeshSlotMaterial(in pMesh as Integer, in pSlot as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _mesh_slot_material(pMesh, pSlot) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Gives one slot of a mesh a material.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pSlot: The material slot, counted from 1.
+
+pMaterial: A material handle, or 0 for plain white.
+
+Description: Every node that draws the mesh shows it, unless the node has a
+material of its own.
+*/
+public handler r3MeshSetSlotMaterial(in pMesh as Integer, in pSlot as Integer, in pMaterial as Integer) returns nothing
+   unsafe
+      _mesh_set_slot_material(pMesh, pSlot, pMaterial)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the name a model file gave a material slot.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pSlot: The material slot, counted from 1.
+
+Returns: The name, or empty.
+*/
+public handler r3MeshSlotName(in pMesh as Integer, in pSlot as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _mesh_slot_name(pMesh, pSlot) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns the picture file a model's material asked for.
+
+pMesh: A mesh handle, from <r3MeshBox>, <r3MeshLoadObj> or another of the
+r3Mesh makers.
+
+pSlot: The material slot, counted from 1.
+
+Returns: The file name as the material file wrote it, or empty.
+
+Description: After <r3MeshParseObj>, which reads no files, this says which
+picture to load for each slot.
+*/
+public handler r3MeshSlotTextureName(in pMesh as Integer, in pSlot as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _mesh_slot_texture_name(pMesh, pSlot) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Makes a box.
+
+pHx: Half the width, in metres.
+
+pHy: Half the height, in metres.
+
+pHz: Half the depth, in metres.
+
+Returns: A mesh handle, or 0 if a size was refused.
+
+Example:
+put r3MeshBox(0.5, 0.5, 0.5) into sCube
+
+Description: Centred on its origin, like a box shape in box3dxt, so a node at
+a body's transform covers the body. Each face shows the whole texture.
+*/
+public handler r3MeshBox(in pHx as Number, in pHy as Number, in pHz as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_box(pHx, pHy, pHz) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a flat rectangle facing up.
+
+pHx: Half the width, in metres.
+
+pHz: Half the depth, in metres.
+
+pURepeat: How many times the texture repeats across the width.
+
+pVRepeat: How many times it repeats across the depth.
+
+Returns: A mesh handle, or 0 if an argument was refused.
+
+Example:
+put r3MeshPlane(20, 20, 10, 10) into sFloor
+
+Description: A floor. The texture repeats across it as many times as asked.
+*/
+public handler r3MeshPlane(in pHx as Number, in pHz as Number, in pURepeat as Number, in pVRepeat as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_plane(pHx, pHz, pURepeat, pVRepeat) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a sphere.
+
+pRadius: The radius, in metres.
+
+pSlices: How many segments go round the y axis, 3 to 256.
+
+pStacks: How many segments go from pole to pole, 2 to 256.
+
+Returns: A mesh handle, or 0 if an argument was refused.
+
+Example:
+put r3MeshSphere(0.5, 24, 12) into sBall
+
+Description: More slices and stacks make it rounder and slower to draw; 24 and
+12 look round at most sizes.
+*/
+public handler r3MeshSphere(in pRadius as Number, in pSlices as Integer, in pStacks as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_sphere(pRadius, pSlices, pStacks) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a cylinder standing along the y axis.
+
+pRadius: The radius, in metres.
+
+pHalfHeight: Half the height, in metres.
+
+pSlices: How many segments go round the y axis, 3 to 256.
+
+Returns: A mesh handle, or 0 if an argument was refused.
+
+Description: Closed at both ends.
+*/
+public handler r3MeshCylinder(in pRadius as Number, in pHalfHeight as Number, in pSlices as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_cylinder(pRadius, pHalfHeight, pSlices) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a capsule standing along the y axis.
+
+pRadius: The radius, in metres.
+
+pHalfHeight: Half the distance between the centres of the two end spheres, in
+metres.
+
+pSlices: How many segments go round the y axis, 3 to 256.
+
+pStacks: How many segments each end has from its pole to its rim, 2 to 256.
+
+Returns: A mesh handle, or 0 if an argument was refused.
+
+Description: A cylinder with a half sphere on each end: box3dxt's capsule with
+its two centres at plus and minus pHalfHeight on the y axis.
+*/
+public handler r3MeshCapsule(in pRadius as Number, in pHalfHeight as Number, in pSlices as Integer, in pStacks as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_capsule(pRadius, pHalfHeight, pSlices, pStacks) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a mesh from a list of triangles as text.
+
+pText: One line per triangle, nine numbers: "x1,y1,z1,x2,y2,z2,x3,y3,z3",
+counter-clockwise seen from outside.
+
+Returns: A mesh handle, or 0 if a line was refused.
+
+Description: The text box3dxt gives for a shape, so that what is drawn is
+exactly what is simulated. Lighting is flat, and a texture repeats once a
+metre.
+*/
+public handler r3MeshFromTrianglesText(in pText as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_from_triangles_text(pText) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Loads a model from a Wavefront OBJ file.
+
+pPath: The file's full path.
+
+Returns: A mesh handle, or 0 if the file could not be read.
+
+Example:
+put r3MeshLoadObj(specialFolderPath("resources") & "/teapot.obj") into sTeapot
+put r3NodeCreate(sScene, sTeapot) into sTeapotNode
+
+Description: The material file the model names (MTL) is read too, and the
+pictures it names are loaded as textures, so a textured model arrives ready to
+draw. Faces of any number of corners are accepted. Check <r3LastError> if it
+returns 0.
+*/
+public handler r3MeshLoadObj(in pPath as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_load_obj(pPath) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a model from the text of an OBJ file.
+
+pObjText: The contents of the OBJ file.
+
+pMtlText: The contents of its material file, or empty.
+
+Returns: A mesh handle, or 0 if the text is not a model.
+
+Description: Nothing is read from disk, so this works where there are no
+files, such as the web. Textures are not loaded: ask <r3MeshSlotTextureName>
+which picture each slot wants and set it with <r3MeshSlotMaterial> and
+<r3MaterialSetTexture>.
+*/
+public handler r3MeshParseObj(in pObjText as String, in pMtlText as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _mesh_parse_obj(pObjText, pMtlText) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds a light that shines from far away, like the sun.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pDx: The x of the direction the light travels.
+
+pDy: The y of the direction the light travels (negative is downward).
+
+pDz: The z of the direction the light travels.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+pIntensity: The brightness, 0 to 100; 1 is full.
+
+Returns: A light handle, or 0 if refused.
+
+Example:
+put r3LightCreateDirectional(sScene, -1, -2, -1, 255, 244, 230, 1) into sSun
+
+Description: Every surface is lit from the same direction. A scene holds at
+most 8 lights, and starts with one of these.
+*/
+public handler r3LightCreateDirectional(in pScene as Integer, in pDx as Number, in pDy as Number, in pDz as Number, in pR as Number, in pG as Number, in pB as Number, in pIntensity as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _light_create_directional(pScene, pDx, pDy, pDz, pR, pG, pB, pIntensity) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a scene.
+
+Returns: A scene handle.
+
+Example:
+put r3SceneCreate() into sScene
+
+Description: A scene holds nodes (the things drawn), lights and a camera, and
+draws itself with <r3SceneRender>. It starts with a dim ambient light, one
+directional light and a camera at 0,2,8 looking at the origin. Free it with
+<r3SceneDestroy>.
+*/
+public handler r3SceneCreate() returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _scene_create() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Frees a scene with its nodes and lights.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Description: Meshes, materials and textures are not the scene's and stay.
+*/
+public handler r3SceneDestroy(in pScene as Integer) returns nothing
+   unsafe
+      _scene_destroy(pScene)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a scene handle is alive.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: True if it is.
+*/
+public handler r3SceneIsValid(in pScene as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _scene_is_valid(pScene) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets the colour drawn where nothing is.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+*/
+public handler r3SceneSetBackground(in pScene as Integer, in pR as Number, in pG as Number, in pB as Number) returns nothing
+   unsafe
+      _scene_set_background(pScene, pR, pG, pB)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the background colour.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: Three numbers as text, "r,g,b".
+*/
+public handler r3SceneBackground(in pScene as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_background(pScene) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Sets the light that reaches every surface from everywhere.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+Description: It keeps the sides that face away from every light from going
+black. The default is 64,64,64.
+*/
+public handler r3SceneSetAmbient(in pScene as Integer, in pR as Number, in pG as Number, in pB as Number) returns nothing
+   unsafe
+      _scene_set_ambient(pScene, pR, pG, pB)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the ambient light.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: Three numbers as text, "r,g,b".
+*/
+public handler r3SceneAmbient(in pScene as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_ambient(pScene) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Fades distant things into a colour.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+pFogNear: The distance in metres where fog starts.
+
+pFogFar: The distance where everything is fog, or 0 for no fog.
+
+Example:
+r3SceneSetFog sScene, 31, 33, 41, 10, 40
+
+Description: Usually the background colour, so the far edge of a floor melts
+away. A pFogFar of 0 turns fog off.
+*/
+public handler r3SceneSetFog(in pScene as Integer, in pR as Number, in pG as Number, in pB as Number, in pFogNear as Number, in pFogFar as Number) returns nothing
+   unsafe
+      _scene_set_fog(pScene, pR, pG, pB, pFogNear, pFogFar)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how smooth edges are drawn.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pN: 1 to 4.
+
+Description: Each pixel becomes the average of pN by pN samples. 1 is fastest
+and has jagged edges; 2 is a good balance; 4 is smoothest and sixteen times
+the work.
+*/
+public handler r3SceneSetSupersample(in pScene as Integer, in pN as Integer) returns nothing
+   unsafe
+      _scene_set_supersample(pScene, pN)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the supersampling of a scene.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: 1 to 4.
+*/
+public handler r3SceneSupersample(in pScene as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_supersample(pScene) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Places the camera.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pEx: The eye's x, in metres.
+
+pEy: The eye's y.
+
+pEz: The eye's z.
+
+pTx: The x of the point looked at.
+
+pTy: Its y.
+
+pTz: Its z.
+
+pFov: The vertical field of view in degrees, 5 to 150.
+
+Example:
+r3SceneSetCamera sScene, 0, 3, 10, 0, 1, 0, 50
+
+Description: The same camera box3dxt's renderer has, so one set of numbers
+serves both. Up is the world's y axis; looking straight down, the top of the
+picture is the world's -z.
+*/
+public handler r3SceneSetCamera(in pScene as Integer, in pEx as Number, in pEy as Number, in pEz as Number, in pTx as Number, in pTy as Number, in pTz as Number, in pFov as Number) returns nothing
+   unsafe
+      _scene_set_camera(pScene, pEx, pEy, pEz, pTx, pTy, pTz, pFov)
+   end unsafe
+end handler
+
+/**
+Summary: Places the camera from one text.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pText: Seven numbers, "eyeX,eyeY,eyeZ,targetX,targetY,targetZ,fov".
+
+Description: Takes what <r3SceneCamera> returns, or box3dxt's
+b3RenderCamera().
+*/
+public handler r3SceneSetCameraText(in pScene as Integer, in pText as String) returns nothing
+   unsafe
+      _scene_set_camera_text(pScene, pText)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the camera.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: Seven numbers as text, "eyeX,eyeY,eyeZ,targetX,targetY,targetZ,fov".
+*/
+public handler r3SceneCamera(in pScene as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_camera(pScene) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Sets the nearest and farthest distances drawn.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pNearZ: The near distance in metres, at least 0.001.
+
+pFarZ: The far distance in metres, or 0 for none.
+
+Description: Nothing nearer than the near distance is drawn (the default is
+0.05). A far distance of 0, the default, draws everything.
+*/
+public handler r3SceneSetClip(in pScene as Integer, in pNearZ as Number, in pFarZ as Number) returns nothing
+   unsafe
+      _scene_set_clip(pScene, pNearZ, pFarZ)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the nearest and farthest distances drawn.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: Two numbers as text, "near,far".
+*/
+public handler r3SceneClip(in pScene as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_clip(pScene) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Finds where a point in the world lands in the picture.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pW: The picture's width in pixels, 1 to 4096.
+
+pH: The picture's height in pixels, 1 to 4096.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+
+Returns: Three numbers as text, "px,py,depth", or empty if the point is behind
+the camera. Depth is metres in front of the camera.
+
+Example:
+put r3SceneProject(sScene, 640, 480, 0, 1, 0) into tSpot
+set the loc of field "Label" to (the left of image "View" + item 1 of tSpot), (the top of image "View" + item 2 of tSpot)
+
+Description: For placing a label or a control over something in the scene.
+*/
+public handler r3SceneProject(in pScene as Integer, in pW as Integer, in pH as Integer, in pX as Number, in pY as Number, in pZ as Number) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_project(pScene, pW, pH, pX, pY, pZ) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns the ray from the camera through a point of the picture.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pW: The picture's width in pixels, 1 to 4096.
+
+pH: The picture's height in pixels, 1 to 4096.
+
+pPx: The picture x, in pixels from the left edge; a pixel's centre is at +0.5.
+
+pPy: The picture y, in pixels from the top edge; a pixel's centre is at +0.5.
+
+Returns: Six numbers as text, "originX,originY,originZ,dirX,dirY,dirZ"; the
+direction has length 1.
+
+Description: The same ray box3dxt's b3RenderRay gives, for casting into a
+physics world from a mouse click.
+*/
+public handler r3SceneRay(in pScene as Integer, in pW as Integer, in pH as Integer, in pPx as Number, in pPy as Number) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_ray(pScene, pW, pH, pPx, pPy) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Adds a light that shines from a point, like a lamp.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+pIntensity: The brightness, 0 to 100; 1 is full.
+
+pRange: The distance in metres where its light ends, or 0 for no end.
+
+Returns: A light handle, or 0 if refused.
+
+Example:
+put r3LightCreatePoint(sScene, 0, 3, 0, 255, 200, 120, 2, 12) into sLamp
+
+Description: Things near it are brighter. A scene holds at most 8 lights.
+*/
+public handler r3LightCreatePoint(in pScene as Integer, in pX as Number, in pY as Number, in pZ as Number, in pR as Number, in pG as Number, in pB as Number, in pIntensity as Number, in pRange as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _light_create_point(pScene, pX, pY, pZ, pR, pG, pB, pIntensity, pRange) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Removes a light from its scene.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+*/
+public handler r3LightDestroy(in pLight as Integer) returns nothing
+   unsafe
+      _light_destroy(pLight)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a light handle is alive.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+Returns: True if it is.
+*/
+public handler r3LightIsValid(in pLight as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _light_is_valid(pLight) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many lights a scene has.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: The count, 0 to 8.
+*/
+public handler r3SceneLightCount(in pScene as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_light_count(pScene) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns one of a scene's lights.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pIndex: Which item, counted from 1.
+
+Returns: A light handle, or 0.
+
+Description: Light 1 of a new scene is the directional light it starts with.
+*/
+public handler r3SceneLight(in pScene as Integer, in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_light(pScene, pIndex) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets the colour and brightness of a light.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+pR: Red, 0 to 255.
+
+pG: Green, 0 to 255.
+
+pB: Blue, 0 to 255.
+
+pIntensity: The brightness, 0 to 100; 1 is full.
+*/
+public handler r3LightSetColor(in pLight as Integer, in pR as Number, in pG as Number, in pB as Number, in pIntensity as Number) returns nothing
+   unsafe
+      _light_set_color(pLight, pR, pG, pB, pIntensity)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the colour and brightness of a light.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+Returns: Four numbers as text, "r,g,b,intensity".
+*/
+public handler r3LightColor(in pLight as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _light_color(pLight) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Turns a directional light.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+pDx: The x of the direction the light travels.
+
+pDy: The y of the direction the light travels.
+
+pDz: The z of the direction the light travels.
+
+Description: Refused for a point light.
+*/
+public handler r3LightSetDirection(in pLight as Integer, in pDx as Number, in pDy as Number, in pDz as Number) returns nothing
+   unsafe
+      _light_set_direction(pLight, pDx, pDy, pDz)
+   end unsafe
+end handler
+
+/**
+Summary: Moves a point light.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+
+Description: Refused for a directional light.
+*/
+public handler r3LightSetPosition(in pLight as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _light_set_position(pLight, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the direction of a directional light or the position of a point light.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+Returns: Three numbers as text, "x,y,z".
+*/
+public handler r3LightVector(in pLight as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _light_vector(pLight) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns what kind a light is.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+Returns: 1 for directional, 2 for point, 0 for a handle that is not alive.
+*/
+public handler r3LightKind(in pLight as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _light_kind(pLight) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Turns a light on or off.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+pFlag: True to turn it on, false to turn it off.
+*/
+public handler r3LightSetEnabled(in pLight as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _light_set_enabled(pLight, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a light is on.
+
+pLight: A light handle, from <r3LightCreateDirectional> or
+<r3LightCreatePoint>.
+
+Returns: True if it is.
+*/
+public handler r3LightIsEnabled(in pLight as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _light_is_enabled(pLight) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Places a mesh in a scene.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pMesh: A mesh handle, or 0 for a node that draws nothing yet.
+
+Returns: A node handle, or 0 if refused.
+
+Example:
+put r3NodeCreate(sScene, sCube) into tNode
+r3NodeSetPosition tNode, 0, 2, 0
+
+Description: A node is one thing drawn: a mesh at a position, with a rotation
+and a size. Many nodes can share one mesh. Destroying the scene destroys its
+nodes.
+*/
+public handler r3NodeCreate(in pScene as Integer, in pMesh as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _node_create(pScene, pMesh) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Removes a node from its scene.
+
+pNode: A node handle from <r3NodeCreate>.
+*/
+public handler r3NodeDestroy(in pNode as Integer) returns nothing
+   unsafe
+      _node_destroy(pNode)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a node handle is alive.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: True if it is.
+*/
+public handler r3NodeIsValid(in pNode as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _node_is_valid(pNode) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the scene a node is in.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: The scene handle, or 0.
+*/
+public handler r3NodeScene(in pNode as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _node_scene(pNode) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many nodes a scene has.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: The count.
+*/
+public handler r3SceneNodeCount(in pScene as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_node_count(pScene) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns one of a scene's nodes.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pIndex: Which item, counted from 1.
+
+Returns: A node handle, or 0.
+
+Description: The order changes when a node is destroyed, so read the whole
+list again after that.
+*/
+public handler r3SceneNode(in pScene as Integer, in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_node(pScene, pIndex) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Changes the mesh a node draws.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pMesh: A mesh handle, or 0 to draw nothing.
+*/
+public handler r3NodeSetMesh(in pNode as Integer, in pMesh as Integer) returns nothing
+   unsafe
+      _node_set_mesh(pNode, pMesh)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the mesh a node draws.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: The mesh handle, or 0.
+*/
+public handler r3NodeMesh(in pNode as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _node_mesh(pNode) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Gives a node a material of its own.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pMaterial: A material handle, or 0 to go back to the mesh's own materials.
+
+Description: It replaces every material of the mesh for this node alone, so
+many nodes can share a mesh and differ in colour.
+*/
+public handler r3NodeSetMaterial(in pNode as Integer, in pMaterial as Integer) returns nothing
+   unsafe
+      _node_set_material(pNode, pMaterial)
+   end unsafe
+end handler
+
+/**
+Summary: Returns a node's own material.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: The material handle, or 0 if it uses the mesh's.
+*/
+public handler r3NodeMaterial(in pNode as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _node_material(pNode) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Moves a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+*/
+public handler r3NodeSetPosition(in pNode as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _node_set_position(pNode, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Turns a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pQx: The quaternion's x.
+
+pQy: The quaternion's y.
+
+pQz: The quaternion's z.
+
+pQw: The quaternion's w.
+
+Description: The rotation is a quaternion, as box3dxt gives; it need not be
+exactly unit length.
+*/
+public handler r3NodeSetRotation(in pNode as Integer, in pQx as Number, in pQy as Number, in pQz as Number, in pQw as Number) returns nothing
+   unsafe
+      _node_set_rotation(pNode, pQx, pQy, pQz, pQw)
+   end unsafe
+end handler
+
+/**
+Summary: Moves and turns a node at once.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pX: The x coordinate, in metres.
+
+pY: The y coordinate, in metres (y is up).
+
+pZ: The z coordinate, in metres.
+
+pQx: The quaternion's x.
+
+pQy: The quaternion's y.
+
+pQz: The quaternion's z.
+
+pQw: The quaternion's w.
+*/
+public handler r3NodeSetTransform(in pNode as Integer, in pX as Number, in pY as Number, in pZ as Number, in pQx as Number, in pQy as Number, in pQz as Number, in pQw as Number) returns nothing
+   unsafe
+      _node_set_transform(pNode, pX, pY, pZ, pQx, pQy, pQz, pQw)
+   end unsafe
+end handler
+
+/**
+Summary: Moves and turns a node from one text.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pText: Seven numbers, "x,y,z,qx,qy,qz,qw".
+
+Example:
+r3NodeSetTransformText tNode, b3BodyTransform(tBody)
+
+Description: Takes what box3dxt's b3BodyTransform returns, so a body's node
+follows it in one line.
+*/
+public handler r3NodeSetTransformText(in pNode as Integer, in pText as String) returns nothing
+   unsafe
+      _node_set_transform_text(pNode, pText)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the size of a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pSx: The scale along the mesh's x.
+
+pSy: The scale along its y.
+
+pSz: The scale along its z.
+
+Description: 1 is the mesh's own size. A negative number mirrors the mesh.
+*/
+public handler r3NodeSetScale(in pNode as Integer, in pSx as Number, in pSy as Number, in pSz as Number) returns nothing
+   unsafe
+      _node_set_scale(pNode, pSx, pSy, pSz)
+   end unsafe
+end handler
+
+/**
+Summary: Returns where a node is.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: Three numbers as text, "x,y,z".
+*/
+public handler r3NodePosition(in pNode as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _node_position(pNode) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns the rotation of a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: Four numbers as text, "qx,qy,qz,qw".
+*/
+public handler r3NodeRotation(in pNode as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _node_rotation(pNode) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns the size of a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: Three numbers as text, "sx,sy,sz".
+*/
+public handler r3NodeScale(in pNode as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _node_scale(pNode) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Returns the position and rotation of a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: Seven numbers as text, "x,y,z,qx,qy,qz,qw".
+*/
+public handler r3NodeTransform(in pNode as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _node_transform(pNode) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Shows or hides a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pFlag: True to show it, false to hide it.
+
+Description: A hidden node is not drawn and not found by <r3ScenePick>.
+*/
+public handler r3NodeSetVisible(in pNode as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _node_set_visible(pNode, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a node is shown.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: True if it is.
+*/
+public handler r3NodeIsVisible(in pNode as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _node_is_visible(pNode) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Gives a node a number of your choosing.
+
+pNode: A node handle from <r3NodeCreate>.
+
+pTag: A whole number; 0 means no tag.
+
+Example:
+r3NodeSetTag tNode, tBody
+
+Description: Normally the box3dxt body the node draws: <r3SceneApplyMoves>
+moves the nodes whose tag is a body that moved.
+*/
+public handler r3NodeSetTag(in pNode as Integer, in pTag as Integer) returns nothing
+   unsafe
+      _node_set_tag(pNode, pTag)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the tag of a node.
+
+pNode: A node handle from <r3NodeCreate>.
+
+Returns: The number, or 0.
+*/
+public handler r3NodeTag(in pNode as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _node_tag(pNode) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Finds the node with a tag.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pTag: The number given to <r3NodeSetTag>.
+
+Returns: The first such node's handle, or 0.
+*/
+public handler r3SceneNodeByTag(in pScene as Integer, in pTag as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_node_by_tag(pScene, pTag) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Moves every node whose body moved, from box3dxt's move list.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pText: What b3MovesText() returns: one line per body,
+"body,x,y,z,qx,qy,qz,qw,fellAsleep".
+
+Returns: How many nodes were moved.
+
+Example:
+b3WorldStep sWorld, 1/60, 4
+get b3WorldUpdateMoves(sWorld)
+get r3SceneApplyMoves(sScene, b3MovesText())
+set the imageData of image "View" to r3SceneRender(sScene, 640, 480)
+
+Description: One call a frame carries a whole physics step to the picture:
+each line of the text moves the nodes tagged with that body (<r3NodeSetTag>).
+Bodies with no node are skipped.
+*/
+public handler r3SceneApplyMoves(in pScene as Integer, in pText as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_apply_moves(pScene, pText) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets how many processor threads draw a picture.
+
+pN: 1 to 16.
+
+Description: The picture is the same whatever the number; more threads draw a
+large picture faster. The default is the number of processor cores, up to 8.
+*/
+public handler r3SetThreadCount(in pN as Integer) returns nothing
+   unsafe
+      _set_thread_count(pN)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how many threads draw a picture.
+
+Returns: 1 to 16.
+*/
+public handler r3ThreadCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _thread_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Draws a scene and returns the picture.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pW: The picture's width in pixels, 1 to 4096.
+
+pH: The picture's height in pixels, 1 to 4096.
+
+Returns: The picture as imageData, pW by pH pixels, or empty if the call was
+refused.
+
+Example:
+set the imageData of image "View" to r3SceneRender(sScene, the width of image "View", the height of image "View")
+
+Description: Set it as the imageData of an image of the same width and height.
+The whole picture is drawn inside the library, so thousands of triangles cost
+a few milliseconds.
+*/
+public handler r3SceneRender(in pScene as Integer, in pW as Integer, in pH as Integer) returns Data
+   variable tPtr as Pointer
+   variable tLen as Integer
+   variable tData as Data
+   variable tOk as CBool
+   checkABI()
+   put the empty data into tData
+   unsafe
+      put _scene_render(pScene, pW, pH) into tLen
+      if tLen > 0 then
+         put _scene_frame(pScene) into tPtr
+         put MCDataCreateWithBytes(tPtr, tLen, tData) into tOk
+      end if
+   end unsafe
+   return tData
+end handler
+
+/**
+Summary: Returns the last picture drawn of a scene again.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: The picture as imageData, or empty if none was drawn.
+*/
+public handler r3SceneFrame(in pScene as Integer) returns Data
+   variable tPtr as Pointer
+   variable tLen as Integer
+   variable tData as Data
+   variable tOk as CBool
+   put the empty data into tData
+   unsafe
+      put _scene_frame_length(pScene) into tLen
+      if tLen > 0 then
+         put _scene_frame(pScene) into tPtr
+         put MCDataCreateWithBytes(tPtr, tLen, tData) into tOk
+      end if
+   end unsafe
+   return tData
+end handler
+
+/**
+Summary: Returns the size of the last picture drawn of a scene.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: The byte count, width times height times 4, or 0.
+*/
+public handler r3SceneFrameLength(in pScene as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_frame_length(pScene) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how much work the last picture was.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: Three numbers as text, "triangles,pixels,milliseconds": triangles
+drawn, pixels written, and the time taken.
+
+Description: For tuning a scene: show item 3 in a field while you change it.
+*/
+public handler r3SceneStats(in pScene as Integer) returns String
+   variable tR as Pointer
+   unsafe
+      put _scene_stats(pScene) into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+/**
+Summary: Finds the node under a point of the picture.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pW: The picture's width in pixels, 1 to 4096.
+
+pH: The picture's height in pixels, 1 to 4096.
+
+pPx: The picture x, in pixels from the left edge; a pixel's centre is at +0.5.
+
+pPy: The picture y, in pixels from the top edge; a pixel's centre is at +0.5.
+
+Returns: The node handle, or 0 if nothing is there.
+
+Example:
+on mouseDown
+   put r3ScenePick(sScene, the width of me, the height of me, the mouseH - the left of me, the mouseV - the top of me) into tNode
+end mouseDown
+
+Description: For clicking on things. <r3HitText> then says where it was hit.
+*/
+public handler r3ScenePick(in pScene as Integer, in pW as Integer, in pH as Integer, in pPx as Number, in pPy as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_pick(pScene, pW, pH, pPx, pPy) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Finds the first node a ray meets.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pOx: The x of the ray's start.
+
+pOy: The y of the ray's start.
+
+pOz: The z of the ray's start.
+
+pDx: The x of the ray's direction.
+
+pDy: The y of the ray's direction.
+
+pDz: The z of the ray's direction.
+
+Returns: The node handle, or 0.
+
+Description: <r3HitText> then says where.
+*/
+public handler r3SceneRayCast(in pScene as Integer, in pOx as Number, in pOy as Number, in pOz as Number, in pDx as Number, in pDy as Number, in pDz as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _scene_ray_cast(pScene, pOx, pOy, pOz, pDx, pDy, pDz) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns where the last pick or ray cast hit.
+
+Returns: Five numbers as text, "x,y,z,distance,triangle", or empty if it hit
+nothing.
+*/
+public handler r3HitText() returns String
+   variable tR as Pointer
+   unsafe
+      put _hit_text() into tR
+   end unsafe
+   return textOf(tR)
+end handler
+
+end library

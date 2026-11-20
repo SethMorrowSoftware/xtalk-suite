@@ -103,6 +103,9 @@ LCB_LIBS = {
     # box3dxt joined 2026-11-20. "b3" does not begin with "b2", so the two
     # physics bindings stay disjoint by prefix.
     "box3dxt/src/box3dxt.lcb": ("b3",),
+    # render3dxt joined 2026-11-20: the renderer beside the two physics
+    # bindings, and no other prefix begins with "r3".
+    "render3dxt/src/render3dxt.lcb": ("r3",),
     "curlxt/src/curl.lcb": ("cu",),
 }
 
