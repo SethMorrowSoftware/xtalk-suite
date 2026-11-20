@@ -56,7 +56,15 @@
 
 #if !defined(_WIN32)
     #define _GNU_SOURCE 1          /* dladdr, RTLD_DEEPBIND, fseeko */
-    #define _FILE_OFFSET_BITS 64
+    /* NOT on Android: 32-bit bionic declares fseeko and ftello under a
+     * 64-bit off_t only from API 24, and this file builds at API 21 (the
+     * first armv7 and x86 builds, 2026-11-20, stopped right there). 64-bit
+     * Android has a 64-bit off_t without it; on 32-bit, off_t still holds
+     * every position below PDX_MAX_FILE, and a larger file is refused by
+     * the seek to its end rather than by the size check. */
+    #if !defined(__ANDROID__)
+        #define _FILE_OFFSET_BITS 64
+    #endif
 #endif
 
 #include "fpdfview.h"
