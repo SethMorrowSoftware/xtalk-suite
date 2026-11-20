@@ -180,7 +180,8 @@ static void check_at(int ok, const char *what, int line)
 }
 #define CHECK(cond, what) check_at((cond) ? 1 : 0, what, __LINE__)
 
-static int near(double a, double b, double tol) { return fabs(a - b) <= tol; }
+/* Not "near": that is a macro of <windows.h> (MSVC, 2026-11-20). */
+static int close_to(double a, double b, double tol) { return fabs(a - b) <= tol; }
 
 /* The n-th comma-separated number of a text result. */
 static double item(const char *text, int n)
@@ -364,12 +365,12 @@ static void test_engine_and_tone(void)
     CHECK(aux_engine_is_valid(e) && aux_engine_is_offline(e), "it is valid and offline");
     CHECK(aux_engine_sample_rate(e) == 48000 && aux_engine_channels(e) == 2, "it has the rate and channels asked for");
     CHECK(aux_engine_device_name(e)[0] == 0, "an offline engine has no device name");
-    CHECK(near(aux_engine_volume(e), 1.0, 1e-6), "its volume starts at 1");
+    CHECK(close_to(aux_engine_volume(e), 1.0, 1e-6), "its volume starts at 1");
     CHECK(aux_engine_time(e) == 0.0, "its clock starts at 0");
 
     CHECK(render_peak(e, 4800) == 0.0, "an engine with no sounds renders silence");
     CHECK(aux_out_sample_rate() == 48000 && aux_out_channels() == 2, "the out buffer says what the render was");
-    CHECK(near(aux_engine_time(e), 0.1, 1e-9), "4800 frames at 48000 is a tenth of a second");
+    CHECK(close_to(aux_engine_time(e), 0.1, 1e-9), "4800 frames at 48000 is a tenth of a second");
     CHECK(aux_engine_render(e, 0, "f32") == 0, "rendering 0 frames is refused");
     CHECK(aux_engine_render(e, 100, "f64") == 0, "an unknown format is refused");
     CHECK(aux_engine_render(e, 100, NULL) == 0, "a missing format is refused");
@@ -393,9 +394,9 @@ static void test_engine_and_tone(void)
     aux_sound_start(t);
     CHECK(aux_sound_is_playing(t), "started, it is playing");
     double p = render_peak(e, 4800);
-    CHECK(near(p, 0.5, 0.01), "a 0.5 sine peaks at 0.5");
+    CHECK(close_to(p, 0.5, 0.01), "a 0.5 sine peaks at 0.5");
     const char *pk = aux_engine_peak(e);
-    CHECK(items(pk) == 2 && near(item(pk, 1), 0.5, 0.01) && near(item(pk, 2), 0.5, 0.01), "the meter saw 0.5 on both sides");
+    CHECK(items(pk) == 2 && close_to(item(pk, 1), 0.5, 0.01) && close_to(item(pk, 2), 0.5, 0.01), "the meter saw 0.5 on both sides");
     pk = aux_engine_peak(e);
     CHECK(item(pk, 1) == 0.0 && item(pk, 2) == 0.0, "reading the meter reset it");
     const char *w = aux_engine_waveform(e, 64);
@@ -408,15 +409,15 @@ static void test_engine_and_tone(void)
 
     /* volume, pan, pitch */
     aux_sound_set_volume(t, 0.5);
-    CHECK(near(aux_sound_volume(t), 0.5, 1e-6), "the volume reads back");
-    CHECK(near(render_peak(e, 4800), 0.25, 0.01), "half volume is half the peak");
+    CHECK(close_to(aux_sound_volume(t), 0.5, 1e-6), "the volume reads back");
+    CHECK(close_to(render_peak(e, 4800), 0.25, 0.01), "half volume is half the peak");
     aux_sound_set_volume(t, -1);
     aux_sound_set_volume(t, NAN);
     aux_sound_set_volume(t, 1000);
-    CHECK(near(aux_sound_volume(t), 0.5, 1e-6), "a negative, a NaN and a huge volume are refused");
+    CHECK(close_to(aux_sound_volume(t), 0.5, 1e-6), "a negative, a NaN and a huge volume are refused");
     aux_sound_set_volume(t, 1.0);
     aux_sound_set_pan(t, 1.0);
-    CHECK(near(aux_sound_pan(t), 1.0, 1e-6), "the pan reads back");
+    CHECK(close_to(aux_sound_pan(t), 1.0, 1e-6), "the pan reads back");
     {
         double l, r;
         int bytes = aux_engine_render(e, 4800, "f32");
@@ -425,12 +426,12 @@ static void test_engine_and_tone(void)
         CHECK(l < 0.01 && r > 0.3, "panned right, the left side is silent");
     }
     aux_sound_set_pan(t, 5);
-    CHECK(near(aux_sound_pan(t), 1.0, 1e-6), "a pan of 5 is refused");
+    CHECK(close_to(aux_sound_pan(t), 1.0, 1e-6), "a pan of 5 is refused");
     aux_sound_set_pan(t, 0.0);
     aux_sound_set_pitch(t, 2.0);
-    CHECK(near(aux_sound_pitch(t), 2.0, 1e-6), "the pitch reads back");
+    CHECK(close_to(aux_sound_pitch(t), 2.0, 1e-6), "the pitch reads back");
     aux_sound_set_pitch(t, 0.0);
-    CHECK(near(aux_sound_pitch(t), 2.0, 1e-6), "a pitch of 0 is refused");
+    CHECK(close_to(aux_sound_pitch(t), 2.0, 1e-6), "a pitch of 0 is refused");
     aux_sound_set_pitch(t, 1.0);
     aux_sound_set_frequency(t, 880);
     aux_sound_set_frequency(t, -5);
@@ -438,11 +439,11 @@ static void test_engine_and_tone(void)
 
     /* the engine's own volume, and stop */
     aux_engine_set_volume(e, 0.5);
-    CHECK(near(aux_engine_volume(e), 0.5, 1e-6), "the engine volume reads back");
+    CHECK(close_to(aux_engine_volume(e), 0.5, 1e-6), "the engine volume reads back");
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.25, 0.02), "and halves the mix");
+    CHECK(close_to(render_peak(e, 4800), 0.25, 0.02), "and halves the mix");
     aux_engine_set_volume(e, -3);
-    CHECK(near(aux_engine_volume(e), 0.5, 1e-6), "a negative engine volume is refused");
+    CHECK(close_to(aux_engine_volume(e), 0.5, 1e-6), "a negative engine volume is refused");
     aux_engine_set_volume(e, 1.0);
     aux_sound_stop(t);
     CHECK(!aux_sound_is_playing(t), "stopped, it is not playing");
@@ -458,7 +459,7 @@ static void test_engine_and_tone(void)
         int s = aux_sound_tone(e, shapes[i], 220, 0.25);
         CHECK(s > 0, "another shape is made");
         aux_sound_start(s);
-        CHECK(near(render_peak(e, 4800), 0.25, 0.03), "and peaks at its amplitude");
+        CHECK(close_to(render_peak(e, 4800), 0.25, 0.03), "and peaks at its amplitude");
         aux_sound_free(s);
         CHECK(!aux_sound_is_valid(s), "freed, it is not valid");
     }
@@ -516,12 +517,12 @@ static void test_codecs(void)
     CHECK(dn == frames * 2 && memcmp(aux_out_pointer(), tone, (size_t)dn) == 0, "and so does decoding from it");
 
     dn = aux_decode_file(k_wav_short, "f32", 16000, 2);
-    CHECK(near(dn, frames * 2 * 2 * 4, 64), "decoding to f32 16000 stereo converts: twice the frames, two channels, four bytes");
+    CHECK(close_to(dn, frames * 2 * 2 * 4, 64), "decoding to f32 16000 stereo converts: twice the frames, two channels, four bytes");
     CHECK(aux_out_sample_rate() == 16000 && aux_out_channels() == 2, "and says so");
     {
         double l, r;
         out_peaks(dn, 2, &l, &r);
-        CHECK(near(l, 0.5, 0.02) && near(r, 0.5, 0.02), "and the converted sound still peaks at 0.5");
+        CHECK(close_to(l, 0.5, 0.02) && close_to(r, 0.5, 0.02), "and the converted sound still peaks at 0.5");
     }
     CHECK(aux_decode_file("no-such-file.wav", "s16", 0, 0) == 0 && aux_last_error()[0] != 0, "a missing file is refused, with a reason");
     CHECK(aux_decode_file("", "s16", 0, 0) == 0 && aux_decode_file(NULL, "s16", 0, 0) == 0, "an empty path is refused");
@@ -588,12 +589,12 @@ static void test_sounds(void)
     /* loaded whole */
     int s = aux_sound_load(e, k_wav_short, 0);
     CHECK(s > 0, "the short file loads whole");
-    CHECK(near(aux_sound_length(s), 0.5, 0.01), "it is half a second long");
+    CHECK(close_to(aux_sound_length(s), 0.5, 0.01), "it is half a second long");
     CHECK(aux_sound_position(s) == 0.0, "it starts at 0");
     CHECK(aux_poll_ended() == 0, "nothing has ended yet");
     aux_sound_start(s);
     double pk = play_out(e, s, 0.5);
-    CHECK(near(pk, 0.5, 0.05), "it plays, peaking at the file's 0.5");
+    CHECK(close_to(pk, 0.5, 0.05), "it plays, peaking at the file's 0.5");
     CHECK(aux_sound_at_end(s) && !aux_sound_is_playing(s), "then it is at its end and no longer playing");
     CHECK(aux_poll_ended() == 1 && aux_ended_sound(1) == s, "poll reports it ended, once");
     CHECK(aux_ended_sound(0) == 0 && aux_ended_sound(2) == 0, "outside the list there is no sound");
@@ -607,14 +608,14 @@ static void test_sounds(void)
     render_peak(e, 4800);
     CHECK(aux_sound_position(s) == at, "stopped, it keeps its place");
     aux_sound_seek(s, 0.25);
-    CHECK(near(aux_sound_position(s), 0.25, 0.01), "seek moves it");
+    CHECK(close_to(aux_sound_position(s), 0.25, 0.01), "seek moves it");
     aux_sound_seek(s, -1);
-    CHECK(near(aux_sound_position(s), 0.25, 0.01), "a negative position is refused");
+    CHECK(close_to(aux_sound_position(s), 0.25, 0.01), "a negative position is refused");
 
     /* clones: one set of samples, many players */
     int c1 = aux_sound_clone(s), c2 = aux_sound_clone(s);
     CHECK(c1 > 0 && c2 > 0 && c1 != c2 && c1 != s, "two clones, three handles");
-    CHECK(near(aux_sound_length(c1), 0.5, 0.01), "a clone has the same length");
+    CHECK(close_to(aux_sound_length(c1), 0.5, 0.01), "a clone has the same length");
     CHECK(aux_engine_sound_count(e) == 3, "the engine counts three sounds");
     aux_sound_seek(s, 0);
     aux_sound_start(s);
@@ -625,12 +626,12 @@ static void test_sounds(void)
     aux_sound_stop(c1);
     aux_sound_set_volume(c2, 0.0);
     render_peak(e, 2400);
-    CHECK(near(render_peak(e, 2400), 0.5, 0.06), "each clone has its own state");
+    CHECK(close_to(render_peak(e, 2400), 0.5, 0.06), "each clone has its own state");
     aux_sound_free(s);
     CHECK(!aux_sound_is_valid(s) && aux_sound_is_valid(c1), "freeing the original leaves its clones");
     aux_sound_set_volume(c2, 1.0);
     aux_sound_seek(c2, 0);
-    CHECK(near(play_out(e, c2, 0.5), 0.5, 0.06), "and they still play");
+    CHECK(close_to(play_out(e, c2, 0.5), 0.5, 0.06), "and they still play");
     aux_sound_free(c1);
     aux_sound_free(c2);
     aux_poll_ended();
@@ -638,11 +639,11 @@ static void test_sounds(void)
     /* streamed: three seconds, so the reader has to keep ahead */
     int st = aux_sound_load(e, k_wav_long, 1);
     CHECK(st > 0, "the long file opens as a stream");
-    CHECK(near(aux_sound_length(st), 3.0, 0.01), "it is three seconds long");
+    CHECK(close_to(aux_sound_length(st), 3.0, 0.01), "it is three seconds long");
     CHECK(aux_sound_clone(st) == 0, "a stream cannot be cloned");
     aux_sound_start(st);
     pk = play_out(e, st, 3.0);
-    CHECK(near(pk, 0.5, 0.05), "it plays through");
+    CHECK(close_to(pk, 0.5, 0.05), "it plays through");
     CHECK(aux_sound_at_end(st), "to its end");
     CHECK(aux_poll_ended() == 1 && aux_ended_sound(1) == st, "and poll reports it");
     aux_sound_free(st);
@@ -654,7 +655,7 @@ static void test_sounds(void)
     for (int stream = 0; stream <= 1; stream++) {
         int f = aux_sound_load_data(e, k_flac, (int)sizeof(k_flac), stream);
         CHECK(f > 0, "the FLAC bytes load");
-        CHECK(near(aux_sound_length(f), 0.25, 0.01), "a quarter second");
+        CHECK(close_to(aux_sound_length(f), 0.25, 0.01), "a quarter second");
         aux_sound_start(f);
         pk = play_out(e, f, 0.25);
         CHECK(pk > 0.05 && aux_sound_at_end(f), "and play to the end");
@@ -681,13 +682,13 @@ static void test_sounds(void)
     CHECK(p > 0, "raw samples make a sound (an odd trailing byte ignored)");
     memset(tone, 0, (size_t)frames * 2);        /* the shim copied: ours can go */
     free(tone);
-    CHECK(near(aux_sound_length(p), 0.2, 0.005), "a fifth of a second");
+    CHECK(close_to(aux_sound_length(p), 0.2, 0.005), "a fifth of a second");
     aux_sound_set_looping(p, 1);
     CHECK(aux_sound_is_looping(p), "looping reads back");
     aux_sound_start(p);
     pk = 0.0;
     for (int i = 0; i < 20; i++) { double q = render_peak(e, 4800); if (q > pk) pk = q; }
-    CHECK(near(pk, 0.5, 0.05) && aux_sound_is_playing(p) && !aux_sound_at_end(p), "two seconds on, a looping 0.2 s sound still plays");
+    CHECK(close_to(pk, 0.5, 0.05) && aux_sound_is_playing(p) && !aux_sound_at_end(p), "two seconds on, a looping 0.2 s sound still plays");
     CHECK(aux_poll_ended() == 0, "and a looping sound never ends");
     aux_sound_set_loop_range(p, 0.05, 0.1);
     for (int i = 0; i < 10; i++) render_peak(e, 4800);
@@ -751,7 +752,7 @@ static void test_schedule_and_fades(void)
     CHECK(first < 0.2 && second > 0.4, "a fade-in gets louder");
     aux_sound_fade(t, -1, 0.5, 0.05);
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.25, 0.02), "a fade from 'where it is' lands on its target");
+    CHECK(close_to(render_peak(e, 4800), 0.25, 0.02), "a fade from 'where it is' lands on its target");
     aux_sound_fade(t, -2, 1, 0.1);
     CHECK(strstr(aux_last_error(), "fade") != NULL, "a fade from -2 is refused");
     aux_sound_stop_with_fade(t, -1);
@@ -768,7 +769,7 @@ static void test_groups_and_space(void)
     int g = aux_group_create(e);
     int og = aux_group_create(other);
     CHECK(g > 0 && og > 0 && aux_group_is_valid(g), "groups are made");
-    CHECK(near(aux_group_volume(g), 1.0, 1e-6) && aux_group_pan(g) == 0.0 && near(aux_group_pitch(g), 1.0, 1e-6), "a group starts at volume 1, pan 0, pitch 1");
+    CHECK(close_to(aux_group_volume(g), 1.0, 1e-6) && aux_group_pan(g) == 0.0 && close_to(aux_group_pitch(g), 1.0, 1e-6), "a group starts at volume 1, pan 0, pitch 1");
     aux_sound_start(t);
     aux_sound_set_group(t, og);
     CHECK(aux_sound_group(t) == 0 && strstr(aux_last_error(), "different engines") != NULL, "a group of another engine is refused");
@@ -777,16 +778,16 @@ static void test_groups_and_space(void)
     aux_sound_set_group(t, g);
     CHECK(aux_sound_group(t) == g, "the sound joins the group");
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.5, 0.02), "and is still heard");
+    CHECK(close_to(render_peak(e, 4800), 0.5, 0.02), "and is still heard");
     aux_group_set_volume(g, 0.5);
-    CHECK(near(aux_group_volume(g), 0.5, 1e-6), "the group volume reads back");
+    CHECK(close_to(aux_group_volume(g), 0.5, 1e-6), "the group volume reads back");
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.25, 0.02), "and halves its sounds");
+    CHECK(close_to(render_peak(e, 4800), 0.25, 0.02), "and halves its sounds");
     aux_group_set_volume(g, -1);
-    CHECK(near(aux_group_volume(g), 0.5, 1e-6), "a negative group volume is refused");
+    CHECK(close_to(aux_group_volume(g), 0.5, 1e-6), "a negative group volume is refused");
     aux_group_set_volume(g, 1.0);
     aux_group_set_pan(g, -1.0);
-    CHECK(near(aux_group_pan(g), -1.0, 1e-6), "the group pan reads back");
+    CHECK(close_to(aux_group_pan(g), -1.0, 1e-6), "the group pan reads back");
     {
         double l, r;
         int bytes = aux_engine_render(e, 4800, "f32");
@@ -795,12 +796,12 @@ static void test_groups_and_space(void)
         CHECK(r < 0.01 && l > 0.3, "a group panned left silences the right");
     }
     aux_group_set_pan(g, 3);
-    CHECK(near(aux_group_pan(g), -1.0, 1e-6), "a group pan of 3 is refused");
+    CHECK(close_to(aux_group_pan(g), -1.0, 1e-6), "a group pan of 3 is refused");
     aux_group_set_pan(g, 0.0);
     aux_group_set_pitch(g, 2.0);
-    CHECK(near(aux_group_pitch(g), 2.0, 1e-6), "the group pitch reads back");
+    CHECK(close_to(aux_group_pitch(g), 2.0, 1e-6), "the group pitch reads back");
     aux_group_set_pitch(g, -1);
-    CHECK(near(aux_group_pitch(g), 2.0, 1e-6), "a negative group pitch is refused");
+    CHECK(close_to(aux_group_pitch(g), 2.0, 1e-6), "a negative group pitch is refused");
     aux_group_set_pitch(g, 1.0);
     aux_group_stop(g);
     render_peak(e, 4800);
@@ -813,7 +814,7 @@ static void test_groups_and_space(void)
     aux_group_free(g);
     CHECK(!aux_group_is_valid(g) && aux_sound_group(t) == 0, "freeing the group returns its sound to the engine");
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.5, 0.02), "where it is heard at full volume");
+    CHECK(close_to(render_peak(e, 4800), 0.5, 0.02), "where it is heard at full volume");
     g = aux_group_create(e);
     aux_sound_set_group(t, g);
     aux_sound_set_group(t, 0);
@@ -825,7 +826,7 @@ static void test_groups_and_space(void)
     CHECK(!aux_sound_is_spatial(t), "a sound starts without a place");
     aux_sound_set_position(t, 0, 0, -50);
     render_peak(e, 4800);
-    CHECK(near(render_peak(e, 4800), 0.5, 0.02), "and its position changes nothing until it has one");
+    CHECK(close_to(render_peak(e, 4800), 0.5, 0.02), "and its position changes nothing until it has one");
     aux_sound_set_spatial(t, 1);
     CHECK(aux_sound_is_spatial(t), "spatial reads back");
     aux_sound_set_position(t, 0, 0, -1);
@@ -837,7 +838,7 @@ static void test_groups_and_space(void)
     render_peak(e, 9600);
     double farPeak = render_peak(e, 4800);
     /* straight ahead a placed sound is shared between the two sides: half each */
-    CHECK(near(nearPeak, 0.25, 0.02) && farPeak < nearPeak * 0.05, "fifty metres away it is much quieter than at one");
+    CHECK(close_to(nearPeak, 0.25, 0.02) && farPeak < nearPeak * 0.05, "fifty metres away it is much quieter than at one");
     aux_sound_set_rolloff(t, 0.0);
     render_peak(e, 9600);
     CHECK(render_peak(e, 4800) > nearPeak * 0.8, "with no rolloff, distance does not matter");
@@ -965,7 +966,7 @@ static void test_devices(void)
     double clock = aux_engine_time(e);
     CHECK(clock > 0.05, "its clock runs by itself");
     const char *pk = aux_engine_peak(e);
-    CHECK(near(item(pk, 1), 0.5, 0.02), "and its thread mixed the tone");
+    CHECK(close_to(item(pk, 1), 0.5, 0.02), "and its thread mixed the tone");
     CHECK(items(aux_engine_waveform(e, 32)) == 32, "the waveform is read while the device runs");
     aux_engine_stop(e);
     sleep_ms(60);
@@ -1031,7 +1032,7 @@ static void test_devices(void)
     CHECK(secs > 0.1 && !aux_capture_is_recording(c), "the recording stops, with its length");
     CHECK(aux_capture_record_stop(c) == 0.0, "stopping twice is fine");
     int dn = aux_decode_file(k_wav_rec, "s16", 0, 0);
-    CHECK(near(dn, secs * 16000 * 2, 4) && aux_out_sample_rate() == 16000 && aux_out_channels() == 1,
+    CHECK(close_to(dn, secs * 16000 * 2, 4) && aux_out_sample_rate() == 16000 && aux_out_channels() == 1,
           "the recorded file is a WAV of that length, in the capture's format");
     aux_capture_stop(c);
     CHECK(!aux_capture_is_running(c), "it stops");
@@ -1092,7 +1093,7 @@ static void test_shutdown(void)
     CHECK(e > 0 && e != 0, "the library works again after a shutdown");
     t = aux_sound_tone(e, "sine", 440, 0.5);
     aux_sound_start(t);
-    CHECK(near(render_peak(e, 4800), 0.5, 0.01), "and sounds as before");
+    CHECK(close_to(render_peak(e, 4800), 0.5, 0.01), "and sounds as before");
     aux_shut_down();
 }
 
