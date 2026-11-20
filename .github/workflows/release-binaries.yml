@@ -80,7 +80,7 @@
 # hold) - the dylibs ship with the linker's ad-hoc signature only, and the
 # installer's refusals keep holding the line for hand-assembled bundles.
 #
-# ANDROID LANES SINCE 2026-11-18. The `android` job builds all eight native
+# ANDROID LANES SINCE 2026-11-18. The `android` job builds all ten native
 # members for the four Android ABIs OXT-Beyond's Android builder packs
 # (arm64-android, armv7-android, x86_64-android, x86-android). The recipe is
 # NOT spelled out here row by row as the desktop lanes are: one toolchain,
@@ -426,6 +426,67 @@ jobs:
             os: windows-2025
             cmake_args: -A Win32
           - member: box3dxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          # ---- webpxt and barcodext: added 2026-11-20. Both build their
+          # library from source inside the member's CMake (FetchContent,
+          # pinned to a commit) and have no dependency, so each row is
+          # box3dxt's shape. barcodext is C++20 (zxing-cpp): its 32-bit gcc
+          # row needs the C++ multilib and -m32 for both languages.
+          # native-webpxt.yml and native-barcodext.yml build and test the
+          # same six on every change to the member.
+          - member: webpxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: webpxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: webpxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: webpxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: webpxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: webpxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          - member: barcodext
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: barcodext
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: barcodext
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib g++-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32
+          - member: barcodext
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: barcodext
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: barcodext
             platform_id: universal-mac
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
@@ -1217,7 +1278,7 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------- Android
-  # All eight native members, one job per Android ABI, each calling
+  # All ten native members, one job per Android ABI, each calling
   # tools/build-android.sh once per member. Per ABI rather than per member
   # and ABI: the three OpenSSL members share one static OpenSSL per ABI (four
   # builds of it instead of twelve), the x86 ABIs share one emulator boot per

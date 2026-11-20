@@ -377,6 +377,39 @@ MEMBERS = [
         "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
+        "name": "barcodext",
+        "lib": "barcodext",
+        "lcb": ["barcodext/src/barcodext.lcb"],
+        # EMPTY until the first release-binaries dispatch lands its libraries
+        # (joined 2026-11-20 with none committed), as box3dxt's row says.
+        "ships": [],
+        "shim": "barcodext/src/barcode_shim.cpp",
+        "prefix": "bcx_",
+        "abi_header": "barcodext/src/barcode_shim.cpp",
+        "abi_define": "BCX_ABI_VERSION",
+        "abi_symbol": "bcx_abi_version",
+        # src/barcodext.map (GNU ld) and the same pattern for ld64 export
+        # bcx_* and nothing else, the statically linked C++ runtime included
+        # (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
+        "name": "webpxt",
+        "lib": "webpxt",
+        "lcb": ["webpxt/src/webpxt.lcb"],
+        # EMPTY until the first release-binaries dispatch, as above.
+        "ships": [],
+        "shim": "webpxt/src/webp_shim.c",
+        "prefix": "wpx_",
+        "abi_header": "webpxt/src/webp_shim.c",
+        "abi_define": "WPX_ABI_VERSION",
+        "abi_symbol": "wpx_abi_version",
+        # src/webpxt.map and the ld64 pattern export wpx_* and nothing else:
+        # libwebp declares its API with default visibility, and the script
+        # is what keeps WebP* out (measured on x86_64-linux, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],

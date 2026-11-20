@@ -854,6 +854,54 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
+### 2.11 webpxt
+
+- Joined 2026-11-20: libwebp 1.6.0 (pinned to the commit of its tag) behind the `wpx_*` C
+  shim (ABI 1) and the `wp*` binding. Records: the shim's smoke test and random-input test,
+  clean under ASan/UBSan, also as a 32-bit build and as WebAssembly under node; and
+  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally
+  built library (2026-11-20), which its native lane repeats on every change. No desktop IDE
+  has loaded it: for everything beyond that server run it is verified statically; needs an
+  OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them,
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/webpxt` exists, empty; a publish-members run adopts it
+  (`--adopt webpxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: webpxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `webpxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `wpLibraryVersion()`, a WebP file decoded into an image object and that image encoded back, an animation stepped, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `webpxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/webpxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `wpLibraryVersion()` answers in the web IDE |
+| 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's webpxt row has a pill and a Run |
+| 6 | A demo stack (open a WebP file, show it, save an image as WebP; the kit's look) | coding | - | a paste-and-run example in `webpxt/examples/` |
+| 7 | Adopt and publish `SethMorrowSoftware/webpxt` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+
+### 2.12 barcodext
+
+- Joined 2026-11-20: zxing-cpp 3.1.1 (pinned to the commit of its tag, with the Zint backend
+  its writer is built on) behind the `bcx_*` C++ shim (ABI 1) and the `bc*` binding.
+  Records: the shim's smoke test (every kind the library writes is created and read back)
+  and random-input test, clean under ASan/UBSan, also as a 32-bit build and as WebAssembly
+  under node; and `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine
+  over a locally built library (2026-11-20), which its native lane repeats on every change.
+  Every picture read so far was drawn by the library's own writer. No desktop IDE has loaded
+  it: for everything beyond that server run it is verified statically; needs an OXT pass.
+- Binaries and publishing: as webpxt's (`SethMorrowSoftware/barcodext` exists, empty).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: barcodext`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `barcodext/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `bcLibraryVersion()`, a QR Code created into an image object and read back from its `imageData`, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `barcodext/docs/api-reference.md` says |
+| 3 | A read of real photographs: a phone picture of a printed QR Code, an EAN-13 on a product, a turned and a poorly lit one | S1, after #1 | - | each is read, or the limit is written into `barcodext/docs/getting-started.md` |
+| 4 | The web archive (`wasm32-emscripten/barcodext.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `bcLibraryVersion()` answers in the web IDE |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's barcodext row has a pill and a Run |
+| 7 | A demo stack (type text, see its QR Code; drop a picture, see what it holds; the kit's look) | coding | - | a paste-and-run example in `barcodext/examples/` |
+| 8 | Adopt and publish `SethMorrowSoftware/barcodext` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+| 9 | The suite board's band (2026-11-20): members with no in-engine harness are names in three columns under the rows, not rows | S1 | 48 | the band's names sit under the last row and above the members caption on an engine |
+
 ---
 
 ## 3. The apps

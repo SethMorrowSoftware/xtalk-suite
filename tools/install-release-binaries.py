@@ -132,8 +132,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
 # library committed, its manifest created by its first dispatch.
+#
+# BARCODEXT AND WEBPXT JOINED 2026-11-20 the same way.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt")
+           "curlxt", "box3dxt", "barcodext", "webpxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 
