@@ -854,6 +854,34 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
+### 2.11 xlsxt
+
+- Joined 2026-11-20: libxlsxwriter 1.2.4, zlib 1.4 (with its minizip) and Expat 2.10.0, each
+  pinned to a commit, behind the `xlx_*` C shim (ABI 1) and the `xl*` binding, whose names
+  are mechanical. Writing is libxlsxwriter; the reader is the shim's own. Records: the shim's
+  smoke test and random-call test (damaged files included), clean under ASan/UBSan, also as
+  a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
+  OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
+  its native lane repeats on every change. No desktop IDE has loaded it: for everything
+  beyond that server run it is verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
+  2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: xlsxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
+| 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
+| 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
+| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
+| 6 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
+| 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
+| 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+
 ---
 
 ## 3. The apps
