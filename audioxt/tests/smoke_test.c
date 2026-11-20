@@ -606,7 +606,11 @@ static void test_sounds(void)
     aux_sound_stop(s);
     double at = aux_sound_position(s);
     render_peak(e, 4800);
-    CHECK(aux_sound_position(s) == at, "stopped, it keeps its place");
+    /* Not `==`: on 32-bit x86 the fresh result is still an 80-bit x87 value
+     * while `at` has been rounded to a double in memory, and the two differ
+     * in the last bits (the linux-x86 lane, 2026-11-20). A moved position
+     * differs by a whole block, a tenth of a second here. */
+    CHECK(close_to(aux_sound_position(s), at, 1e-9), "stopped, it keeps its place");
     aux_sound_seek(s, 0.25);
     CHECK(close_to(aux_sound_position(s), 0.25, 0.01), "seek moves it");
     aux_sound_seek(s, -1);
@@ -972,7 +976,7 @@ static void test_devices(void)
     sleep_ms(60);
     double stopped = aux_engine_time(e);
     sleep_ms(120);
-    CHECK(aux_engine_time(e) == stopped, "stopped, the clock stands still");
+    CHECK(close_to(aux_engine_time(e), stopped, 1e-9), "stopped, the clock stands still");   /* not ==: x87, as above */
     aux_engine_start(e);
     sleep_ms(150);
     CHECK(aux_engine_time(e) > stopped, "started, it runs again");
