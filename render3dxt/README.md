@@ -40,9 +40,11 @@ the picture.
   `r3HitText` the exact place it was hit; `r3SceneRayCast` does the same along any ray.
 - **Smooth edges.** One to four samples each way per pixel (`r3SceneSetSupersample`).
 - **Speed.** Everything per pixel is native and spread over the processor's cores. The
-  picture is identical whatever the thread count.
-- **The family's rules.** No thread ever runs script: every drawing thread is finished
-  before `r3SceneRender` returns (rule 1). Every export checks its handles and numbers before
+  picture is identical whatever the thread count. A picture can be begun and taken a frame
+  later (`r3SceneRenderBegin`), so the engine's one script thread never waits for it.
+- **The family's rules.** No thread ever runs script: a drawing thread lives for one
+  picture and is joined, before `r3SceneRender` returns or, for a picture begun, by the next
+  call that names a handle (rule 1). Every export checks its handles and numbers before
   it uses them, and a refused call returns 0 or empty with a reason in `r3LastError()`: a
   frame loop cannot be stopped by a bad number (rule 2). Results that are several numbers
   cross as one short text (rule 3). Every handle is a generation-tagged integer, and a stale

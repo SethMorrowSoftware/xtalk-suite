@@ -139,6 +139,8 @@ extern int r3x_scene_apply_moves(int scene, const char *text);
 extern void r3x_set_thread_count(int n);
 extern int r3x_thread_count(void);
 extern int r3x_scene_render(int scene, int w, int h);
+extern int r3x_scene_render_begin(int scene, int w, int h);
+extern int r3x_scene_is_render_ready(int scene);
 extern const unsigned char *r3x_scene_frame(int scene);
 extern int r3x_scene_frame_length(int scene);
 extern const char *r3x_scene_stats(int scene);
@@ -365,6 +367,8 @@ static void fz_r3x_scene_apply_moves(void) { fz_seen_int(r3x_scene_apply_moves(f
 static void fz_r3x_set_thread_count(void) { r3x_set_thread_count(fz_int()); }
 static void fz_r3x_thread_count(void) { fz_seen_int(r3x_thread_count()); }
 static void fz_r3x_scene_render(void) { fz_seen_int(r3x_scene_render(fz_int(), fz_int(), fz_int())); }
+static void fz_r3x_scene_render_begin(void) { fz_seen_int(r3x_scene_render_begin(fz_int(), fz_int(), fz_int())); }
+static void fz_r3x_scene_is_render_ready(void) { fz_seen_int(r3x_scene_is_render_ready(fz_int())); }
 static void fz_r3x_scene_frame(void) { fz_seen_ptr((const void *)r3x_scene_frame(fz_int())); }
 static void fz_r3x_scene_frame_length(void) { fz_seen_int(r3x_scene_frame_length(fz_int())); }
 static void fz_r3x_scene_stats(void) { fz_seen_ptr((const void *)r3x_scene_stats(fz_int())); }
@@ -488,6 +492,8 @@ static void (*const k_fuzz_calls[])(void) = {
     fz_r3x_set_thread_count,
     fz_r3x_thread_count,
     fz_r3x_scene_render,
+    fz_r3x_scene_render_begin,
+    fz_r3x_scene_is_render_ready,
     fz_r3x_scene_frame,
     fz_r3x_scene_frame_length,
     fz_r3x_scene_stats,
@@ -612,6 +618,8 @@ static const char *const k_fuzz_names[] = {
     "r3x_set_thread_count",
     "r3x_thread_count",
     "r3x_scene_render",
+    "r3x_scene_render_begin",
+    "r3x_scene_is_render_ready",
     "r3x_scene_frame",
     "r3x_scene_frame_length",
     "r3x_scene_stats",

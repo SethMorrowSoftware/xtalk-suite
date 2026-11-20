@@ -127,6 +127,9 @@ end openDemo
 
 command testWithBoth pPath
    local tLog, tBefore, tCount, tLine
+   -- a desktop engine starts with "png", and the demo must hand its pictures
+   -- over as "rle" without leaving the property changed
+   set the paintCompression to "png"
    openDemo pPath
    check "the window is the size the kit's 720p rule allows", the width of stack "rdDemo" is 980 and the height of stack "rdDemo" is 620, the rect of stack "rdDemo"
    check "the status line says it is running", field "uiStatus" of stack "rdDemo" begins with "Running - render3dxt", field "uiStatus" of stack "rdDemo"
@@ -146,6 +149,7 @@ command testWithBoth pPath
    check "frames ran on the timer: the picture changed", pictureLeaves(tBefore), "the picture is still the first picture after ten seconds"
    check "the stats line fills in", thingsBecome(9) and field "rdStats" of stack "rdDemo" contains "triangles", field "rdStats" of stack "rdDemo"
    put "INFO   " & field "rdStats" of stack "rdDemo" & return
+   check "the paintCompression is left as it was found", the paintCompression is "png", the paintCompression
 
    -- the buttons, by message
    press "rdCrate"
@@ -185,6 +189,14 @@ command testWithBoth pPath
    put picture() into tBefore
    press "rdPause"
    check "Go on starts it again", pictureLeaves(tBefore) and the label of button "rdPause" of stack "rdDemo" is "Pause", the label of button "rdPause" of stack "rdDemo"
+
+   -- running: a drag reaches the picture through the frame timer, which
+   -- begins a picture only when something has changed
+   wait 200 milliseconds with messages
+   put picture() into tBefore
+   dispatch "rdOrbitBy" to stack "rdDemo" with -45, 15
+   check "a drag turns the camera while running", pictureLeaves(tBefore), "the picture did not change"
+   check "and the paintCompression is still as it was found", the paintCompression is "png", the paintCompression
 
    press "rdReset"
    check "Start again puts the first nine back", thingsBecome(9), field "rdStats" of stack "rdDemo"

@@ -891,6 +891,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
 | 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
 | 10 | The suite board at row pitch 27: fifteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
+| 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
+| 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
 
 ---
 

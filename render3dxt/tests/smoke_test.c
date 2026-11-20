@@ -134,6 +134,8 @@ extern int r3x_scene_apply_moves(int scene, const char *text);
 extern void r3x_set_thread_count(int n);
 extern int r3x_thread_count(void);
 extern int r3x_scene_render(int scene, int w, int h);
+extern int r3x_scene_render_begin(int scene, int w, int h);
+extern int r3x_scene_is_render_ready(int scene);
 extern const unsigned char *r3x_scene_frame(int scene);
 extern int r3x_scene_frame_length(int scene);
 extern const char *r3x_scene_stats(int scene);
@@ -971,6 +973,110 @@ static void test_fog_supersample_threads(void)
     r3x_texture_destroy(tex);
 }
 
+/* A picture begun (r3x_scene_render_begin) is the picture r3x_scene_render
+ * draws, byte for byte; nothing a script does while it is drawing can reach
+ * it, and nothing it reads can be freed under it. */
+static void test_background(void)
+{
+    int s = r3x_scene_create();
+    r3x_scene_set_camera(s, 0, 0, 10, 0, 0, 0, 50);
+    r3x_scene_set_background(s, 10, 20, 30);
+    r3x_scene_set_supersample(s, 2);
+    int tex = r3x_texture_checker(128, 8, 250, 120, 30, 20, 60, 200);
+    int lit = r3x_material_create(255, 255, 255);
+    r3x_material_set_texture(lit, tex);
+    r3x_material_set_double_sided(lit, 1);
+    int sp = r3x_mesh_sphere(1.5, 48, 24);
+    int box = r3x_mesh_box(1, 1, 1);
+    int nd = r3x_node_create(s, sp);
+    r3x_node_set_material(nd, lit);
+    for (int i = 0; i < 20; i++) {
+        int k = r3x_node_create(s, box);
+        r3x_node_set_material(k, lit);
+        r3x_node_set_position(k, (i % 5) - 2, (i / 5) - 1.5, -3);
+        r3x_node_set_scale(k, 0.4, 0.4, 0.4);
+    }
+    CHECK(r3x_scene_is_render_ready(s) == 1, "nothing begun: ready");
+    int n = r3x_scene_render(s, 320, 240);
+    unsigned char *want = (unsigned char *)malloc((size_t)n);
+    memcpy(want, r3x_scene_frame(s), (size_t)n);
+    double wantTris = item(r3x_scene_stats(s), 1);
+    int same = 1, counted = 1, lengths = 1;
+    for (int t = 1; t <= 8; t *= 2) {
+        r3x_set_thread_count(t);
+        int got = r3x_scene_render_begin(s, 320, 240);
+        if (got != n) lengths = 0;
+        /* never waits, and is 0 or 1 */
+        int r = r3x_scene_is_render_ready(s);
+        if (r != 0 && r != 1) lengths = 0;
+        const unsigned char *f = r3x_scene_frame(s);          /* waits */
+        if (!f || memcmp(want, f, (size_t)n) != 0) { same = 0; printf("begun on %d threads differs\n", t); }
+        if (r3x_scene_is_render_ready(s) != 1) lengths = 0;
+        if (r3x_scene_frame_length(s) != n) lengths = 0;
+        if (item(r3x_scene_stats(s), 1) != wantTris) counted = 0;
+    }
+    CHECK(same, "a picture begun is the picture drawn at once");
+    CHECK(lengths, "begin returns the byte count, and the picture is ready once taken");
+    CHECK(counted, "a picture begun counts its triangles");
+
+    /* what changes after the begin belongs to the next picture */
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_scene_set_background(s, 200, 0, 0);
+    r3x_node_set_position(nd, 50, 0, 0);
+    CHECK(memcmp(want, r3x_scene_frame(s), (size_t)n) == 0, "a change after the begin is not in that picture");
+    r3x_scene_render_begin(s, 320, 240);
+    CHECK(is_rgb(px(s, 320, 2, 2), 200, 0, 0, 0), "and is in the next");
+    r3x_scene_set_background(s, 10, 20, 30);
+    r3x_node_set_position(nd, 0, 0, 0);
+
+    /* a second begin waits for the first; a render does too */
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_scene_render_begin(s, 160, 120);
+    CHECK(r3x_scene_frame_length(s) == 160 * 120 * 4, "the second begin's picture is the one kept");
+    r3x_scene_render_begin(s, 160, 120);
+    r3x_scene_render(s, 320, 240);
+    CHECK(memcmp(want, r3x_scene_frame(s), (size_t)n) == 0, "a render after a begin draws its own picture");
+
+    /* more triangles than the queue holds: the earlier passes are drawn in
+     * the call and only the last is left to the background */
+    int big = r3x_mesh_sphere(1.5, 256, 128);
+    int bn = r3x_node_create(s, big);
+    r3x_node_set_material(bn, lit);
+    r3x_node_set_position(bn, 0, 0, 2);
+    int n2 = r3x_scene_render(s, 320, 240);
+    unsigned char *want2 = (unsigned char *)malloc((size_t)n2);
+    memcpy(want2, r3x_scene_frame(s), (size_t)n2);
+    CHECK(item(r3x_scene_stats(s), 1) > 32768, "more triangles than one queue (%d)", (int)item(r3x_scene_stats(s), 1));
+    r3x_scene_render_begin(s, 320, 240);
+    CHECK(memcmp(want2, r3x_scene_frame(s), (size_t)n2) == 0, "the same picture over several passes");
+    free(want2);
+
+    /* refusals, and a scene with nothing in it */
+    CHECK(r3x_scene_render_begin(0, 320, 240) == 0 && r3x_last_error()[0], "begin on no scene refused");
+    CHECK(r3x_scene_render_begin(s, 0, 240) == 0 && r3x_last_error()[0], "begin with no width refused");
+    CHECK(r3x_scene_is_render_ready(0) == 1 && r3x_scene_is_render_ready(-5) == 1, "no scene: nothing drawing");
+    int e = r3x_scene_create();
+    CHECK(r3x_scene_render_begin(e, 64, 64) == 64 * 64 * 4 && r3x_scene_frame(e) != NULL, "an empty scene begun");
+    r3x_scene_destroy(e);
+
+    /* everything the threads read, destroyed while they draw: each call
+     * waits, so this is safe (ASan and TSan run it) */
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_texture_destroy(tex);
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_material_destroy(lit);
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_mesh_destroy(sp);
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_set_thread_count(3);
+    r3x_scene_render_begin(s, 320, 240);
+    r3x_scene_destroy(s);
+    CHECK(r3x_scene_is_render_ready(s) == 1 && r3x_scene_frame(s) == NULL, "a scene destroyed while drawing");
+    r3x_mesh_destroy(box);
+    r3x_mesh_destroy(big);
+    free(want);
+}
+
 static void test_edges_and_clipping(void)
 {
     /* a plane of two triangles filling part of the picture exactly: no pixel
@@ -1137,6 +1243,7 @@ int main(void)
     test_meshes();
     test_lighting();
     test_fog_supersample_threads();
+    test_background();
     test_edges_and_clipping();
     test_stale_handles();
     test_speed();

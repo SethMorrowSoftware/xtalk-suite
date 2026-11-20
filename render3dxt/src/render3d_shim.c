@@ -114,6 +114,17 @@
 #define R3X_H_GEN_MASK  0x7FF
 #define R3X_H_MAX_SLOTS (R3X_H_SLOT_MASK - 1)
 
+/* A picture begun with r3x_scene_render_begin may still be drawing on the
+ * library's threads. They read the scene's buffers, the queue, textures and
+ * materials, so EVERY lookup of a handle waits for them first (settle): no
+ * call can change or free what they read, and none has to know that. Only
+ * the calls that take no handle and r3x_scene_is_render_ready do not wait. */
+static int s_drawing = 0;
+static void settle(void);
+#if defined(__GNUC__) && !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+static void settle_at_unload(void);
+#endif
+
 #define DEFINE_TABLE(NAME, TYPE)                                              \
     static TYPE *NAME##_arr = NULL;                                           \
     static unsigned char  *NAME##_used = NULL;                                \
@@ -178,6 +189,7 @@
         return NAME##_encode(idx);                                            \
     }                                                                         \
     static TYPE NAME##_get(int h) {                                           \
+        if (s_drawing) settle();                                              \
         int idx = NAME##_slot_of(h);                                          \
         if (idx < 0) return NULL;                                             \
         return NAME##_arr[idx];                                               \
@@ -2559,8 +2571,11 @@ static SV to_screen(const Frame *fr, const CV *v, double tanH, double aspect)
 /* single-threaded order: the picture is the same, byte for byte,      */
 /* whatever the thread count and whichever thread took which band      */
 /* (the smoke test holds that; TSan runs it).                          */
-/* Every thread is joined before the render call returns: nothing      */
-/* runs while script does (suite rule 1).                              */
+/* r3x_scene_render joins every thread before it returns. A picture    */
+/* BEGUN (r3x_scene_render_begin) leaves its last pass to threads that */
+/* go on after the call; they are joined by the next call that names   */
+/* a handle (settle). Either way no thread ever calls script (suite    */
+/* rule 1) and there is no pool: a thread lives for one picture.       */
 /* ------------------------------------------------------------------ */
 #define R3X_QUEUE 32768
 #define R3X_MAX_THREADS 16
@@ -2589,6 +2604,7 @@ LC_API void r3x_set_thread_count(int n)
 {
     ok_clear();
     if (n < 1 || n > R3X_MAX_THREADS) { fail("render3dxt: threads are 1 to 16"); return; }
+    if (s_drawing) settle();
 #if defined(__EMSCRIPTEN__)
     n = 1;   /* the web build has no threads */
 #endif
@@ -2610,11 +2626,34 @@ typedef struct Pass {
     int clear, resolve;        /* besides drawing what is queued              */
 #if defined(_WIN32)
     volatile LONG next;        /* the next band nobody has taken              */
+    volatile LONG finished;    /* threads that have no band left              */
 #else
     int next;
+    int finished;
 #endif
 } Pass;
-typedef struct Worker { Pass *p; double pixels; } Worker;
+typedef struct Worker { Pass *p; double pixels; double ended; } Worker;
+
+static void count_finished(Pass *p)
+{
+#if defined(__EMSCRIPTEN__)
+    p->finished++;
+#elif defined(_WIN32)
+    InterlockedIncrement(&p->finished);
+#else
+    __atomic_fetch_add(&p->finished, 1, __ATOMIC_RELEASE);
+#endif
+}
+static int read_finished(Pass *p)
+{
+#if defined(__EMSCRIPTEN__)
+    return p->finished;
+#elif defined(_WIN32)
+    return (int)InterlockedCompareExchange(&p->finished, 0, 0);
+#else
+    return __atomic_load_n(&p->finished, __ATOMIC_ACQUIRE);
+#endif
+}
 
 /* The next band, or one past the last. Atomic: threads take bands as they
  * finish, so a thread whose bands were empty sky goes on to help with the
@@ -2703,21 +2742,90 @@ static void work(Worker *wk)
 }
 
 #if defined(_WIN32)
-static DWORD WINAPI work_main(LPVOID p) { work((Worker *)p); return 0; }
+static DWORD WINAPI work_main(LPVOID p) { work((Worker *)p); ((Worker *)p)->ended = now_ms(); count_finished(((Worker *)p)->p); return 0; }
 #elif !defined(__EMSCRIPTEN__)
-static void *work_main(void *p) { work((Worker *)p); return NULL; }
+static void *work_main(void *p) { work((Worker *)p); ((Worker *)p)->ended = now_ms(); count_finished(((Worker *)p)->p); return NULL; }
 #endif
+
+/* A PICTURE DRAWING IN THE BACKGROUND (r3x_scene_render_begin). The engine
+ * runs script on one thread, so a picture drawn inside a call is time in
+ * which nothing else happens: no physics, no redraw, no mouse. Begun
+ * instead, its last pass is left to threads that are ALL this library's
+ * own, the call returns, and the script and the engine go on beside them.
+ * No thread calls script (suite rule 1): the script asks whether the
+ * picture is ready, and takes it. One picture at a time is in the
+ * background; settle() joins its threads, and every handle lookup calls
+ * it, so nothing the threads read can change or be freed under them. */
+static struct {
+    Frame fr;                  /* the threads' own copy of the frame          */
+    Pass pass;
+    Worker wk[R3X_MAX_THREADS];
+#if defined(_WIN32)
+    HANDLE th[R3X_MAX_THREADS];
+#elif !defined(__EMSCRIPTEN__)
+    pthread_t th[R3X_MAX_THREADS];
+#endif
+    int nt;                    /* threads started                             */
+    Scene *scene; int handle;  /* whose picture                               */
+    int outBytes;
+    double t0;
+} s_bg;
+
+#if defined(__GNUC__) && !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+/* The library unloaded with a picture still drawing: its threads must not
+ * outlive their code. (On Windows a DLL cannot wait for threads as it
+ * unloads, and the process ending has already stopped them.) */
+__attribute__((destructor)) static void settle_at_unload(void) { settle(); }
+#endif
+
+/* Waits for the picture in the background, if there is one, and books it
+ * to its scene. */
+static void settle(void)
+{
+    if (!s_drawing) return;
+    s_drawing = 0;             /* first: the lookups below must not come back here */
+#if !defined(__EMSCRIPTEN__)
+    for (int i = 0; i < s_bg.nt; i++) {
+#if defined(_WIN32)
+        WaitForSingleObject(s_bg.th[i], INFINITE);
+        CloseHandle(s_bg.th[i]);
+#else
+        pthread_join(s_bg.th[i], NULL);
+#endif
+    }
+#endif
+    /* the time the picture took is to its last thread's end, not to now:
+     * a script may leave a finished picture waiting */
+    double ended = s_bg.t0;
+    for (int i = 0; i < s_bg.nt; i++) {
+        s_bg.fr.pixels += s_bg.wk[i].pixels;
+        if (s_bg.wk[i].ended > ended) ended = s_bg.wk[i].ended;
+    }
+    s_queued = 0;
+    Scene *s = s_bg.scene;
+    s->frameLen = s_bg.outBytes;
+    s->statTris = (int)s_bg.fr.tris;
+    s->statPixels = s_bg.fr.pixels;
+    s->statMs = ended - s_bg.t0;
+    s_bg.scene = NULL;
+}
 
 /* Draws what is queued. The first pass of a frame also clears the picture,
  * and the last (pLast) also resolves it. */
-static void flush_queue(Frame *fr, int pLast)
+static int flush_queue_bg(Frame *fr, int nt, int rows);
+
+/* pLast is 0 for a pass that is not the frame's last, 1 for the last, and 2
+ * for a last pass that may be left to the background: it returns 1 if it
+ * was (nothing is finished yet: settle() finishes it), else 0. */
+static int flush_queue(Frame *fr, int pLast)
 {
     Pass pass;
     pass.fr = fr;
     pass.clear = !fr->cleared;
-    pass.resolve = pLast;
+    pass.resolve = pLast != 0;
     pass.next = 0;
-    if (!pass.clear && !pass.resolve && s_queued == 0) return;
+    pass.finished = 0;
+    if (!pass.clear && !pass.resolve && s_queued == 0) return 0;
     int nt = r3x_thread_count();
     /* a share thinner than 16 rows costs more to start than it saves */
     if (nt > fr->H / 16) nt = fr->H / 16;
@@ -2729,6 +2837,7 @@ static void flush_queue(Frame *fr, int pLast)
     rows = (rows + fr->ss - 1) / fr->ss * fr->ss;
     pass.rows = rows;
     pass.nb = (fr->H + rows - 1) / rows;
+    if (pLast == 2 && flush_queue_bg(fr, nt, rows)) return 1;
     Worker wk[R3X_MAX_THREADS];
     for (int i = 0; i < nt; i++) { wk[i].p = &pass; wk[i].pixels = 0; }
 #if defined(__EMSCRIPTEN__)
@@ -2764,6 +2873,39 @@ static void flush_queue(Frame *fr, int pLast)
     for (int i = 0; i < nt; i++) fr->pixels += wk[i].pixels;
     fr->cleared = 1;
     s_queued = 0;
+    return 0;
+}
+
+/* The last pass of a frame, left to nt threads of its own. Returns 0 if not
+ * one thread could be started (the caller then draws it itself). The queue
+ * stays as it is until settle(). */
+static int flush_queue_bg(Frame *fr, int nt, int rows)
+{
+#if defined(__EMSCRIPTEN__)
+    (void)fr; (void)nt; (void)rows;
+    return 0;                  /* the web build has no threads */
+#else
+    s_bg.fr = *fr;
+    s_bg.pass.fr = &s_bg.fr;
+    s_bg.pass.clear = !fr->cleared;
+    s_bg.pass.resolve = 1;
+    s_bg.pass.next = 0;
+    s_bg.pass.finished = 0;
+    s_bg.pass.rows = rows;
+    s_bg.pass.nb = (fr->H + rows - 1) / rows;
+    int n = 0;
+    for (int i = 0; i < nt; i++) {
+        s_bg.wk[n].p = &s_bg.pass; s_bg.wk[n].pixels = 0; s_bg.wk[n].ended = 0;
+#if defined(_WIN32)
+        s_bg.th[n] = CreateThread(NULL, 0, work_main, &s_bg.wk[n], 0, NULL);
+        if (s_bg.th[n] != NULL) n++;
+#else
+        if (pthread_create(&s_bg.th[n], NULL, work_main, &s_bg.wk[n]) == 0) n++;
+#endif
+    }
+    s_bg.nt = n;
+    return n > 0;
+#endif
 }
 
 static void queue_triangle(Frame *fr, const DrawSt *ds, const SV *a, const SV *b, const SV *c)
@@ -2927,7 +3069,7 @@ static int frame_reserve(Scene *s, size_t pixels, size_t outBytes)
 /* Draws the scene into a w x h picture held by the scene, in imageData's
  * layout (0,R,G,B per pixel, rows from the top). Returns the byte count,
  * w * h * 4, or 0 if refused. r3x_scene_frame is the pointer to it. */
-LC_API int r3x_scene_render(int scene, int w, int h)
+static int render_scene(int scene, int w, int h, int pBackground)
 {
     ok_clear();
     Scene *s = scenes_get(scene);
@@ -2974,7 +3116,12 @@ LC_API int r3x_scene_render(int scene, int w, int h)
         Node *nd = nodes_get(s->nodes[i]);
         if (nd && nd->visible) draw_node(&fr, s, &cam, nd, aspect);
     }
-    flush_queue(&fr, 1);
+    if (flush_queue(&fr, pBackground ? 2 : 1)) {
+        s_bg.scene = s; s_bg.handle = scene; s_bg.outBytes = (int)outBytes; s_bg.t0 = t0;
+        s->frameLen = 0;       /* no picture to hand out until this one is settled */
+        s_drawing = 1;
+        return (int)outBytes;
+    }
     s->frameLen = (int)outBytes;
     s->statTris = (int)fr.tris;
     s->statPixels = fr.pixels;
@@ -2982,8 +3129,37 @@ LC_API int r3x_scene_render(int scene, int w, int h)
     return (int)outBytes;
 }
 
+LC_API int r3x_scene_render(int scene, int w, int h)
+{
+    return render_scene(scene, w, h, 0);
+}
+
+/* The same picture, BEGUN: the scene is read and its triangles are set up
+ * before this returns (so what the script changes afterwards belongs to the
+ * next picture), and the pixels are drawn by the library's threads while
+ * the script and the engine go on. r3x_scene_is_render_ready asks, without
+ * waiting, whether it is finished; r3x_scene_frame hands it over, waiting
+ * if it must. Any other call that names a handle waits for it too, so
+ * nothing can be changed under the threads. One picture at a time: a second
+ * begin waits for the first. Returns the byte count, or 0 if refused.
+ * Where there are no threads (the web) the picture is drawn before this
+ * returns, and it is ready at once. */
+LC_API int r3x_scene_render_begin(int scene, int w, int h)
+{
+    return render_scene(scene, w, h, 1);
+}
+
+/* 1 if no picture of this scene is still being drawn: the one begun is
+ * finished, or none was begun. 0 while it is drawing. Never waits. */
+LC_API int r3x_scene_is_render_ready(int scene)
+{
+    if (!s_drawing || s_bg.handle != scene) return 1;
+    return read_finished(&s_bg.pass) >= s_bg.nt ? 1 : 0;
+}
+
 /* The last picture r3x_scene_render made for this scene (valid until the
- * next render of the scene or its destruction), or NULL. */
+ * next render of the scene or its destruction), or NULL. A picture begun
+ * and not yet finished is waited for. */
 LC_API const unsigned char *r3x_scene_frame(int scene)
 {
     Scene *s = scenes_get(scene);

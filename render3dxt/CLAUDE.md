@@ -17,9 +17,14 @@ model and its partner; read that member's CLAUDE.md for the reasons behind the s
 
 ## The rules
 
-1. **Never call script from a foreign thread.** The drawing threads are created inside
-   `r3x_scene_render` and every one is joined before it returns (`flush_queue`). There is no
-   thread pool and no callback: nothing of this library runs while script does.
+1. **Never call script from a foreign thread.** The drawing threads are created for one
+   picture and joined: by `r3x_scene_render` before it returns (`flush_queue`), or, for a
+   picture begun with `r3x_scene_render_begin`, by the next call that looks a handle up
+   (`settle`, called from every table's `_get`). There is no thread pool and no callback:
+   the script asks whether a picture is ready, and takes it. While a begun picture draws,
+   its threads read the scene's buffers, the queue, textures and materials, and `settle` in
+   every lookup is what keeps any call from changing or freeing those under them: a new
+   export that reaches an object without its table's `_get` must call `settle` itself.
 2. **Nothing crosses the boundary but values.** The shim is C: there is no exception to
    firewall. Every export validates its handles and its numbers before it uses them, and a
    refused call returns 0 or empty and sets `r3x_last_error`. It never aborts and never
@@ -81,6 +86,12 @@ drift gates are the suite's.
   is cleared, drawn (queue order) and resolved by the ONE thread that takes it. A change to
   the fill loop must keep a row's values depending only on the row; the smoke test compares
   the bytes across thread counts.
+- **A picture can be begun** (`r3x_scene_render_begin`): the setup, and every pass but the
+  last when the queue overflows, run in the call; the last pass is left to threads that are
+  all the library's own (`flush_queue_bg`), with their own copy of the frame (`s_bg`).
+  `settle` joins them and books the picture and its statistics to the scene. One picture
+  at a time, for all scenes: the queue is one. The smoke test holds a begun picture to the
+  bytes of the one drawn at once, and destroys what the threads read while they draw.
 - **Depth is stored as 1/depth** (0 is "nothing drawn"), and every attribute is interpolated
   divided by depth, stepping by a constant a pixel.
 - **Lighting is per vertex** (Gouraud), cached per mesh vertex for each material and side;
@@ -110,6 +121,10 @@ drift gates are the suite's.
 5. **The C tests carry their files** (`tests/test_assets.h`) because on the Android emulator
    a test is one pushed binary. Add a file to `tests/assets/`, then run
    `tools/build-test-assets.py`.
+7. **`set the imageData` compresses** as `the paintCompression` says, "png" on a desktop
+   engine: 36.6 ms of the demo's 49 ms frame before the demo set "rle" around that line
+   (OXT-Beyond 0.2.8-dp.2, 2026-11-20). The server engine starts with "rle", so no engine
+   test here ever showed it; `tests/engine-demo.lc` now sets "png" first.
 6. **`imageData` is not scaled**: the image control must be exactly the picture's size.
 
 ## Status

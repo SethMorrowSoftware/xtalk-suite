@@ -209,6 +209,8 @@ private foreign handler _scene_apply_moves(in pScene as CInt, in pText as ZStrin
 private foreign handler _set_thread_count(in pN as CInt) returns nothing binds to "c:render3dxt>r3x_set_thread_count!cdecl"
 private foreign handler _thread_count() returns CInt binds to "c:render3dxt>r3x_thread_count!cdecl"
 private foreign handler _scene_render(in pScene as CInt, in pW as CInt, in pH as CInt) returns CInt binds to "c:render3dxt>r3x_scene_render!cdecl"
+private foreign handler _scene_render_begin(in pScene as CInt, in pW as CInt, in pH as CInt) returns CInt binds to "c:render3dxt>r3x_scene_render_begin!cdecl"
+private foreign handler _scene_is_render_ready(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_is_render_ready!cdecl"
 private foreign handler _scene_frame(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_frame!cdecl"
 private foreign handler _scene_frame_length(in pScene as CInt) returns CInt binds to "c:render3dxt>r3x_scene_frame_length!cdecl"
 private foreign handler _scene_stats(in pScene as CInt) returns Pointer binds to "c:render3dxt>r3x_scene_stats!cdecl"
@@ -2458,11 +2460,79 @@ public handler r3SceneRender(in pScene as Integer, in pW as Integer, in pH as In
 end handler
 
 /**
-Summary: Returns the last picture drawn of a scene again.
+Summary: Begins drawing a scene and returns at once.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+pW: The picture's width in pixels, 1 to 4096.
+
+pH: The picture's height in pixels, 1 to 4096.
+
+Returns: The picture's byte count, pW times pH times 4, or 0 if the call was
+refused.
+
+Example:
+-- one frame of a game: show the picture begun last time, begin the next
+on gameFrame
+   set the imageData of image "View" to r3SceneFrame(sScene)
+   get r3SceneApplyMoves(sScene, b3MovesText())
+   get r3SceneRenderBegin(sScene, 640, 480)
+   b3WorldStep sWorld, 1/60, 4
+   get b3WorldUpdateMoves(sWorld)
+   send "gameFrame" to me in 16 milliseconds
+end gameFrame
+
+Description: The engine runs script on one thread, so a picture drawn by
+<r3SceneRender> is time in which nothing else happens. This call reads the
+scene as it is now, leaves the drawing to the library's own threads, and comes
+back at once: the physics step, the engine's own redraw and the wait for the
+next frame all go on beside it. <r3SceneFrame> hands the picture over, waiting for
+it if it is not finished, and <r3SceneIsRenderReady> asks without waiting.
+
+What the script changes after this call belongs to the next picture. Any call
+that names a scene, node, mesh, material, texture or light waits for the
+picture first, so nothing can go wrong by calling one early: it only gives
+the time back. One picture is drawn at a time. No message is sent when it is
+finished. On the web, where there are no threads, the picture is drawn before
+this returns.
+*/
+public handler r3SceneRenderBegin(in pScene as Integer, in pW as Integer, in pH as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _scene_render_begin(pScene, pW, pH) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns whether a picture begun with r3SceneRenderBegin is finished.
+
+pScene: A scene handle from <r3SceneCreate>.
+
+Returns: False while a picture of the scene is still being drawn; true when it
+is finished, and when none was begun.
+
+Description: It never waits. Use it to do something else while a large picture
+is drawn; a frame loop that calls <r3SceneFrame> once a frame does not need it.
+*/
+public handler r3SceneIsRenderReady(in pScene as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _scene_is_render_ready(pScene) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the last picture drawn of a scene.
 
 pScene: A scene handle from <r3SceneCreate>.
 
 Returns: The picture as imageData, or empty if none was drawn.
+
+Description: After <r3SceneRenderBegin> this is how the picture is taken: if
+it is still being drawn, the call waits for it.
 */
 public handler r3SceneFrame(in pScene as Integer) returns Data
    variable tPtr as Pointer

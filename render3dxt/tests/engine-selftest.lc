@@ -201,6 +201,31 @@ command testTexturesAndModels
    put r3SceneRender(tScene, 640, 480) into tData
    check "a 640 x 480 frame", the number of bytes of tData is 640 * 480 * 4, the number of bytes of tData
    put "INFO a 640 x 480 frame of" && item 1 of r3SceneStats(tScene) && "triangles took" && item 3 of r3SceneStats(tScene) && "ms on" && r3ThreadCount() && "threads" & return
+
+   -- the same picture BEGUN: the call returns, the library's threads draw,
+   -- and r3SceneFrame hands the picture over (waiting if it must)
+   local tBytes, tBegun, tWaited
+   put r3SceneRenderBegin(tScene, 640, 480) into tBytes
+   check "a picture begun answers its byte count", tBytes is 640 * 480 * 4, tBytes && r3LastError()
+   put r3SceneFrame(tScene) into tBegun
+   check "a picture begun is the picture drawn at once", tBegun is tData, the number of bytes of tBegun
+   check "and is ready once taken", r3SceneIsRenderReady(tScene) is true, r3SceneIsRenderReady(tScene)
+   -- polled, never waited for: the script does something else meanwhile
+   get r3SceneRenderBegin(tScene, 640, 480)
+   put 0 into tWaited
+   repeat while r3SceneIsRenderReady(tScene) is false and tWaited < 5000
+      wait 1 millisecond
+      add 1 to tWaited
+   end repeat
+   check "a picture begun becomes ready by itself", r3SceneIsRenderReady(tScene) is true, tWaited
+   check "and is still that picture", r3SceneFrame(tScene) is tData, the number of bytes of r3SceneFrame(tScene)
+   -- a change after the begin waits for the picture and is not in it
+   get r3SceneRenderBegin(tScene, 640, 480)
+   r3SceneSetBackground tScene, 255, 0, 0
+   check "a change after the begin belongs to the next picture", r3SceneFrame(tScene) is tData, the number of bytes of r3SceneFrame(tScene)
+   check "a refused begin is 0", r3SceneRenderBegin(tScene, 0, 480) is 0 and r3LastError() is not empty, r3LastError()
+   -- destroyed while drawing: the call waits, nothing is left behind
+   get r3SceneRenderBegin(tScene, 640, 480)
    r3SceneDestroy tScene
 end testTexturesAndModels
 
@@ -441,6 +466,10 @@ command sweepEveryHandler
       get r3ThreadCount()
       put "r3SceneRender" into tName
       get r3SceneRender(0, 0, 0)
+      put "r3SceneRenderBegin" into tName
+      get r3SceneRenderBegin(0, 0, 0)
+      put "r3SceneIsRenderReady" into tName
+      get r3SceneIsRenderReady(0)
       put "r3SceneFrame" into tName
       get r3SceneFrame(0)
       put "r3SceneFrameLength" into tName
@@ -457,7 +486,7 @@ command sweepEveryHandler
       check "sweep: " & tName, false, oneLine(tError)
       exit sweepEveryHandler
    end try
-   check "sweep: all 121 public handlers called with zeros, none threw", true
+   check "sweep: all 123 public handlers called with zeros, none threw", true
 end sweepEveryHandler
 -- <<< END SWEEP <<<
 

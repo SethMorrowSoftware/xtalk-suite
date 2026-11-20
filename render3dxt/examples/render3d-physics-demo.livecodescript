@@ -9,12 +9,20 @@ script "RenderThreeDDemo"
 -- thing to kick it, and use the buttons to drop more.
 --
 -- WHAT TO LOOK AT AS A TEMPLATE. rdFrame is the whole join between the two
--- extensions, and it is four lines:
+-- extensions, and it is five lines:
 --
+--    set the imageData of image "rdView" to r3SceneFrame(sScene)   -- rdShow
 --    b3WorldStep sWorld, 1/60, 4
 --    get b3WorldUpdateMoves(sWorld)
 --    get r3SceneApplyMoves(sScene, b3MovesText())
---    set the imageData of image "rdView" to r3SceneRender(sScene, kRdViewW, kRdViewH)
+--    get r3SceneRenderBegin(sScene, kRdViewW, kRdViewH)
+--
+-- The engine runs script on one thread, so the frame never waits for a
+-- picture: it shows the one begun a frame ago and begins the next, which
+-- render3dxt draws on its own threads while the engine redraws the window
+-- and waits for the timer. Physics steps by the clock, so a slow machine
+-- shows fewer pictures and never a slower fall; and when nothing has moved
+-- and nothing was touched, no picture is drawn at all.
 --
 -- A node is tagged with its body's handle (rdAddThing), so one call carries
 -- a whole physics step to the picture, and a click on the picture leads back
@@ -53,6 +61,7 @@ constant kRdWinH = 620
 -- (four samples a pixel) stays inside a sixtieth of a second on an
 -- ordinary machine.
 constant kRdViewW = 624
+constant kRdStepMs = 16.6667 -- one physics step: a sixtieth of a second
 constant kRdViewH = 468
 constant kRdViewLeft = 16
 constant kRdViewTop = 52
@@ -79,6 +88,10 @@ local sRdRunning             -- true while the frame timer should keep going
 local sRdPaused
 local sRdFrameMsg            -- the id of the pending rdFrame message
 local sRdFrames              -- frames drawn since the stack opened
+local sRdBegun               -- true while a picture begun last frame waits to be shown
+local sRdStale               -- true when the scene has changed since the last picture was begun
+local sRdClock               -- the milliseconds at the last frame
+local sRdOwed                -- simulated time the physics still owes the clock, milliseconds
 local sRdYaw, sRdPitch       -- the camera's place on its orbit, radians
 local sRdDragging            -- true between a mouseDown on the picture and its end
 local sRdDragX, sRdDragY     -- where the mouse was at the last drag step
@@ -879,6 +892,10 @@ command rdStart
    put false into sRdPaused
    put false into sRdDragging
    put 0 into sRdFrames
+   put false into sRdBegun
+   put false into sRdStale
+   put the milliseconds into sRdClock
+   put 0 into sRdOwed
    put empty into sRdFrameMsg
    set the label of button "rdPause" to "Pause"
    if sRdHaveRender is not true and sRdHavePhysics is not true then
@@ -1048,6 +1065,8 @@ command rdOrbitBy pDx, pDy
    rdAimCamera
    if sRdPaused is true then
       rdDraw
+   else
+      put true into sRdStale
    end if
 end rdOrbitBy
 
@@ -1127,7 +1146,7 @@ end rdFirstThings
 -- ==========================================================================
 
 on rdFrame
-   local tStarted, tSpent
+   local tStarted, tSpent, tSteps, tMoved
    -- pinned at the timer's entry: a delayed handler's unqualified controls
    -- resolve against the defaultStack (docs/OXT-ENGINE-NOTES.md 5.3)
    set the defaultStack to the short name of this stack
@@ -1136,16 +1155,42 @@ on rdFrame
       exit rdFrame
    end if
    put the milliseconds into tStarted
-   if sRdPaused is not true then
-      b3WorldStep sRdWorld, 1/60, 4
-      get b3WorldUpdateMoves(sRdWorld)
-      get r3SceneApplyMoves(sRdScene, b3MovesText())
-      rdDraw
+   -- 1. the picture begun a frame ago was drawn while the engine did its
+   -- own work: show it (r3SceneFrame waits if it is not quite finished)
+   if sRdBegun is true then
+      put false into sRdBegun
+      rdShow r3SceneFrame(sRdScene)
       add 1 to sRdFrames
       if sRdFrames mod 30 is 0 then
          rdSweepFallen
          rdShowStats
       end if
+   end if
+   -- 2. physics by the clock: as many sixtieths as have really gone by (at
+   -- most four a frame; a longer stall is forgiven, not caught up)
+   if sRdPaused is not true then
+      add tStarted - sRdClock to sRdOwed
+      put min(4, max(0, round(sRdOwed / kRdStepMs))) into tSteps
+      subtract tSteps * kRdStepMs from sRdOwed
+      if sRdOwed > kRdStepMs then
+         put 0 into sRdOwed
+      end if
+      put 0 into tMoved
+      repeat tSteps
+         b3WorldStep sRdWorld, 1/60, 4
+         get b3WorldUpdateMoves(sRdWorld)
+         add r3SceneApplyMoves(sRdScene, b3MovesText()) to tMoved
+      end repeat
+      if tMoved > 0 then
+         put true into sRdStale
+      end if
+   end if
+   put tStarted into sRdClock
+   -- 3. begin the next picture, if anything in it would differ. The call
+   -- returns once the scene is read; the pixels are drawn in the background
+   if sRdStale is true then
+      put false into sRdStale
+      put (r3SceneRenderBegin(sRdScene, kRdViewW, kRdViewH) > 0) into sRdBegun
    end if
    -- sixty frames a second when a frame costs less than a sixtieth
    put the milliseconds - tStarted into tSpent
@@ -1153,10 +1198,31 @@ on rdFrame
    put the result into sRdFrameMsg
 end rdFrame
 
+-- A picture drawn and shown at once (the first one, and every change made
+-- while paused). It replaces any picture still in the background.
 command rdDraw
    set the defaultStack to the short name of this stack
-   set the imageData of image "rdView" to r3SceneRender(sRdScene, kRdViewW, kRdViewH)
+   put false into sRdBegun
+   put false into sRdStale
+   rdShow r3SceneRender(sRdScene, kRdViewW, kRdViewH)
 end rdDraw
+
+-- Hands a picture to the image. The engine compresses whatever is set as
+-- imageData the way the paintCompression says, and a desktop engine starts
+-- with "png": encoding a PNG of every frame cost three times what drawing
+-- the picture did (measured 2026-11-20 on OXT-Beyond 0.2.8-dp.2: 36.6 ms a
+-- frame against 6.5 with "rle"). The property is global and the paint tools
+-- read it, so it is changed for this one line and put back.
+command rdShow pPicture
+   local tWas
+   if pPicture is empty then
+      exit rdShow
+   end if
+   put the paintCompression into tWas
+   set the paintCompression to "rle"
+   set the imageData of image "rdView" to pPicture
+   set the paintCompression to tWas
+end rdShow
 
 -- A thing that rolled off the floor falls for ever: twice a second, the
 -- ones far below it are removed.
@@ -1199,6 +1265,8 @@ command rdDrop pKind
    rdAddThing pKind, ((sRdDropCount * 7) mod 9) * 0.5 - 2, 7 + (sRdDropCount mod 3), ((sRdDropCount * 5) mod 7) * 0.5 - 1.5
    if sRdPaused is true then
       rdDraw
+   else
+      put true into sRdStale
    end if
 end rdDrop
 
@@ -1212,6 +1280,8 @@ command rdRain
    end repeat
    if sRdPaused is true then
       rdDraw
+   else
+      put true into sRdStale
    end if
 end rdRain
 
@@ -1253,6 +1323,8 @@ command rdSetSmooth pOn
    end if
    if sRdPaused is true then
       rdDraw
+   else
+      put true into sRdStale
    end if
 end rdSetSmooth
 
@@ -1277,6 +1349,8 @@ command rdSetTextured pOn
    end repeat
    if sRdPaused is true then
       rdDraw
+   else
+      put true into sRdStale
    end if
 end rdSetTextured
 

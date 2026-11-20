@@ -77,13 +77,42 @@ end addCrate
 
 on frame
    set the defaultStack to the short name of this stack
+   showPicture r3SceneFrame(sScene)                 -- the picture begun last frame
    b3WorldStep sWorld, 1/60, 4
    get b3WorldUpdateMoves(sWorld)
    get r3SceneApplyMoves(sScene, b3MovesText())
-   set the imageData of image "View" to r3SceneRender(sScene, 640, 480)
+   get r3SceneRenderBegin(sScene, 640, 480)         -- drawn while the engine goes on
    send "frame" to me in 16 milliseconds
 end frame
+
+command showPicture pPicture
+   local tWas
+   if pPicture is empty then exit showPicture
+   put the paintCompression into tWas
+   set the paintCompression to "rle"
+   set the imageData of image "View" to pPicture
+   set the paintCompression to tWas
+end showPicture
 ```
+
+Two things in that loop are about the engine, not about 3D, and they decide the frame rate:
+
+- **The engine runs script on one thread.** `r3SceneRender` draws the picture inside the
+  call, and nothing else happens until it returns. `r3SceneRenderBegin` reads the scene,
+  hands the drawing to the library's own threads and returns; the picture is drawn while
+  the engine redraws the window and waits for the timer, and `r3SceneFrame` takes it a
+  frame later (waiting only if it is not finished). Any call that names a scene, node,
+  mesh, material, texture or light waits for a picture that is still drawing, so the order
+  above (take, change, begin) is the one that never waits.
+- **`set the imageData` compresses the picture** the way `the paintCompression` says, and
+  a desktop engine starts with "png". Encoding a PNG of every frame took 36.6 ms of a
+  49 ms frame in the demo (OXT-Beyond 0.2.8-dp.2, 2026-11-20), three times what drawing
+  it did; with "rle" the same step took 6.5 ms. The property is global and the paint tools
+  read it, so set it around the one line and put it back.
+
+A game also steps its physics by the clock rather than once a frame, so a slow machine shows
+fewer pictures instead of slower motion, and draws nothing when nothing moved: the demo's
+`rdFrame` does both.
 
 The sizes agree by design: `r3MeshBox` takes half-sizes like `b3ShapeAddBox`, and a box, a
 sphere, a cylinder and a capsule are all centred on their origin, so a node at a body's
@@ -181,6 +210,9 @@ be given to the other (`r3SceneSetCameraText`).
 - Lighting is worked out at the corners of triangles and blended across them, so more lights
   cost little, and a large flat floor shows a lamp's pool of light only if it is made of
   several triangles.
+- In a frame loop, begin the picture and take it a frame later (`r3SceneRenderBegin`,
+  above), and set "rle" as the paintCompression around `set the imageData`: those two
+  decide the frame rate more than anything in the scene.
 - The picture is the same whatever the thread count. On the web the library draws on one
   thread.
 - Moving a thousand nodes one call at a time from script costs more than drawing them:

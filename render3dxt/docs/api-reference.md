@@ -1,6 +1,6 @@
 # render3dxt API reference
 
-The 121 public handlers, from the doc blocks in `src/render3dxt.lcb` (the IDE dictionary reads the
+The 123 public handlers, from the doc blocks in `src/render3dxt.lcb` (the IDE dictionary reads the
 same blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
 gate). Read [getting-started.md](getting-started.md) first: it has the units, the limits every
 call is held to, and the handful of rules that decide whether a scene works.
@@ -1437,15 +1437,55 @@ Set it as the imageData of an image of the same width and height. The whole pict
 set the imageData of image "View" to r3SceneRender(sScene, the width of image "View", the height of image "View")
 ```
 
+### `r3SceneRenderBegin`
+
+`r3SceneRenderBegin(in pScene as Integer, in pW as Integer, in pH as Integer) returns Integer`
+
+Begins drawing a scene and returns at once.
+
+- pScene: A scene handle from `r3SceneCreate`.
+- pW: The picture's width in pixels, 1 to 4096.
+- pH: The picture's height in pixels, 1 to 4096.
+
+Returns: The picture's byte count, pW times pH times 4, or 0 if the call was refused.
+
+The engine runs script on one thread, so a picture drawn by `r3SceneRender` is time in which nothing else happens. This call reads the scene as it is now, leaves the drawing to the library's own threads, and comes back at once: the physics step, the engine's own redraw and the wait for the next frame all go on beside it. `r3SceneFrame` hands the picture over, waiting for it if it is not finished, and `r3SceneIsRenderReady` asks without waiting.
+
+```
+-- one frame of a game: show the picture begun last time, begin the next
+on gameFrame
+set the imageData of image "View" to r3SceneFrame(sScene)
+get r3SceneApplyMoves(sScene, b3MovesText())
+get r3SceneRenderBegin(sScene, 640, 480)
+b3WorldStep sWorld, 1/60, 4
+get b3WorldUpdateMoves(sWorld)
+send "gameFrame" to me in 16 milliseconds
+end gameFrame
+```
+
+### `r3SceneIsRenderReady`
+
+`r3SceneIsRenderReady(in pScene as Integer) returns Boolean`
+
+Returns whether a picture begun with r3SceneRenderBegin is finished.
+
+- pScene: A scene handle from `r3SceneCreate`.
+
+Returns: False while a picture of the scene is still being drawn; true when it is finished, and when none was begun.
+
+It never waits. Use it to do something else while a large picture is drawn; a frame loop that calls `r3SceneFrame` once a frame does not need it.
+
 ### `r3SceneFrame`
 
 `r3SceneFrame(in pScene as Integer) returns Data`
 
-Returns the last picture drawn of a scene again.
+Returns the last picture drawn of a scene.
 
 - pScene: A scene handle from `r3SceneCreate`.
 
 Returns: The picture as imageData, or empty if none was drawn.
+
+After `r3SceneRenderBegin` this is how the picture is taken: if it is still being drawn, the call waits for it.
 
 ### `r3SceneFrameLength`
 
