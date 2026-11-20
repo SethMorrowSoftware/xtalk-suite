@@ -240,6 +240,19 @@ endif()
 add_library(box3dxt SHARED src/box3d_shim.c)
 target_link_libraries(box3dxt PRIVATE box3d)
 
+# Box3D starts its own worker threads and waits on semaphores. Since glibc 2.34
+# those live in libc; before it (the release lanes build at 2.28, so that the
+# library loads on old systems) they are in libpthread, and a library that
+# does not name it leaves pthread_create and sem_* undefined: the first
+# manylinux run (2026-11-20) built the .so and failed to link its tests.
+# FindThreads names it where one is needed and nothing where it is not
+# (Windows, Android's bionic, macOS).
+if(NOT MSVC)
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    target_link_libraries(box3dxt PRIVATE Threads::Threads)
+endif()
+
 set_target_properties(box3dxt PROPERTIES
     C_STANDARD 17
     C_STANDARD_REQUIRED ON
