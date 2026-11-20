@@ -131,9 +131,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # src/code/MANIFEST.sha256 entries through the leg below.
 #
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
-# library committed, its manifest created by its first dispatch.
+# library committed, its manifest created by its first dispatch. GAMEPADXT
+# joined the same day, the same way (desktop rows only: it is not built for
+# Android, docs/ANDROID.md).
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt")
+           "curlxt", "box3dxt", "gamepadxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 

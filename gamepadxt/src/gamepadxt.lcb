@@ -1,0 +1,1370 @@
+/*
+gamepadxt.lcb - xTalk Builder (LCB) binding library for game controllers,
+                via the gamepad_shim C shim over SDL3. Part of gamepadxt for
+                OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    if gpStart() then put gpPads() into sPads
+
+Conventions (the shim, src/gamepad_shim.c, is where each is enforced):
+  * A pad handle is an integer (0 = invalid). Every handler tolerates a stale
+    or 0 handle: getters return 0, false or empty, actions do nothing.
+  * NAMES ARE MECHANICAL: the handler for the shim's gpx_pad_set_player is
+    gpPadSetPlayer; nothing is renamed by hand. tools/check-lcb-signatures.py
+    holds the bijection (every export bound once, every binding wrapped by the
+    one public handler of that name).
+  * A button or an axis is named by text ("south", "leftx").
+  * A result of several values comes back as TEXT, comma-separated, with a
+    "." decimal point in every locale; events come one a line. Text results
+    cross as a Pointer that textOf() copies, never as ZStringNative. Text
+    ARGUMENTS cross as ZStringUTF8, which the engine builds and frees itself.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Nothing here throws, bar the ABI check: a refused call returns 0, false
+    or empty and gpLastError() says why. A read in a frame loop must not be
+    able to stop the loop.
+  * NOTHING HAPPENS BETWEEN POLLS (suite rule 1): no handler of a script is
+    ever called by this library. The script calls gpPoll from a timer and
+    reads gpEvents.
+
+The foreign handlers bind to the shared library "gamepadxt" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time.
+*/
+
+/**
+Game controllers for xTalk: Xbox, PlayStation, Switch and most other pads,
+with one button layout, through SDL.
+
+Call <gpStart> once, then <gpPoll> from a timer (every 16 to 33
+milliseconds for a game). Each connected controller is a pad handle, an
+integer; <gpPads> lists them. Read what is held with <gpPadStick>,
+<gpPadAxes> and <gpPadButton>, and read what happened (a button going down,
+a controller arriving or leaving) from <gpEvents>. Call <gpStop> when the
+stack closes.
+
+Buttons are named by where they are: "south" is the bottom face button on
+every pad, whatever is printed on it (<gpButtonNames> lists them all, and
+<gpPadButtonLabel> gives the printed letter). A stick axis runs from -1 to
+1, with left and up negative; a trigger runs from 0 to 1.
+
+A pad handle stops working when its controller is unplugged, and using one
+that no longer works is harmless: getters return 0, false or empty and
+actions do nothing. Nothing here throws; <gpLastError> says why a call was
+refused.
+
+<gpPadRumble> shakes a pad and <gpPadSetLED> colours its light, where the
+pad can. <gpVirtualAttach> makes a pad in software, for on-screen controls
+and for testing a game with no controller attached.
+
+Tags: Gamepad, Controller, Games, Library
+*/
+library org.openxtalk.library.gamepadxt
+
+use com.livecode.foreign
+
+-- The engine's own string builder, resolved by NAME (so no leading
+-- underscore): see textOf() below.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+
+metadata title is "Gamepads for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Game controllers for xTalk via SDL3: buttons, sticks, triggers, rumble, hot-plug, virtual pads."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/gamepad_shim.c; tools/check-lcb-signatures.py holds every line to the
+-- C definition it binds (name, return type, each parameter type).
+-- =====================================================================
+
+private foreign handler _gpx_text_length(in pText as Pointer) returns CInt binds to "c:gamepadxt>gpx_text_length!cdecl"
+
+-- ---- the library
+private foreign handler _gpx_abi_version() returns CInt binds to "c:gamepadxt>gpx_abi_version!cdecl"
+private foreign handler _gpx_library_version() returns Pointer binds to "c:gamepadxt>gpx_library_version!cdecl"
+private foreign handler _gpx_last_error() returns Pointer binds to "c:gamepadxt>gpx_last_error!cdecl"
+private foreign handler _gpx_assert_count() returns CInt binds to "c:gamepadxt>gpx_assert_count!cdecl"
+
+-- ---- starting and stopping
+private foreign handler _gpx_start() returns CInt binds to "c:gamepadxt>gpx_start!cdecl"
+private foreign handler _gpx_stop() returns nothing binds to "c:gamepadxt>gpx_stop!cdecl"
+private foreign handler _gpx_is_started() returns CInt binds to "c:gamepadxt>gpx_is_started!cdecl"
+
+-- ---- polling and events
+private foreign handler _gpx_poll() returns CInt binds to "c:gamepadxt>gpx_poll!cdecl"
+private foreign handler _gpx_event_count() returns CInt binds to "c:gamepadxt>gpx_event_count!cdecl"
+private foreign handler _gpx_events() returns Pointer binds to "c:gamepadxt>gpx_events!cdecl"
+private foreign handler _gpx_dropped_events() returns CInt binds to "c:gamepadxt>gpx_dropped_events!cdecl"
+private foreign handler _gpx_set_axis_events(in pStep as CDouble) returns nothing binds to "c:gamepadxt>gpx_set_axis_events!cdecl"
+private foreign handler _gpx_axis_events() returns CDouble binds to "c:gamepadxt>gpx_axis_events!cdecl"
+
+-- ---- pads
+private foreign handler _gpx_pad_count() returns CInt binds to "c:gamepadxt>gpx_pad_count!cdecl"
+private foreign handler _gpx_pad_at(in pIndex as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_at!cdecl"
+private foreign handler _gpx_pads() returns Pointer binds to "c:gamepadxt>gpx_pads!cdecl"
+private foreign handler _gpx_pad_is_connected(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_is_connected!cdecl"
+private foreign handler _gpx_pad_name(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_name!cdecl"
+private foreign handler _gpx_pad_type(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_type!cdecl"
+private foreign handler _gpx_pad_vendor(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_vendor!cdecl"
+private foreign handler _gpx_pad_product(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_product!cdecl"
+private foreign handler _gpx_pad_guid(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_guid!cdecl"
+private foreign handler _gpx_pad_player(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_player!cdecl"
+private foreign handler _gpx_pad_set_player(in pPad as CInt, in pPlayer as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_set_player!cdecl"
+private foreign handler _gpx_pad_is_virtual(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_is_virtual!cdecl"
+private foreign handler _gpx_pad_battery(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_battery!cdecl"
+private foreign handler _gpx_pad_power(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_power!cdecl"
+private foreign handler _gpx_pad_mapping(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_mapping!cdecl"
+
+-- ---- buttons, sticks and triggers
+private foreign handler _gpx_button_names() returns Pointer binds to "c:gamepadxt>gpx_button_names!cdecl"
+private foreign handler _gpx_axis_names() returns Pointer binds to "c:gamepadxt>gpx_axis_names!cdecl"
+private foreign handler _gpx_pad_button(in pPad as CInt, in pButton as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_pad_button!cdecl"
+private foreign handler _gpx_pad_has_button(in pPad as CInt, in pButton as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_pad_has_button!cdecl"
+private foreign handler _gpx_pad_buttons(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_buttons!cdecl"
+private foreign handler _gpx_pad_button_label(in pPad as CInt, in pButton as ZStringUTF8) returns Pointer binds to "c:gamepadxt>gpx_pad_button_label!cdecl"
+private foreign handler _gpx_pad_axis(in pPad as CInt, in pAxis as ZStringUTF8) returns CDouble binds to "c:gamepadxt>gpx_pad_axis!cdecl"
+private foreign handler _gpx_pad_has_axis(in pPad as CInt, in pAxis as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_pad_has_axis!cdecl"
+private foreign handler _gpx_pad_axes(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_pad_axes!cdecl"
+private foreign handler _gpx_pad_stick(in pPad as CInt, in pSide as ZStringUTF8) returns Pointer binds to "c:gamepadxt>gpx_pad_stick!cdecl"
+private foreign handler _gpx_set_dead_zone(in pZone as CDouble) returns nothing binds to "c:gamepadxt>gpx_set_dead_zone!cdecl"
+private foreign handler _gpx_dead_zone() returns CDouble binds to "c:gamepadxt>gpx_dead_zone!cdecl"
+
+-- ---- rumble and lights
+private foreign handler _gpx_pad_has_rumble(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_has_rumble!cdecl"
+private foreign handler _gpx_pad_rumble(in pPad as CInt, in pLow as CDouble, in pHigh as CDouble, in pMilliseconds as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_rumble!cdecl"
+private foreign handler _gpx_pad_has_trigger_rumble(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_has_trigger_rumble!cdecl"
+private foreign handler _gpx_pad_rumble_triggers(in pPad as CInt, in pLeft as CDouble, in pRight as CDouble, in pMilliseconds as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_rumble_triggers!cdecl"
+private foreign handler _gpx_pad_has_led(in pPad as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_has_led!cdecl"
+private foreign handler _gpx_pad_set_led(in pPad as CInt, in pRed as CInt, in pGreen as CInt, in pBlue as CInt) returns CInt binds to "c:gamepadxt>gpx_pad_set_led!cdecl"
+
+-- ---- mappings
+private foreign handler _gpx_add_mapping(in pMapping as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_add_mapping!cdecl"
+private foreign handler _gpx_add_mappings_from_file(in pPath as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_add_mappings_from_file!cdecl"
+
+-- ---- virtual pads
+private foreign handler _gpx_virtual_attach(in pName as ZStringUTF8) returns CInt binds to "c:gamepadxt>gpx_virtual_attach!cdecl"
+private foreign handler _gpx_virtual_detach(in pPad as CInt) returns nothing binds to "c:gamepadxt>gpx_virtual_detach!cdecl"
+private foreign handler _gpx_virtual_set_button(in pPad as CInt, in pButton as ZStringUTF8, in pDown as CInt) returns CInt binds to "c:gamepadxt>gpx_virtual_set_button!cdecl"
+private foreign handler _gpx_virtual_set_axis(in pPad as CInt, in pAxis as ZStringUTF8, in pValue as CDouble) returns CInt binds to "c:gamepadxt>gpx_virtual_set_axis!cdecl"
+private foreign handler _gpx_virtual_rumble(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_virtual_rumble!cdecl"
+private foreign handler _gpx_virtual_led(in pPad as CInt) returns Pointer binds to "c:gamepadxt>gpx_virtual_led!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+-- A Boolean for the C side, which takes an int.
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is GPX_ABI_VERSION in
+-- src/gamepad_shim.c (the suite's check-binary-freshness.py compares the
+-- two). Called where a script first reaches the library: gpStart, which
+-- everything else needs, and gpLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _gpx_abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "gamepadxt: incompatible native library (this binding needs ABI 1) - update the gamepadxt library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing a
+-- static buffer kills the host (box3dxt's first engine run, 2026-11-20). 4
+-- is the engine's MCStringEncoding value for UTF-8 (a pad's name can be
+-- any text), sodiumxt's proven way to build a String from bytes.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _gpx_text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: An integer. This binding needs 1.
+
+Example:
+put gpABIVersion()
+
+Description: The binding checks this number itself before <gpStart> does
+anything, and throws if the library beside the engine is from another
+version. Call it to see which library was found.
+*/
+public handler gpABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name and version of the library underneath.
+
+Returns: Text such as "SDL 3.4.20".
+
+Example:
+put gpLibraryVersion()
+
+Description: gamepadxt reads controllers through SDL (Simple DirectMedia
+Layer), built into the library. Calling this is also the quickest way to
+see that the extension and its native library are installed.
+*/
+public handler gpLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _gpx_library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Says why the last call was refused.
+
+Returns: A sentence, or empty if the last call was not refused.
+
+Example:
+if not gpStart() then answer gpLastError()
+
+Description: Nothing in this library throws (bar the version check): a call
+that cannot be carried out returns false, 0 or empty and leaves its reason
+here. The next call replaces it.
+*/
+public handler gpLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns how many internal checks of the underlying library have failed.
+
+Returns: An integer, 0 in every released build.
+
+Example:
+put gpAssertCount()
+
+Description: A diagnostic for the library's own tests, which run a build
+with those checks compiled in. A released library has none, so this is 0.
+*/
+public handler gpAssertCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_assert_count() into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Starting and stopping
+-- =====================================================================
+
+/**
+Summary: Starts reading game controllers.
+
+Returns: True if controllers can now be read, false if the system refused
+(<gpLastError> says why).
+
+Example:
+on openCard
+   if gpStart() then send "readPads" to me in 16 milliseconds
+end openCard
+
+Description: Call this once before anything else, then call <gpPoll> from a
+timer. Every controller already plugged in is opened at once; on Windows and
+macOS some are found a moment later and appear at a later <gpPoll>.
+
+Starts are counted: each one needs its own <gpStop>, and controllers stop
+being read at the last. So two stacks that both use this library do not
+stop each other.
+*/
+public handler gpStart() returns Boolean
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _gpx_start() into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Stops reading game controllers.
+
+Example:
+on closeCard
+   gpStop
+end closeCard
+
+Description: Gives back one <gpStart>. At the last one every pad is closed,
+every pad handle stops working and waiting events are thrown away. Call it
+when the stack closes: the engine does not do it for you. A stop with
+nothing started does nothing.
+*/
+public handler gpStop() returns nothing
+   unsafe
+      _gpx_stop()
+   end unsafe
+end handler
+
+/**
+Summary: Tells whether controllers are being read.
+
+Returns: True between a <gpStart> and its <gpStop>.
+
+Example:
+if not gpIsStarted() then get gpStart()
+*/
+public handler gpIsStarted() returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_is_started() into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- =====================================================================
+-- Polling and events
+-- =====================================================================
+
+/**
+Summary: Reads every controller once.
+
+Returns: The number of events waiting for <gpEvents>.
+
+Example:
+on readPads
+   get gpPoll()
+   repeat for each line tEvent in gpEvents()
+      if item 1 of tEvent is "button" and item 4 of tEvent is "down" then
+         buttonPressed item 2 of tEvent, item 3 of tEvent
+      end if
+   end repeat
+   send "readPads" to me in 16 milliseconds
+end readPads
+
+Description: Nothing changes between two polls: this call is what notices a
+controller being plugged in or pulled out, and what updates the buttons and
+sticks the other handlers report. Call it from a timer, every 16 to 33
+milliseconds for a game. It never waits.
+*/
+public handler gpPoll() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_poll() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the number of events waiting.
+
+Returns: An integer, as of the last <gpPoll>.
+
+Example:
+if gpEventCount() > 0 then handleEvents gpEvents()
+*/
+public handler gpEventCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_event_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns every waiting event and empties the queue.
+
+Returns: One event a line, oldest first; empty if none are waiting. Each
+line is comma-separated: "connected,pad", "disconnected,pad",
+"button,pad,name,down", "button,pad,name,up", and, once <gpSetAxisEvents>
+has turned them on, "axis,pad,name,value".
+
+Example:
+repeat for each line tEvent in gpEvents()
+   if item 1 of tEvent is "connected" then put item 2 of tEvent into sPad
+end repeat
+
+Description: Events are for things that happen once: a button going down, a
+pad arriving. A quick tap between two polls is still two events, so nothing
+is missed. For things that are held (a stick, a trigger, a button kept
+down) read the state instead, with <gpPadAxes>, <gpPadStick> or
+<gpPadButton>.
+
+The pad in a "disconnected" line is a handle that no longer works; compare
+it with the ones you kept. At most 4096 events wait; see <gpDroppedEvents>.
+*/
+public handler gpEvents() returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_events() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns how many events were thrown away unread.
+
+Returns: An integer, counted since the library was loaded.
+
+Example:
+put gpDroppedEvents()
+
+Description: At most 4096 events wait for <gpEvents>. A stack that polls and
+never reads them loses the oldest, and this counts each one. A stack that
+reads its events after every poll always sees 0.
+*/
+public handler gpDroppedEvents() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_dropped_events() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Turns events for sticks and triggers on or off.
+
+pStep: 0 for no axis events (how it starts), or 0.01 to 1: how far an axis
+must move, as a part of its full travel, before it is reported again.
+
+Example:
+gpSetAxisEvents 0.1
+
+Description: Stick and trigger events are off to begin with, because a
+stick in motion would queue an event at every poll and most stacks read
+sticks with <gpPadStick> instead. With a step set, an axis is reported in
+<gpEvents> when it has moved at least that far since its last report, and
+always when it comes to rest at 0 or at an end. A value out of range is
+refused.
+*/
+public handler gpSetAxisEvents(in pStep as Number) returns nothing
+   unsafe
+      _gpx_set_axis_events(pStep)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the step set by <gpSetAxisEvents>.
+
+Returns: A number, 0 if axis events are off.
+
+Example:
+put gpAxisEvents()
+*/
+public handler gpAxisEvents() returns Number
+   variable tR as Number
+   unsafe
+      put _gpx_axis_events() into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Pads
+-- =====================================================================
+
+/**
+Summary: Returns the number of pads connected.
+
+Returns: An integer, as of the last <gpPoll>.
+
+Example:
+if gpPadCount() is 0 then put "Plug in a controller" into field "status"
+*/
+public handler gpPadCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the handle of one connected pad, by position.
+
+pIndex: Which pad, from 1 to <gpPadCount>.
+
+Returns: A pad handle, or 0 if there is no pad at that position.
+
+Example:
+put gpPadAt(1) into sPad
+
+Description: A pad handle is a number that names one connected controller.
+It stops working when that controller is unplugged, and the same controller
+plugged in again gets a new one, so a stack that cares who is who should
+follow the "connected" and "disconnected" events of <gpEvents>.
+*/
+public handler gpPadAt(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_at(pIndex) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the handles of every connected pad.
+
+Returns: Pad handles, comma-separated; empty if no pad is connected.
+
+Example:
+repeat for each item tPad in gpPads()
+   put gpPadName(tPad) & return after tNames
+end repeat
+*/
+public handler gpPads() returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pads() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Tells whether a pad handle still names a connected pad.
+
+pPad: A pad handle.
+
+Returns: True while the pad is plugged in.
+
+Example:
+if not gpPadIsConnected(sPad) then put gpPadAt(1) into sPad
+*/
+public handler gpPadIsConnected(in pPad as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_is_connected(pPad) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns a pad's name.
+
+pPad: A pad handle.
+
+Returns: Text such as "Xbox Series X Controller"; empty for a handle that
+no longer works.
+
+Example:
+put gpPadName(sPad) into field "controller"
+*/
+public handler gpPadName(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_name(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns what kind of pad this is.
+
+pPad: A pad handle.
+
+Returns: One of unknown, standard, xbox360, xboxone, ps3, ps4, ps5,
+switchpro, joyconleft, joyconright, joyconpair, gamecube or steam; empty
+for a handle that no longer works.
+
+Example:
+if gpPadType(sPad) begins with "ps" then showPlayStationPrompts
+
+Description: Use it to choose which button pictures to show. For the
+letter or symbol printed on one button, <gpPadButtonLabel> is more direct.
+*/
+public handler gpPadType(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_type(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the USB vendor number of a pad.
+
+pPad: A pad handle.
+
+Returns: An integer, 0 if the system does not report one.
+
+Example:
+put gpPadVendor(sPad)
+*/
+public handler gpPadVendor(in pPad as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_vendor(pPad) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the USB product number of a pad.
+
+pPad: A pad handle.
+
+Returns: An integer, 0 if the system does not report one.
+
+Example:
+put gpPadProduct(sPad)
+*/
+public handler gpPadProduct(in pPad as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_product(pPad) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the identifier the mapping database knows a pad's model by.
+
+pPad: A pad handle.
+
+Returns: 32 hexadecimal digits; empty for a handle that no longer works.
+
+Example:
+put gpPadGUID(sPad)
+
+Description: It is the first field of a mapping line (see <gpAddMapping>).
+Two pads of the same model have the same one.
+*/
+public handler gpPadGUID(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_guid(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the player number a pad shows on its lights.
+
+pPad: A pad handle.
+
+Returns: An integer, 0 for the first player, or -1 if the pad has none.
+
+Example:
+put gpPadPlayer(sPad) + 1 into field "player"
+*/
+public handler gpPadPlayer(in pPad as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_player(pPad) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets the player number a pad shows on its lights.
+
+pPad: A pad handle.
+
+pPlayer: The player number, 0 to 15 (0 is the first player), or -1 for
+none.
+
+Returns: True if the pad took it.
+
+Example:
+get gpPadSetPlayer(sPad, 0)
+*/
+public handler gpPadSetPlayer(in pPad as Integer, in pPlayer as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_set_player(pPad, pPlayer) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Tells whether a pad was made by <gpVirtualAttach>.
+
+pPad: A pad handle.
+
+Returns: True for a virtual pad, false for a real one or a handle that no
+longer works.
+
+Example:
+if gpPadIsVirtual(sPad) then put "on-screen controls" into field "input"
+*/
+public handler gpPadIsVirtual(in pPad as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_is_virtual(pPad) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how full a pad's battery is.
+
+pPad: A pad handle.
+
+Returns: A percentage, 0 to 100, or -1 if the pad does not report one.
+
+Example:
+if gpPadBattery(sPad) is not -1 and gpPadBattery(sPad) < 15 then warnLowBattery
+*/
+public handler gpPadBattery(in pPad as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_battery(pPad) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how a pad is powered.
+
+pPad: A pad handle.
+
+Returns: One of unknown, onbattery, nobattery (it is wired), charging,
+charged or error; empty for a handle that no longer works.
+
+Example:
+put gpPadPower(sPad)
+*/
+public handler gpPadPower(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_power(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the mapping line in use for a pad.
+
+pPad: A pad handle.
+
+Returns: A line in the format <gpAddMapping> takes; empty if the pad has
+none or the handle no longer works.
+
+Example:
+put gpPadMapping(sPad) into field "mapping"
+*/
+public handler gpPadMapping(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_mapping(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Buttons, sticks and triggers
+-- =====================================================================
+
+/**
+Summary: Lists the button names this library uses.
+
+Returns: south, east, west, north, back, guide, start, leftstick,
+rightstick, leftshoulder, rightshoulder, dpup, dpdown, dpleft, dpright,
+misc1, rightpaddle1, leftpaddle1, rightpaddle2, leftpaddle2, touchpad and
+misc2 to misc6, comma-separated.
+
+Example:
+repeat for each item tButton in gpButtonNames()
+   if gpPadHasButton(sPad, tButton) then put tButton & return after tList
+end repeat
+
+Description: The four face buttons are named by where they are, not by what
+is printed on them: south is the bottom one (A on an Xbox pad, Cross on a
+PlayStation pad, B on a Nintendo pad). So a game that jumps on "south"
+feels the same on every controller. Where a button name is asked for, the
+Xbox letters a, b, x and y are also accepted, as the places they have on an
+Xbox pad. leftstick and rightstick are the clicks of the sticks.
+*/
+public handler gpButtonNames() returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_button_names() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Lists the axis names this library uses.
+
+Returns: leftx, lefty, rightx, righty, lefttrigger and righttrigger,
+comma-separated.
+
+Example:
+put gpAxisNames()
+*/
+public handler gpAxisNames() returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_axis_names() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Tells whether a button is held down.
+
+pPad: A pad handle.
+
+pButton: A button name, such as "south" (see <gpButtonNames>).
+
+Returns: True while the button is down, as of the last <gpPoll>. False for
+a name that is not a button or a handle that no longer works.
+
+Example:
+if gpPadButton(sPad, "south") then jump
+
+Description: This reads what is held now. To act once when a button goes
+down, use the "button" events of <gpEvents>.
+*/
+public handler gpPadButton(in pPad as Integer, in pButton as String) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_button(pPad, pButton) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Tells whether a pad has a certain button.
+
+pPad: A pad handle.
+
+pButton: A button name (see <gpButtonNames>).
+
+Returns: True if the pad has it.
+
+Example:
+if not gpPadHasButton(sPad, "guide") then hide button "Home"
+*/
+public handler gpPadHasButton(in pPad as Integer, in pButton as String) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_has_button(pPad, pButton) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns every button that is held down.
+
+pPad: A pad handle.
+
+Returns: Button names, comma-separated; empty if none is held.
+
+Example:
+if "start" is among the items of gpPadButtons(sPad) then pauseGame
+*/
+public handler gpPadButtons(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_buttons(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns what is printed on one of a pad's face buttons.
+
+pPad: A pad handle.
+
+pButton: A button name (see <gpButtonNames>).
+
+Returns: One of a, b, x, y, cross, circle, square or triangle; empty for a
+button that is not one of the four face buttons.
+
+Example:
+put "Press " & gpPadButtonLabel(sPad, "south") & " to jump" into field "hint"
+*/
+public handler gpPadButtonLabel(in pPad as Integer, in pButton as String) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_button_label(pPad, pButton) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns one axis of a stick, or a trigger.
+
+pPad: A pad handle.
+
+pAxis: An axis name (see <gpAxisNames>).
+
+Returns: A stick axis from -1 to 1 (left and up are negative), a trigger
+from 0 to 1. 0 for a name that is not an axis or a handle that no longer
+works.
+
+Example:
+put gpPadAxis(sPad, "righttrigger") into tThrottle
+
+Description: The value is as the pad reports it. A stick at rest rarely
+reads exactly 0, so for sticks prefer <gpPadStick>, which removes that.
+*/
+public handler gpPadAxis(in pPad as Integer, in pAxis as String) returns Number
+   variable tR as Number
+   unsafe
+      put _gpx_pad_axis(pPad, pAxis) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Tells whether a pad has a certain axis.
+
+pPad: A pad handle.
+
+pAxis: An axis name (see <gpAxisNames>).
+
+Returns: True if the pad has it.
+
+Example:
+if gpPadHasAxis(sPad, "rightx") then enableCameraStick
+*/
+public handler gpPadHasAxis(in pPad as Integer, in pAxis as String) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_has_axis(pPad, pAxis) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns all six axes of a pad in one call.
+
+pPad: A pad handle.
+
+Returns: leftx, lefty, rightx, righty, lefttrigger and righttrigger,
+comma-separated, each as <gpPadAxis> gives it; empty for a handle that no
+longer works.
+
+Example:
+put gpPadAxes(sPad) into tAxes
+put item 5 of tAxes into tBrake
+*/
+public handler gpPadAxes(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_axes(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns where a stick is, ready to use for movement.
+
+pPad: A pad handle.
+
+pSide: "left" or "right".
+
+Returns: "x,y", each from -1 to 1 (left and up are negative); empty for a
+handle that no longer works.
+
+Example:
+put gpPadStick(sPad, "left") into tStick
+add item 1 of tStick * 6 to sPlayerX
+add item 2 of tStick * 6 to sPlayerY
+
+Description: A stick at rest does not read exactly 0, so a small region
+around the centre, the dead zone, is treated as 0 (see <gpSetDeadZone>).
+Outside it the reading is rescaled, so movement still starts gently at the
+edge of the zone and reaches 1 at full tilt, in every direction.
+*/
+public handler gpPadStick(in pPad as Integer, in pSide as String) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_pad_stick(pPad, pSide) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Sets the dead zone <gpPadStick> removes.
+
+pZone: How much of a stick's travel around its centre reads as 0, from 0 to
+0.9. It starts at 0.15.
+
+Example:
+gpSetDeadZone 0.2
+
+Description: Raise it if a character drifts with the stick untouched (an
+old or worn pad); lower it for finer control. It applies to every pad. A
+value out of range is refused.
+*/
+public handler gpSetDeadZone(in pZone as Number) returns nothing
+   unsafe
+      _gpx_set_dead_zone(pZone)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the dead zone set by <gpSetDeadZone>.
+
+Returns: A number from 0 to 0.9.
+
+Example:
+put gpDeadZone()
+*/
+public handler gpDeadZone() returns Number
+   variable tR as Number
+   unsafe
+      put _gpx_dead_zone() into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Rumble and lights
+-- =====================================================================
+
+/**
+Summary: Tells whether a pad can rumble.
+
+pPad: A pad handle.
+
+Returns: True if it can.
+
+Example:
+if gpPadHasRumble(sPad) then get gpPadRumble(sPad, 0.5, 0.5, 200)
+*/
+public handler gpPadHasRumble(in pPad as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_has_rumble(pPad) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Makes a pad rumble.
+
+pPad: A pad handle.
+
+pLow: The strength of the heavy, slow motor, 0 to 1.
+
+pHigh: The strength of the light, fast motor, 0 to 1.
+
+pMilliseconds: How long to rumble, 0 to 60000.
+
+Returns: True if the pad took it; false if it cannot rumble or a value was
+out of range.
+
+Example:
+get gpPadRumble(sPad, 1, 0.3, 250)
+
+Description: A new call replaces the one before it, and strengths of 0 stop
+the rumble. The rumble ends by itself after the time given, as long as
+<gpPoll> keeps being called.
+*/
+public handler gpPadRumble(in pPad as Integer, in pLow as Number, in pHigh as Number, in pMilliseconds as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_rumble(pPad, pLow, pHigh, pMilliseconds) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Tells whether a pad has motors in its triggers.
+
+pPad: A pad handle.
+
+Returns: True if it has (Xbox One and later pads).
+
+Example:
+if gpPadHasTriggerRumble(sPad) then get gpPadRumbleTriggers(sPad, 0, 1, 100)
+*/
+public handler gpPadHasTriggerRumble(in pPad as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_has_trigger_rumble(pPad) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Makes a pad's triggers rumble.
+
+pPad: A pad handle.
+
+pLeft: The strength of the left trigger's motor, 0 to 1.
+
+pRight: The strength of the right trigger's motor, 0 to 1.
+
+pMilliseconds: How long to rumble, 0 to 60000.
+
+Returns: True if the pad took it; false if it has no trigger motors or a
+value was out of range.
+
+Example:
+get gpPadRumbleTriggers(sPad, 0, 0.8, 120)
+*/
+public handler gpPadRumbleTriggers(in pPad as Integer, in pLeft as Number, in pRight as Number, in pMilliseconds as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_rumble_triggers(pPad, pLeft, pRight, pMilliseconds) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Tells whether a pad has a light whose colour can be set.
+
+pPad: A pad handle.
+
+Returns: True if it has (PlayStation 4 and 5 pads).
+
+Example:
+if gpPadHasLED(sPad) then get gpPadSetLED(sPad, 0, 128, 255)
+*/
+public handler gpPadHasLED(in pPad as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_has_led(pPad) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets the colour of a pad's light.
+
+pPad: A pad handle.
+
+pRed: Red, 0 to 255.
+
+pGreen: Green, 0 to 255.
+
+pBlue: Blue, 0 to 255.
+
+Returns: True if the pad took it; false if it has no such light or a value
+was out of range.
+
+Example:
+get gpPadSetLED(sPad, 255, 0, 0)
+*/
+public handler gpPadSetLED(in pPad as Integer, in pRed as Integer, in pGreen as Integer, in pBlue as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_pad_set_led(pPad, pRed, pGreen, pBlue) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- =====================================================================
+-- Mappings
+-- =====================================================================
+
+/**
+Summary: Teaches the library a pad it does not know, or corrects one.
+
+pMapping: One mapping line, at most 8192 bytes.
+
+Returns: 1 if the mapping was added, 0 if it replaced an existing one, -1
+if it was refused (<gpLastError> says why).
+
+Example:
+get gpAddMapping(field "mapping")
+
+Description: A mapping says which of a device's raw buttons is "south",
+which axis is "leftx", and so on. Several thousand come built in. The line
+is in the format of the community's SDL_GameControllerDB (its
+gamecontrollerdb.txt): an identifier (see <gpPadGUID>), a name, then pairs
+such as a:b0. Add mappings after <gpStart>.
+*/
+public handler gpAddMapping(in pMapping as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_add_mapping(pMapping) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Loads a whole file of mappings.
+
+pPath: The path of a text file of mapping lines, such as a downloaded
+gamecontrollerdb.txt.
+
+Returns: The number of mappings added, or -1 if the file could not be read
+(<gpLastError> says why).
+
+Example:
+get gpAddMappingsFromFile(specialFolderPath("resources") & "/gamecontrollerdb.txt")
+
+Description: Only lines that name this operating system in a "platform:"
+field are taken (as every line of gamecontrollerdb.txt does); a line for
+another system, or one that names none, is skipped. See <gpAddMapping> for
+what a mapping is.
+*/
+public handler gpAddMappingsFromFile(in pPath as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_add_mappings_from_file(pPath) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Virtual pads
+-- =====================================================================
+
+/**
+Summary: Makes a pad that exists only in software.
+
+pName: A name for the pad, at most 64 bytes; empty for "Virtual Gamepad".
+
+Returns: The handle of the new pad, or 0 if it could not be made.
+
+Example:
+put gpVirtualAttach("Touch controls") into sTouchPad
+
+Description: A virtual pad has every button and all six axes, and is a pad
+in every other way: it is in <gpPads>, it sends events and it answers every
+handler. Drive it with <gpVirtualSetButton> and <gpVirtualSetAxis>. Use one
+to give a game on-screen controls without a second code path, to replay
+recorded input, or to test a game with no controller in the room.
+*/
+public handler gpVirtualAttach(in pName as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _gpx_virtual_attach(pName) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Removes a virtual pad.
+
+pPad: The handle of a virtual pad.
+
+Example:
+gpVirtualDetach sTouchPad
+
+Description: Its "disconnected" event is queued and its handle stops
+working. A real pad is left alone.
+*/
+public handler gpVirtualDetach(in pPad as Integer) returns nothing
+   unsafe
+      _gpx_virtual_detach(pPad)
+   end unsafe
+end handler
+
+/**
+Summary: Presses or releases a button of a virtual pad.
+
+pPad: The handle of a virtual pad.
+
+pButton: A button name (see <gpButtonNames>).
+
+pDown: True to press the button, false to release it.
+
+Returns: True if the pad took it.
+
+Example:
+on mouseDown
+   get gpVirtualSetButton(sTouchPad, "south", true)
+end mouseDown
+
+Description: Like a real press, it shows at the next <gpPoll>.
+*/
+public handler gpVirtualSetButton(in pPad as Integer, in pButton as String, in pDown as Boolean) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_virtual_set_button(pPad, pButton, asInt(pDown)) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Moves a stick or a trigger of a virtual pad.
+
+pPad: The handle of a virtual pad.
+
+pAxis: An axis name (see <gpAxisNames>).
+
+pValue: A stick axis from -1 to 1, a trigger from 0 to 1.
+
+Returns: True if the pad took it; false if the value was out of range.
+
+Example:
+get gpVirtualSetAxis(sTouchPad, "leftx", -1)
+
+Description: Like a real movement, it shows at the next <gpPoll>.
+*/
+public handler gpVirtualSetAxis(in pPad as Integer, in pAxis as String, in pValue as Number) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _gpx_virtual_set_axis(pPad, pAxis, pValue) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns what a virtual pad was last told to rumble at.
+
+pPad: The handle of a virtual pad.
+
+Returns: "low,high,left,right", each 0 to 1: the two motors of
+<gpPadRumble>, then the two triggers of <gpPadRumbleTriggers>. Empty for a
+pad that is not virtual.
+
+Example:
+if item 1 of gpVirtualRumble(sTouchPad) > 0 then shakeScreen
+
+Description: A virtual pad has no motors, so this is how a stack sees the
+rumble a game asked for: to shake the screen instead, or to test it.
+*/
+public handler gpVirtualRumble(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_virtual_rumble(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the colour a virtual pad's light was last set to.
+
+pPad: The handle of a virtual pad.
+
+Returns: "red,green,blue", each 0 to 255. Empty for a pad that is not
+virtual.
+
+Example:
+put gpVirtualLED(sTouchPad)
+*/
+public handler gpVirtualLED(in pPad as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _gpx_virtual_led(pPad) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+end library

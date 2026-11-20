@@ -377,6 +377,26 @@ MEMBERS = [
         "closure": {"elf": [], "pe": [], "macho": []},
     },
     {
+        "name": "gamepadxt",
+        "lib": "gamepadxt",
+        "lcb": ["gamepadxt/src/gamepadxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands gamepadxt's
+        # libraries (joined 2026-11-20 with none committed), as box3dxt's row
+        # above was: the change after that run lists them here.
+        "ships": [],
+        "shim": "gamepadxt/src/gamepad_shim.c",
+        "prefix": "gpx_",
+        # The ABI define lives in the shim itself.
+        "abi_header": "gamepadxt/src/gamepad_shim.c",
+        "abi_define": "GPX_ABI_VERSION",
+        "abi_symbol": "gpx_abi_version",
+        # src/gamepadxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export gpx_* and nothing else; SDL is linked in static
+        # (measured on the x86_64-linux build, 2026-11-20: 55 exports, all
+        # gpx_*).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],

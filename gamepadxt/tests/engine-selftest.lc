@@ -1,0 +1,367 @@
+<?lc
+-- engine-selftest.lc - gamepadxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   gamepadxt.lcm, compiled from src/gamepadxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../gamepadxt for .../gamepadxt.so)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int, a
+-- script string as a C string and back, a double as a number), and that a
+-- pad driven from SCRIPT reads back in script. Two halves:
+--
+--   the SCENES, written by hand, on a VIRTUAL pad (no controller needed);
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros. Zeros
+--     are safe by the binding's contract (a 0 handle is a no-op), so a call
+--     that throws or kills the engine here is a binding that does not match
+--     its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE, on Windows, macOS or the web, or
+-- with a real controller. It runs the Linux x86-64 library on the Linux
+-- x86-64 server engine, on a pad that exists only in software.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=gamepadxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", gpABIVersion() is 1, gpABIVersion()
+   check "version text", gpLibraryVersion() begins with "SDL 3.", gpLibraryVersion()
+   check "no error, no assertion at load", gpLastError() is empty and gpAssertCount() is 0, gpLastError() && gpAssertCount()
+   check "not started at load, and a Boolean comes back as a Boolean", gpIsStarted() is false, gpIsStarted()
+   check "nothing before the start", gpPadCount() is 0 and gpPads() is empty and gpEvents() is empty and gpPoll() is 0, \
+         gpPadCount() && gpPads()
+   check "the refusal has a reason", gpLastError() contains "not started", gpLastError()
+end testLibrary
+
+command testCounting
+   check "start", gpStart() is true, gpLastError()
+   check "started", gpIsStarted() is true and gpLastError() is empty, gpLastError()
+   check "a second start", gpStart() is true, gpLastError()
+   gpStop
+   check "one stop of two leaves it running", gpIsStarted() is true, gpIsStarted()
+   gpStop
+   check "the last stop stops it", gpIsStarted() is false, gpIsStarted()
+   gpStop
+   check "a stray stop is harmless", gpIsStarted() is false and gpLastError() is empty, gpLastError()
+end testCounting
+
+command testPad
+   local tBase, tPad, tEvents, tAxes, tStick, tSeen, tButton, tOther
+   get gpStart()
+   get gpEvents()
+   put gpPadCount() into tBase
+
+   -- a script string goes in as a C string and comes back as text, UTF-8
+   -- both ways (numToCodepoint keeps this file ASCII)
+   put gpVirtualAttach("Pad " & numToCodepoint(233) & numToCodepoint(26085)) into tPad
+   check "a virtual pad", tPad > 0 and gpPadCount() is tBase + 1, tPad && gpLastError()
+   check "its name round-trips as UTF-8", gpPadName(tPad) is "Pad " & numToCodepoint(233) & numToCodepoint(26085), gpPadName(tPad)
+   check "its arrival is an event", ("connected," & tPad) is among the lines of gpEvents(), gpEvents()
+   check "listed", tPad is among the items of gpPads() and gpPadIsConnected(tPad) is true and gpPadIsVirtual(tPad) is true, gpPads()
+   put false into tSeen
+   repeat with i = 1 to gpPadCount()
+      if gpPadAt(i) is tPad then put true into tSeen
+   end repeat
+   check "reached by position", tSeen, gpPadCount()
+   check "type and identifiers", gpPadType(tPad) is "standard" and the number of chars of gpPadGUID(tPad) is 32 \
+         and gpPadVendor(tPad) is an integer and gpPadProduct(tPad) is an integer, gpPadType(tPad) && gpPadGUID(tPad)
+   check "a long text result", gpPadMapping(tPad) contains "leftx:a0" and gpPadMapping(tPad) begins with gpPadGUID(tPad), gpPadMapping(tPad)
+   check "battery and power", gpPadBattery(tPad) >= -1 and gpPadBattery(tPad) <= 100 and gpPadPower(tPad) is not empty, \
+         gpPadBattery(tPad) && gpPadPower(tPad)
+   check "the player number", gpPadSetPlayer(tPad, 2) is true and gpPadPlayer(tPad) is 2 and gpPadSetPlayer(tPad, 99) is false, \
+         gpPadPlayer(tPad) && gpLastError()
+
+   -- buttons: a Boolean in, a Boolean out, an event
+   check "the names", the number of items of gpButtonNames() is 26 and item 1 of gpButtonNames() is "south" \
+         and gpAxisNames() is "leftx,lefty,rightx,righty,lefttrigger,righttrigger", gpButtonNames() && gpAxisNames()
+   check "has", gpPadHasButton(tPad, "south") is true and gpPadHasAxis(tPad, "leftx") is true and gpPadHasButton(tPad, "nosuch") is false, \
+         gpPadHasButton(tPad, "south")
+   check "press", gpVirtualSetButton(tPad, "south", true) is true, gpLastError()
+   check "it shows only after a poll", gpPadButton(tPad, "south") is false, gpPadButton(tPad, "south")
+   check "the poll counts the event", gpPoll() is 1 and gpEventCount() is 1, gpEventCount()
+   check "held", gpPadButton(tPad, "south") is true and gpPadButton(tPad, "a") is true and gpPadButtons(tPad) is "south", gpPadButtons(tPad)
+   check "the event", gpEvents() is "button," & tPad & ",south,down", gpEvents()
+   get gpVirtualSetButton(tPad, "start", true)
+   get gpVirtualSetButton(tPad, "south", false)
+   get gpPoll()
+   put gpEvents() into tEvents
+   check "two events, one a line", the number of lines of tEvents is 2 and ("button," & tPad & ",south,up") is among the lines of tEvents \
+         and ("button," & tPad & ",start,down") is among the lines of tEvents, oneLine(tEvents)
+   check "released", gpPadButton(tPad, "south") is false and gpPadButtons(tPad) is "start", gpPadButtons(tPad)
+   get gpVirtualSetButton(tPad, "start", false)
+   check "labels", gpPadButtonLabel(tPad, "south") is "a" and gpPadButtonLabel(tPad, "north") is "y" and gpPadButtonLabel(tPad, "start") is empty, \
+         gpPadButtonLabel(tPad, "south")
+   check "every button name is taken", true
+   repeat for each item tButton in gpButtonNames()
+      if gpVirtualSetButton(tPad, tButton, false) is not true then check "button name " & tButton, false, gpLastError()
+   end repeat
+   check "a name that is not a button", gpPadButton(tPad, "nosuch") is false and gpLastError() contains "no such button", gpLastError()
+
+   -- axes: doubles in, doubles and number text out
+   check "set axes", gpVirtualSetAxis(tPad, "leftx", 0.5) is true and gpVirtualSetAxis(tPad, "lefty", -1) is true \
+         and gpVirtualSetAxis(tPad, "righttrigger", 0.75) is true, gpLastError()
+   get gpPoll()
+   check "one axis", near(gpPadAxis(tPad, "leftx"), 0.5, 0.0002) and gpPadAxis(tPad, "lefty") is -1 \
+         and near(gpPadAxis(tPad, "righttrigger"), 0.75, 0.0002), gpPadAxis(tPad, "leftx") && gpPadAxis(tPad, "lefty")
+   put gpPadAxes(tPad) into tAxes
+   check "six axes as items", the number of items of tAxes is 6 and near(item 1 of tAxes, 0.5, 0.0002) and item 2 of tAxes is -1 \
+         and item 3 of tAxes is 0 and near(item 6 of tAxes, 0.75, 0.0002), tAxes
+   check "out of range is refused", gpVirtualSetAxis(tPad, "leftx", 2) is false and gpVirtualSetAxis(tPad, "lefttrigger", -0.5) is false \
+         and gpLastError() is not empty, gpLastError()
+   check "the dead zone", near(gpDeadZone(), 0.15, 0.000001), gpDeadZone()
+   get gpVirtualSetAxis(tPad, "leftx", 0.1)
+   get gpVirtualSetAxis(tPad, "lefty", 0)
+   get gpPoll()
+   check "a stick inside the dead zone", gpPadStick(tPad, "left") is "0,0", gpPadStick(tPad, "left")
+   get gpVirtualSetAxis(tPad, "leftx", 1)
+   get gpPoll()
+   put gpPadStick(tPad, "left") into tStick
+   check "a stick at full tilt", item 1 of tStick is 1 and item 2 of tStick is 0, tStick
+   gpSetDeadZone 0.3
+   check "the dead zone set", near(gpDeadZone(), 0.3, 0.000001), gpDeadZone()
+   gpSetDeadZone 5
+   check "and refused out of range", near(gpDeadZone(), 0.3, 0.000001) and gpLastError() is not empty, gpDeadZone()
+   gpSetDeadZone 0.15
+   -- the axis moves above queued nothing: the one line waiting is the
+   -- button release from before them
+   put gpEvents() into tEvents
+   check "axis events are off", gpAxisEvents() is 0 and "axis" is not in tEvents, gpAxisEvents() && tEvents
+   gpSetAxisEvents 0.1
+   get gpVirtualSetAxis(tPad, "leftx", 0)
+   get gpPoll()
+   put gpEvents() into tEvents
+   check "an axis event", tEvents is "axis," & tPad & ",leftx,0" and near(gpAxisEvents(), 0.1, 0.0001), gpAxisEvents() && tEvents
+   gpSetAxisEvents 0
+
+   -- rumble and light, seen from the virtual pad
+   check "can rumble", gpPadHasRumble(tPad) is true and gpPadHasTriggerRumble(tPad) is true and gpPadHasLED(tPad) is true, gpPadHasRumble(tPad)
+   check "rumble", gpPadRumble(tPad, 0.5, 1, 200) is true and near(item 1 of gpVirtualRumble(tPad), 0.5, 0.001) \
+         and item 2 of gpVirtualRumble(tPad) is 1, gpVirtualRumble(tPad) && gpLastError()
+   check "trigger rumble", gpPadRumbleTriggers(tPad, 1, 0, 200) is true and item 3 of gpVirtualRumble(tPad) is 1, gpVirtualRumble(tPad)
+   check "rumble refused out of range", gpPadRumble(tPad, 2, 0, 100) is false and gpPadRumble(tPad, 0.5, 0.5, -1) is false, gpLastError()
+   get gpPadRumble(tPad, 0, 0, 0)
+   get gpPadRumbleTriggers(tPad, 0, 0, 0)
+   check "light", gpPadSetLED(tPad, 10, 128, 255) is true and gpVirtualLED(tPad) is "10,128,255" and gpPadSetLED(tPad, 256, 0, 0) is false, \
+         gpVirtualLED(tPad)
+
+   -- mappings: a long string in
+   check "a mapping", gpAddMapping("03000000deadbeef0000cafe00000000,Engine Test,a:b0,b:b1,leftx:a0,lefty:a1,") is 1 \
+         and gpAddMapping("not a mapping") is -1 and gpAddMapping(empty) is -1, gpLastError()
+   check "a mappings file that is not there", gpAddMappingsFromFile("/no-such-directory/no-such-file.txt") is -1 \
+         and gpLastError() is not empty, gpLastError()
+
+   -- a handle that no longer works
+   gpVirtualDetach tPad
+   check "detached", gpPadIsConnected(tPad) is false and gpPadCount() is tBase and ("disconnected," & tPad) is among the lines of gpEvents(), \
+         gpPadCount()
+   check "a dead handle reads as nothing", gpPadName(tPad) is empty and gpPadButton(tPad, "south") is false and gpPadAxis(tPad, "leftx") is 0 \
+         and gpPadAxes(tPad) is empty and gpPadRumble(tPad, 1, 1, 10) is false and gpPadPlayer(tPad) is -1, gpPadName(tPad)
+   check "and says why", gpLastError() contains "no such pad", gpLastError()
+   put gpVirtualAttach(empty) into tOther
+   check "an empty name gets the default; a new pad a new handle", gpPadName(tOther) is "Virtual Gamepad" and tOther is not tPad, \
+         gpPadName(tOther) && tOther
+   check "nothing was dropped", gpDroppedEvents() is 0, gpDroppedEvents()
+
+   -- the last stop closes what is still open
+   gpStop
+   check "stopped: the pad is gone with it", gpIsStarted() is false and gpPadCount() is 0 and gpPadIsConnected(tOther) is false, gpPadCount()
+end testPad
+
+-- The public boundary is typed and nothing is optional (suite engine note
+-- 6.4): an EMPTY value where a pad handle belongs is a script error the
+-- caller can catch, never a crash. 0 is the safe "no pad".
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get gpPadName(empty)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty handle is a catchable script error (pass 0, not empty)", tThrew, "gpPadName(empty) did not throw on this engine"
+   check "0 is the safe no-pad", gpPadName(0) is empty and gpPadIsConnected(0) is false, gpPadName(0)
+end testTypedBoundary
+
+-- ---------------------------------------------------------------------
+-- The sweep
+-- ---------------------------------------------------------------------
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/gamepadxt.lcb, in file order, called once with
+-- zeros (false for a Boolean, empty for a String). One try for the lot: tName is
+-- the call that was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "gpABIVersion" into tName
+      get gpABIVersion()
+      put "gpLibraryVersion" into tName
+      get gpLibraryVersion()
+      put "gpLastError" into tName
+      get gpLastError()
+      put "gpAssertCount" into tName
+      get gpAssertCount()
+      put "gpStart" into tName
+      get gpStart()
+      put "gpStop" into tName
+      gpStop
+      put "gpIsStarted" into tName
+      get gpIsStarted()
+      put "gpPoll" into tName
+      get gpPoll()
+      put "gpEventCount" into tName
+      get gpEventCount()
+      put "gpEvents" into tName
+      get gpEvents()
+      put "gpDroppedEvents" into tName
+      get gpDroppedEvents()
+      put "gpSetAxisEvents" into tName
+      gpSetAxisEvents 0
+      put "gpAxisEvents" into tName
+      get gpAxisEvents()
+      put "gpPadCount" into tName
+      get gpPadCount()
+      put "gpPadAt" into tName
+      get gpPadAt(0)
+      put "gpPads" into tName
+      get gpPads()
+      put "gpPadIsConnected" into tName
+      get gpPadIsConnected(0)
+      put "gpPadName" into tName
+      get gpPadName(0)
+      put "gpPadType" into tName
+      get gpPadType(0)
+      put "gpPadVendor" into tName
+      get gpPadVendor(0)
+      put "gpPadProduct" into tName
+      get gpPadProduct(0)
+      put "gpPadGUID" into tName
+      get gpPadGUID(0)
+      put "gpPadPlayer" into tName
+      get gpPadPlayer(0)
+      put "gpPadSetPlayer" into tName
+      get gpPadSetPlayer(0, 0)
+      put "gpPadIsVirtual" into tName
+      get gpPadIsVirtual(0)
+      put "gpPadBattery" into tName
+      get gpPadBattery(0)
+      put "gpPadPower" into tName
+      get gpPadPower(0)
+      put "gpPadMapping" into tName
+      get gpPadMapping(0)
+      put "gpButtonNames" into tName
+      get gpButtonNames()
+      put "gpAxisNames" into tName
+      get gpAxisNames()
+      put "gpPadButton" into tName
+      get gpPadButton(0, empty)
+      put "gpPadHasButton" into tName
+      get gpPadHasButton(0, empty)
+      put "gpPadButtons" into tName
+      get gpPadButtons(0)
+      put "gpPadButtonLabel" into tName
+      get gpPadButtonLabel(0, empty)
+      put "gpPadAxis" into tName
+      get gpPadAxis(0, empty)
+      put "gpPadHasAxis" into tName
+      get gpPadHasAxis(0, empty)
+      put "gpPadAxes" into tName
+      get gpPadAxes(0)
+      put "gpPadStick" into tName
+      get gpPadStick(0, empty)
+      put "gpSetDeadZone" into tName
+      gpSetDeadZone 0
+      put "gpDeadZone" into tName
+      get gpDeadZone()
+      put "gpPadHasRumble" into tName
+      get gpPadHasRumble(0)
+      put "gpPadRumble" into tName
+      get gpPadRumble(0, 0, 0, 0)
+      put "gpPadHasTriggerRumble" into tName
+      get gpPadHasTriggerRumble(0)
+      put "gpPadRumbleTriggers" into tName
+      get gpPadRumbleTriggers(0, 0, 0, 0)
+      put "gpPadHasLED" into tName
+      get gpPadHasLED(0)
+      put "gpPadSetLED" into tName
+      get gpPadSetLED(0, 0, 0, 0)
+      put "gpAddMapping" into tName
+      get gpAddMapping(empty)
+      put "gpAddMappingsFromFile" into tName
+      get gpAddMappingsFromFile(empty)
+      put "gpVirtualAttach" into tName
+      get gpVirtualAttach(empty)
+      put "gpVirtualDetach" into tName
+      gpVirtualDetach 0
+      put "gpVirtualSetButton" into tName
+      get gpVirtualSetButton(0, empty, false)
+      put "gpVirtualSetAxis" into tName
+      get gpVirtualSetAxis(0, empty, 0)
+      put "gpVirtualRumble" into tName
+      get gpVirtualRumble(0)
+      put "gpVirtualLED" into tName
+      get gpVirtualLED(0)
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 54 public handlers called with zeros, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["gamepadxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.gamepadxt" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & gpLibraryVersion() & return
+      testLibrary
+      testCounting
+      testPad
+      testTypedBoundary
+      sweepEveryHandler
+      check "the sweep left nothing started", gpIsStarted() is false, gpIsStarted()
+      check "nothing above tripped an SDL assertion", gpAssertCount() is 0, gpAssertCount()
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

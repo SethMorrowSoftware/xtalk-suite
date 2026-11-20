@@ -103,6 +103,8 @@ LCB_LIBS = {
     # box3dxt joined 2026-11-20. "b3" does not begin with "b2", so the two
     # physics bindings stay disjoint by prefix.
     "box3dxt/src/box3dxt.lcb": ("b3",),
+    # gamepadxt joined 2026-11-20.
+    "gamepadxt/src/gamepadxt.lcb": ("gp",),
     "curlxt/src/curl.lcb": ("cu",),
 }
 

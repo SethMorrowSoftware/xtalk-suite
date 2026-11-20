@@ -854,6 +854,34 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
+### 2.11 gamepadxt
+
+- Joined 2026-11-20: SDL 3.4.20's gamepad subsystem (pinned to the release commit, built
+  static with only its joystick, haptic and HIDAPI parts) behind the `gpx_*` C shim (ABI 1)
+  and the `gp*` binding, whose names are mechanical. Records: the shim's smoke test and
+  random-call test, clean under ASan/UBSan with SDL's asserts on, also as a 32-bit build and
+  as WebAssembly under node; and `tests/engine-selftest.lc` on OXT-Beyond's headless Linux
+  server engine over a locally built library (2026-11-20), which its native lane repeats on
+  every change. EVERY one of those drives SDL's virtual pads: no real controller has been
+  read through it, and no desktop IDE has loaded it. For everything beyond that server run
+  it is verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`; no Android ids, `docs/ANDROID.md`), and the change
+  after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
+  2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
+| 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
+| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine, and a pad read in a browser after a button press | OXT-Beyond | - | `gpPads()` lists a pad in the web IDE |
+| 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 5 | An in-engine harness folded into the suite paste (virtual pads make one possible without hardware), replacing its NO_HARNESS entry | coding | - | the board's gamepadxt row has a pill and a Run |
+| 6 | A demo stack: a pad tester that draws the buttons and sticks (the kit's look), and b2k Kit input from a pad | coding | - | a paste-and-run example in `gamepadxt/examples/` |
+| 7 | The suite board with fifteen rows: the pitch is now derived (`suRowStep`, 27 at fifteen) | S1 | 48 | the rows do not touch on an engine |
+| 8 | Android: the Java side SDL's controller code needs, written for the engine's activity | OXT-Beyond | - | a pad read on an Android device |
+
 ---
 
 ## 3. The apps
