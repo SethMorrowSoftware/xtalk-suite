@@ -324,11 +324,14 @@ static int load_from(const char *folder)
             lib = open_library(path);
         }
     }
-#if defined(__ANDROID__)
-    /* An app's libraries may never leave the APK, so there is no folder to
-     * build a path in; the linker finds a packaged library by its name. */
-    if (!lib) lib = open_library("libpdfium.so");
-#endif
+    /* NEVER by bare name. Android carries a PDFium of its own
+     * (libpdfium.so under /system, another build with another surface), and a
+     * bare "libpdfium.so" finds THAT one: the first Android 6.0 run
+     * (2026-11-20) loaded it for a folder that held nothing. A library that
+     * stays inside its APK needs no bare name either: this library's own
+     * path is then "<apk>!/lib/<abi>/libpdfxt.so", and the linker opens the
+     * sibling path built from it (Android 6.0 and later, which PDFium needs
+     * anyway). */
     if (!lib) {
         snprintf(s_error, sizeof s_error,
                  "the PDFium library (%s) was not found or could not be loaded in: %.300s",

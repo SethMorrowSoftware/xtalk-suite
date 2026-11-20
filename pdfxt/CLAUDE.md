@@ -96,6 +96,10 @@ box3dxt is the member this one was shaped on.
 5. **Handle bits**: 12 bits of slot+1, 11 of generation. `PDX_MAX_DOCS` is 4095, not 4096:
    slot+1 = 4096 would collide with the generation's first bit (found by the smoke test).
 
+6. **PDFium is opened by full path only, never by bare name.** Android has a system
+   `libpdfium.so` of its own; `dlopen("libpdfium.so")` finds it, and it is another build. The
+   first Android 6.0 emulator run (2026-11-20) caught a bare-name fallback doing exactly that.
+
 ## Status
 
 Verified natively (smoke, ASan/UBSan, x86_64 Linux) and on the headless Linux server engine
