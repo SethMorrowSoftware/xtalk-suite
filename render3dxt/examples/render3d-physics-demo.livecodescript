@@ -39,9 +39,12 @@ script "RenderThreeDDemo"
 -- headless Linux server engine (tests/engine-demo.lc, 2026-11-20): the
 -- window's controls were built, the boot self-check came back green, frames
 -- ran on the timer, the picture reached the image, and a drop, a kick, the
--- toggles, Reset and the close were driven by message. No DESKTOP engine
--- has opened it: how it looks, the mouse (drag to orbit, click to kick) and
--- its speed on a real screen are verified statically; needs an OXT pass.
+-- toggles, Reset and the close were driven by message. One desktop engine
+-- has opened it (OXT-Beyond 0.2.8-dp.2 on Linux, 2026-11-20): the picture
+-- was seen, a real pointer dragged the camera, kicked a thing and pressed
+-- every button, and it showed 57 pictures a second with nine things. On
+-- Windows and macOS its look, the mouse and its speed are verified
+-- statically; needs an OXT pass.
 --
 -- THE LOOK. This stack adopts the suite UI kit v2 verbatim (the marked
 -- block below); the kit block is never edited here - a look change edits
@@ -845,7 +848,7 @@ command rdBuild
    uiCap "rdHelp", "Drag the picture to walk round the scene. Click a crate, a ball or the gem to kick it.", "668,260,958,292"
    uiSection "rdLogCap", "Boot self-check", "668,300,958,318"
    uiArea "rdLog", "668,322,958,516"
-   uiFooter "This stack shows render3dxt drawing what box3dxt simulates; it reads and writes no file and uses no network. It has run on the headless Linux server engine (build, boot self-check, frames, buttons by message; 2026-11-20). On a desktop its look, the mouse and its speed are verified statically; needs an OXT pass.", "16,534,964,604"
+   uiFooter "This stack shows render3dxt drawing what box3dxt simulates; it reads and writes no file and uses no network. It has run on the headless Linux server engine and in a desktop IDE on Linux (OXT-Beyond 0.2.8-dp.2, 2026-11-20: seen, dragged, kicked, every button). On Windows and macOS it is verified statically; needs an OXT pass.", "16,534,964,604"
    set the uRdUiVersion of this stack to kRdUiVersion
    unlock screen
 end rdBuild

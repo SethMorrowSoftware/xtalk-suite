@@ -865,9 +865,15 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   (2026-11-20), which its native lane repeats on every change: the binding alone
   (`tests/engine-selftest.lc`), a Box3D simulation drawn with box3dxt beside it
   (`tests/engine-interop.lc`), and its demo stack opened and driven by message
-  (`tests/engine-demo.lc`). No desktop IDE has loaded it and no picture of it has been seen
-  on a screen through an engine: beyond those server runs it is verified statically; needs
-  an OXT pass.
+  (`tests/engine-demo.lc`). One desktop IDE has run it, the same day: OXT-Beyond
+  0.2.8-dp.2 on the owner's Linux machine, locally built libraries installed as extensions.
+  The demo's window was built, its boot self-check read 11 passed, 0 failed, 0 skipped, the
+  picture was seen and recorded, and a real pointer dragged the camera, kicked a thing and
+  pressed every button. Its first frame loop showed 20 pictures a second, 36 of each
+  frame's 47 ms in `set the imageData` (the engine encoding a PNG, #11); with "rle" set
+  around that line and the picture begun in the background it showed 57 with nine things
+  and 50 to 52 with about fifty, the engine busy 12 ms a frame. Windows, macOS, Android and
+  the web have not run it: there it is verified statically; needs an OXT pass.
 - The contract with box3dxt (world, transform text, move lines, camera text, picture
   coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
   smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
@@ -882,7 +888,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows; on Windows, Linux and a Mac | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
+| 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
 | 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
 | 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |

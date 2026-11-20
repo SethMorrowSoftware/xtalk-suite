@@ -121,16 +121,20 @@ drift gates are the suite's.
 5. **The C tests carry their files** (`tests/test_assets.h`) because on the Android emulator
    a test is one pushed binary. Add a file to `tests/assets/`, then run
    `tools/build-test-assets.py`.
-7. **`set the imageData` compresses** as `the paintCompression` says, "png" on a desktop
+6. **`set the imageData` compresses** as `the paintCompression` says, "png" on a desktop
    engine: 36.6 ms of the demo's 49 ms frame before the demo set "rle" around that line
    (OXT-Beyond 0.2.8-dp.2, 2026-11-20). The server engine starts with "rle", so no engine
    test here ever showed it; `tests/engine-demo.lc` now sets "png" first.
-6. **`imageData` is not scaled**: the image control must be exactly the picture's size.
+7. **`imageData` is not scaled**: the image control must be exactly the picture's size.
 
 ## Status
 
 Verified natively (smoke and fuzz; ASan/UBSan and TSan; 64-bit, 32-bit and wasm under node)
 and on the headless Linux server engine (`tests/engine-selftest.lc`, `engine-interop.lc`
-with box3dxt, `engine-demo.lc`; 2026-11-20, locally built libraries). No desktop IDE and no
-other platform's engine has loaded it: verified statically; needs an OXT pass. No binaries
-are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+with box3dxt, `engine-demo.lc`; 2026-11-20, locally built libraries). One desktop IDE has
+run it (OXT-Beyond 0.2.8-dp.2 on Linux x86_64, 2026-11-20, locally built libraries
+installed as extensions): the demo's window was built, its boot self-check read 11 passed,
+the picture was seen and recorded, and a real pointer dragged, kicked and pressed every
+button; 57 pictures a second with nine things, 50 to 52 with about fifty. No engine on
+Windows, macOS, Android or the web has loaded it: there it is verified statically; needs
+an OXT pass. No binaries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.

@@ -94,9 +94,14 @@ Joined the suite on 2026-11-20. What has run, and where:
   `tests/engine-demo.lc` (the demo stack is opened and driven: its window's controls are
   built, its boot self-check is green, frames run on the timer, the buttons act, closing
   frees everything).
-- **Not yet:** no desktop IDE has loaded it, so nobody has SEEN a picture of it on a screen
-  through an engine, and no engine on Windows, macOS, Android or the web has run it: on
-  those it is verified statically; needs an OXT pass. No library is committed under
+- **In a desktop IDE:** OXT-Beyond 0.2.8-dp.2 on Linux x86_64, 2026-11-20, with locally
+  built libraries installed as extensions. The demo's window was built, its boot self-check
+  read 11 passed, the picture was seen and recorded, and a real pointer dragged the camera,
+  kicked a thing and pressed every button. It showed 57 pictures a second with nine things
+  falling and 50 to 52 with about fifty (20 before the demo stopped the engine encoding a
+  PNG of every frame and began its pictures in the background).
+- **Not yet:** no engine on Windows, macOS, Android or the web has run it: on those it is
+  verified statically; needs an OXT pass. No library is committed under
   `src/code/` yet; the suite's release-binaries dispatch lands them.
 
 How fast it is depends on the machine. As one measure: a 624 by 468 picture of the demo's
