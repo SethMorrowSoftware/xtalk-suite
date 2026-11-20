@@ -845,7 +845,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   imageData) is held natively to Box3D's own ray casts and has crossed as data on the server
   engine, and OXT-Beyond's Linux IDE showed its pictures in an image on 2026-11-20 (from
   9b7b59a, a library loaded by hand; picking by pixel and by ray agreed; about 30 frames a
-  second solid at 640 by 400, the engine's `set the imageData` the larger half). Beyond those runs it is verified statically;
+  second solid at 640 by 400 with the default paintCompression, 48 with "rle"). Beyond those runs it is verified statically;
   needs an OXT pass.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands them
   (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
@@ -862,7 +862,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
-| 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` is the larger cost, and `the paintCompression` "rle" is expected to cut it (render3dxt's measurement, 2026-11-20): measure it with box3dxt's picture and set it in the demo | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
+| 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
 ---

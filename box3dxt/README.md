@@ -97,7 +97,8 @@ Joined the suite on 2026-11-20. What has run, and where:
   on that machine from 9b7b59a, loaded by hand as above) a stack showed the teapot scene in
   an image, the right way up and in the right colours, in all three modes; a click through
   `b3RenderShapeAt` and `b3RenderRay` named the body under it; about 30 frames a second
-  solid at 640 by 400, more than half of each frame the engine's own copy into the image;
+  solid at 640 by 400 with the engine's default paintCompression and about 48 with "rle"
+  (`docs/getting-started.md`, "Seeing the world");
   four minutes with up to 150 spheres counted no assert. One stack on one machine; on
   Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
 - **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has

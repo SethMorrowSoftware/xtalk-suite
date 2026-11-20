@@ -101,10 +101,10 @@ end physicsFrame
 
 One line makes that loop much faster on the desktop: `set the paintCompression to "rle"`
 before the frame loop starts (keep the old value and put it back when the stack closes). The
-engine compresses every imageData it is handed, and its default, "png", is the slow one: the
-suite's render3dxt measured the same `set the imageData` at 36.6 ms with "png" and 6.5 ms
-with "rle" in OXT-Beyond's Linux IDE on 2026-11-20. That is its picture, not this library's;
-with box3dxt's it is verified statically; needs an OXT pass.
+engine compresses every imageData it is handed, and its default, "png", is the slow one. In
+OXT-Beyond's Linux IDE on 2026-11-20, a solid 640 by 400 picture took 13 ms to set with
+"png" and 1 ms with "rle", the pixels identical, and the teapot scene went from about 30
+frames a second to about 48 (from 15 to 39 at 960 by 600).
 
 - **The picture and the image must be the same size.** Handed a picture of another size the
   engine raises no error and shows sheared stripes (observed in OXT-Beyond's Linux IDE,
@@ -147,11 +147,11 @@ shadows, one picture for the whole library. The cost is the pixels, and more of 
 engine's than the library's. Measured in OXT-Beyond's Linux IDE on 2026-11-20 (one desktop
 machine; the teapot of `tests/models/`, three small ones and some dozens of spheres), a 640
 by 400 picture took about 12 ms to draw solid, 9 ms with outlines and 4 ms as a wireframe,
-and `set the imageData` then took 14, 12 and 6 ms: about 30, 36 and 58 frames a second. At
-960 by 600 the same scene ran at about 15, 20 and 36. The engine's copy costs more for a
-busy picture than for an empty one of the same size (those numbers are with the engine's
-default paintCompression, "png"; see the note under the frame loop above). So choose the picture's size first; a
-smaller picture is the one setting that buys speed.
+and `set the imageData` then took 14, 12 and 6 ms with the engine's default
+paintCompression: about 30, 36 and 58 frames a second. With "rle" (the note under the frame
+loop above) that step fell to between 1 and 4 ms and the same scene ran at about 48, 50 and
+54 frames a second, and at 39, 36 and 43 at 960 by 600. After that the drawing is the cost,
+and it goes by the pixel: a smaller picture is the setting that buys speed.
 
 A mesh is drawn from both sides, though Box3D collides and casts rays against its front
 only: looking past a gap into a model, `b3RenderShapeAt` names the mesh where a ray cast
