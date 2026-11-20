@@ -99,8 +99,9 @@ on physicsFrame
 end physicsFrame
 ```
 
-- **The picture and the image must be the same size.** The engine takes imageData only when
-  it is exactly width times height times 4 bytes, which is what `b3RenderByteCount()` is.
+- **The picture and the image must be the same size.** Handed a picture of another size the
+  engine raises no error and shows sheared stripes (observed in OXT-Beyond's Linux IDE,
+  2026-11-20). `b3RenderWidth()` and `b3RenderHeight()` say what the picture is.
 - **y is up, the camera looks from an eye to a target**, and the angle is the vertical field
   of view (50 is a natural lens). The camera, the light (`b3RenderSetLight`, the direction it
   travels) and the background stay as set until changed.
@@ -124,7 +125,8 @@ on mouseDown
    put b3RenderRay(tX, tY) into tRay
    if b3CastRayClosest(sWorld, item 1 of tRay, item 2 of tRay, item 3 of tRay, \
          100 * item 4 of tRay, 100 * item 5 of tRay, 100 * item 6 of tRay) is 1 then
-      b3BodyApplyImpulse b3HitBody(1), 0, 5, 0, item 1 of b3HitPoint(1), item 2 of b3HitPoint(1), item 3 of b3HitPoint(1), true
+      -- an impulse is mass times the speed it gives: 6 m/s upward, whatever the body weighs
+      b3BodyApplyImpulse b3HitBody(1), 0, 6 * b3BodyMass(b3HitBody(1)), 0, item 1 of b3HitPoint(1), item 2 of b3HitPoint(1), item 3 of b3HitPoint(1), true
    end if
 end mouseDown
 ```
@@ -134,9 +136,18 @@ label over a body), and `b3RenderDepth` is how far away a pixel's surface is.
 
 What it is and is not: a software rasteriser, there so a simulation can be SEEN on every
 platform with nothing else installed. One light, flat or smooth shading, no textures, no
-shadows, one picture for the whole library. The cost is the pixels: 640 by 400 is a few
-milliseconds of drawing plus the engine's copy into the image; the teapot of
-`tests/models/` (6,320 triangles) costs little more than a box. A sphere and a capsule are
+shadows, one picture for the whole library. The cost is the pixels, and more of it is the
+engine's than the library's. Measured in OXT-Beyond's Linux IDE on 2026-11-20 (one desktop
+machine; the teapot of `tests/models/`, three small ones and some dozens of spheres), a 640
+by 400 picture took about 12 ms to draw solid, 9 ms with outlines and 4 ms as a wireframe,
+and `set the imageData` then took 14, 12 and 6 ms: about 30, 36 and 58 frames a second. At
+960 by 600 the same scene ran at about 15, 20 and 36. The engine's copy costs more for a
+busy picture than for an empty one of the same size. So choose the picture's size first; a
+smaller picture is the one setting that buys speed.
+
+A mesh is drawn from both sides, though Box3D collides and casts rays against its front
+only: looking past a gap into a model, `b3RenderShapeAt` names the mesh where a ray cast
+goes through it. A sphere and a capsule are
 drawn as the many-sided solids `b3ShapeTrianglesText` lists, so a silhouette can differ from
 a ray cast by part of a pixel. For textures, your own models' looks and anything a game
 would want, use the suite's render3dxt: it takes `b3RenderCamera()`'s seven numbers, a

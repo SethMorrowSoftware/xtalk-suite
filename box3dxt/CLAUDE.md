@@ -115,9 +115,9 @@ Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under nod
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library), and in OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built on
 that machine, loaded by `load extension` and `revLibraryMapping`; one drop scene with a ray
-cast and contact events; README "Status"). The renderer has run natively and on the server
-engine (the picture as data, its bytes read); an image showing it in an IDE is verified
-statically; needs an OXT pass. No other platform's engine has loaded it and no
+cast and contact events; README "Status"). The renderer has run natively, on the server
+engine (the picture as data, its bytes read) and in that Linux IDE (an image showing the
+teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). No other platform's engine has loaded it and no
 IDE has loaded a release library or an installed extension: verified statically; needs an
 OXT pass. No binaries are committed yet. Open work is in the suite's
 `docs/WORK-PLAN.md`.

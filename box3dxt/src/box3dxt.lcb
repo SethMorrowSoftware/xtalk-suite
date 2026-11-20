@@ -7170,8 +7170,8 @@ end if
 Description: Every shape of every enabled body is drawn as the camera of
 <b3RenderSetCamera> sees it: lit by one light, nearer surfaces hiding
 farther ones. Take the picture with <b3RenderPixels>; it stays until the
-next render. Make the image the same size first, or the engine will not
-take the data. Rendering reads the world and never changes it, so it is
+next render. Make the image the same size first: the engine takes data of
+another size without complaint and shows it as sheared stripes. Rendering reads the world and never changes it, so it is
 safe at any moment between steps. There is one picture for the whole
 library, not one per world.
 */

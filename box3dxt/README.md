@@ -93,7 +93,13 @@ Joined the suite on 2026-11-20. What has run, and where:
   the teapot, from five cameras) and to arithmetic done by hand for one square-on box; the
   random-call test renders thousands of small pictures of whatever the other calls left and
   reads every byte. On the server engine the self-test takes the picture as binary data and
-  reads its bytes. An image SHOWING it in an IDE is verified statically; needs an OXT pass.
+  reads its bytes. In OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built
+  on that machine from 9b7b59a, loaded by hand as above) a stack showed the teapot scene in
+  an image, the right way up and in the right colours, in all three modes; a click through
+  `b3RenderShapeAt` and `b3RenderRay` named the body under it; about 30 frames a second
+  solid at 640 by 400, more than half of each frame the engine's own copy into the image;
+  four minutes with up to 150 spheres counted no assert. One stack on one machine; on
+  Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
 - **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
   loaded a release library or an installed extension: on those it is verified statically;
   needs an OXT pass. No library is
