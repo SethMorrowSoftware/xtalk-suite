@@ -66,6 +66,11 @@ self-test's `sweepEveryHandler`. `tools/check-shim-coverage.py` refuses any of t
    the bytes before it calls any encode again (the binding does).
 6. **The web archive holds libwebp's four libraries in one relocatable object**; the order on
    the `emcc -r` line is the static link order (mux, demux, webp, sharpyuv).
+7. **A universal macOS build is two builds and a `lipo`.** libwebp chooses its SIMD files
+   when it is configured, so one configure for two architectures drops SSE2 and breaks the
+   Intel half. With two entries in `CMAKE_OSX_ARCHITECTURES` the member's CMake configures
+   itself once per architecture and joins the results under the usual names (the comment in
+   `CMakeLists.txt` has the failure it came from). The join has run only in CI.
 
 ## Status
 

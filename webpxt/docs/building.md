@@ -78,3 +78,8 @@ and read the diff: the file's bytes may change, the pixels must not.
 
 None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
 a developer's machine.
+
+On macOS, `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` builds each architecture on its own
+(libwebp picks its SIMD files per architecture when it is configured) and joins them with
+`lipo` into `build/webpxt.dylib`; the tests are joined the same way, so
+`arch -x86_64 build/webpxt_smoke` runs the Intel half.
