@@ -59,6 +59,25 @@ typedef int sock_t;
 #  define INVALID_SOCKET (-1)
 #endif
 
+/* The loopback SERVER must not die of SIGPIPE when it writes to a client the
+   library already dropped (a cancelled socket, a refused upgrade): macOS
+   raised it on the first run of the WebSocket tests (2026-11-20). Asked for
+   per socket and per send, never by ignoring the signal process-wide: a
+   SIGPIPE out of the LIBRARY must still kill this test. */
+#if defined(MSG_NOSIGNAL)
+#  define SRV_SEND_FLAGS MSG_NOSIGNAL
+#else
+#  define SRV_SEND_FLAGS 0
+#endif
+static void srv_no_sigpipe(sock_t c) {
+#if defined(SO_NOSIGPIPE)
+    int one = 1;
+    setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#else
+    (void)c;
+#endif
+}
+
 static int g_fail = 0;
 static int g_pass = 0;
 
@@ -91,7 +110,7 @@ static bool read_request(sock_t c, std::string &head, std::string &body) {
     if (p != std::string::npos) len = static_cast<size_t>(std::atol(head.c_str() + p + 15));
     if (lower.find("expect: 100-continue") != std::string::npos) {
         const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
-        send(c, cont, static_cast<int>(std::strlen(cont)), 0);
+        send(c, cont, static_cast<int>(std::strlen(cont)), SRV_SEND_FLAGS);
     }
     while (body.size() < len) {
         int n = static_cast<int>(recv(c, tmp, sizeof tmp, 0));
@@ -105,7 +124,7 @@ static void respond(sock_t c, int code, const std::string &extra, const std::str
     std::string r = "HTTP/1.1 " + std::to_string(code) + " X\r\n" + extra +
                     "Content-Length: " + std::to_string(body.size()) +
                     "\r\nConnection: close\r\n\r\n" + body;
-    send(c, r.data(), static_cast<int>(r.size()), 0);
+    send(c, r.data(), static_cast<int>(r.size()), SRV_SEND_FLAGS);
 }
 
 static std::string header_value(const std::string &head, const std::string &name) {
@@ -181,7 +200,7 @@ static std::string base64(const std::string &in) {
 static bool send_all(sock_t c, const std::string &s) {
     size_t off = 0;
     while (off < s.size()) {
-        int n = static_cast<int>(send(c, s.data() + off, static_cast<int>(std::min<size_t>(s.size() - off, 65536)), 0));
+        int n = static_cast<int>(send(c, s.data() + off, static_cast<int>(std::min<size_t>(s.size() - off, 65536)), SRV_SEND_FLAGS));
         if (n <= 0) return false;
         off += static_cast<size_t>(n);
     }
@@ -341,6 +360,7 @@ static void server_loop(sock_t ls) {
         sock_t c = accept(ls, nullptr, nullptr);
         if (c == INVALID_SOCKET) continue;
         if (g_stop) { CLOSESOCK(c); break; }
+        srv_no_sigpipe(c);
         workers.emplace_back(serve_one, c);
     }
     for (std::thread &t : workers) t.join();
