@@ -5,7 +5,7 @@
 #   bash tools/build-android.sh --list          # the members and platform ids
 #   bash tools/build-android.sh --pins          # the pinned versions, one a line
 #
-#   <member>       sodiumxt | enetxt | box2dxt | coinxt | curlxt |
+#   <member>       sodiumxt | enetxt | box2dxt | box3dxt | coinxt | curlxt |
 #                  datachannelxt | torrentxt
 #   <platform-id>  arm64-android | armv7-android | x86_64-android | x86-android
 #
@@ -73,7 +73,7 @@ OPENSSL_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 BOOST_VERSION="1.86.0"
 BOOST_SHA256="2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26"
 
-MEMBERS="sodiumxt enetxt box2dxt coinxt curlxt datachannelxt torrentxt"
+MEMBERS="sodiumxt enetxt box2dxt box3dxt coinxt curlxt datachannelxt torrentxt"
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
 case "${1:-}" in
@@ -338,6 +338,12 @@ else
         x86_64-android) args+=(-DBOX2D_AVX2=OFF) ;;
         x86-android)    args+=(-DBOX2D_DISABLE_SIMD=ON) ;;
       esac ;;
+    box3dxt)
+      # Nothing to pass. Box3D picks its AVX2 solver at RUN time (so the
+      # x86_64 library needs no flag to stay loadable everywhere), the
+      # member's own CMake asks for SSE2 arithmetic on 32-bit x86, and the
+      # two ARM ABIs take the NEON path.
+      : ;;
     curlxt|datachannelxt)
       need_openssl
       roots="$OPENSSL_PREFIX"

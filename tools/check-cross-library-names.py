@@ -100,6 +100,9 @@ LCB_LIBS = {
     "datachannelxt/src/datachannel.lcb": ("dc",),
     "coinxt/src/coinxt.lcb": ("cx",),
     "box2dxt/src/box2dxt.lcb": ("b2",),
+    # box3dxt joined 2026-11-20. "b3" does not begin with "b2", so the two
+    # physics bindings stay disjoint by prefix.
+    "box3dxt/src/box3dxt.lcb": ("b3",),
     "curlxt/src/curl.lcb": ("cu",),
 }
 

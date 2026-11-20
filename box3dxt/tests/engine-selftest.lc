@@ -1,0 +1,1086 @@
+<?lc
+-- engine-selftest.lc - box3dxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../box3dxt for .../box3dxt.so)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int, a
+-- C string as text, a double as a number), and that a scene built from
+-- SCRIPT simulates. Two halves:
+--
+--   the SCENES, written by hand: a drop, a ray, events, a hinge, a hull;
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros. Zeros
+--     are safe by the binding's contract (a 0 handle is a no-op), so a call
+--     that throws or kills the engine here is a binding that does not match
+--     its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web. It runs the Linux x86-64 library on the Linux x86-64 server engine.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=box3dxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+command stepWorld pWorld, pSteps
+   repeat pSteps times
+      b3WorldStep pWorld, 1/60, 4
+   end repeat
+end stepWorld
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", b3ABIVersion() is 1, b3ABIVersion()
+   check "version text", b3LibraryVersion() begins with "box3dxt ABI 1; Box3D ", b3LibraryVersion()
+   check "a Boolean comes back as a Boolean", b3HasAVX2() is true or b3HasAVX2() is false, b3HasAVX2()
+   check "no asserts at load", b3AssertCount() is 0 and b3AssertText() is empty, b3AssertText()
+end testLibrary
+
+command testDrop
+   local tWorld, tGround, tBall, tShape, tBefore
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   check "world created", tWorld > 0 and b3WorldIsValid(tWorld) is true, tWorld && b3LastError()
+   check "gravity is text with items", b3WorldGravity(tWorld) is "0,-10,0", b3WorldGravity(tWorld)
+   put b3BodyCreate(tWorld, 0, 0, -1, 0) into tGround
+   check "floor shape", b3ShapeAddBox(tGround, 20, 1, 20, 0, 0.6, 0) > 0, b3LastError()
+   put b3BodyCreate(tWorld, 2, 0, 5, 0) into tBall
+   put b3ShapeAddSphere(tBall, 0, 0, 0, 0.5, 1, 0.6, 0) into tShape
+   check "ball shape", tShape > 0 and b3ShapeBody(tShape) is tBall, tShape && b3LastError()
+   check "position text", b3BodyPosition(tBall) is "0,5,0", b3BodyPosition(tBall)
+   check "mass of a 0.5 m ball of density 1", near(b3BodyMass(tBall), 4/3 * pi * 0.125, 0.001), b3BodyMass(tBall)
+   check "counts", b3WorldBodyCount(tWorld) is 2 and b3WorldShapeCount(tWorld) is 2 and b3BodyShapeCount(tBall) is 1, \
+         b3WorldBodyCount(tWorld) && b3WorldShapeCount(tWorld)
+   put b3BodyY(tBall) into tBefore
+   stepWorld tWorld, 30
+   check "it falls", b3BodyY(tBall) < tBefore - 0.5 and item 2 of b3BodyVelocity(tBall) < -1, b3BodyY(tBall) && b3BodyVelocity(tBall)
+   stepWorld tWorld, 240
+   check "it rests on the floor", near(b3BodyY(tBall), 0.5, 0.03), b3BodyY(tBall)
+   check "transform has seven items", the number of items of b3BodyTransform(tBall) is 7, b3BodyTransform(tBall)
+   check "matrix has twelve items", the number of items of b3BodyMatrix(tBall) is 12, b3BodyMatrix(tBall)
+
+   -- Booleans, both ways across the boundary
+   b3BodySetBullet tBall, true
+   check "Boolean in, Boolean out (true)", b3BodyIsBullet(tBall) is true, b3BodyIsBullet(tBall)
+   b3BodySetBullet tBall, false
+   check "Boolean in, Boolean out (false)", b3BodyIsBullet(tBall) is false, b3BodyIsBullet(tBall)
+   b3BodySetMotionLocks tBall, false, true, false, true, false, true
+   check "six Booleans in one call", b3BodyMotionLocks(tBall) is "0,1,0,1,0,1", b3BodyMotionLocks(tBall)
+   b3BodySetMotionLocks tBall, false, false, false, false, false, false
+
+   -- an impulse, a teleport, the type
+   b3BodyApplyImpulseToCenter tBall, 0, 5, 0, true
+   check "an impulse changes the velocity at once", item 2 of b3BodyVelocity(tBall) > 1, b3BodyVelocity(tBall)
+   b3BodySetTransform tBall, 3, 4, 5, 0, 0, 0, 1
+   check "teleport", near(b3BodyX(tBall), 3, 0.0001) and near(b3BodyY(tBall), 4, 0.0001) and near(b3BodyZ(tBall), 5, 0.0001), b3BodyPosition(tBall)
+   b3BodySetType tBall, 1
+   check "type", b3BodyType(tBall) is 1 and b3BodyType(0) is 0, b3BodyType(tBall)
+   b3BodySetType tBall, 2
+
+   -- refusals: 0 or empty back, an explanation, no throw
+   check "a negative radius is refused", b3ShapeAddSphere(tBall, 0, 0, 0, -1, 1, 0.6, 0) is 0 and b3LastError() is not empty, b3LastError()
+   check "a dead handle reads as nothing", b3BodyX(987654) is 0 and b3BodyPosition(987654) is empty and b3BodyIsValid(987654) is false, \
+         b3BodyX(987654) && b3BodyPosition(987654)
+   b3BodyDestroy tBall
+   check "destroyed: the handle is dead and its shape with it", b3BodyIsValid(tBall) is false and b3ShapeIsValid(tShape) is false, \
+         b3BodyIsValid(tBall) && b3ShapeIsValid(tShape)
+   b3BodyDestroy tBall
+   b3BodySetPosition tBall, 1, 2, 3
+   check "calls on a dead handle are harmless", b3WorldBodyCount(tWorld) is 1, b3WorldBodyCount(tWorld)
+   b3WorldDestroy tWorld
+   check "world destroyed", b3WorldIsValid(tWorld) is false and b3BodyIsValid(tGround) is false, b3WorldIsValid(tWorld)
+end testDrop
+
+command testQueriesAndEvents
+   local tWorld, tGround, tBox, tBoxShape, tBall, tBallShape, tBegins, tMoves, tSawBall, tZone, tZoneShape, tEnters
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   put b3BodyCreate(tWorld, 0, 0, -1, 0) into tGround
+   get b3ShapeAddBox(tGround, 20, 1, 20, 0, 0.6, 0)
+   put b3BodyCreate(tWorld, 0, 0, 3, 0) into tBox
+   put b3ShapeAddBox(tBox, 1, 0.5, 1, 0, 0.6, 0) into tBoxShape
+   b3WorldStep tWorld, 1/60, 4
+
+   check "a ray straight down hits the box, then the floor", b3CastRay(tWorld, 0, 10, 0, 0, -20, 0) is 2 and b3HitCount() is 2, b3HitCount()
+   check "nearest first", b3HitShape(1) is tBoxShape and b3HitBody(1) is tBox and b3HitBody(2) is tGround, b3HitShape(1) && b3HitBody(1)
+   check "hit fraction", near(b3HitFraction(1), 6.5 / 20, 0.001), b3HitFraction(1)
+   check "hit point and normal are text", near(item 2 of b3HitPoint(1), 3.5, 0.001) and near(item 2 of b3HitNormal(1), 1, 0.001), \
+         b3HitPoint(1) && b3HitNormal(1)
+   check "closest", b3CastRayClosest(tWorld, 0, 10, 0, 0, -20, 0) is 1 and b3HitShape(1) is tBoxShape, b3HitShape(1)
+   check "a miss", b3CastRay(tWorld, 50, 10, 50, 0, 5, 0) is 0 and b3HitShape(1) is 0, b3HitCount()
+   check "overlap box", b3OverlapAABB(tWorld, -0.5, 2.9, -0.5, 0.5, 3.1, 0.5) is 1 and b3ListItem(1) is tBoxShape and b3ListCount() is 1, b3ListCount()
+   check "list index out of range", b3ListItem(0) is 0 and b3ListItem(2) is 0, b3ListItem(2)
+   -- a shape's category starts as EVERY bit, so a query filter only bites
+   -- once a shape has been given a category of its own
+   b3ShapeSetFilter tBoxShape, 4, 65535, 0
+   b3QuerySetFilter 1, 2
+   check "a filter that skips the box", b3CastRay(tWorld, 0, 10, 0, 0, -20, 0) is 1 and b3HitBody(1) is tGround, b3HitCount()
+   b3QueryResetFilter
+   check "filter reset (a zero-argument command)", b3CastRay(tWorld, 0, 10, 0, 0, -20, 0) is 2, b3HitCount()
+
+   -- events: off by default, so ask for them
+   b3ShapeOptionsSetEvents true, true, true
+   put b3BodyCreate(tWorld, 2, 5, 3, 0) into tBall
+   put b3ShapeAddSphere(tBall, 0, 0, 0, 0.5, 1, 0.6, 0) into tBallShape
+   b3ShapeOptionsReset
+   check "events option reached the shape", b3ShapeAreContactEventsEnabled(tBallShape) is true and b3ShapeAreHitEventsEnabled(tBallShape) is true, \
+         b3ShapeAreContactEventsEnabled(tBallShape)
+   put 0 into tBegins
+   put 0 into tMoves
+   put false into tSawBall
+   repeat 120 times
+      b3WorldStep tWorld, 1/60, 4
+      if b3WorldUpdateContactEvents(tWorld) > 0 and b3ContactBeginCount() > 0 then
+         add b3ContactBeginCount() to tBegins
+         if b3ContactBeginShapeA(1) is tBallShape or b3ContactBeginShapeB(1) is tBallShape then put true into tSawBall
+      end if
+      if b3WorldUpdateMoves(tWorld) > 0 then
+         add 1 to tMoves
+         if tMoves is 1 then
+            check "the move list names the ball", b3MoveBody(1) is tBall and b3MoveCount() is 1, b3MoveBody(1)
+            check "moves text: one line, nine items", the number of lines of b3MovesText() is 1 and the number of items of line 1 of b3MovesText() is 9 \
+                  and item 1 of b3MovesText() is tBall, oneLine(b3MovesText())
+         end if
+      end if
+   end repeat
+   check "one begin-touch event, naming the ball", tBegins is 1 and tSawBall, tBegins && tSawBall
+   check "the ball moved for a while", tMoves > 20, tMoves
+   stepWorld tWorld, 240
+   check "then fell asleep", b3BodyIsAwake(tBall) is false and b3WorldAwakeBodyCount(tWorld) is 0, b3WorldAwakeBodyCount(tWorld)
+   check "a sleeping world reports no moves", b3WorldUpdateMoves(tWorld) is 0, b3MoveCount()
+
+   -- a sensor
+   b3ShapeOptionsSetSensor true
+   b3ShapeOptionsSetEvents false, false, true
+   put b3BodyCreate(tWorld, 0, 10, 3, 0) into tZone
+   put b3ShapeAddSphere(tZone, 0, 0, 0, 1, 0, 0, 0) into tZoneShape
+   b3ShapeOptionsReset
+   check "sensor shape", b3ShapeIsSensor(tZoneShape) is true and b3ShapeIsSensor(tBallShape) is false, b3ShapeIsSensor(tZoneShape)
+   b3BodySetTransform tBall, 10, 6, 0, 0, 0, 0, 1
+   b3BodySetAwake tBall, true
+   put 0 into tEnters
+   repeat 120 times
+      b3WorldStep tWorld, 1/60, 4
+      if b3WorldUpdateSensorEvents(tWorld) > 0 and b3SensorBeginCount() > 0 then
+         if b3SensorBeginSensor(1) is tZoneShape and b3SensorBeginVisitor(1) is tBallShape then add 1 to tEnters
+      end if
+   end repeat
+   check "the ball entered the sensor once", tEnters is 1, tEnters
+   b3WorldDestroy tWorld
+end testQueriesAndEvents
+
+command testJointsAndGeometry
+   local tWorld, tAnchor, tArm, tHinge, tQuat, tHull, tGround, tMesh, tField, tCount
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   put b3BodyCreate(tWorld, 0, 0, 10, 0) into tAnchor
+   get b3ShapeAddBox(tAnchor, 0.1, 0.1, 0.1, 0, 0.6, 0)
+   put b3BodyCreate(tWorld, 2, 1, 10, 0) into tArm
+   get b3ShapeAddBox(tArm, 1, 0.1, 0.1, 1, 0.6, 0)
+   put b3JointRevolute(tWorld, tAnchor, tArm, 0, 10, 0, 0, 0, 1, false) into tHinge
+   check "hinge", tHinge > 0 and b3JointType(tHinge) is 5 and b3JointIsValid(tHinge) is true, tHinge && b3LastError()
+   check "its bodies", b3JointBodyA(tHinge) is tAnchor and b3JointBodyB(tHinge) is tArm and b3JointCollideConnected(tHinge) is false, b3JointBodyA(tHinge)
+   stepWorld tWorld, 45
+   check "the arm swings down about z", b3RevoluteAngle(tHinge) < -0.5 and b3BodyY(tArm) < 9.8, b3RevoluteAngle(tHinge) && b3BodyY(tArm)
+   check "and stays on the hinge", near(sqrt(b3BodyX(tArm) ^ 2 + (b3BodyY(tArm) - 10) ^ 2), 1, 0.02), b3BodyPosition(tArm)
+   b3RevoluteSetLimits tHinge, -0.25, 0.25
+   b3RevoluteEnableLimit tHinge, true
+   check "limit set and on", b3RevoluteIsLimitEnabled(tHinge) is true and near(b3RevoluteLowerLimit(tHinge), -0.25, 0.0001) \
+         and near(b3RevoluteUpperLimit(tHinge), 0.25, 0.0001), b3RevoluteLowerLimit(tHinge)
+   stepWorld tWorld, 240
+   check "the limit holds the arm", near(b3RevoluteAngle(tHinge), -0.25, 0.03), b3RevoluteAngle(tHinge)
+   b3RevoluteSetMotorSpeed tHinge, 1.5
+   check "a scalar joint setting round-trips", near(b3RevoluteMotorSpeed(tHinge), 1.5, 0.0001), b3RevoluteMotorSpeed(tHinge)
+   check "a revolute call on no joint reads 0", b3RevoluteMotorSpeed(0) is 0 and b3PrismaticSpeed(tHinge) is 0, b3PrismaticSpeed(tHinge)
+   check "the same two bodies twice is refused politely", b3JointRevolute(tWorld, tArm, tArm, 0, 10, 0, 0, 0, 1, false) is 0 and b3LastError() is not empty, b3LastError()
+   b3JointDestroy tHinge, true
+   check "joint destroyed", b3JointIsValid(tHinge) is false and b3JointType(tHinge) is -1, b3JointType(tHinge)
+
+   -- rotations
+   put b3QuatFromAxisAngle(0, 1, 0, pi / 2) into tQuat
+   check "quaternion of a quarter turn about y", near(item 2 of tQuat, sqrt(0.5), 0.0001) and near(item 4 of tQuat, sqrt(0.5), 0.0001) \
+         and near(item 1 of tQuat, 0, 0.0001), tQuat
+   check "it turns x into -z", near(item 3 of b3QuatRotate(item 1 of tQuat, item 2 of tQuat, item 3 of tQuat, item 4 of tQuat, 1, 0, 0), -1, 0.0001), \
+         b3QuatRotate(item 1 of tQuat, item 2 of tQuat, item 3 of tQuat, item 4 of tQuat, 1, 0, 0)
+
+   -- a hull, a mesh and a height field from the geometry buffers
+   b3GeometryBegin
+   repeat for each item tX in "-1,1"
+      repeat for each item tY in "-1,1"
+         repeat for each item tZ in "-1,1"
+            get b3GeometryAddPoint(tX * 0.5, tY * 0.25, tZ * 0.5)
+         end repeat
+      end repeat
+   end repeat
+   check "eight points", b3GeometryPointCount() is 8, b3GeometryPointCount()
+   put b3ShapeAddHull(tArm, 1, 0.6, 0) into tHull
+   check "hull", tHull > 0 and b3ShapeType(tHull) is 3, tHull && b3LastError()
+   put b3BodyCreate(tWorld, 0, 30, 0, 0) into tGround
+   b3GeometryBegin
+   get b3GeometryAddPoint(-5, 0, -5)
+   get b3GeometryAddPoint(5, 0, -5)
+   get b3GeometryAddPoint(5, 0, 5)
+   get b3GeometryAddPoint(-5, 0, 5)
+   check "triangles count up", b3GeometryAddTriangle(1, 3, 2) is 1 and b3GeometryAddTriangle(1, 4, 3) is 2, b3LastError()
+   put b3ShapeAddMesh(tGround, 0.6, 0) into tMesh
+   check "mesh", tMesh > 0 and b3ShapeType(tMesh) is 4, tMesh && b3LastError()
+   check "a mesh on a moving body is refused", b3ShapeAddMesh(tArm, 0.6, 0) is 0 and b3LastError() is not empty, b3LastError()
+   check "a ray lands on the mesh", b3CastRayClosest(tWorld, 30, 5, 0, 0, -10, 0) is 1 and b3HitShape(1) is tMesh and near(item 2 of b3HitPoint(1), 0, 0.01), b3HitPoint(1)
+   b3GeometryBegin
+   put 0 into tCount
+   repeat 16 times
+      add 1 to tCount
+      get b3GeometryAddHeight((tCount mod 4) * 0.5)
+   end repeat
+   put b3ShapeAddHeightField(b3BodyCreate(tWorld, 0, 60, 0, 0), 4, 4, 2, 1, 2, 0.6, 0) into tField
+   check "height field", tField > 0 and b3ShapeType(tField) is 2, tField && b3LastError()
+   b3WorldDestroy tWorld
+end testJointsAndGeometry
+
+-- The typed boundary (suite engine note 6.4): an EMPTY value into a typed
+-- parameter is an error the engine raises before the call is made. That is
+-- the engine's rule and not the binding's; what is held here is that it is
+-- an error a script can catch and not a fault, and that 0 is the safe "no
+-- handle".
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get b3BodyX(empty)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty handle is a catchable script error (pass 0, not empty)", tThrew, "b3BodyX(empty) did not throw on this engine"
+   check "0 is the safe no-handle", b3BodyX(0) is 0 and b3BodyIsValid(0) is false, b3BodyX(0)
+end testTypedBoundary
+
+-- ---------------------------------------------------------------------
+-- The sweep
+-- ---------------------------------------------------------------------
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/box3dxt.lcb, in file order, called once with
+-- zeros (false for a Boolean). One try for the lot: tName is the call that
+-- was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "b3ABIVersion" into tName
+      get b3ABIVersion()
+      put "b3LibraryVersion" into tName
+      get b3LibraryVersion()
+      put "b3LastError" into tName
+      get b3LastError()
+      put "b3AssertCount" into tName
+      get b3AssertCount()
+      put "b3AssertText" into tName
+      get b3AssertText()
+      put "b3HasAVX2" into tName
+      get b3HasAVX2()
+      put "b3UnstableCount" into tName
+      get b3UnstableCount()
+      put "b3WorldCreate" into tName
+      get b3WorldCreate(0, 0, 0, 0)
+      put "b3WorldDestroy" into tName
+      b3WorldDestroy 0
+      put "b3WorldIsValid" into tName
+      get b3WorldIsValid(0)
+      put "b3WorldStep" into tName
+      b3WorldStep 0, 0, 0
+      put "b3WorldSetGravity" into tName
+      b3WorldSetGravity 0, 0, 0, 0
+      put "b3WorldGravity" into tName
+      get b3WorldGravity(0)
+      put "b3WorldEnableSleeping" into tName
+      b3WorldEnableSleeping 0, false
+      put "b3WorldIsSleepingEnabled" into tName
+      get b3WorldIsSleepingEnabled(0)
+      put "b3WorldEnableContinuous" into tName
+      b3WorldEnableContinuous 0, false
+      put "b3WorldIsContinuousEnabled" into tName
+      get b3WorldIsContinuousEnabled(0)
+      put "b3WorldSetRestitutionThreshold" into tName
+      b3WorldSetRestitutionThreshold 0, 0
+      put "b3WorldRestitutionThreshold" into tName
+      get b3WorldRestitutionThreshold(0)
+      put "b3WorldSetHitEventThreshold" into tName
+      b3WorldSetHitEventThreshold 0, 0
+      put "b3WorldHitEventThreshold" into tName
+      get b3WorldHitEventThreshold(0)
+      put "b3WorldSetContactTuning" into tName
+      b3WorldSetContactTuning 0, 0, 0, 0
+      put "b3WorldSetMaxLinearSpeed" into tName
+      b3WorldSetMaxLinearSpeed 0, 0
+      put "b3WorldMaxLinearSpeed" into tName
+      get b3WorldMaxLinearSpeed(0)
+      put "b3WorldSetWorkerCount" into tName
+      b3WorldSetWorkerCount 0, 0
+      put "b3WorldWorkerCount" into tName
+      get b3WorldWorkerCount(0)
+      put "b3WorldBodyCount" into tName
+      get b3WorldBodyCount(0)
+      put "b3WorldShapeCount" into tName
+      get b3WorldShapeCount(0)
+      put "b3WorldJointCount" into tName
+      get b3WorldJointCount(0)
+      put "b3WorldContactCount" into tName
+      get b3WorldContactCount(0)
+      put "b3WorldAwakeBodyCount" into tName
+      get b3WorldAwakeBodyCount(0)
+      put "b3WorldStepMs" into tName
+      get b3WorldStepMs(0)
+      put "b3WorldBounds" into tName
+      get b3WorldBounds(0)
+      put "b3WorldExplode" into tName
+      b3WorldExplode 0, 0, 0, 0, 0, 0, 0
+      put "b3BodyCreate" into tName
+      get b3BodyCreate(0, 0, 0, 0, 0)
+      put "b3BodyCreateRotated" into tName
+      get b3BodyCreateRotated(0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3BodyDestroy" into tName
+      b3BodyDestroy 0
+      put "b3BodyIsValid" into tName
+      get b3BodyIsValid(0)
+      put "b3BodyType" into tName
+      get b3BodyType(0)
+      put "b3BodySetType" into tName
+      b3BodySetType 0, 0
+      put "b3BodyWorld" into tName
+      get b3BodyWorld(0)
+      put "b3BodyPosition" into tName
+      get b3BodyPosition(0)
+      put "b3BodyX" into tName
+      get b3BodyX(0)
+      put "b3BodyY" into tName
+      get b3BodyY(0)
+      put "b3BodyZ" into tName
+      get b3BodyZ(0)
+      put "b3BodyRotation" into tName
+      get b3BodyRotation(0)
+      put "b3BodyTransform" into tName
+      get b3BodyTransform(0)
+      put "b3BodyMatrix" into tName
+      get b3BodyMatrix(0)
+      put "b3BodySetTransform" into tName
+      b3BodySetTransform 0, 0, 0, 0, 0, 0, 0, 0
+      put "b3BodySetPosition" into tName
+      b3BodySetPosition 0, 0, 0, 0
+      put "b3BodySetRotation" into tName
+      b3BodySetRotation 0, 0, 0, 0, 0
+      put "b3BodySetTargetTransform" into tName
+      b3BodySetTargetTransform 0, 0, 0, 0, 0, 0, 0, 0, 0, false
+      put "b3BodyVelocity" into tName
+      get b3BodyVelocity(0)
+      put "b3BodyAngularVelocity" into tName
+      get b3BodyAngularVelocity(0)
+      put "b3BodySpeed" into tName
+      get b3BodySpeed(0)
+      put "b3BodySetVelocity" into tName
+      b3BodySetVelocity 0, 0, 0, 0
+      put "b3BodySetAngularVelocity" into tName
+      b3BodySetAngularVelocity 0, 0, 0, 0
+      put "b3BodyApplyForce" into tName
+      b3BodyApplyForce 0, 0, 0, 0, 0, 0, 0, false
+      put "b3BodyApplyForceToCenter" into tName
+      b3BodyApplyForceToCenter 0, 0, 0, 0, false
+      put "b3BodyApplyTorque" into tName
+      b3BodyApplyTorque 0, 0, 0, 0, false
+      put "b3BodyApplyImpulse" into tName
+      b3BodyApplyImpulse 0, 0, 0, 0, 0, 0, 0, false
+      put "b3BodyApplyImpulseToCenter" into tName
+      b3BodyApplyImpulseToCenter 0, 0, 0, 0, false
+      put "b3BodyApplyAngularImpulse" into tName
+      b3BodyApplyAngularImpulse 0, 0, 0, 0, false
+      put "b3BodyMass" into tName
+      get b3BodyMass(0)
+      put "b3BodyApplyMassFromShapes" into tName
+      b3BodyApplyMassFromShapes 0
+      put "b3BodyLocalCenter" into tName
+      get b3BodyLocalCenter(0)
+      put "b3BodyWorldCenter" into tName
+      get b3BodyWorldCenter(0)
+      put "b3BodyLocalPoint" into tName
+      get b3BodyLocalPoint(0, 0, 0, 0)
+      put "b3BodyWorldPoint" into tName
+      get b3BodyWorldPoint(0, 0, 0, 0)
+      put "b3BodyLocalVector" into tName
+      get b3BodyLocalVector(0, 0, 0, 0)
+      put "b3BodyWorldVector" into tName
+      get b3BodyWorldVector(0, 0, 0, 0)
+      put "b3BodyPointVelocity" into tName
+      get b3BodyPointVelocity(0, 0, 0, 0)
+      put "b3BodySetLinearDamping" into tName
+      b3BodySetLinearDamping 0, 0
+      put "b3BodyLinearDamping" into tName
+      get b3BodyLinearDamping(0)
+      put "b3BodySetAngularDamping" into tName
+      b3BodySetAngularDamping 0, 0
+      put "b3BodyAngularDamping" into tName
+      get b3BodyAngularDamping(0)
+      put "b3BodySetGravityScale" into tName
+      b3BodySetGravityScale 0, 0
+      put "b3BodyGravityScale" into tName
+      get b3BodyGravityScale(0)
+      put "b3BodyIsAwake" into tName
+      get b3BodyIsAwake(0)
+      put "b3BodySetAwake" into tName
+      b3BodySetAwake 0, false
+      put "b3BodyEnableSleep" into tName
+      b3BodyEnableSleep 0, false
+      put "b3BodyIsSleepEnabled" into tName
+      get b3BodyIsSleepEnabled(0)
+      put "b3BodySetSleepThreshold" into tName
+      b3BodySetSleepThreshold 0, 0
+      put "b3BodySleepThreshold" into tName
+      get b3BodySleepThreshold(0)
+      put "b3BodyIsEnabled" into tName
+      get b3BodyIsEnabled(0)
+      put "b3BodyEnable" into tName
+      b3BodyEnable 0
+      put "b3BodyDisable" into tName
+      b3BodyDisable 0
+      put "b3BodySetBullet" into tName
+      b3BodySetBullet 0, false
+      put "b3BodyIsBullet" into tName
+      get b3BodyIsBullet(0)
+      put "b3BodySetMotionLocks" into tName
+      b3BodySetMotionLocks 0, false, false, false, false, false, false
+      put "b3BodyMotionLocks" into tName
+      get b3BodyMotionLocks(0)
+      put "b3BodyEnableHitEvents" into tName
+      b3BodyEnableHitEvents 0, false
+      put "b3BodyAABB" into tName
+      get b3BodyAABB(0)
+      put "b3BodyShapeCount" into tName
+      get b3BodyShapeCount(0)
+      put "b3BodyJointCount" into tName
+      get b3BodyJointCount(0)
+      put "b3ListCount" into tName
+      get b3ListCount()
+      put "b3ListItem" into tName
+      get b3ListItem(0)
+      put "b3BodyListShapes" into tName
+      get b3BodyListShapes(0)
+      put "b3BodyListJoints" into tName
+      get b3BodyListJoints(0)
+      put "b3BodyListTouching" into tName
+      get b3BodyListTouching(0)
+      put "b3ShapeOptionsReset" into tName
+      b3ShapeOptionsReset
+      put "b3ShapeOptionsSetSensor" into tName
+      b3ShapeOptionsSetSensor false
+      put "b3ShapeOptionsSetEvents" into tName
+      b3ShapeOptionsSetEvents false, false, false
+      put "b3ShapeOptionsSetFilter" into tName
+      b3ShapeOptionsSetFilter 0, 0, 0
+      put "b3ShapeOptionsSetRollingResistance" into tName
+      b3ShapeOptionsSetRollingResistance 0
+      put "b3GeometryBegin" into tName
+      b3GeometryBegin
+      put "b3GeometryAddPoint" into tName
+      get b3GeometryAddPoint(0, 0, 0)
+      put "b3GeometryAddTriangle" into tName
+      get b3GeometryAddTriangle(0, 0, 0)
+      put "b3GeometryAddHeight" into tName
+      get b3GeometryAddHeight(0)
+      put "b3GeometryPointCount" into tName
+      get b3GeometryPointCount()
+      put "b3ShapeAddSphere" into tName
+      get b3ShapeAddSphere(0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddCapsule" into tName
+      get b3ShapeAddCapsule(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddBox" into tName
+      get b3ShapeAddBox(0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddBoxAt" into tName
+      get b3ShapeAddBoxAt(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddCylinder" into tName
+      get b3ShapeAddCylinder(0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddCone" into tName
+      get b3ShapeAddCone(0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeAddHull" into tName
+      get b3ShapeAddHull(0, 0, 0, 0)
+      put "b3ShapeAddMesh" into tName
+      get b3ShapeAddMesh(0, 0, 0)
+      put "b3ShapeAddHeightField" into tName
+      get b3ShapeAddHeightField(0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3ShapeDestroy" into tName
+      b3ShapeDestroy 0, false
+      put "b3ShapeIsValid" into tName
+      get b3ShapeIsValid(0)
+      put "b3ShapeType" into tName
+      get b3ShapeType(0)
+      put "b3ShapeBody" into tName
+      get b3ShapeBody(0)
+      put "b3ShapeIsSensor" into tName
+      get b3ShapeIsSensor(0)
+      put "b3ShapeSetDensity" into tName
+      b3ShapeSetDensity 0, 0, false
+      put "b3ShapeDensity" into tName
+      get b3ShapeDensity(0)
+      put "b3ShapeSetFriction" into tName
+      b3ShapeSetFriction 0, 0
+      put "b3ShapeFriction" into tName
+      get b3ShapeFriction(0)
+      put "b3ShapeSetRestitution" into tName
+      b3ShapeSetRestitution 0, 0
+      put "b3ShapeRestitution" into tName
+      get b3ShapeRestitution(0)
+      put "b3ShapeSetRollingResistance" into tName
+      b3ShapeSetRollingResistance 0, 0
+      put "b3ShapeRollingResistance" into tName
+      get b3ShapeRollingResistance(0)
+      put "b3ShapeSetFilter" into tName
+      b3ShapeSetFilter 0, 0, 0, 0
+      put "b3ShapeFilter" into tName
+      get b3ShapeFilter(0)
+      put "b3ShapeEnableContactEvents" into tName
+      b3ShapeEnableContactEvents 0, false
+      put "b3ShapeAreContactEventsEnabled" into tName
+      get b3ShapeAreContactEventsEnabled(0)
+      put "b3ShapeEnableHitEvents" into tName
+      b3ShapeEnableHitEvents 0, false
+      put "b3ShapeAreHitEventsEnabled" into tName
+      get b3ShapeAreHitEventsEnabled(0)
+      put "b3ShapeEnableSensorEvents" into tName
+      b3ShapeEnableSensorEvents 0, false
+      put "b3ShapeAreSensorEventsEnabled" into tName
+      get b3ShapeAreSensorEventsEnabled(0)
+      put "b3ShapeAABB" into tName
+      get b3ShapeAABB(0)
+      put "b3ShapeClosestPoint" into tName
+      get b3ShapeClosestPoint(0, 0, 0, 0)
+      put "b3ShapeListSensorVisitors" into tName
+      get b3ShapeListSensorVisitors(0)
+      put "b3QuerySetFilter" into tName
+      b3QuerySetFilter 0, 0
+      put "b3QueryResetFilter" into tName
+      b3QueryResetFilter
+      put "b3CastRay" into tName
+      get b3CastRay(0, 0, 0, 0, 0, 0, 0)
+      put "b3CastRayClosest" into tName
+      get b3CastRayClosest(0, 0, 0, 0, 0, 0, 0)
+      put "b3CastSphere" into tName
+      get b3CastSphere(0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3HitCount" into tName
+      get b3HitCount()
+      put "b3HitShape" into tName
+      get b3HitShape(0)
+      put "b3HitBody" into tName
+      get b3HitBody(0)
+      put "b3HitFraction" into tName
+      get b3HitFraction(0)
+      put "b3HitPoint" into tName
+      get b3HitPoint(0)
+      put "b3HitNormal" into tName
+      get b3HitNormal(0)
+      put "b3OverlapAABB" into tName
+      get b3OverlapAABB(0, 0, 0, 0, 0, 0, 0)
+      put "b3OverlapSphere" into tName
+      get b3OverlapSphere(0, 0, 0, 0, 0)
+      put "b3WorldUpdateContactEvents" into tName
+      get b3WorldUpdateContactEvents(0)
+      put "b3ContactBeginCount" into tName
+      get b3ContactBeginCount()
+      put "b3ContactBeginShapeA" into tName
+      get b3ContactBeginShapeA(0)
+      put "b3ContactBeginShapeB" into tName
+      get b3ContactBeginShapeB(0)
+      put "b3ContactEndCount" into tName
+      get b3ContactEndCount()
+      put "b3ContactEndShapeA" into tName
+      get b3ContactEndShapeA(0)
+      put "b3ContactEndShapeB" into tName
+      get b3ContactEndShapeB(0)
+      put "b3ContactHitCount" into tName
+      get b3ContactHitCount()
+      put "b3ContactHitShapeA" into tName
+      get b3ContactHitShapeA(0)
+      put "b3ContactHitShapeB" into tName
+      get b3ContactHitShapeB(0)
+      put "b3ContactHitSpeed" into tName
+      get b3ContactHitSpeed(0)
+      put "b3ContactHitPoint" into tName
+      get b3ContactHitPoint(0)
+      put "b3ContactHitNormal" into tName
+      get b3ContactHitNormal(0)
+      put "b3WorldUpdateSensorEvents" into tName
+      get b3WorldUpdateSensorEvents(0)
+      put "b3SensorBeginCount" into tName
+      get b3SensorBeginCount()
+      put "b3SensorBeginSensor" into tName
+      get b3SensorBeginSensor(0)
+      put "b3SensorBeginVisitor" into tName
+      get b3SensorBeginVisitor(0)
+      put "b3SensorEndCount" into tName
+      get b3SensorEndCount()
+      put "b3SensorEndSensor" into tName
+      get b3SensorEndSensor(0)
+      put "b3SensorEndVisitor" into tName
+      get b3SensorEndVisitor(0)
+      put "b3WorldUpdateMoves" into tName
+      get b3WorldUpdateMoves(0)
+      put "b3MoveCount" into tName
+      get b3MoveCount()
+      put "b3MoveBody" into tName
+      get b3MoveBody(0)
+      put "b3MoveFellAsleep" into tName
+      get b3MoveFellAsleep(0)
+      put "b3MoveTransform" into tName
+      get b3MoveTransform(0)
+      put "b3MovesText" into tName
+      get b3MovesText()
+      put "b3WorldUpdateJointEvents" into tName
+      get b3WorldUpdateJointEvents(0)
+      put "b3JointEventCount" into tName
+      get b3JointEventCount()
+      put "b3JointEventJoint" into tName
+      get b3JointEventJoint(0)
+      put "b3QuatFromAxisAngle" into tName
+      get b3QuatFromAxisAngle(0, 0, 0, 0)
+      put "b3QuatFromEuler" into tName
+      get b3QuatFromEuler(0, 0, 0)
+      put "b3QuatMultiply" into tName
+      get b3QuatMultiply(0, 0, 0, 0, 0, 0, 0, 0)
+      put "b3QuatRotate" into tName
+      get b3QuatRotate(0, 0, 0, 0, 0, 0, 0)
+      put "b3QuatToAxisAngle" into tName
+      get b3QuatToAxisAngle(0, 0, 0, 0)
+      put "b3JointRevolute" into tName
+      get b3JointRevolute(0, 0, 0, 0, 0, 0, 0, 0, 0, false)
+      put "b3JointPrismatic" into tName
+      get b3JointPrismatic(0, 0, 0, 0, 0, 0, 0, 0, 0, false)
+      put "b3JointSpherical" into tName
+      get b3JointSpherical(0, 0, 0, 0, 0, 0, 0, 0, 0, false)
+      put "b3JointWeld" into tName
+      get b3JointWeld(0, 0, 0, 0, 0, 0, false)
+      put "b3JointDistance" into tName
+      get b3JointDistance(0, 0, 0, 0, 0, 0, 0, 0, 0, false)
+      put "b3JointWheel" into tName
+      get b3JointWheel(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false)
+      put "b3JointMotor" into tName
+      get b3JointMotor(0, 0, 0, false)
+      put "b3JointParallel" into tName
+      get b3JointParallel(0, 0, 0, 0, 0, 0, false)
+      put "b3JointFilter" into tName
+      get b3JointFilter(0, 0, 0)
+      put "b3JointDestroy" into tName
+      b3JointDestroy 0, false
+      put "b3JointIsValid" into tName
+      get b3JointIsValid(0)
+      put "b3JointType" into tName
+      get b3JointType(0)
+      put "b3JointBodyA" into tName
+      get b3JointBodyA(0)
+      put "b3JointBodyB" into tName
+      get b3JointBodyB(0)
+      put "b3JointSetCollideConnected" into tName
+      b3JointSetCollideConnected 0, false
+      put "b3JointCollideConnected" into tName
+      get b3JointCollideConnected(0)
+      put "b3JointWakeBodies" into tName
+      b3JointWakeBodies 0
+      put "b3JointLocalFrameA" into tName
+      get b3JointLocalFrameA(0)
+      put "b3JointLocalFrameB" into tName
+      get b3JointLocalFrameB(0)
+      put "b3JointSetLocalFrameA" into tName
+      b3JointSetLocalFrameA 0, 0, 0, 0, 0, 0, 0, 0
+      put "b3JointSetLocalFrameB" into tName
+      b3JointSetLocalFrameB 0, 0, 0, 0, 0, 0, 0, 0
+      put "b3JointConstraintForce" into tName
+      get b3JointConstraintForce(0)
+      put "b3JointConstraintTorque" into tName
+      get b3JointConstraintTorque(0)
+      put "b3JointLinearSeparation" into tName
+      get b3JointLinearSeparation(0)
+      put "b3JointAngularSeparation" into tName
+      get b3JointAngularSeparation(0)
+      put "b3JointSetForceThreshold" into tName
+      b3JointSetForceThreshold 0, 0
+      put "b3JointForceThreshold" into tName
+      get b3JointForceThreshold(0)
+      put "b3JointSetTorqueThreshold" into tName
+      b3JointSetTorqueThreshold 0, 0
+      put "b3JointTorqueThreshold" into tName
+      get b3JointTorqueThreshold(0)
+      put "b3RevoluteSetLimits" into tName
+      b3RevoluteSetLimits 0, 0, 0
+      put "b3RevoluteEnableSpring" into tName
+      b3RevoluteEnableSpring 0, false
+      put "b3RevoluteIsSpringEnabled" into tName
+      get b3RevoluteIsSpringEnabled(0)
+      put "b3RevoluteSetSpringHertz" into tName
+      b3RevoluteSetSpringHertz 0, 0
+      put "b3RevoluteSpringHertz" into tName
+      get b3RevoluteSpringHertz(0)
+      put "b3RevoluteSetSpringDampingRatio" into tName
+      b3RevoluteSetSpringDampingRatio 0, 0
+      put "b3RevoluteSpringDampingRatio" into tName
+      get b3RevoluteSpringDampingRatio(0)
+      put "b3RevoluteSetTargetAngle" into tName
+      b3RevoluteSetTargetAngle 0, 0
+      put "b3RevoluteTargetAngle" into tName
+      get b3RevoluteTargetAngle(0)
+      put "b3RevoluteAngle" into tName
+      get b3RevoluteAngle(0)
+      put "b3RevoluteEnableLimit" into tName
+      b3RevoluteEnableLimit 0, false
+      put "b3RevoluteIsLimitEnabled" into tName
+      get b3RevoluteIsLimitEnabled(0)
+      put "b3RevoluteLowerLimit" into tName
+      get b3RevoluteLowerLimit(0)
+      put "b3RevoluteUpperLimit" into tName
+      get b3RevoluteUpperLimit(0)
+      put "b3RevoluteEnableMotor" into tName
+      b3RevoluteEnableMotor 0, false
+      put "b3RevoluteIsMotorEnabled" into tName
+      get b3RevoluteIsMotorEnabled(0)
+      put "b3RevoluteSetMotorSpeed" into tName
+      b3RevoluteSetMotorSpeed 0, 0
+      put "b3RevoluteMotorSpeed" into tName
+      get b3RevoluteMotorSpeed(0)
+      put "b3RevoluteMotorTorque" into tName
+      get b3RevoluteMotorTorque(0)
+      put "b3RevoluteSetMaxMotorTorque" into tName
+      b3RevoluteSetMaxMotorTorque 0, 0
+      put "b3RevoluteMaxMotorTorque" into tName
+      get b3RevoluteMaxMotorTorque(0)
+      put "b3PrismaticSetLimits" into tName
+      b3PrismaticSetLimits 0, 0, 0
+      put "b3PrismaticEnableSpring" into tName
+      b3PrismaticEnableSpring 0, false
+      put "b3PrismaticIsSpringEnabled" into tName
+      get b3PrismaticIsSpringEnabled(0)
+      put "b3PrismaticSetSpringHertz" into tName
+      b3PrismaticSetSpringHertz 0, 0
+      put "b3PrismaticSpringHertz" into tName
+      get b3PrismaticSpringHertz(0)
+      put "b3PrismaticSetSpringDampingRatio" into tName
+      b3PrismaticSetSpringDampingRatio 0, 0
+      put "b3PrismaticSpringDampingRatio" into tName
+      get b3PrismaticSpringDampingRatio(0)
+      put "b3PrismaticSetTargetTranslation" into tName
+      b3PrismaticSetTargetTranslation 0, 0
+      put "b3PrismaticTargetTranslation" into tName
+      get b3PrismaticTargetTranslation(0)
+      put "b3PrismaticEnableLimit" into tName
+      b3PrismaticEnableLimit 0, false
+      put "b3PrismaticIsLimitEnabled" into tName
+      get b3PrismaticIsLimitEnabled(0)
+      put "b3PrismaticLowerLimit" into tName
+      get b3PrismaticLowerLimit(0)
+      put "b3PrismaticUpperLimit" into tName
+      get b3PrismaticUpperLimit(0)
+      put "b3PrismaticEnableMotor" into tName
+      b3PrismaticEnableMotor 0, false
+      put "b3PrismaticIsMotorEnabled" into tName
+      get b3PrismaticIsMotorEnabled(0)
+      put "b3PrismaticSetMotorSpeed" into tName
+      b3PrismaticSetMotorSpeed 0, 0
+      put "b3PrismaticMotorSpeed" into tName
+      get b3PrismaticMotorSpeed(0)
+      put "b3PrismaticSetMaxMotorForce" into tName
+      b3PrismaticSetMaxMotorForce 0, 0
+      put "b3PrismaticMaxMotorForce" into tName
+      get b3PrismaticMaxMotorForce(0)
+      put "b3PrismaticMotorForce" into tName
+      get b3PrismaticMotorForce(0)
+      put "b3PrismaticTranslation" into tName
+      get b3PrismaticTranslation(0)
+      put "b3PrismaticSpeed" into tName
+      get b3PrismaticSpeed(0)
+      put "b3SphericalSetMotorVelocity" into tName
+      b3SphericalSetMotorVelocity 0, 0, 0, 0
+      put "b3SphericalMotorVelocity" into tName
+      get b3SphericalMotorVelocity(0)
+      put "b3SphericalMotorTorque" into tName
+      get b3SphericalMotorTorque(0)
+      put "b3SphericalSetTargetRotation" into tName
+      b3SphericalSetTargetRotation 0, 0, 0, 0, 0
+      put "b3SphericalTargetRotation" into tName
+      get b3SphericalTargetRotation(0)
+      put "b3SphericalSetTwistLimits" into tName
+      b3SphericalSetTwistLimits 0, 0, 0
+      put "b3SphericalEnableConeLimit" into tName
+      b3SphericalEnableConeLimit 0, false
+      put "b3SphericalIsConeLimitEnabled" into tName
+      get b3SphericalIsConeLimitEnabled(0)
+      put "b3SphericalSetConeLimit" into tName
+      b3SphericalSetConeLimit 0, 0
+      put "b3SphericalConeLimit" into tName
+      get b3SphericalConeLimit(0)
+      put "b3SphericalConeAngle" into tName
+      get b3SphericalConeAngle(0)
+      put "b3SphericalEnableTwistLimit" into tName
+      b3SphericalEnableTwistLimit 0, false
+      put "b3SphericalIsTwistLimitEnabled" into tName
+      get b3SphericalIsTwistLimitEnabled(0)
+      put "b3SphericalLowerTwistLimit" into tName
+      get b3SphericalLowerTwistLimit(0)
+      put "b3SphericalUpperTwistLimit" into tName
+      get b3SphericalUpperTwistLimit(0)
+      put "b3SphericalTwistAngle" into tName
+      get b3SphericalTwistAngle(0)
+      put "b3SphericalEnableSpring" into tName
+      b3SphericalEnableSpring 0, false
+      put "b3SphericalIsSpringEnabled" into tName
+      get b3SphericalIsSpringEnabled(0)
+      put "b3SphericalSetSpringHertz" into tName
+      b3SphericalSetSpringHertz 0, 0
+      put "b3SphericalSpringHertz" into tName
+      get b3SphericalSpringHertz(0)
+      put "b3SphericalSetSpringDampingRatio" into tName
+      b3SphericalSetSpringDampingRatio 0, 0
+      put "b3SphericalSpringDampingRatio" into tName
+      get b3SphericalSpringDampingRatio(0)
+      put "b3SphericalEnableMotor" into tName
+      b3SphericalEnableMotor 0, false
+      put "b3SphericalIsMotorEnabled" into tName
+      get b3SphericalIsMotorEnabled(0)
+      put "b3SphericalSetMaxMotorTorque" into tName
+      b3SphericalSetMaxMotorTorque 0, 0
+      put "b3SphericalMaxMotorTorque" into tName
+      get b3SphericalMaxMotorTorque(0)
+      put "b3WeldSetLinearHertz" into tName
+      b3WeldSetLinearHertz 0, 0
+      put "b3WeldLinearHertz" into tName
+      get b3WeldLinearHertz(0)
+      put "b3WeldSetLinearDampingRatio" into tName
+      b3WeldSetLinearDampingRatio 0, 0
+      put "b3WeldLinearDampingRatio" into tName
+      get b3WeldLinearDampingRatio(0)
+      put "b3WeldSetAngularHertz" into tName
+      b3WeldSetAngularHertz 0, 0
+      put "b3WeldAngularHertz" into tName
+      get b3WeldAngularHertz(0)
+      put "b3WeldSetAngularDampingRatio" into tName
+      b3WeldSetAngularDampingRatio 0, 0
+      put "b3WeldAngularDampingRatio" into tName
+      get b3WeldAngularDampingRatio(0)
+      put "b3DistanceSetLengthRange" into tName
+      b3DistanceSetLengthRange 0, 0, 0
+      put "b3DistanceSetLength" into tName
+      b3DistanceSetLength 0, 0
+      put "b3DistanceLength" into tName
+      get b3DistanceLength(0)
+      put "b3DistanceEnableSpring" into tName
+      b3DistanceEnableSpring 0, false
+      put "b3DistanceIsSpringEnabled" into tName
+      get b3DistanceIsSpringEnabled(0)
+      put "b3DistanceSetSpringHertz" into tName
+      b3DistanceSetSpringHertz 0, 0
+      put "b3DistanceSpringHertz" into tName
+      get b3DistanceSpringHertz(0)
+      put "b3DistanceSetSpringDampingRatio" into tName
+      b3DistanceSetSpringDampingRatio 0, 0
+      put "b3DistanceSpringDampingRatio" into tName
+      get b3DistanceSpringDampingRatio(0)
+      put "b3DistanceEnableLimit" into tName
+      b3DistanceEnableLimit 0, false
+      put "b3DistanceIsLimitEnabled" into tName
+      get b3DistanceIsLimitEnabled(0)
+      put "b3DistanceMinLength" into tName
+      get b3DistanceMinLength(0)
+      put "b3DistanceMaxLength" into tName
+      get b3DistanceMaxLength(0)
+      put "b3DistanceCurrentLength" into tName
+      get b3DistanceCurrentLength(0)
+      put "b3DistanceEnableMotor" into tName
+      b3DistanceEnableMotor 0, false
+      put "b3DistanceIsMotorEnabled" into tName
+      get b3DistanceIsMotorEnabled(0)
+      put "b3DistanceSetMotorSpeed" into tName
+      b3DistanceSetMotorSpeed 0, 0
+      put "b3DistanceMotorSpeed" into tName
+      get b3DistanceMotorSpeed(0)
+      put "b3DistanceSetMaxMotorForce" into tName
+      b3DistanceSetMaxMotorForce 0, 0
+      put "b3DistanceMaxMotorForce" into tName
+      get b3DistanceMaxMotorForce(0)
+      put "b3DistanceMotorForce" into tName
+      get b3DistanceMotorForce(0)
+      put "b3WheelSetSuspensionLimits" into tName
+      b3WheelSetSuspensionLimits 0, 0, 0
+      put "b3WheelSetSteeringLimits" into tName
+      b3WheelSetSteeringLimits 0, 0, 0
+      put "b3WheelEnableSuspension" into tName
+      b3WheelEnableSuspension 0, false
+      put "b3WheelIsSuspensionEnabled" into tName
+      get b3WheelIsSuspensionEnabled(0)
+      put "b3WheelSetSuspensionHertz" into tName
+      b3WheelSetSuspensionHertz 0, 0
+      put "b3WheelSuspensionHertz" into tName
+      get b3WheelSuspensionHertz(0)
+      put "b3WheelSetSuspensionDampingRatio" into tName
+      b3WheelSetSuspensionDampingRatio 0, 0
+      put "b3WheelSuspensionDampingRatio" into tName
+      get b3WheelSuspensionDampingRatio(0)
+      put "b3WheelEnableSuspensionLimit" into tName
+      b3WheelEnableSuspensionLimit 0, false
+      put "b3WheelIsSuspensionLimitEnabled" into tName
+      get b3WheelIsSuspensionLimitEnabled(0)
+      put "b3WheelLowerSuspensionLimit" into tName
+      get b3WheelLowerSuspensionLimit(0)
+      put "b3WheelUpperSuspensionLimit" into tName
+      get b3WheelUpperSuspensionLimit(0)
+      put "b3WheelEnableSpinMotor" into tName
+      b3WheelEnableSpinMotor 0, false
+      put "b3WheelIsSpinMotorEnabled" into tName
+      get b3WheelIsSpinMotorEnabled(0)
+      put "b3WheelSetSpinMotorSpeed" into tName
+      b3WheelSetSpinMotorSpeed 0, 0
+      put "b3WheelSpinMotorSpeed" into tName
+      get b3WheelSpinMotorSpeed(0)
+      put "b3WheelSetMaxSpinTorque" into tName
+      b3WheelSetMaxSpinTorque 0, 0
+      put "b3WheelMaxSpinTorque" into tName
+      get b3WheelMaxSpinTorque(0)
+      put "b3WheelSpinSpeed" into tName
+      get b3WheelSpinSpeed(0)
+      put "b3WheelSpinTorque" into tName
+      get b3WheelSpinTorque(0)
+      put "b3WheelEnableSteering" into tName
+      b3WheelEnableSteering 0, false
+      put "b3WheelIsSteeringEnabled" into tName
+      get b3WheelIsSteeringEnabled(0)
+      put "b3WheelSetSteeringHertz" into tName
+      b3WheelSetSteeringHertz 0, 0
+      put "b3WheelSteeringHertz" into tName
+      get b3WheelSteeringHertz(0)
+      put "b3WheelSetSteeringDampingRatio" into tName
+      b3WheelSetSteeringDampingRatio 0, 0
+      put "b3WheelSteeringDampingRatio" into tName
+      get b3WheelSteeringDampingRatio(0)
+      put "b3WheelSetMaxSteeringTorque" into tName
+      b3WheelSetMaxSteeringTorque 0, 0
+      put "b3WheelMaxSteeringTorque" into tName
+      get b3WheelMaxSteeringTorque(0)
+      put "b3WheelEnableSteeringLimit" into tName
+      b3WheelEnableSteeringLimit 0, false
+      put "b3WheelIsSteeringLimitEnabled" into tName
+      get b3WheelIsSteeringLimitEnabled(0)
+      put "b3WheelLowerSteeringLimit" into tName
+      get b3WheelLowerSteeringLimit(0)
+      put "b3WheelUpperSteeringLimit" into tName
+      get b3WheelUpperSteeringLimit(0)
+      put "b3WheelSetTargetSteeringAngle" into tName
+      b3WheelSetTargetSteeringAngle 0, 0
+      put "b3WheelTargetSteeringAngle" into tName
+      get b3WheelTargetSteeringAngle(0)
+      put "b3WheelSteeringAngle" into tName
+      get b3WheelSteeringAngle(0)
+      put "b3WheelSteeringTorque" into tName
+      get b3WheelSteeringTorque(0)
+      put "b3MotorSetLinearVelocity" into tName
+      b3MotorSetLinearVelocity 0, 0, 0, 0
+      put "b3MotorLinearVelocity" into tName
+      get b3MotorLinearVelocity(0)
+      put "b3MotorSetAngularVelocity" into tName
+      b3MotorSetAngularVelocity 0, 0, 0, 0
+      put "b3MotorAngularVelocity" into tName
+      get b3MotorAngularVelocity(0)
+      put "b3MotorSetMaxVelocityForce" into tName
+      b3MotorSetMaxVelocityForce 0, 0
+      put "b3MotorMaxVelocityForce" into tName
+      get b3MotorMaxVelocityForce(0)
+      put "b3MotorSetMaxVelocityTorque" into tName
+      b3MotorSetMaxVelocityTorque 0, 0
+      put "b3MotorMaxVelocityTorque" into tName
+      get b3MotorMaxVelocityTorque(0)
+      put "b3MotorSetLinearHertz" into tName
+      b3MotorSetLinearHertz 0, 0
+      put "b3MotorLinearHertz" into tName
+      get b3MotorLinearHertz(0)
+      put "b3MotorSetLinearDampingRatio" into tName
+      b3MotorSetLinearDampingRatio 0, 0
+      put "b3MotorLinearDampingRatio" into tName
+      get b3MotorLinearDampingRatio(0)
+      put "b3MotorSetAngularHertz" into tName
+      b3MotorSetAngularHertz 0, 0
+      put "b3MotorAngularHertz" into tName
+      get b3MotorAngularHertz(0)
+      put "b3MotorSetAngularDampingRatio" into tName
+      b3MotorSetAngularDampingRatio 0, 0
+      put "b3MotorAngularDampingRatio" into tName
+      get b3MotorAngularDampingRatio(0)
+      put "b3MotorSetMaxSpringForce" into tName
+      b3MotorSetMaxSpringForce 0, 0
+      put "b3MotorMaxSpringForce" into tName
+      get b3MotorMaxSpringForce(0)
+      put "b3MotorSetMaxSpringTorque" into tName
+      b3MotorSetMaxSpringTorque 0, 0
+      put "b3MotorMaxSpringTorque" into tName
+      get b3MotorMaxSpringTorque(0)
+      put "b3ParallelSetSpringHertz" into tName
+      b3ParallelSetSpringHertz 0, 0
+      put "b3ParallelSpringHertz" into tName
+      get b3ParallelSpringHertz(0)
+      put "b3ParallelSetSpringDampingRatio" into tName
+      b3ParallelSetSpringDampingRatio 0, 0
+      put "b3ParallelSpringDampingRatio" into tName
+      get b3ParallelSpringDampingRatio(0)
+      put "b3ParallelSetMaxTorque" into tName
+      b3ParallelSetMaxTorque 0, 0
+      put "b3ParallelMaxTorque" into tName
+      get b3ParallelMaxTorque(0)
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 379 public handlers called with zeros, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["box3dxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.boxthreed" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & b3LibraryVersion() & return
+      testLibrary
+      testDrop
+      testQueriesAndEvents
+      testJointsAndGeometry
+      testTypedBoundary
+      sweepEveryHandler
+      check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
+            b3AssertCount() && b3AssertText() && b3UnstableCount()
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

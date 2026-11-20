@@ -829,6 +829,31 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
 
+### 2.10 box3dxt
+
+- Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
+  `b3x_*` C shim (ABI 1) and the `b3*` binding, whose names are mechanical. Records: the
+  shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
+  also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
+  OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
+  its native lane repeats on every change. No desktop IDE has loaded it: for everything
+  beyond that server run it is verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/box3dxt` does not exist yet. The owner creates it EMPTY,
+  then a publish-members run adopts it (`--adopt box3dxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: box3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
+| 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
+| 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
+
 ---
 
 ## 3. The apps
