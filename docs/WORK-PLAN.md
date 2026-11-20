@@ -832,7 +832,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 2.10 box3dxt
 
 - Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
-  `b3x_*` C shim (ABI 1) and the `b3*` binding, whose names are mechanical. Records: the
+  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20) and the `b3*` binding, whose names are mechanical. Records: the
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
@@ -841,7 +841,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   built on that machine from 144d529, loaded by `load extension` and `revLibraryMapping`; a
   stack built there ran a twelve-body drop in a frame loop with a ray cast and contact
   events, and Box3D counted no assert. A real model (the Utah teapot) is in both tests
-  since that day. Beyond those runs it is verified statically; needs an OXT pass.
+  since that day. The renderer (a software rasteriser in the shim; the picture crosses as
+  imageData) is held natively to Box3D's own ray casts and has crossed as data on the server
+  engine; no IDE has shown a picture from it. Beyond those runs it is verified statically;
+  needs an OXT pass.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands them
   (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
   and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
@@ -855,7 +858,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
-| 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
 ---

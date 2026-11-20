@@ -21,7 +21,7 @@
 #include <string.h>
 
 /* >>> BEGIN SHIM DECLARATIONS (generated: tools/check-smoke-coverage.py --write) >>> */
-/* 380 exports, in the shim's order. Plain declarations: the test is a client of
+/* 399 exports, in the shim's order. Plain declarations: the test is a client of
  * the built library, exactly as the engine's FFI is. */
 extern int b3x_abi_version(void);
 extern const char*b3x_library_version(void);
@@ -403,6 +403,25 @@ extern void b3x_parallel_set_spring_damping_ratio(int j, double v);
 extern double b3x_parallel_spring_damping_ratio(int j);
 extern void b3x_parallel_set_max_torque(int j, double v);
 extern double b3x_parallel_max_torque(int j);
+extern void b3x_render_set_camera(double ex, double ey, double ez, double tx, double ty, double tz, double fovDegrees);
+extern const char*b3x_render_camera(void);
+extern void b3x_render_set_light(double dx, double dy, double dz);
+extern void b3x_render_set_background(int red, int green, int blue);
+extern void b3x_shape_set_color(int s, int red, int green, int blue);
+extern void b3x_shape_clear_color(int s);
+extern const char*b3x_shape_color(int s);
+extern int b3x_render_world(int w, int width, int height, int mode);
+extern const char*b3x_render_pixels(void);
+extern int b3x_render_byte_count(void);
+extern int b3x_render_width(void);
+extern int b3x_render_height(void);
+extern int b3x_render_triangle_count(void);
+extern int b3x_render_pixel(int x, int y);
+extern int b3x_render_shape_at(int x, int y);
+extern double b3x_render_depth(int x, int y);
+extern const char*b3x_render_project(double x, double y, double z);
+extern const char*b3x_render_ray(double x, double y);
+extern const char*b3x_shape_triangles_text(int s);
 /* <<< END SHIM DECLARATIONS <<< */
 
 static int s_pass = 0, s_fail = 0;
@@ -478,8 +497,8 @@ static int make_world(int *ground)
 static void test_library(void)
 {
     double v[4];
-    CHECK(b3x_abi_version() == 1, "abi %d", b3x_abi_version());
-    CHECK(strncmp(b3x_library_version(), "box3dxt ABI 1; Box3D ", 21) == 0, "version '%s'", b3x_library_version());
+    CHECK(b3x_abi_version() == 2, "abi %d", b3x_abi_version());
+    CHECK(strncmp(b3x_library_version(), "box3dxt ABI 2; Box3D ", 21) == 0, "version '%s'", b3x_library_version());
     CHECK(b3x_has_avx2() == 0 || b3x_has_avx2() == 1, "has_avx2");
     CHECK(b3x_world_create(NAN, 0, 0, 1) == 0, "NaN gravity must refuse");
     CHECK(strlen(b3x_last_error()) > 0, "a refusal leaves an error text");
@@ -1965,6 +1984,361 @@ static void test_last_error(void)
     b3x_world_destroy(w);
 }
 
+/* ------------------------------------------------------------------ */
+/* The renderer. Its oracle is Box3D itself: the shape a pixel shows   */
+/* must be the shape a ray through that pixel hits, at the distance    */
+/* the ray finds, over a scene with every shape kind and the real      */
+/* model. Exact colours are asked only where they can be derived by    */
+/* hand (a face square to the light is its own colour).                */
+/* ------------------------------------------------------------------ */
+static int rgb(int r, int g, int b) { return (r << 16) | (g << 8) | b; }
+
+/* The triangles of a shape: how many lines, whether every one has nine
+ * numbers, the volume they enclose (positive when they wind
+ * counter-clockwise seen from outside) and their bounds. */
+typedef struct { int lines, bad; double volume, lo[3], hi[3]; int inward; } Tris;
+static Tris triangles_of(int shape, double cx, double cy, double cz)
+{
+    Tris r;
+    memset(&r, 0, sizeof r);
+    for (int k = 0; k < 3; k++) { r.lo[k] = 1e30; r.hi[k] = -1e30; }
+    const char *p = b3x_shape_triangles_text(shape);
+    while (p && *p) {
+        char line[512];
+        int n = 0;
+        while (*p && *p != '\n' && n < 511) line[n++] = *p++;
+        line[n] = 0;
+        if (*p == '\n') p++;
+        double v[10];
+        r.lines++;
+        if (parse(line, v, 10) != 9) { r.bad++; continue; }
+        for (int i = 0; i < 9; i++) {
+            if (v[i] < r.lo[i % 3]) r.lo[i % 3] = v[i];
+            if (v[i] > r.hi[i % 3]) r.hi[i % 3] = v[i];
+        }
+        double a[3] = { v[0] - cx, v[1] - cy, v[2] - cz }, b[3] = { v[3] - cx, v[4] - cy, v[5] - cz }, c[3] = { v[6] - cx, v[7] - cy, v[8] - cz };
+        double six = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        r.volume += six / 6.0;
+        if (six < -1e-9) r.inward++;
+    }
+    return r;
+}
+
+/* Every `step`th pixel of the last picture against a ray cast through its
+ * centre. A pixel on a silhouette may fairly differ (the picture is made of
+ * flat triangles, a sphere is round), so disagreement is COUNTED and the
+ * caller holds it to a small share. */
+static void picture_against_rays(int w, int step, int *compared, int *shapeBad, int *depthBad, int *covered)
+{
+    int W = b3x_render_width(), H = b3x_render_height();
+    for (int y = step / 2; y < H; y += step)
+        for (int x = step / 2; x < W; x += step) {
+            double ray[6];
+            if (parse(b3x_render_ray(x + 0.5, y + 0.5), ray, 6) != 6) { (*shapeBad)++; continue; }
+            int drawn = b3x_render_shape_at(x, y);
+            double depth = b3x_render_depth(x, y);
+            int hit = b3x_cast_ray_closest(w, ray[0], ray[1], ray[2], ray[3] * 200.0, ray[4] * 200.0, ray[5] * 200.0) ? b3x_hit_shape(1) : 0;
+            (*compared)++;
+            if (drawn) (*covered)++;
+            if (drawn != hit) { (*shapeBad)++; continue; }
+            if (!drawn) { if (depth != 0.0) (*depthBad)++; continue; }
+            /* the ray's distance, measured along the view as the depth is */
+            double cam[7], pt[3];
+            parse(b3x_render_camera(), cam, 7);
+            parse(b3x_hit_point(1), pt, 3);
+            double f[3] = { cam[3] - cam[0], cam[4] - cam[1], cam[5] - cam[2] };
+            double fl = sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+            double along = ((pt[0] - cam[0]) * f[0] + (pt[1] - cam[1]) * f[1] + (pt[2] - cam[2]) * f[2]) / fl;
+            if (!near(depth, along, 0.02 + 0.01 * along)) (*depthBad)++;
+        }
+}
+
+static void test_render(void)
+{
+    double v[12];
+    /* 0. before the first picture: everything answers, nothing is there */
+    CHECK(b3x_render_width() == 0 && b3x_render_height() == 0 && b3x_render_byte_count() == 0 && b3x_render_triangle_count() == 0,
+          "no picture before the first render");
+    CHECK(b3x_render_pixels() != NULL && b3x_render_pixel(0, 0) == -1 && b3x_render_shape_at(0, 0) == 0 && b3x_render_depth(0, 0) == 0.0,
+          "a pixel of no picture is outside it");
+    CHECK(b3x_render_project(0, 0, 0)[0] == 0 && b3x_render_ray(1, 1)[0] == 0, "no picture, no projection and no ray");
+    CHECK(strcmp(b3x_render_camera(), "0,4,12,0,1,0,50") == 0, "the camera starts where the docs say: '%s'", b3x_render_camera());
+
+    /* 1. refusals, each leaving what was there */
+    CHECK(b3x_render_world(0, 64, 64, 0) == 0 && strcmp(b3x_last_error(), "not a world") == 0, "no world, no picture: '%s'", b3x_last_error());
+    int w = b3x_world_create(0, -10, 0, 1);
+    CHECK(b3x_render_world(w, 0, 64, 0) == 0 && b3x_render_world(w, 64, 2049, 0) == 0 && b3x_render_world(w, -5, -5, 0) == 0 && b3x_last_error()[0] != 0,
+          "a picture of no size, or too big, is refused: '%s'", b3x_last_error());
+    CHECK(b3x_render_world(w, 64, 64, 3) == 0 && b3x_render_world(w, 64, 64, -1) == 0 && b3x_render_width() == 0, "an unknown mode is refused");
+    b3x_render_set_camera(1, 2, 3, 1, 2, 3, 50);
+    CHECK(b3x_last_error()[0] != 0 && strcmp(b3x_render_camera(), "0,4,12,0,1,0,50") == 0, "a camera looking at itself is refused: '%s'", b3x_last_error());
+    b3x_render_set_camera(0, 0, 10, 0, 0, 0, 4.9);
+    b3x_render_set_camera(0, 0, 10, 0, 0, 0, 150.1);
+    b3x_render_set_camera(0, NAN, 10, 0, 0, 0, 50);
+    b3x_render_set_camera(0, 0, INFINITY, 0, 0, 0, 50);
+    b3x_render_set_camera(0, 0, 10, 0, 0, 0, NAN);
+    CHECK(strcmp(b3x_render_camera(), "0,4,12,0,1,0,50") == 0, "a camera of bad numbers is refused: '%s'", b3x_render_camera());
+    b3x_render_set_background(10, 20, 30);
+    b3x_render_set_background(256, 0, 0);
+    b3x_render_set_background(0, -1, 0);
+    b3x_render_set_light(0, 0, 0);
+    b3x_render_set_light(NAN, 0, 0);
+
+    /* 2. one box, seen square on, lit square on: every number by hand.
+     * The box is 2 m across with its near face 9 m from the eye; at 50
+     * degrees a 100 pixel tall picture has 107.23 pixels per unit of slope,
+     * so the face is 23.83 pixels across and centred. */
+    int box = b3x_body_create(w, 0, 0, 0, 0);
+    int sbox = b3x_shape_add_box(box, 1, 1, 1, 0, 0.5, 0);
+    CHECK(b3x_shape_color(sbox)[0] == 0, "a new shape has no colour of its own");
+    b3x_shape_set_color(sbox, 200, 100, 50);
+    CHECK(strcmp(b3x_shape_color(sbox), "200,100,50") == 0, "a shape keeps the colour it is given: '%s'", b3x_shape_color(sbox));
+    b3x_shape_set_color(sbox, 200, 100, 256);
+    b3x_shape_set_color(sbox, -1, 100, 50);
+    CHECK(strcmp(b3x_shape_color(sbox), "200,100,50") == 0, "a colour outside a byte is refused and the old one stays");
+    b3x_render_set_camera(0, 0, 10, 0, 0, 0, 50);
+    b3x_render_set_light(0, 0, -7);
+    char before[200];
+    snprintf(before, sizeof before, "%s", b3x_body_transform(box));
+    CHECK(b3x_render_world(w, 200, 100, 0) == 1 && b3x_last_error()[0] == 0, "a world is rendered: '%s'", b3x_last_error());
+    CHECK(b3x_render_width() == 200 && b3x_render_height() == 100 && b3x_render_byte_count() == 80000, "the picture is the size asked for");
+    CHECK(b3x_render_triangle_count() == 12, "a box is twelve triangles (%d)", b3x_render_triangle_count());
+    CHECK(b3x_render_pixel(100, 50) == rgb(200, 100, 50), "a face square to the light is its own colour (%06x)", b3x_render_pixel(100, 50));
+    CHECK(b3x_render_shape_at(100, 50) == sbox && near(b3x_render_depth(100, 50), 9.0, 1e-3), "the centre pixel is the box, 9 m away (%g)", b3x_render_depth(100, 50));
+    CHECK(b3x_render_pixel(0, 0) == rgb(10, 20, 30) && b3x_render_shape_at(0, 0) == 0 && b3x_render_depth(0, 0) == 0.0,
+          "a corner is the background that was set, refused colours ignored (%06x)", b3x_render_pixel(0, 0));
+    CHECK(b3x_render_pixel(199, 99) == rgb(10, 20, 30) && b3x_render_pixel(200, 99) == -1 && b3x_render_pixel(199, 100) == -1 &&
+              b3x_render_pixel(-1, 0) == -1 && b3x_render_shape_at(-1, -1) == 0 && b3x_render_depth(200, 100) == 0.0,
+          "the last pixel is inside the picture and the next is not");
+    {
+        const unsigned char *p = (const unsigned char *)b3x_render_pixels() + 4 * (50 * 200 + 100);
+        CHECK(p[0] == 0 && p[1] == 200 && p[2] == 100 && p[3] == 50, "the bytes are 0, red, green, blue, rows from the top");
+        int count = 0, minx = 999, maxx = -1, miny = 999, maxy = -1;
+        for (int y = 0; y < 100; y++)
+            for (int x = 0; x < 200; x++)
+                if (b3x_render_shape_at(x, y) == sbox) {
+                    count++;
+                    if (x < minx) minx = x;
+                    if (x > maxx) maxx = x;
+                    if (y < miny) miny = y;
+                    if (y > maxy) maxy = y;
+                }
+        /* pixel centres within 11.915 of 100, 50: 88.5 .. 111.5 each way */
+        CHECK(minx == 88 && maxx == 111 && miny == 38 && maxy == 61 && count == 24 * 24,
+              "the face covers exactly the pixels whose centres it holds (%d..%d, %d..%d, %d)", minx, maxx, miny, maxy, count);
+    }
+    CHECK(strcmp(before, b3x_body_transform(box)) == 0, "rendering does not move anything");
+    CHECK(parse(b3x_render_project(1, 1, 1), v, 12) == 3 && near(v[0], 111.915, 0.01) && near(v[1], 38.085, 0.01) && near(v[2], 9.0, 1e-9),
+          "a corner of the face projects where the arithmetic says: '%s'", b3x_render_project(1, 1, 1));
+    CHECK(b3x_render_project(0, 0, 10.5)[0] == 0 && b3x_render_project(0, 0, 9.96)[0] == 0 && b3x_render_project(NAN, 0, 0)[0] == 0,
+          "a point behind the camera, or inside its near plane, projects nowhere");
+    CHECK(parse(b3x_render_project(500, 0, 0), v, 12) == 3 && v[0] > 200.0, "a point off to the side projects outside the picture: '%s'", b3x_render_project(500, 0, 0));
+    CHECK(parse(b3x_render_ray(100, 50), v, 12) == 6 && near(v[0], 0, 1e-12) && near(v[2], 10, 1e-12) && near(v[3], 0, 1e-9) && near(v[4], 0, 1e-9) && near(v[5], -1, 1e-9),
+          "the ray through the middle is the way the camera looks: '%s'", b3x_render_ray(100, 50));
+    CHECK(b3x_render_ray(NAN, 0)[0] == 0 && b3x_render_ray(0, INFINITY)[0] == 0, "a ray through no point is empty");
+
+    /* 3. the modes: a wireframe leaves the middle of the face empty, and
+     * outlines leave it filled */
+    CHECK(b3x_render_world(w, 200, 100, 1) == 1 && b3x_render_shape_at(100, 50) == 0 && b3x_render_pixel(100, 50) == rgb(10, 20, 30) &&
+              b3x_render_shape_at(88, 50) == sbox,
+          "a wireframe draws the edges and not the faces");
+    CHECK(b3x_render_world(w, 200, 100, 2) == 1 && b3x_render_pixel(100, 50) == rgb(200, 100, 50) && b3x_render_pixel(88, 50) != rgb(200, 100, 50) &&
+              b3x_render_shape_at(88, 50) == sbox,
+          "outlines are drawn over a filled face (%06x)", b3x_render_pixel(88, 50));
+
+    /* 4. the colours a shape is given when it has none: static scenery,
+     * a moving body, the same body asleep */
+    b3x_shape_clear_color(sbox);
+    CHECK(b3x_shape_color(sbox)[0] == 0 && b3x_render_world(w, 200, 100, 0) == 1 && b3x_render_pixel(100, 50) == 0x8C9A8C,
+          "static scenery is grey-green (%06x)", b3x_render_pixel(100, 50));
+    b3x_body_set_type(box, 2);
+    b3x_shape_set_density(sbox, 1, 1);
+    /* one step first: the shim refuses a forced sleep between a type change
+     * and the next step (the stale move index); gravity off, so the box
+     * stays in front of the centre pixel */
+    b3x_world_set_gravity(w, 0, 0, 0);
+    b3x_world_step(w, 1.0 / 60.0, 4);
+    b3x_body_set_awake(box, 1);
+    b3x_render_world(w, 200, 100, 0);
+    int awake = b3x_render_pixel(100, 50);
+    b3x_body_set_awake(box, 0);
+    b3x_render_world(w, 200, 100, 0);
+    int asleep = b3x_render_pixel(100, 50);
+    CHECK(awake != 0x8C9A8C && awake != asleep && awake != rgb(10, 20, 30) && asleep != rgb(10, 20, 30) && !b3x_body_is_awake(box),
+          "a moving body has a colour, and a dimmer one asleep (%06x, %06x); rendering does not wake it", awake, asleep);
+    b3x_body_set_type(box, 0);
+    b3x_world_set_gravity(w, 0, -10, 0);
+
+    /* a disabled body is not drawn; another world's bodies are not drawn */
+    b3x_body_disable(box);
+    CHECK(b3x_render_world(w, 200, 100, 0) == 1 && b3x_render_shape_at(100, 50) == 0 && b3x_render_triangle_count() == 0, "a disabled body is not drawn");
+    b3x_body_enable(box);
+    int other = b3x_world_create(0, -10, 0, 1);
+    CHECK(b3x_render_world(other, 40, 30, 0) == 1 && b3x_render_triangle_count() == 0 && b3x_render_pixel(20, 15) == rgb(10, 20, 30) &&
+              b3x_render_byte_count() == 4800,
+          "an empty world is a picture of the background");
+    b3x_world_destroy(other);
+    CHECK(b3x_render_width() == 40 && b3x_render_pixel(20, 15) == rgb(10, 20, 30), "the picture outlives the world it was of");
+
+    /* a shape destroyed after the picture is no longer what a pixel names,
+     * and its slot's next shape does not inherit its colour */
+    b3x_shape_set_color(sbox, 1, 2, 3);
+    b3x_render_world(w, 200, 100, 0);
+    CHECK(b3x_render_shape_at(100, 50) == sbox, "the box again");
+    b3x_shape_destroy(sbox, 1);
+    CHECK(b3x_render_shape_at(100, 50) == 0 && b3x_shape_color(sbox)[0] == 0, "a destroyed shape is under no pixel and has no colour");
+    b3x_shape_set_color(sbox, 9, 9, 9);
+    b3x_shape_clear_color(sbox);
+    b3x_shape_clear_color(0);
+    b3x_shape_clear_color(-1);
+    int sbox2 = b3x_shape_add_box(box, 1, 1, 1, 0, 0.5, 0);
+    CHECK(sbox2 > 0 && b3x_shape_color(sbox2)[0] == 0 && b3x_shape_triangles_text(sbox)[0] == 0, "the next shape starts with no colour");
+    b3x_body_destroy(box);
+
+    /* 5. every shape kind and the real model, against Box3D's own rays */
+    int ground = b3x_body_create(w, 0, 0, -0.5, 0);
+    int sground = b3x_shape_add_box(ground, 30, 0.5, 30, 0, 0.6, 0);
+    int ball = b3x_body_create(w, 2, -4, 1.0, 2);
+    int sball = b3x_shape_add_sphere(ball, 0, 0, 0, 1.0, 1, 0.5, 0);
+    int cap = b3x_body_create_rotated(w, 2, 5, 1.2, 1, 0.3, 0.1, 0.2, 0.927);
+    int scap = b3x_shape_add_capsule(cap, 0, -0.6, 0, 0, 0.6, 0, 0.5, 1, 0.5, 0);
+    int cyl = b3x_body_create(w, 2, -2, 0.8, 4);
+    int scyl = b3x_shape_add_cylinder(cyl, 1.6, 0.6, 16, 1, 0.5, 0);
+    int cone = b3x_body_create(w, 2, 2.5, 0.8, 4.5);
+    int scone = b3x_shape_add_cone(cone, 1.6, 0.7, 0.2, 12, 1, 0.5, 0);
+    int tilted = b3x_body_create_rotated(w, 2, 0, 3.9, 3, 0.2, 0.3, 0.1, 0.927);
+    int stilted = b3x_shape_add_box_at(tilted, 0.5, 0.3, 0.7, 0.2, 0.1, 0, 0, 0, 0, 1, 1, 0.5, 0);
+    int pot = b3x_body_create(w, 0, 0, 0, -1);
+    teapot_geometry(1.0, 1);
+    int smesh = b3x_shape_add_mesh(pot, 0.6, 0);
+    int small = b3x_body_create_rotated(w, 2, 6, 1.5, 4, 0, 0.38, 0, 0.925);
+    teapot_geometry(0.4, 0);
+    int shull = b3x_shape_add_hull(small, 1, 0.5, 0);
+    int hills = b3x_body_create(w, 0, -9, 0, -6);
+    b3x_geometry_begin();
+    for (int z = 0; z < 6; z++)
+        for (int x = 0; x < 5; x++) b3x_geometry_add_height(0.3 * ((x * 7 + z * 3) % 5));
+    int sfield = b3x_shape_add_height_field(hills, 5, 6, 1.0, 1.0, 1.0, 0.6, 0);
+    CHECK(sground && sball && scap && scyl && scone && stilted && smesh && shull && sfield, "the scene of every shape kind was built: %s", b3x_last_error());
+
+    static const double k_views[5][7] = {
+        { 9, 7, 14, 0, 1, 0, 50 },        /* the usual three-quarter view     */
+        { -12, 3, 6, 0, 1.5, 0, 35 },     /* low, from the other side         */
+        { 0.3, 25, 0.2, 0, 0, 0, 60 },    /* almost straight down             */
+        { 0, 30, 0, 0, 0, 0, 40 },        /* STRAIGHT down: the fallback up   */
+        { 3, 1.2, 9, -1, 1.5, -2, 110 },  /* close, wide: shapes cross the near plane's side */
+    };
+    for (int view = 0; view < 5; view++) {
+        const double *c = k_views[view];
+        b3x_render_set_camera(c[0], c[1], c[2], c[3], c[4], c[5], c[6]);
+        b3x_render_set_light(-0.4, -0.8, -0.5);
+        for (int mode = 0; mode <= 2; mode += 2) {
+            CHECK(b3x_render_world(w, 320, 200, mode) == 1, "view %d mode %d rendered", view, mode);
+            int compared = 0, shapeBad = 0, depthBad = 0, covered = 0;
+            picture_against_rays(w, 3, &compared, &shapeBad, &depthBad, &covered);
+            CHECK(compared > 6000 && covered > compared / 4 && shapeBad * 100 <= compared * 2 && depthBad * 100 <= compared,
+                  "view %d mode %d: the picture is what rays see (%d pixels, %d drawn; %d name another shape, %d another depth)",
+                  view, mode, compared, covered, shapeBad, depthBad);
+        }
+        CHECK(b3x_render_triangle_count() > TEAPOT_TRIANGLE_COUNT, "the model's triangles were all given to the renderer (%d)", b3x_render_triangle_count());
+        /* a point projected and the ray through where it landed: the same line */
+        int trips = 0;
+        for (int i = 0; i < 40; i++) {
+            double p[3] = { -6.0 + 0.31 * i, 0.2 + 0.07 * i, 5.0 - 0.29 * i }, s[3], r[6];
+            if (parse(b3x_render_project(p[0], p[1], p[2]), s, 3) != 3) continue;
+            if (parse(b3x_render_ray(s[0], s[1]), r, 6) != 6) { trips = -1000; break; }
+            double d[3] = { p[0] - r[0], p[1] - r[1], p[2] - r[2] };
+            double t = d[0] * r[3] + d[1] * r[4] + d[2] * r[5];
+            double q[3] = { d[0] - t * r[3], d[1] - t * r[4], d[2] - t * r[5] };   /* what is left beside the ray */
+            double off = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
+            double unit = r[3] * r[3] + r[4] * r[4] + r[5] * r[5];
+            /* the texts carry nine digits: a direction is a unit to 1e-8 */
+            if (off < 1e-6 && t > 0 && near(unit, 1.0, 1e-7)) trips++; else { trips = -1000; break; }
+        }
+        CHECK(trips >= 20, "view %d: project and ray are each other's inverse (%d points)", view, trips);
+    }
+    /* straight down: world x runs right and world z runs DOWN the picture */
+    {
+        double a[3], b[3], c[3];
+        parse(b3x_render_project(0, 0, 0), a, 3);
+        parse(b3x_render_project(1, 0, 0), b, 3);
+        parse(b3x_render_project(0, 0, 1), c, 3);
+        b3x_render_set_camera(0, 30, 0, 0, 0, 0, 40);
+        b3x_render_world(w, 320, 200, 0);
+        parse(b3x_render_project(0, 0, 0), a, 3);
+        parse(b3x_render_project(1, 0, 0), b, 3);
+        parse(b3x_render_project(0, 0, 1), c, 3);
+        CHECK(near(a[0], 160, 1e-6) && near(a[1], 100, 1e-6) && b[0] > a[0] + 1 && near(b[1], a[1], 1e-6) && c[1] > a[1] + 1 && near(c[0], a[0], 1e-6),
+              "looking straight down, x is right and z is down the picture");
+    }
+    /* the eye INSIDE the model, a shape wrapped around the camera, a picture
+     * one pixel big, the biggest there is: nothing to assert but survival
+     * and a whole buffer (the sanitizer lane reads every byte) */
+    b3x_render_set_camera(0.2, 1.4, -1.0, 3, 1.5, -1, 140);
+    CHECK(b3x_render_world(w, 64, 48, 2) == 1, "a picture from inside the teapot");
+    b3x_render_set_camera(-4, 1.0, 2, -4, 1.0, 1, 150);
+    CHECK(b3x_render_world(w, 64, 48, 0) == 1, "a picture from inside a ball");
+    b3x_render_set_camera(9, 7, 14, 0, 1, 0, 50);
+    CHECK(b3x_render_world(w, 1, 1, 0) == 1 && b3x_render_byte_count() == 4 && b3x_render_pixel(0, 0) >= 0 && b3x_render_pixel(1, 0) == -1, "a picture of one pixel");
+    CHECK(b3x_render_world(w, 2048, 2048, 2) == 1 && b3x_render_byte_count() == 2048 * 2048 * 4, "the biggest picture there is");
+    {
+        const unsigned char *p = (const unsigned char *)b3x_render_pixels();
+        unsigned lead = 0;
+        for (int i = 0; i < 2048 * 2048 * 4; i += 4) lead |= p[i];
+        CHECK(lead == 0 && b3x_render_shape_at(1024, 1024) != 0, "every pixel of it starts with its zero byte");
+    }
+    CHECK(b3x_render_world(w, 2048, 1, 1) == 1 && b3x_render_world(w, 1, 2048, 1) == 1, "a picture one pixel thin, each way");
+    CHECK(b3x_render_world(w, 200, 100, 0) == 1 && b3x_render_width() == 200, "and a small one again in the same buffer");
+
+    /* 6. shapes as triangles: the count, the winding and the size of each */
+    Tris t = triangles_of(sground, 0, 0, 0);
+    CHECK(t.lines == 12 && t.bad == 0 && t.inward == 0 && near(t.volume, 60 * 1 * 60, 1e-3) && near(t.lo[1], -0.5, 1e-6) && near(t.hi[0], 30, 1e-6),
+          "a box is twelve triangles around its volume, in its body's frame (%d, %g)", t.lines, t.volume);
+    t = triangles_of(sball, 0, 0, 0);
+    CHECK(t.lines > 100 && t.bad == 0 && t.inward == 0 && t.volume > 0.95 * 4.18879 && t.volume < 4.18879 && near(t.hi[1], 1.0, 1e-6) && near(t.lo[1], -1.0, 1e-6),
+          "a ball is rounded off from inside: its triangles enclose a little less (%d, %g)", t.lines, t.volume);
+    t = triangles_of(scap, 0, 0, 0);
+    CHECK(t.lines > 100 && t.bad == 0 && t.inward == 0 && t.volume > 0.95 * 1.46608 && t.volume < 1.46608 && near(t.hi[1], 1.1, 1e-6),
+          "a capsule the same (%d, %g)", t.lines, t.volume);
+    t = triangles_of(scyl, 0, 0, 0);
+    CHECK(t.bad == 0 && t.inward == 0 && t.volume > 0.9 * 1.80956 && t.volume < 1.80956, "a cylinder of 16 sides (%d, %g)", t.lines, t.volume);
+    t = triangles_of(scone, 0, 0, 0);
+    CHECK(t.bad == 0 && t.inward == 0 && t.volume > 0.5 && t.volume < 1.2, "a cone (%d, %g)", t.lines, t.volume);
+    t = triangles_of(stilted, 0.2, 0.1, 0);
+    CHECK(t.lines == 12 && t.inward == 0 && near(t.volume, 1.0 * 0.6 * 1.4, 1e-4) && near(t.hi[0], 0.7, 1e-5) && near(t.lo[0], -0.3, 1e-5),
+          "an offset box keeps its offset and loses its body's rotation (%g, %g..%g)", t.volume, t.lo[0], t.hi[0]);
+    t = triangles_of(smesh, 0, 1.5, 0);
+    CHECK(t.lines == TEAPOT_TRIANGLE_COUNT && t.bad == 0 && near(t.lo[0], -3.0, 1e-3) && near(t.hi[0], 3.434, 1e-3) && near(t.hi[1], 3.15, 1e-3) && t.volume > 5.0,
+          "the mesh gives back the model's triangles, wound as they came (%d, %g)", t.lines, t.volume);
+    t = triangles_of(shull, 0, 0.6, 0);
+    CHECK(t.lines > 20 && t.bad == 0 && t.inward == 0 && t.volume > 0.4 * 0.064 * 20 && t.lo[0] >= -1.2 - 1e-3 && t.hi[0] <= 1.3736 + 1e-3 && t.hi[1] <= 1.26 + 1e-3,
+          "the hull of the model winds outward, inside the model's bounds (%d, %g)", t.lines, t.volume);
+    t = triangles_of(sfield, 0, 0, 0);
+    CHECK(t.lines == 2 * 4 * 5 && t.bad == 0 && t.hi[1] <= 1.2 + 1e-6 && t.lo[1] >= 0.0, "a height field is two triangles a cell (%d)", t.lines);
+    CHECK(b3x_shape_triangles_text(0)[0] == 0 && b3x_shape_triangles_text(-7)[0] == 0 && b3x_shape_triangles_text(sbox)[0] == 0,
+          "a handle that is not a shape has no triangles");
+    CHECK(b3x_render_triangle_count() > TEAPOT_TRIANGLE_COUNT, "listing triangles leaves the last render's count alone");
+
+    /* 7. a picture while things move: step, render, and the fallen ball is
+     * lower in the picture */
+    b3x_render_set_camera(9, 7, 14, 0, 1, 0, 50);
+    b3x_body_set_position(ball, -4, 6, 2);
+    b3x_body_set_awake(ball, 1);
+    b3x_render_world(w, 320, 200, 0);
+    double y0[3], y1[3];
+    parse(b3x_render_project(-4, b3x_body_y(ball), 2), y0, 3);
+    CHECK(b3x_render_shape_at((int)y0[0], (int)y0[1]) == sball, "the ball is drawn where its centre projects");
+    for (int i = 0; i < 30; i++) b3x_world_step(w, 1.0 / 60.0, 4);
+    b3x_render_world(w, 320, 200, 0);
+    parse(b3x_render_project(-4, b3x_body_y(ball), 2), y1, 3);
+    CHECK(y1[1] > y0[1] + 10 && b3x_render_shape_at((int)y1[0], (int)y1[1]) == sball && b3x_render_shape_at((int)y0[0], (int)y0[1]) != sball,
+          "half a second later it is drawn lower (%g then %g)", y0[1], y1[1]);
+    b3x_world_destroy(w);
+    CHECK(b3x_render_shape_at(160, 100) == 0 && b3x_render_width() == 320 && b3x_render_pixel(160, 100) >= 0, "the world gone, the picture stays and names no shape");
+    b3x_render_set_background(0x20, 0x24, 0x2A);
+    b3x_render_set_camera(0, 4, 12, 0, 1, 0, 50);
+}
+
 int main(void)
 {
     test_library();
@@ -1979,6 +2353,7 @@ int main(void)
     test_stress();
     test_model();
     test_last_error();
+    test_render();
     CHECK(b3x_text_length("") == 0 && b3x_text_length(NULL) == 0 && b3x_text_length(b3x_library_version()) == (int)strlen(b3x_library_version()),
           "the text length the binding copies by");
     int assertsElsewhere = b3x_assert_count();

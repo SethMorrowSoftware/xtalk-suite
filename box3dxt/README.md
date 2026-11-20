@@ -9,12 +9,15 @@ family's flat C shim and a thin LCB layer, the way box2dxt binds Box2D:
 
 ```
 Box3D (pinned to a commit, static)                the physics
-   |- C shim   src/box3d_shim.c  ->  box3dxt.{so,dll,dylib}     (ABI: b3x_*, v1)
+   |- C shim   src/box3d_shim.c  ->  box3dxt.{so,dll,dylib}     (ABI: b3x_*, v2)
         |- LCB binding  src/box3dxt.lcb     (org.openxtalk.library.boxthreed; public b3*)
 ```
 
-It is a physics engine only: it moves bodies and tells you where they are. Drawing them is
-the stack's business (a 3D view, or a 2D projection of the positions it reports).
+It moves bodies and tells you where they are, and it can SHOW them: a small software
+renderer inside the library paints a world into the imageData of an image, with no graphics
+library and no drawing code in the stack. It is there to see a simulation, not to be a game
+renderer (no textures; one light). The suite's render3dxt is the textured one, and the two
+count cameras, pictures and rays the same way.
 
 ## What it can do
 
@@ -27,6 +30,11 @@ the stack's business (a 3D view, or a 2D projection of the positions it reports)
   their limits, springs and motors, plus a filter joint that only stops two bodies colliding.
 - **Queries.** Ray casts (all hits or the closest), a swept sphere, box and sphere overlaps,
   each through an optional category filter.
+- **A picture of the world.** `b3RenderWorld` draws every shape, solid, lit and depth-tested
+  (or as a wireframe, or with outlines), into a picture up to 2048 pixels each way;
+  `b3RenderPixels` is that picture as imageData. A pixel names the shape drawn there and its
+  distance, a world point projects into the picture, and a click becomes a ray for
+  `b3CastRayClosest`. `b3ShapeTrianglesText` hands any shape to another renderer as triangles.
 - **Events.** Contact begin / end / hit, sensor enter / leave, the bodies that moved in the
   last step, and joints pushed past a force threshold: all read by polling after a step, so no
   callback ever runs script.
@@ -80,6 +88,12 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **A real model** (2026-11-20): the Utah teapot, 3644 points and 6320 triangles, is loaded
   as a static mesh and as falling hulls by the smoke test, which checks rays at it against
   a ray-triangle test of its own, and from its `.obj` file by the engine self-test.
+- **The renderer** (ABI 2, 2026-11-20): the smoke test holds a picture to Box3D itself (the
+  shape and the distance at a pixel against a ray cast through it, over every shape kind and
+  the teapot, from five cameras) and to arithmetic done by hand for one square-on box; the
+  random-call test renders thousands of small pictures of whatever the other calls left and
+  reads every byte. On the server engine the self-test takes the picture as binary data and
+  reads its bytes. An image SHOWING it in an IDE is verified statically; needs an OXT pass.
 - **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
   loaded a release library or an installed extension: on those it is verified statically;
   needs an OXT pass. No library is

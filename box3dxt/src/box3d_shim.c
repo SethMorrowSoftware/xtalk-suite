@@ -65,7 +65,7 @@
 
 /* Bump when the exported ABI changes; src/box3dxt.lcb's checkABI() names the
  * same number and refuses a library that answers another. */
-#define B3X_ABI_VERSION 1
+#define B3X_ABI_VERSION 2
 
 /* ------------------------------------------------------------------ */
 /* Generic handle tables (box2dxt's, with one change: see below).      */
@@ -1536,6 +1536,7 @@ static int def_in(b3ShapeDef *d, double density, double friction, double restitu
 }
 
 /* Give a new shape its handle (or destroy it when the table is full). */
+static void color_forget(int slot);      /* the renderer's, defined with it */
 static int shape_adopt(b3ShapeId id)
 {
     if (!b3Shape_IsValid(id)) return fail("Box3D could not create the shape");
@@ -1548,6 +1549,7 @@ static int shape_adopt(b3ShapeId id)
         return fail("out of memory");
     }
     b3Shape_SetUserData(id, h2ud(h));
+    color_forget(shapes_slot_of(h));      /* a reused slot must not keep the last shape's colour */
     ok_clear();
     return h;
 }
@@ -3531,4 +3533,641 @@ LC_API double b3x_parallel_max_torque(int j)
 {
     b3JointId id;
     return joint_typed(j, b3_parallelJoint, &id) ? (double)b3ParallelJoint_GetMaxTorque(id) : 0.0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The renderer (ABI 2, 2026-11-20)                                    */
+/*                                                                     */
+/* box3dxt simulates; until this section a stack had to draw the       */
+/* result itself, and the first demo that drew a real model from       */
+/* script (thousands of projected edges per frame) ran at a crawl.     */
+/* This draws a world HERE: every shape, solid, lit and depth-tested,  */
+/* into a pixel buffer the binding hands to script as the imageData    */
+/* of an image. It is a way to SEE a simulation, on every platform     */
+/* with no graphics library: a software rasteriser, not a game         */
+/* renderer (no textures; one light; flat or smooth shading).          */
+/*                                                                     */
+/* Rules it keeps: nothing here calls script or keeps a pointer into   */
+/* Box3D past the call; every size and number is held to a limit       */
+/* before a buffer is sized by it; and a render never changes the      */
+/* world (it reads transforms and geometry only).                      */
+/* ------------------------------------------------------------------ */
+#define B3X_RENDER_MAX_SIDE 2048      /* pixels, each way               */
+#define B3X_RENDER_NEAR     0.05      /* metres: the near plane         */
+
+static unsigned char *s_rPix = NULL;   /* 4 bytes a pixel: 0, R, G, B   */
+static float *s_rDepth = NULL;         /* 1/distance along the view; 0 = empty */
+static int   *s_rShape = NULL;         /* the shape handle drawn there  */
+static int    s_rCap = 0;              /* pixels the three can hold     */
+static int    s_rW = 0, s_rH = 0;
+static int    s_rTriangles = 0;
+static double s_rEye[3] = { 0.0, 4.0, 12.0 };
+static double s_rRight[3] = { 1.0, 0.0, 0.0 }, s_rUp[3] = { 0.0, 1.0, 0.0 }, s_rFwd[3] = { 0.0, 0.0, -1.0 };
+static double s_rTarget[3] = { 0.0, 1.0, 0.0 };
+static double s_rFov = 50.0;           /* vertical, degrees             */
+static double s_rLight[3] = { -0.37139, -0.74278, -0.55709 };   /* the way the light travels */
+static unsigned s_rBack = 0x20242A;
+static unsigned *s_shapeColor = NULL;  /* by shape slot: 0x01RRGGBB when set */
+static int    s_shapeColorCap = 0;
+
+static void camera_basis(void)
+{
+    double f[3] = { s_rTarget[0] - s_rEye[0], s_rTarget[1] - s_rEye[1], s_rTarget[2] - s_rEye[2] };
+    double fl = sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    f[0] /= fl; f[1] /= fl; f[2] /= fl;
+    /* right = forward x up; looking straight up or down, z stands in for up */
+    double ux = 0.0, uy = 1.0, uz = 0.0;
+    if (fabs(f[1]) > 0.999) { uy = 0.0; uz = -1.0; }
+    double r[3] = { f[1] * uz - f[2] * uy, f[2] * ux - f[0] * uz, f[0] * uy - f[1] * ux };
+    double rl = sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    r[0] /= rl; r[1] /= rl; r[2] /= rl;
+    s_rFwd[0] = f[0]; s_rFwd[1] = f[1]; s_rFwd[2] = f[2];
+    s_rRight[0] = r[0]; s_rRight[1] = r[1]; s_rRight[2] = r[2];
+    s_rUp[0] = r[1] * f[2] - r[2] * f[1];
+    s_rUp[1] = r[2] * f[0] - r[0] * f[2];
+    s_rUp[2] = r[0] * f[1] - r[1] * f[0];
+}
+
+/* Where the camera stands, what it looks at, and its vertical field of
+ * view in degrees. y is up. Refused (and said why) if the two points are
+ * the same or the angle is outside 5 to 150. */
+LC_API void b3x_render_set_camera(double ex, double ey, double ez, double tx, double ty, double tz, double fovDegrees)
+{
+    if (!fin3(ex, ey, ez) || !fin3(tx, ty, tz) || !isfinite(fovDegrees) || fovDegrees < 5.0 || fovDegrees > 150.0) {
+        fail("the camera needs finite points and a field of view from 5 to 150 degrees");
+        return;
+    }
+    double dx = tx - ex, dy = ty - ey, dz = tz - ez;
+    if (!(dx * dx + dy * dy + dz * dz > 1.0e-12)) { fail("the camera's eye and target are the same point"); return; }
+    s_rEye[0] = ex; s_rEye[1] = ey; s_rEye[2] = ez;
+    s_rTarget[0] = tx; s_rTarget[1] = ty; s_rTarget[2] = tz;
+    s_rFov = fovDegrees;
+    camera_basis();
+}
+/* "ex,ey,ez,tx,ty,tz,fov" */
+LC_API const char *b3x_render_camera(void)
+{
+    double v[7] = { s_rEye[0], s_rEye[1], s_rEye[2], s_rTarget[0], s_rTarget[1], s_rTarget[2], s_rFov };
+    return text_of(v, 7);
+}
+/* The direction the light TRAVELS (0,-1,0 is straight down). */
+LC_API void b3x_render_set_light(double dx, double dy, double dz)
+{
+    b3Vec3 d;
+    if (!dir_in(dx, dy, dz, &d)) { fail("the light needs a direction with a length"); return; }
+    s_rLight[0] = d.x; s_rLight[1] = d.y; s_rLight[2] = d.z;
+}
+static int byte_ok(int v) { return v >= 0 && v <= 255; }
+LC_API void b3x_render_set_background(int red, int green, int blue)
+{
+    if (!byte_ok(red) || !byte_ok(green) || !byte_ok(blue)) { fail("a colour is three numbers from 0 to 255"); return; }
+    s_rBack = ((unsigned)red << 16) | ((unsigned)green << 8) | (unsigned)blue;
+}
+
+static void color_forget(int slot)
+{
+    if (slot >= 0 && slot < s_shapeColorCap) s_shapeColor[slot] = 0;
+}
+/* A shape's own colour for the renderer. Without one a shape is drawn in
+ * a colour that says what its body is doing (see body_color). */
+LC_API void b3x_shape_set_color(int s, int red, int green, int blue)
+{
+    b3ShapeId id;
+    if (!shape_ok(s, &id)) return;
+    int r = red, g = green, b = blue;
+    if (!byte_ok(r) || !byte_ok(g) || !byte_ok(b)) { fail("a colour is three numbers from 0 to 255"); return; }
+    int slot = shapes_slot_of(s);
+    if (slot >= s_shapeColorCap) {
+        int nc = s_shapeColorCap ? s_shapeColorCap : 64;
+        while (nc <= slot) nc *= 2;
+        unsigned *p = (unsigned *)realloc(s_shapeColor, (size_t)nc * sizeof(unsigned));
+        if (!p) { fail("out of memory"); return; }
+        memset(p + s_shapeColorCap, 0, (size_t)(nc - s_shapeColorCap) * sizeof(unsigned));
+        s_shapeColor = p; s_shapeColorCap = nc;
+    }
+    s_shapeColor[slot] = 0x01000000u | ((unsigned)r << 16) | ((unsigned)g << 8) | (unsigned)b;
+}
+LC_API void b3x_shape_clear_color(int s) { color_forget(shapes_slot_of(s)); }
+/* "r,g,b", or empty for a shape with no colour of its own */
+LC_API const char *b3x_shape_color(int s)
+{
+    b3ShapeId id;
+    int slot = shapes_slot_of(s);
+    if (!shape_ok(s, &id) || slot >= s_shapeColorCap || !(s_shapeColor[slot] & 0x01000000u)) return text_empty();
+    double v[3] = { (double)((s_shapeColor[slot] >> 16) & 255), (double)((s_shapeColor[slot] >> 8) & 255), (double)(s_shapeColor[slot] & 255) };
+    return text_of(v, 3);
+}
+
+/* Static scenery is a quiet grey-green; a moving body takes one of eight
+ * colours by its handle, so neighbours differ; asleep, the same colour
+ * dimmed, which makes sleep visible at a glance. */
+static unsigned body_color(b3BodyId body, int bodyHandle)
+{
+    static const unsigned k_palette[8] = { 0xE0694E, 0x4E9FE0, 0xE0B84E, 0x6CC76C, 0xB07CE0, 0x4EC9C0, 0xE07CA8, 0xC9C24E };
+    if (b3Body_GetType(body) == b3_staticBody) return 0x8C9A8C;
+    unsigned c = k_palette[(unsigned)(bodyHandle & B3X_H_SLOT_MASK) % 8u];
+    if (b3Body_GetType(body) == b3_kinematicBody) c = 0x7C8CE0;
+    if (!b3Body_IsAwake(body)) {
+        unsigned r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+        r = (r + 110) / 2 * 3 / 4; g = (g + 110) / 2 * 3 / 4; b = (b + 110) / 2 * 3 / 4;
+        c = (r << 16) | (g << 8) | b;
+    }
+    return c;
+}
+
+/* --- the rasteriser ------------------------------------------------- */
+typedef struct { double x, y, z; } RV;             /* a point in view space: x right, y up, z forward */
+typedef struct { double sx, sy, w, i; } RS;        /* on screen: pixel x, y, 1/z, light */
+
+static double s_rScale;                            /* pixels per unit of slope */
+static int    s_rMode;                             /* 0 solid, 1 wire, 2 solid + outlines */
+static unsigned s_rColor;                          /* the colour being drawn */
+static int    s_rHandle;                           /* the shape being drawn */
+
+static RV to_view(double x, double y, double z)
+{
+    double dx = x - s_rEye[0], dy = y - s_rEye[1], dz = z - s_rEye[2];
+    RV v;
+    v.x = dx * s_rRight[0] + dy * s_rRight[1] + dz * s_rRight[2];
+    v.y = dx * s_rUp[0] + dy * s_rUp[1] + dz * s_rUp[2];
+    v.z = dx * s_rFwd[0] + dy * s_rFwd[1] + dz * s_rFwd[2];
+    return v;
+}
+static RS to_screen(RV v, double light)
+{
+    RS s;
+    s.w = 1.0 / v.z;
+    s.sx = 0.5 * s_rW + v.x * s.w * s_rScale;
+    s.sy = 0.5 * s_rH - v.y * s.w * s_rScale;
+    s.i = light;
+    return s;
+}
+static void put_pixel(int x, int y, double w, double light, unsigned color)
+{
+    int at = y * s_rW + x;
+    if (!(w > s_rDepth[at])) return;
+    s_rDepth[at] = (float)w;
+    s_rShape[at] = s_rHandle;
+    if (light < 0.0) light = 0.0;
+    if (light > 1.0) light = 1.0;
+    unsigned char *p = s_rPix + 4 * (size_t)at;
+    p[0] = 0;
+    p[1] = (unsigned char)(((color >> 16) & 255) * light + 0.5);
+    p[2] = (unsigned char)(((color >> 8) & 255) * light + 0.5);
+    p[3] = (unsigned char)((color & 255) * light + 0.5);
+}
+static void fill_triangle(RS a, RS b, RS c)
+{
+    double area = (b.sx - a.sx) * (c.sy - a.sy) - (b.sy - a.sy) * (c.sx - a.sx);
+    if (!(fabs(area) > 1.0e-9) || !isfinite(area)) return;
+    double minx = fmin(a.sx, fmin(b.sx, c.sx)), maxx = fmax(a.sx, fmax(b.sx, c.sx));
+    double miny = fmin(a.sy, fmin(b.sy, c.sy)), maxy = fmax(a.sy, fmax(b.sy, c.sy));
+    if (maxx < 0.0 || maxy < 0.0 || minx > s_rW || miny > s_rH) return;
+    int x0 = minx < 0.0 ? 0 : (int)floor(minx), x1 = maxx > s_rW - 1 ? s_rW - 1 : (int)ceil(maxx);
+    int y0 = miny < 0.0 ? 0 : (int)floor(miny), y1 = maxy > s_rH - 1 ? s_rH - 1 : (int)ceil(maxy);
+    double inv = 1.0 / area;
+    for (int y = y0; y <= y1; y++) {
+        double py = y + 0.5;
+        for (int x = x0; x <= x1; x++) {
+            double px = x + 0.5;
+            double w0 = ((b.sx - px) * (c.sy - py) - (b.sy - py) * (c.sx - px)) * inv;
+            double w1 = ((c.sx - px) * (a.sy - py) - (c.sy - py) * (a.sx - px)) * inv;
+            double w2 = 1.0 - w0 - w1;
+            if (w0 < 0.0 || w1 < 0.0 || w2 < 0.0) continue;
+            put_pixel(x, y, w0 * a.w + w1 * b.w + w2 * c.w, w0 * a.i + w1 * b.i + w2 * c.i, s_rColor);
+        }
+    }
+}
+/* A line, nudged a little towards the eye so an outline wins over the
+ * face it lies on. */
+static void draw_line(RS a, RS b, unsigned color)
+{
+    double dx = b.sx - a.sx, dy = b.sy - a.sy;
+    double len = fmax(fabs(dx), fabs(dy));
+    if (!isfinite(len) || len > 4.0 * (s_rW + s_rH)) {
+        /* far longer than the picture: walk only the part that can be in it */
+        if (!isfinite(len)) return;
+    }
+    int steps = (int)fmin(len, 4.0 * (s_rW + s_rH)) + 1;
+    for (int k = 0; k <= steps; k++) {
+        double t = (double)k / steps;
+        double x = a.sx + dx * t, y = a.sy + dy * t;
+        if (x < 0.0 || y < 0.0 || x >= s_rW || y >= s_rH) continue;
+        put_pixel((int)x, (int)y, (a.w + (b.w - a.w) * t) * 1.002 + 1.0e-6, 1.0, color);
+    }
+}
+/* Cut a segment at the near plane; 0 if all of it is behind. */
+static int clip_segment(RV *a, RV *b)
+{
+    if (a->z < B3X_RENDER_NEAR && b->z < B3X_RENDER_NEAR) return 0;
+    if (a->z < B3X_RENDER_NEAR || b->z < B3X_RENDER_NEAR) {
+        RV *in = a->z < B3X_RENDER_NEAR ? b : a, *out = a->z < B3X_RENDER_NEAR ? a : b;
+        double t = (B3X_RENDER_NEAR - in->z) / (out->z - in->z);
+        out->x = in->x + (out->x - in->x) * t;
+        out->y = in->y + (out->y - in->y) * t;
+        out->z = B3X_RENDER_NEAR;
+    }
+    return 1;
+}
+static void edge3(double ax, double ay, double az, double bx, double by, double bz, unsigned color)
+{
+    RV a = to_view(ax, ay, az), b = to_view(bx, by, bz);
+    if (clip_segment(&a, &b)) draw_line(to_screen(a, 1.0), to_screen(b, 1.0), color);
+}
+static unsigned outline_of(unsigned c)
+{
+    return (((c >> 16) & 255) * 2 / 5 << 16) | (((c >> 8) & 255) * 2 / 5 << 8) | ((c & 255) * 2 / 5);
+}
+/* How lit a surface with this (unit, world) normal is, seen from this
+ * (world) point: the side that faces the eye is the side that is lit. */
+static double light_of(double nx, double ny, double nz, double px, double py, double pz)
+{
+    double toEye = (s_rEye[0] - px) * nx + (s_rEye[1] - py) * ny + (s_rEye[2] - pz) * nz;
+    double d = -(nx * s_rLight[0] + ny * s_rLight[1] + nz * s_rLight[2]);
+    if (toEye < 0.0) d = -d;
+    return 0.34 + 0.66 * (d > 0.0 ? d : 0.0);
+}
+/* One triangle in world space with a light value at each corner: clipped
+ * at the near plane, projected, filled (and edged in the wire modes when
+ * `edges` asks: bit 0 = a to b, bit 1 = b to c, bit 2 = c to a). */
+/* The same tessellation serves b3x_shape_triangles_text: with s_rCollect
+ * set, a triangle is counted (1) or written as a line of text (2) and
+ * never drawn. s_rOutside, when set, is a point the triangle must face
+ * away from, so every line is counter-clockwise seen from outside. */
+static int s_rCollect = 0, s_rCollectAt = 0;
+static const double *s_rOutside = NULL;
+static void collect3(const double *a, const double *b, const double *c)
+{
+    if (s_rCollect == 1) return;
+    if (s_rOutside) {
+        double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+        double vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+        double d = (uy * vz - uz * vy) * (a[0] - s_rOutside[0]) + (uz * vx - ux * vz) * (a[1] - s_rOutside[1]) + (ux * vy - uy * vx) * (a[2] - s_rOutside[2]);
+        if (d < 0.0) { const double *t = b; b = c; c = t; }
+    }
+    const double *q[3] = { a, b, c };
+    if (s_rCollectAt) s_big[s_rCollectAt++] = '\n';
+    for (int k = 0; k < 9; k++) {
+        if (k) s_big[s_rCollectAt++] = ',';
+        s_rCollectAt += num_text(s_big + s_rCollectAt, s_bigCap - s_rCollectAt, q[k / 3][k % 3]);
+    }
+}
+static void triangle3(const double *a, const double *b, const double *c, double ia, double ib, double ic, int edges)
+{
+    s_rTriangles++;
+    if (s_rCollect) { collect3(a, b, c); return; }
+    if (s_rMode != 0) {
+        unsigned lc = s_rMode == 1 ? s_rColor : outline_of(s_rColor);
+        if (edges & 1) edge3(a[0], a[1], a[2], b[0], b[1], b[2], lc);
+        if (edges & 2) edge3(b[0], b[1], b[2], c[0], c[1], c[2], lc);
+        if (edges & 4) edge3(c[0], c[1], c[2], a[0], a[1], a[2], lc);
+        if (s_rMode == 1) return;
+    }
+    RV v[3] = { to_view(a[0], a[1], a[2]), to_view(b[0], b[1], b[2]), to_view(c[0], c[1], c[2]) };
+    double li[3] = { ia, ib, ic };
+    RV out[4]; double lo[4];
+    int n = 0;
+    for (int k = 0; k < 3; k++) {
+        const RV *p = &v[k], *q = &v[(k + 1) % 3];
+        int pin = p->z >= B3X_RENDER_NEAR, qin = q->z >= B3X_RENDER_NEAR;
+        if (pin) { out[n] = *p; lo[n++] = li[k]; }
+        if (pin != qin) {
+            double t = (B3X_RENDER_NEAR - p->z) / (q->z - p->z);
+            out[n].x = p->x + (q->x - p->x) * t;
+            out[n].y = p->y + (q->y - p->y) * t;
+            out[n].z = B3X_RENDER_NEAR;
+            lo[n++] = li[k] + (li[(k + 1) % 3] - li[k]) * t;
+        }
+    }
+    if (n < 3) return;
+    RS s0 = to_screen(out[0], lo[0]);
+    for (int k = 1; k + 1 < n; k++) fill_triangle(s0, to_screen(out[k], lo[k]), to_screen(out[k + 1], lo[k + 1]));
+}
+/* A flat triangle: one normal, one light value. */
+static void flat3(const double *a, const double *b, const double *c, int edges)
+{
+    double ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    double vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    double nl = sqrt(nx * nx + ny * ny + nz * nz);
+    if (!(nl > 1.0e-20) || !isfinite(nl)) return;
+    double l = light_of(nx / nl, ny / nl, nz / nl, a[0], a[1], a[2]);
+    triangle3(a, b, c, l, l, l, edges);
+}
+
+/* --- shapes --------------------------------------------------------- */
+typedef struct { double p[3]; double m[9]; } RT;   /* a body's place: position and rotation matrix */
+
+static RT rt_of(b3WorldTransform t)
+{
+    RT r;
+    double x = t.q.v.x, y = t.q.v.y, z = t.q.v.z, w = t.q.s;
+    r.p[0] = t.p.x; r.p[1] = t.p.y; r.p[2] = t.p.z;
+    r.m[0] = 1 - 2 * (y * y + z * z); r.m[1] = 2 * (x * y - w * z);     r.m[2] = 2 * (x * z + w * y);
+    r.m[3] = 2 * (x * y + w * z);     r.m[4] = 1 - 2 * (x * x + z * z); r.m[5] = 2 * (y * z - w * x);
+    r.m[6] = 2 * (x * z - w * y);     r.m[7] = 2 * (y * z + w * x);     r.m[8] = 1 - 2 * (x * x + y * y);
+    return r;
+}
+static void rt_point(const RT *t, double x, double y, double z, double *out)
+{
+    out[0] = t->p[0] + t->m[0] * x + t->m[1] * y + t->m[2] * z;
+    out[1] = t->p[1] + t->m[3] * x + t->m[4] * y + t->m[5] * z;
+    out[2] = t->p[2] + t->m[6] * x + t->m[7] * y + t->m[8] * z;
+}
+
+/* A ball of bands: every corner lit by its own normal, so it reads round.
+ * `axis`, `e1`, `e2` are a world frame; the band range lets a capsule use
+ * the two halves. yOffset slides the half along the axis. */
+#define B3X_BALL_SEGMENTS 20
+#define B3X_BALL_RINGS    12
+static void ball_bands(const double *center, const double *axis, const double *e1, const double *e2, double radius, int ringFrom, int ringTo)
+{
+    for (int ring = ringFrom; ring < ringTo; ring++) {
+        double t0 = B3_PI * ring / B3X_BALL_RINGS, t1 = B3_PI * (ring + 1) / B3X_BALL_RINGS;
+        for (int seg = 0; seg < B3X_BALL_SEGMENTS; seg++) {
+            double p0 = 2.0 * B3_PI * seg / B3X_BALL_SEGMENTS, p1 = 2.0 * B3_PI * (seg + 1) / B3X_BALL_SEGMENTS;
+            double n[4][3], q[4][3], l[4];
+            const double ts[4] = { t0, t0, t1, t1 }, ps[4] = { p0, p1, p1, p0 };
+            for (int k = 0; k < 4; k++) {
+                double sa = sin(ts[k]), ca = cos(ts[k]), cp = cos(ps[k]), sp = sin(ps[k]);
+                for (int d = 0; d < 3; d++) {
+                    n[k][d] = axis[d] * ca + (e1[d] * cp + e2[d] * sp) * sa;
+                    q[k][d] = center[d] + radius * n[k][d];
+                }
+                l[k] = light_of(n[k][0], n[k][1], n[k][2], q[k][0], q[k][1], q[k][2]);
+            }
+            /* outlines: one ring in three and one meridian in five, or a
+             * ball is a black blot */
+            int e = (ring % 3 == 0 ? 1 : 0) | (seg % 5 == 0 ? 4 : 0);
+            if (ring > 0) triangle3(q[0], q[1], q[2], l[0], l[1], l[2], e & 1);
+            if (ring < B3X_BALL_RINGS - 1) triangle3(q[0], q[2], q[3], l[0], l[2], l[3], e & 4);
+        }
+    }
+}
+static void frame_about(const double *axis, double *e1, double *e2)
+{
+    double ax = fabs(axis[0]), ay = fabs(axis[1]), az = fabs(axis[2]);
+    double h[3] = { 0.0, 0.0, 0.0 };
+    h[ax <= ay && ax <= az ? 0 : (ay <= az ? 1 : 2)] = 1.0;
+    e1[0] = axis[1] * h[2] - axis[2] * h[1];
+    e1[1] = axis[2] * h[0] - axis[0] * h[2];
+    e1[2] = axis[0] * h[1] - axis[1] * h[0];
+    double l = sqrt(e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]);
+    e1[0] /= l; e1[1] /= l; e1[2] /= l;
+    e2[0] = axis[1] * e1[2] - axis[2] * e1[1];
+    e2[1] = axis[2] * e1[0] - axis[0] * e1[2];
+    e2[2] = axis[0] * e1[1] - axis[1] * e1[0];
+}
+static void draw_sphere(const RT *t, b3Sphere s)
+{
+    double c[3];
+    rt_point(t, s.center.x, s.center.y, s.center.z, c);
+    /* the ball's own frame, turned with the body, so a rolling ball rolls */
+    double axis[3] = { t->m[1], t->m[4], t->m[7] }, e1[3] = { t->m[0], t->m[3], t->m[6] }, e2[3] = { t->m[2], t->m[5], t->m[8] };
+    s_rOutside = c;
+    ball_bands(c, axis, e1, e2, s.radius, 0, B3X_BALL_RINGS);
+    s_rOutside = NULL;
+}
+static void draw_capsule(const RT *t, b3Capsule cap)
+{
+    double a[3], b[3], axis[3], e1[3], e2[3];
+    rt_point(t, cap.center1.x, cap.center1.y, cap.center1.z, a);
+    rt_point(t, cap.center2.x, cap.center2.y, cap.center2.z, b);
+    axis[0] = b[0] - a[0]; axis[1] = b[1] - a[1]; axis[2] = b[2] - a[2];
+    double len = sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+    if (!(len > 1.0e-9)) { axis[0] = 0.0; axis[1] = 1.0; axis[2] = 0.0; }
+    else { axis[0] /= len; axis[1] /= len; axis[2] /= len; }
+    frame_about(axis, e1, e2);
+    s_rOutside = b;
+    ball_bands(b, axis, e1, e2, cap.radius, 0, B3X_BALL_RINGS / 2);
+    s_rOutside = a;
+    ball_bands(a, axis, e1, e2, cap.radius, B3X_BALL_RINGS / 2, B3X_BALL_RINGS);
+    for (int seg = 0; seg < B3X_BALL_SEGMENTS; seg++) {
+        double p0 = 2.0 * B3_PI * seg / B3X_BALL_SEGMENTS, p1 = 2.0 * B3_PI * (seg + 1) / B3X_BALL_SEGMENTS;
+        double n0[3], n1[3], q[4][3];
+        for (int d = 0; d < 3; d++) {
+            n0[d] = e1[d] * cos(p0) + e2[d] * sin(p0);
+            n1[d] = e1[d] * cos(p1) + e2[d] * sin(p1);
+            q[0][d] = a[d] + cap.radius * n0[d]; q[1][d] = a[d] + cap.radius * n1[d];
+            q[2][d] = b[d] + cap.radius * n1[d]; q[3][d] = b[d] + cap.radius * n0[d];
+        }
+        double l0 = light_of(n0[0], n0[1], n0[2], q[0][0], q[0][1], q[0][2]);
+        double l1 = light_of(n1[0], n1[1], n1[2], q[1][0], q[1][1], q[1][2]);
+        int e = seg % 5 == 0 ? 4 : 0;
+        triangle3(q[0], q[1], q[2], l0, l1, l1, 0);
+        triangle3(q[0], q[2], q[3], l0, l1, l0, e);
+    }
+    s_rOutside = NULL;
+}
+/* A hull: each face is a flat polygon, drawn as a fan and outlined along
+ * its own edges only (never the fan's inner ones). */
+static void draw_hull(const RT *t, const b3HullData *hull)
+{
+    if (!hull) return;
+    const b3Vec3 *points = b3GetHullPoints(hull);
+    const b3HullHalfEdge *edges = b3GetHullEdges(hull);
+    const b3HullFace *faces = b3GetHullFaces(hull);
+    for (int f = 0; f < hull->faceCount; f++) {
+        double q[B3_MAX_HULL_VERTICES][3];
+        int n = 0, first = faces[f].edge, e = first;
+        do {
+            if (e < 0 || e >= hull->edgeCount || n >= B3_MAX_HULL_VERTICES) break;
+            int v = edges[e].origin;
+            if (v >= hull->vertexCount) break;
+            rt_point(t, points[v].x, points[v].y, points[v].z, q[n++]);
+            e = edges[e].next;
+        } while (e != first);
+        for (int k = 1; k + 1 < n; k++)
+            flat3(q[0], q[k], q[k + 1], (k == 1 ? 1 : 0) | 2 | (k + 2 == n ? 4 : 0));
+    }
+}
+static void draw_mesh(const RT *t, b3Mesh mesh)
+{
+    if (!mesh.data) return;
+    const b3Vec3 *verts = b3GetMeshVertices(mesh.data);
+    const b3MeshTriangle *tris = b3GetMeshTriangles(mesh.data);
+    for (int i = 0; i < mesh.data->triangleCount; i++) {
+        const int idx[3] = { tris[i].index1, tris[i].index2, tris[i].index3 };
+        double q[3][3];
+        int ok = 1;
+        for (int k = 0; k < 3; k++) {
+            if (idx[k] < 0 || idx[k] >= mesh.data->vertexCount) { ok = 0; break; }
+            const b3Vec3 *p = &verts[idx[k]];
+            rt_point(t, p->x * mesh.scale.x, p->y * mesh.scale.y, p->z * mesh.scale.z, q[k]);
+        }
+        if (ok) flat3(q[0], q[1], q[2], 7);
+    }
+}
+static bool field_triangle(b3Vec3 a, b3Vec3 b, b3Vec3 c, int triangleIndex, void *context)
+{
+    const RT *t = (const RT *)context;
+    double q[3][3];
+    (void)triangleIndex;
+    rt_point(t, a.x, a.y, a.z, q[0]);
+    rt_point(t, b.x, b.y, b.z, q[1]);
+    rt_point(t, c.x, c.y, c.z, q[2]);
+    flat3(q[0], q[1], q[2], 7);
+    return true;
+}
+static void draw_shape(b3ShapeId shape, const RT *t)
+{
+    switch (b3Shape_GetType(shape)) {
+        case b3_sphereShape: draw_sphere(t, b3Shape_GetSphere(shape)); break;
+        case b3_capsuleShape: draw_capsule(t, b3Shape_GetCapsule(shape)); break;
+        case b3_hullShape: draw_hull(t, b3Shape_GetHull(shape)); break;
+        case b3_meshShape: draw_mesh(t, b3Shape_GetMesh(shape)); break;
+        case b3_heightShape: {
+            const b3HeightFieldData *field = b3Shape_GetHeightField(shape);
+            if (field) b3QueryHeightField(field, field->aabb, field_triangle, (void *)t);
+            break;
+        }
+        default: break;          /* a compound: the shim creates none */
+    }
+}
+
+/* Draw world w into a picture `width` by `height` pixels (1 to 2048 each).
+ * mode 0 is solid, 1 a wireframe, 2 solid with outlines. Returns 1, or 0
+ * if it was refused (b3x_last_error says why). The picture stays until
+ * the next render. */
+LC_API int b3x_render_world(int w, int width, int height, int mode)
+{
+    b3WorldId id;
+    if (!world_ok(w, &id)) return fail("not a world");
+    if (width < 1 || height < 1 || width > B3X_RENDER_MAX_SIDE || height > B3X_RENDER_MAX_SIDE)
+        return fail("a picture is 1 to 2048 pixels each way");
+    if (mode < 0 || mode > 2) return fail("the mode is 0 (solid), 1 (wireframe) or 2 (solid with outlines)");
+    int pixels = width * height;
+    if (pixels > s_rCap) {
+        unsigned char *np = (unsigned char *)realloc(s_rPix, (size_t)pixels * 4);
+        if (np) s_rPix = np;
+        float *nd = (float *)realloc(s_rDepth, (size_t)pixels * sizeof(float));
+        if (nd) s_rDepth = nd;
+        int *ns = (int *)realloc(s_rShape, (size_t)pixels * sizeof(int));
+        if (ns) s_rShape = ns;
+        if (!np || !nd || !ns) { s_rCap = 0; s_rW = s_rH = 0; return fail("out of memory"); }
+        s_rCap = pixels;
+    }
+    s_rW = width; s_rH = height; s_rMode = mode; s_rTriangles = 0;
+    s_rScale = 0.5 * height / tan(0.5 * s_rFov * B3_PI / 180.0);
+    camera_basis();
+    for (int i = 0; i < pixels; i++) {
+        s_rPix[4 * (size_t)i] = 0;
+        s_rPix[4 * (size_t)i + 1] = (unsigned char)(s_rBack >> 16);
+        s_rPix[4 * (size_t)i + 2] = (unsigned char)(s_rBack >> 8);
+        s_rPix[4 * (size_t)i + 3] = (unsigned char)s_rBack;
+        s_rDepth[i] = 0.0f;
+        s_rShape[i] = 0;
+    }
+    /* by shape, through the shim's own table: each knows its body */
+    for (int slot = 0; slot < shapes_cnt; slot++) {
+        if (!shapes_used[slot]) continue;
+        b3ShapeId shape = shapes_arr[slot];
+        if (!b3Shape_IsValid(shape)) continue;
+        b3BodyId body = b3Shape_GetBody(shape);
+        if (!b3Body_IsValid(body) || !same_world(b3Body_GetWorld(body), id) || !b3Body_IsEnabled(body)) continue;
+        b3WorldTransform xf = b3Body_GetTransform(body);
+        b3Vec3 p = b3ToVec3(xf.p);
+        if (!float3_ok(p) || !float3_ok(xf.q.v) || !isfinite(xf.q.s)) continue;
+        RT t = rt_of(xf);
+        s_rHandle = shapes_encode(slot);
+        s_rColor = slot < s_shapeColorCap && (s_shapeColor[slot] & 0x01000000u)
+                       ? (s_shapeColor[slot] & 0xFFFFFFu) : body_color(body, body_handle_of(body));
+        draw_shape(shape, &t);
+    }
+    ok_clear();
+    return 1;
+}
+/* The picture: width * height * 4 bytes, rows from the top, each pixel
+ * 0, red, green, blue - the layout of an image's imageData. */
+LC_API const char *b3x_render_pixels(void) { return s_rW > 0 ? (const char *)s_rPix : ""; }
+LC_API int b3x_render_byte_count(void) { return s_rW * s_rH * 4; }
+LC_API int b3x_render_width(void) { return s_rW; }
+LC_API int b3x_render_height(void) { return s_rH; }
+/* Triangles the last render was given (before clipping). */
+LC_API int b3x_render_triangle_count(void) { return s_rTriangles; }
+/* PICTURE COORDINATES, here and in project and ray: x runs right and y
+ * DOWN from the picture's top left corner, which is 0,0; pixel 0,0 covers
+ * 0 to 1 each way and its centre is 0.5,0.5. That is what `the mouseH -
+ * the left of image` gives, so a click needs no arithmetic. (render3dxt,
+ * the suite's textured renderer, counts the same way: one contract.) */
+static int pixel_at(int x, int y) { return x >= 0 && y >= 0 && x < s_rW && y < s_rH ? y * s_rW + x : -1; }
+/* Pixel x,y of the last picture (0,0 is the top left) as red * 65536 +
+ * green * 256 + blue; -1 outside it. */
+LC_API int b3x_render_pixel(int x, int y)
+{
+    int at = pixel_at(x, y);
+    if (at < 0) return -1;
+    return (s_rPix[4 * (size_t)at + 1] << 16) | (s_rPix[4 * (size_t)at + 2] << 8) | s_rPix[4 * (size_t)at + 3];
+}
+/* The shape drawn at pixel x,y, or 0 for the background. */
+LC_API int b3x_render_shape_at(int x, int y)
+{
+    int at = pixel_at(x, y);
+    if (at < 0) return 0;
+    int h = s_rShape[at];
+    return shapes_slot_of(h) >= 0 ? h : 0;
+}
+/* How far along the camera's view the surface at pixel x,y is, in metres;
+ * 0 for the background. */
+LC_API double b3x_render_depth(int x, int y)
+{
+    int at = pixel_at(x, y);
+    return at >= 0 && s_rDepth[at] > 0.0f ? 1.0 / (double)s_rDepth[at] : 0.0;
+}
+/* Where a world point lands in the last picture: "x,y,depth" with x,y in
+ * picture coordinates (they may lie outside the picture) and depth
+ * in metres along the view. Empty if the point is behind the camera or
+ * nothing has been rendered. */
+LC_API const char *b3x_render_project(double x, double y, double z)
+{
+    if (s_rW < 1 || !fin3(x, y, z)) return text_empty();
+    RV v = to_view(x, y, z);
+    if (v.z < B3X_RENDER_NEAR) return text_empty();
+    RS s = to_screen(v, 0.0);
+    double out[3] = { s.sx, s.sy, v.z };
+    return text_of(out, 3);
+}
+/* The ray through picture point x,y of the last picture: "ox,oy,oz,dx,dy,dz", the
+ * camera's eye and a unit direction. Multiply the direction by a length
+ * and hand both to b3x_cast_ray_closest to find what is under the mouse. */
+LC_API const char *b3x_render_ray(double x, double y)
+{
+    if (s_rW < 1 || !fin(x) || !fin(y)) return text_empty();
+    double vx = (x - 0.5 * s_rW) / s_rScale, vy = -(y - 0.5 * s_rH) / s_rScale;
+    double d[3];
+    for (int k = 0; k < 3; k++) d[k] = s_rFwd[k] + s_rRight[k] * vx + s_rUp[k] * vy;
+    double l = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    double out[6] = { s_rEye[0], s_rEye[1], s_rEye[2], d[0] / l, d[1] / l, d[2] / l };
+    return text_of(out, 6);
+}
+
+/* A shape as triangles, for whoever draws it elsewhere (the suite's
+ * render3dxt builds a mesh from this): one line per triangle,
+ * "x1,y1,z1,x2,y2,z2,x3,y3,z3", in the BODY's own frame and in metres, so
+ * the body's transform places it. A hull, a mesh and a height field give
+ * the triangles Box3D collides (a hull's faces as fans, counter-clockwise
+ * seen from outside; a mesh's as it was given them); a sphere and a
+ * capsule give the tessellation the renderer here draws. Empty for a dead
+ * handle. The text lives until the next call that returns a list. */
+LC_API const char *b3x_shape_triangles_text(int s)
+{
+    b3ShapeId id;
+    if (!shape_ok(s, &id)) return text_empty();
+    RT t;
+    memset(&t, 0, sizeof t);
+    t.m[0] = t.m[4] = t.m[8] = 1.0;
+    int kept = s_rTriangles;
+    s_rCollect = 1; s_rTriangles = 0;
+    draw_shape(id, &t);
+    /* 9 numbers a triangle, each within 24 characters with its comma; a
+     * shape too big for an int of text is refused, not truncated */
+    int count = s_rTriangles, ok = count <= 4000000 && big_reserve(count * 9 * 24 + 16);
+    if (!ok) fail("that shape has too many triangles to list");
+    if (ok) {
+        s_rCollect = 2; s_rCollectAt = 0;
+        draw_shape(id, &t);
+        s_big[s_rCollectAt] = 0;
+    }
+    s_rCollect = 0; s_rTriangles = kept;
+    return ok ? s_big : text_empty();
 }

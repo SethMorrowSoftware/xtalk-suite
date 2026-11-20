@@ -74,6 +74,75 @@ Step with a FIXED slice (1/60 s and 4 sub-steps suits most scenes), not with the
 the last frame: a physics step is stable when its size does not change. A step of 0 seconds or
 of more than 1 is ignored.
 
+## Seeing the world
+
+The library can paint a world itself. Make an image the size of the picture you want, and in
+the frame loop render and hand the picture over:
+
+```livecodescript
+on physicsStart
+   put b3WorldCreate(0, -10, 0, 1) into sWorld
+   -- ... create bodies and shapes ...
+   if there is no image "view" then create image "view"
+   set the width of image "view" to 640
+   set the height of image "view" to 400
+   b3RenderSetCamera 9, 7, 14, 0, 1, 0, 50          -- eye x y z, target x y z, degrees
+   send "physicsFrame" to me in 16 milliseconds
+end physicsStart
+
+on physicsFrame
+   b3WorldStep sWorld, 1/60, 4
+   if b3RenderWorld(sWorld, 640, 400, 0) then        -- 0 solid, 1 wireframe, 2 solid + outlines
+      set the imageData of image "view" to b3RenderPixels()
+   end if
+   send "physicsFrame" to me in 16 milliseconds
+end physicsFrame
+```
+
+- **The picture and the image must be the same size.** The engine takes imageData only when
+  it is exactly width times height times 4 bytes, which is what `b3RenderByteCount()` is.
+- **y is up, the camera looks from an eye to a target**, and the angle is the vertical field
+  of view (50 is a natural lens). The camera, the light (`b3RenderSetLight`, the direction it
+  travels) and the background stay as set until changed.
+- **Colours.** A shape with no colour of its own is drawn by what its body is doing: static
+  scenery grey-green, a moving body one of eight colours, the same colour dimmed while it
+  sleeps, so you can watch a pile settle. `b3ShapeSetColor tShape, 230, 120, 40` gives a shape
+  its own.
+- **Picture coordinates** run right and DOWN from the picture's top left corner, which is
+  0,0. `the mouseH - the left of image "view"` is already one.
+
+What is under the mouse, two ways:
+
+```livecodescript
+on mouseDown
+   local tX, tY, tShape, tRay
+   put the mouseH - the left of image "view" into tX
+   put the mouseV - the top of image "view" into tY
+   put b3RenderShapeAt(tX, tY) into tShape           -- the shape that pixel shows; 0 for none
+   if tShape is 0 then exit mouseDown
+   -- the exact point: a ray from the camera through the click, 100 m long
+   put b3RenderRay(tX, tY) into tRay
+   if b3CastRayClosest(sWorld, item 1 of tRay, item 2 of tRay, item 3 of tRay, \
+         100 * item 4 of tRay, 100 * item 5 of tRay, 100 * item 6 of tRay) is 1 then
+      b3BodyApplyImpulse b3HitBody(1), 0, 5, 0, item 1 of b3HitPoint(1), item 2 of b3HitPoint(1), item 3 of b3HitPoint(1), true
+   end if
+end mouseDown
+```
+
+`b3RenderProject(x, y, z)` goes the other way (a world point to a place in the picture, for a
+label over a body), and `b3RenderDepth` is how far away a pixel's surface is.
+
+What it is and is not: a software rasteriser, there so a simulation can be SEEN on every
+platform with nothing else installed. One light, flat or smooth shading, no textures, no
+shadows, one picture for the whole library. The cost is the pixels: 640 by 400 is a few
+milliseconds of drawing plus the engine's copy into the image; the teapot of
+`tests/models/` (6,320 triangles) costs little more than a box. A sphere and a capsule are
+drawn as the many-sided solids `b3ShapeTrianglesText` lists, so a silhouette can differ from
+a ray cast by part of a pixel. For textures, your own models' looks and anything a game
+would want, use the suite's render3dxt: it takes `b3RenderCamera()`'s seven numbers, a
+body's transform and a shape's `b3ShapeTrianglesText` as they are, and its pictures and rays
+are counted the same way as the ones here.
+
 ## Bodies and shapes
 
 A body has a type: 0 static (never moves), 1 kinematic (moves as you tell it, pushed by
@@ -196,4 +265,6 @@ built with them (a debug build); in a release build they stay at 0.
   (1 is right for small scenes; the web build always uses 1). The threads never call script.
 - `b3WorldUpdateMoves` plus `b3MoveTransform` reads every moved body in one pass;
   `b3MovesText()` returns them all as one text, one line a body, for a single parse.
+- `b3RenderWorld` costs by the pixel far more than by the triangle: halve the picture's
+  sides and it draws four times faster. `b3RenderTriangleCount` says how heavy the scene is.
 - Bodies at rest fall asleep and cost nothing; `b3WorldAwakeBodyCount` shows how many are not.

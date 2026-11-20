@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **box3dxt** binds Box3D (Erin Catto's 3D rigid-body engine, MIT, C17) for OXT: Box3D (static,
 FetchContent, pinned to a COMMIT in `CMakeLists.txt` because it has no release tag yet) -> the
-C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 1**: `B3X_ABI_VERSION` there equals the
+C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 2**: `B3X_ABI_VERSION` there equals the
 literal in `checkABI()` of the binding) -> ONE library `box3dxt.{so,dll,dylib}` (bare token),
 or `box3dxt.a` for the web -> the LCB binding `src/box3dxt.lcb`
 (`org.openxtalk.library.boxthreed`, public `b3*`). box2dxt is its ancestor; read that
@@ -77,6 +77,18 @@ member's CLAUDE.md for the reasons behind the shared shape.
   fits: asked for 128 corners of a rounded model, Box3D builds some 250 faces and refuses.
 - **A shape's AABB is loose** (Box3D fattens it), so a test that asks where a body rests
   moves the model's points through the body's transform and does not read the AABB.
+- **The renderer (ABI 2, 2026-11-20) is in the shim**: a software rasteriser over the
+  shim's own shape table (depth as 1/z, near plane 0.05 m, pictures to 2048 a side), one
+  picture for the process. It reads a world and never changes it. The picture is the ONE
+  result that crosses as bytes: `b3x_render_pixels` is public as Data through `dataOf()`,
+  which the signature gate holds to that export alone (its `DATA` set; a second builtin,
+  `MCDataCreateWithBytes`). Its oracle in the smoke test is Box3D: the shape and depth at a
+  pixel against a ray cast through it, over every shape kind and the teapot, from five
+  cameras. The fuzz test reads every byte of the picture after every call. The contract it
+  shares with the suite's render3dxt (camera as "ex,ey,ez,tx,ty,tz,fov", picture coordinates
+  from the top left with pixel centres at +0.5, a ray as origin and unit direction, y up,
+  the fallback up of world -z looking straight down) is in the shim's comments: change
+  neither side alone.
 - **Box3D re-pairs shapes only when one leaves its fat bounding box**: destroying a filter
   joint does not make two resting bodies collide until one of them moves far enough.
 - **32-bit x86 is built with SSE2**, not scalar: Box3D's determinism test fails on x87.
@@ -103,7 +115,9 @@ Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under nod
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library), and in OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built on
 that machine, loaded by `load extension` and `revLibraryMapping`; one drop scene with a ray
-cast and contact events; README "Status"). No other platform's engine has loaded it and no
+cast and contact events; README "Status"). The renderer has run natively and on the server
+engine (the picture as data, its bytes read); an image showing it in an IDE is verified
+statically; needs an OXT pass. No other platform's engine has loaded it and no
 IDE has loaded a release library or an installed extension: verified statically; needs an
 OXT pass. No binaries are committed yet. Open work is in the suite's
 `docs/WORK-PLAN.md`.
