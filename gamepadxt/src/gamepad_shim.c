@@ -137,6 +137,9 @@ typedef struct {
     /* what a virtual pad was last told (the rumble and light hooks) */
     int           vLow, vHigh, vLeft, vRight;      /* 0..65535 */
     int           vRed, vGreen, vBlue;             /* 0..255   */
+    /* one bit per button a virtual pad was told about since SDL last read
+     * it (see gpx_virtual_set_button) */
+    unsigned      vUnread;
     /* the axis values last put in the event queue, for gpx_set_axis_events */
     int           sent[GPX_NUM_AXES];
 } Pad;
@@ -443,6 +446,7 @@ static int open_into(int slot, SDL_JoystickID id, int isVirtual)
     }
     p->id = id;
     p->isVirtual = isVirtual;
+    p->vUnread = 0;
     for (i = 0; i < GPX_NUM_AXES; i++) p->sent[i] = 0;
     push_event(EV_CONNECTED, handle_of(slot), 0, 0);
     return handle_of(slot);
@@ -461,6 +465,19 @@ static void close_slot(int slot, int queue)
 /* Empties SDL's queue: pads that came and went, buttons, and (if asked for)
  * axes go into ours; everything else SDL queued is discarded, so its queue
  * never grows inside a process that does not otherwise read it. */
+static void drain_sdl(void);
+
+/* Has SDL read every device and hands the shim what happened. The one place
+ * SDL_UpdateGamepads is called once started, so that "SDL has now read the
+ * virtual pads" is recorded wherever it happens. */
+static void read_devices(void)
+{
+    int i;
+    SDL_UpdateGamepads();
+    for (i = 0; i < GPX_MAX_PADS; i++) s_pads[i].vUnread = 0;
+    drain_sdl();
+}
+
 static void drain_sdl(void)
 {
     SDL_Event batch[32];
@@ -617,8 +634,7 @@ LC_API int gpx_poll(void)
 {
     if (s_refs <= 0) { set_error("gamepadxt is not started"); return 0; }
     clear_error();
-    SDL_UpdateGamepads();
-    drain_sdl();
+    read_devices();
     return s_eventCount;
 }
 
@@ -1197,7 +1213,14 @@ LC_API void gpx_virtual_detach(int pad)
 }
 
 /* Presses (1) or releases (0) a button of a virtual pad. It shows at the
- * next gpx_poll(), as a real press would. Returns 1 if it was taken. */
+ * next gpx_poll(), as a real press would. Returns 1 if it was taken.
+ *
+ * A TAP BETWEEN TWO POLLS IS KEPT. SDL's virtual pad holds one pending state
+ * a button, not a list of changes: a press and a release set before SDL next
+ * read the pad left it "up" and no event at all, so a quick tap on an
+ * on-screen button, or two steps of a replay in one frame, vanished. So a
+ * second change to a button SDL has not read yet has SDL read the pads first
+ * (the earlier change becomes its event, in order), and only then is set. */
 LC_API int gpx_virtual_set_button(int pad, const char *button, int down)
 {
     Pad *p = virtual_pad_of(pad);
@@ -1205,7 +1228,14 @@ LC_API int gpx_virtual_set_button(int pad, const char *button, int down)
     SDL_Joystick *joystick;
     if (!p) return 0;
     if (b < 0) { set_error("no such button name"); return 0; }
+    if (p->vUnread & (1u << b)) {
+        read_devices();
+        /* reading can close a pad (its device left): look the handle up again */
+        p = virtual_pad_of(pad);
+        if (!p) return 0;
+    }
     joystick = SDL_GetGamepadJoystick(p->pad);
+    if (joystick) p->vUnread |= (1u << b);
     if (!joystick || !SDL_SetJoystickVirtualButton(joystick, b, down ? true : false)) {
         set_sdl_error("the virtual pad did not take the button");
         return 0;

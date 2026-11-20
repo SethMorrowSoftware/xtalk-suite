@@ -390,6 +390,46 @@ static void test_buttons(int pad)
           && gpx_pad_button_label(pad, NULL)[0] == 0, "no label off the face buttons");
 }
 
+/* A press and a release of a virtual button between two polls: SDL's virtual
+ * pad keeps one pending state a button, so the pair once left no event at
+ * all (found in review, 2026-11-20). Both must arrive, in order. */
+static void test_tap_between_polls(int pad)
+{
+    char want[160];
+    (void)gpx_poll();
+    (void)gpx_events();
+    CHECK(gpx_virtual_set_button(pad, "south", 1) == 1 && gpx_virtual_set_button(pad, "south", 0) == 1,
+          "a press and a release with no poll between");
+    (void)gpx_poll();
+    snprintf(want, sizeof(want), "button,%d,south,down\nbutton,%d,south,up", pad, pad);
+    {
+        const char *got = keep(gpx_events());
+        CHECK(strcmp(got, want) == 0, "a tap between two polls is two events: [%s]", got);
+    }
+    CHECK(gpx_pad_button(pad, "south") == 0, "and the button reads up");
+    /* Three changes to one button keep THEIR order. Another button set in
+     * the same gap is read with them, and SDL reports the buttons of one
+     * read in its own order (south before east), as it does for two real
+     * buttons pressed between two reads. */
+    gpx_virtual_set_button(pad, "east", 1);
+    gpx_virtual_set_button(pad, "south", 1);
+    gpx_virtual_set_button(pad, "south", 0);
+    gpx_virtual_set_button(pad, "south", 1);
+    (void)gpx_poll();
+    snprintf(want, sizeof(want),
+             "button,%d,south,down\nbutton,%d,east,down\nbutton,%d,south,up\nbutton,%d,south,down",
+             pad, pad, pad, pad);
+    {
+        const char *got = keep(gpx_events());
+        CHECK(strcmp(got, want) == 0, "three changes keep their order: [%s]", got);
+    }
+    CHECK(gpx_pad_button(pad, "south") == 1 && gpx_pad_button(pad, "east") == 1, "both held");
+    gpx_virtual_set_button(pad, "south", 0);
+    gpx_virtual_set_button(pad, "east", 0);
+    (void)gpx_poll();
+    (void)gpx_events();
+}
+
 static void test_axes(int pad)
 {
     const char *names = keep(gpx_axis_names());
@@ -800,6 +840,7 @@ int main(void)
     base = gpx_pad_count();                         /* real pads on this machine, if any */
     pad = test_attach(base);
     test_buttons(pad);
+    test_tap_between_polls(pad);
     test_axes(pad);
     test_stick(pad);
     test_axis_events(pad);

@@ -774,7 +774,7 @@ Presses or releases a button of a virtual pad.
 
 Returns: True if the pad took it.
 
-Like a real press, it shows at the next `gpPoll`.
+Like a real press, it shows at the next `gpPoll`. A press and a release made before that poll are both kept, so a quick tap on an on-screen button is still two events.
 
 ```
 on mouseDown
