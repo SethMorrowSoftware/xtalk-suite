@@ -836,8 +836,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
-  its native lane repeats on every change. No desktop IDE has loaded it: for everything
-  beyond that server run it is verified statically; needs an OXT pass.
+  its native lane repeats on every change. The first desktop IDE run, 2026-11-20: OXT-Beyond's
+  IDE on 64-bit Linux (engine 9.7.1-BeyondEngine build 25923, Ubuntu 24.04) over a library
+  built on that machine from 144d529, loaded by `load extension` and `revLibraryMapping`; a
+  stack built there ran a twelve-body drop in a frame loop with a ray cast and contact
+  events, and Box3D counted no assert. A real model (the Utah teapot) is in both tests
+  since that day. Beyond those runs it is verified statically; needs an OXT pass.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands them
   (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
   and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
@@ -847,7 +851,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first release-binaries dispatch with `members: box3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |

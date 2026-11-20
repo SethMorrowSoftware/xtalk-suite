@@ -1718,8 +1718,20 @@ LC_API int b3x_shape_add_hull(int b, double density, double friction, double res
     if (!body_ok(b, &id)) return fail("not a body");
     if (s_ptsCnt < 4) return fail("a hull needs at least 4 points");
     if (!def_in(&d, density, friction, restitution)) return fail("density, friction and restitution must be 0 or more");
-    b3HullData *hull = b3CreateHull(s_pts, s_ptsCnt, B3_MAX_HULL_VERTICES);
-    if (!hull) return fail("Box3D could not build a hull from those points (flat, or too complex)");
+    /* Box3D holds a hull to 128 points AND 128 faces AND 128 edges, and
+     * b3CreateHull simplifies to a point budget only: asked for 128 points
+     * of a rounded model it builds some 250 faces and then refuses the
+     * lot. That is how the first real model (the teapot of the smoke test,
+     * 3644 points, 2026-11-20) failed where every hand-typed hull had
+     * passed. So the budget is walked down until the result fits: a hull
+     * of triangles with V points has 3V - 6 edges, so about 44 is where a
+     * smooth shape lands; a boxy one keeps more, because Box3D merges
+     * coplanar faces. Points that are flat or collinear fail every step. */
+    static const int k_budgets[] = { B3_MAX_HULL_VERTICES, 96, 72, 56, 44, 36, 28, 20, 12, 8 };
+    b3HullData *hull = NULL;
+    for (size_t i = 0; i < sizeof k_budgets / sizeof k_budgets[0] && !hull; i++)
+        hull = b3CreateHull(s_pts, s_ptsCnt, k_budgets[i]);
+    if (!hull) return fail("Box3D could not build a hull from those points (flat, or too few)");
     if (!mass_fits(id, b3ComputeHullMass(hull, d.density))) { b3DestroyHull(hull); return fail(k_too_heavy); }
     b3ShapeId sid = b3CreateHullShape(id, &d, hull);
     b3DestroyHull(hull);

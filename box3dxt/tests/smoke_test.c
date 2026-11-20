@@ -1685,6 +1685,261 @@ static void test_net(void)
     s_netAsserts = b3x_assert_count() - assertsBefore;
 }
 
+/* ------------------------------------------------------------------ */
+/* A REAL MODEL (2026-11-20). Every shape above is a handful of points typed
+ * by hand. This one is the Utah teapot (tests/models/teapot.obj, carried
+ * here as tests/teapot_model.h): thousands of points and triangles, with
+ * duplicate points along its patch seams, thin parts (the spout, the handle)
+ * and curved ones - what a model exported from a 3D editor looks like.
+ *
+ * The oracle is not Box3D: brute_ray() intersects a ray with every triangle
+ * itself (Moller-Trumbore, both faces), and the shim's answer has to agree. */
+#include "teapot_model.h"
+
+static void teapot_geometry(double scale, int withTriangles)
+{
+    b3x_geometry_begin();
+    for (int i = 0; i < TEAPOT_POINT_COUNT; i++)
+        b3x_geometry_add_point(scale * kTeapotPoints[i][0], scale * kTeapotPoints[i][1], scale * kTeapotPoints[i][2]);
+    if (withTriangles)
+        for (int i = 0; i < TEAPOT_TRIANGLE_COUNT; i++)
+            b3x_geometry_add_triangle(kTeapotTriangles[i][0], kTeapotTriangles[i][1], kTeapotTriangles[i][2]);
+}
+
+/* The nearest hit of origin + t * d, t in [0, 1], over every triangle; -1
+ * for none. In doubles, so it is the more exact of the two answers. */
+static double brute_ray(double ox, double oy, double oz, double dx, double dy, double dz, int frontOnly)
+{
+    double best = -1.0;
+    for (int i = 0; i < TEAPOT_TRIANGLE_COUNT; i++)
+    {
+        const float *a = kTeapotPoints[kTeapotTriangles[i][0] - 1];
+        const float *b = kTeapotPoints[kTeapotTriangles[i][1] - 1];
+        const float *c = kTeapotPoints[kTeapotTriangles[i][2] - 1];
+        double e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2];
+        double e2x = c[0] - a[0], e2y = c[1] - a[1], e2z = c[2] - a[2];
+        double px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+        double det = e1x * px + e1y * py + e1z * pz;
+        /* front faces only: Box3D's meshes are one-sided (see test_model) */
+        if (frontOnly ? det < 1e-12 : fabs(det) < 1e-12) continue;
+        double tx = ox - a[0], ty = oy - a[1], tz = oz - a[2];
+        double u = (tx * px + ty * py + tz * pz) / det;
+        if (u < 0.0 || u > 1.0) continue;
+        double qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+        double vv = (dx * qx + dy * qy + dz * qz) / det;
+        if (vv < 0.0 || u + vv > 1.0) continue;
+        double t = (e2x * qx + e2y * qy + e2z * qz) / det;
+        if (t < 0.0 || t > 1.0) continue;
+        if (best < 0.0 || t < best) best = t;
+    }
+    return best;
+}
+
+/* One ray, asked of the shim and of the oracle. A ray that grazes an edge of
+ * the silhouette is one two honest implementations may call differently, so
+ * the oracle is asked four more times a hair to each side: only a ray all
+ * five agree on is compared (returns 1), the rest are counted as skipped. */
+static int teapot_ray_agrees(int w, int mesh, double ox, double oy, double oz, double dx, double dy, double dz, int *bad)
+{
+    const double h = 2e-3;
+    double t = brute_ray(ox, oy, oz, dx, dy, dz, 1);
+    double len = sqrt(dx * dx + dy * dy + dz * dz);
+    /* two directions across the ray to nudge along */
+    double ax = dy, ay = -dx, az = 0;
+    if (fabs(ax) + fabs(ay) < 1e-9) { ax = 0; ay = dz; az = -dy; }
+    double al = sqrt(ax * ax + ay * ay + az * az);
+    ax /= al; ay /= al; az /= al;
+    double bx = dy * az - dz * ay, by = dz * ax - dx * az, bz = dx * ay - dy * ax;
+    double bl = sqrt(bx * bx + by * by + bz * bz);
+    bx /= bl; by /= bl; bz /= bl;
+    for (int k = 0; k < 4; k++)
+    {
+        double sx = (k == 0 ? ax : k == 1 ? -ax : k == 2 ? bx : -bx) * h;
+        double sy = (k == 0 ? ay : k == 1 ? -ay : k == 2 ? by : -by) * h;
+        double sz = (k == 0 ? az : k == 1 ? -az : k == 2 ? bz : -bz) * h;
+        double tk = brute_ray(ox + sx, oy + sy, oz + sz, dx, dy, dz, 1);
+        if ((tk < 0) != (t < 0)) return 0;
+        if (t >= 0 && fabs(tk - t) * len > 0.05) return 0;
+    }
+    int n = b3x_cast_ray_closest(w, ox, oy, oz, dx, dy, dz);
+    if (n == 1 && b3x_hit_shape(1) != mesh) n = 0;   /* past the pot, into the floor */
+    if (t < 0)
+    {
+        if (n != 0) { (*bad)++; printf("  ray from %g,%g,%g along %g,%g,%g: the shim hit, the oracle missed\n", ox, oy, oz, dx, dy, dz); }
+        return 1;
+    }
+    if (n != 1 || b3x_hit_shape(1) != mesh || fabs(b3x_hit_fraction(1) - t) * len > 5e-3)
+    {
+        (*bad)++;
+        printf("  ray from %g,%g,%g along %g,%g,%g: the shim says %d hit(s) at %g, the oracle %g\n",
+               ox, oy, oz, dx, dy, dz, n, n ? b3x_hit_fraction(1) : -1.0, t);
+    }
+    return 1;
+}
+
+/* The lowest and highest point of the model, scaled, as body b carries it:
+ * every point through the body's own transform (position, then quaternion
+ * x,y,z,w). A shape's AABB cannot answer this: Box3D keeps it loose. */
+static void teapot_span_y(int b, double scale, double *lo, double *hi)
+{
+    double t[12];
+    *lo = 1e30; *hi = -1e30;
+    if (parse(b3x_body_transform(b), t, 12) != 7) return;
+    double qx = t[3], qy = t[4], qz = t[5], qw = t[6];
+    for (int i = 0; i < TEAPOT_POINT_COUNT; i++)
+    {
+        double x = scale * kTeapotPoints[i][0], y = scale * kTeapotPoints[i][1], z = scale * kTeapotPoints[i][2];
+        /* row 2 of the rotation matrix of a unit quaternion */
+        double wy = 2 * (qx * qy + qw * qz) * x + (1 - 2 * (qx * qx + qz * qz)) * y + 2 * (qy * qz - qw * qx) * z + t[1];
+        if (wy < *lo) *lo = wy;
+        if (wy > *hi) *hi = wy;
+    }
+}
+
+static void test_model(void)
+{
+    double v[12];
+    int w = b3x_world_create(0, -10, 0, 1);
+    b3x_shape_options_set_events(1, 0, 0);
+    int ground = b3x_body_create(w, 0, 0, -0.5, 0);
+    b3x_shape_add_box(ground, 20, 0.5, 20, 0, 0.6, 0);
+
+    /* 1. the teapot as a static triangle mesh, at the size it was modelled */
+    int pot = b3x_body_create(w, 0, 0, 0, 0);
+    teapot_geometry(1.0, 1);
+    CHECK(b3x_geometry_point_count() == TEAPOT_POINT_COUNT, "every point of the model was taken (%d)", b3x_geometry_point_count());
+    int mesh = b3x_shape_add_mesh(pot, 0.6, 0.0);
+    CHECK(mesh > 0 && b3x_shape_type(mesh) == 4, "the teapot is a mesh shape %d: %s", mesh, b3x_last_error());
+    CHECK(parse(b3x_shape_aabb(mesh), v, 12) == 6 && near(v[0], -3.0, 0.03) && near(v[3], 3.434, 0.03) && near(v[1], 0.0, 0.03) &&
+              near(v[4], 3.15, 0.03) && near(v[2], -2.0, 0.03) && near(v[5], 2.0, 0.03),
+          "its bounding box is the model's: '%s'", b3x_shape_aabb(mesh));
+
+    /* 2. rays against the oracle: a grid straight down, a grid along x, a
+     * grid along a slanted direction. The offsets keep origins off the
+     * model's symmetry planes, where every ray would graze a seam. */
+    int compared = 0, skipped = 0, bad = 0, hits = 0;
+    for (int ix = 0; ix < 15; ix++)
+        for (int iz = 0; iz < 9; iz++)
+        {
+            double x = -3.4 + 0.487 * ix + 0.0131, z = -2.1 + 0.527 * iz + 0.0173;
+            if (teapot_ray_agrees(w, mesh, x, 6.0, z, 0, -5.9, 0, &bad)) { compared++; if (brute_ray(x, 6.0, z, 0, -5.9, 0, 1) >= 0) hits++; }
+            else skipped++;
+        }
+    for (int iy = 0; iy < 12; iy++)
+        for (int iz = 0; iz < 9; iz++)
+        {
+            double y = 0.07 + 0.263 * iy, z = -2.1 + 0.527 * iz + 0.0173;
+            if (teapot_ray_agrees(w, mesh, -6.0, y, z, 12.0, 0, 0, &bad)) { compared++; if (brute_ray(-6.0, y, z, 12.0, 0, 0, 1) >= 0) hits++; }
+            else skipped++;
+            if (teapot_ray_agrees(w, mesh, 5.0, y + 3.0, z - 4.0, -9.0, -4.1, 7.3, &bad)) { compared++; if (brute_ray(5.0, y + 3.0, z - 4.0, -9.0, -4.1, 7.3, 1) >= 0) hits++; }
+            else skipped++;
+        }
+    CHECK(bad == 0, "%d of %d rays at the teapot disagree with a ray-triangle test done here", bad, compared);
+    CHECK(compared >= 250 && hits >= 100 && compared - hits >= 50, "the ray grid is a real test: %d compared (%d hits), %d grazing rays skipped", compared, hits, skipped);
+
+    /* A mesh is ONE-SIDED, which is why the oracle above counts front faces
+     * only. Said once by name: from inside the pot, straight up, there is
+     * nothing but the backs of the lid's triangles, and the ray leaves. */
+    CHECK(brute_ray(0.0131, 1.0, 0.0173, 0, 10.0, 0, 0) >= 0 && brute_ray(0.0131, 1.0, 0.0173, 0, 10.0, 0, 1) < 0,
+          "the oracle sees the lid from inside only when it counts back faces");
+    CHECK(b3x_cast_ray_closest(w, 0.0131, 1.0, 0.0173, 0, 10.0, 0) == 0, "a ray from inside the pot passes out through its back faces");
+
+    /* 3. things land ON it. A ball over the lid's knob must touch the mesh
+     * where the oracle says the surface is, not fall through to the floor. */
+    double top = 6.0 - 5.9 * brute_ray(0.0131, 6.0, 0.0173, 0, -5.9, 0, 1);
+    CHECK(near(top, 3.15, 0.05), "the knob is the top of the model: %g", top);
+    int ball = b3x_body_create(w, 2, 0.0131, 4.5, 0.0173);
+    int ballShape = b3x_shape_add_sphere(ball, 0, 0, 0, 0.15, 1.0, 0.6, 0.0);
+    int touched = 0;
+    double touchY = 0;
+    for (int i = 0; i < 120 && !touched; i++)
+    {
+        b3x_world_step(w, 1.0 / 60.0, 4);
+        b3x_world_update_contact_events(w);
+        for (int k = 1; k <= b3x_contact_begin_count(); k++)
+        {
+            int a = b3x_contact_begin_shape_a(k), b = b3x_contact_begin_shape_b(k);
+            if ((a == mesh && b == ballShape) || (a == ballShape && b == mesh)) { touched = 1; touchY = b3x_body_y(ball); }
+        }
+    }
+    CHECK(touched && near(touchY, top + 0.15, 0.12), "a ball touches the knob at y %g (the surface is at %g, its radius 0.15)", touchY, top);
+
+    /* a rain of small balls over the whole pot: none may end below the
+     * floor's top or stop being a number, whatever it rolled off */
+    int rain[40];
+    for (int i = 0; i < 40; i++)
+    {
+        rain[i] = b3x_body_create(w, 2, -3.0 + 0.16 * i + 0.011, 5.0 + 0.35 * (i % 7), -1.7 + 0.43 * (i % 9));
+        b3x_shape_add_sphere(rain[i], 0, 0, 0, 0.12, 1.0, 0.5, 0.1);
+        /* a ball rolls for ever on a flat floor, and this one is 40 m wide */
+        b3x_body_set_linear_damping(rain[i], 0.5);
+        b3x_body_set_angular_damping(rain[i], 2.0);
+    }
+    for (int i = 0; i < 900; i++) b3x_world_step(w, 1.0 / 60.0, 4);
+    int below = 0, onPot = 0;
+    for (int i = 0; i < 40; i++)
+    {
+        double y = b3x_body_y(rain[i]);
+        if (!b3x_body_is_valid(rain[i]) || !(y > 0.12 - 0.02)) { below++; printf("  ball %d valid %d at %s\n", i, b3x_body_is_valid(rain[i]), b3x_body_position(rain[i])); }
+        if (y > 0.4) onPot++;
+    }
+    CHECK(below == 0, "%d of 40 balls rained on the teapot went through it or the floor", below);
+    CHECK(b3x_unstable_count() == 0, "the rain left nothing for the net to remove");
+    printf("  (%d of 40 balls came to rest on the teapot itself)\n", onPot);
+
+    /* 4. the same points as a convex HULL on a dynamic body: a teapot that
+     * falls. Box3D reduces a hull to a budget of points, so the box is held
+     * to the model's within a few percent, not to the last digit. */
+    const double s = 0.3;
+    int falling[5];
+    int hulls[5];
+    for (int i = 0; i < 5; i++)
+    {
+        falling[i] = b3x_body_create(w, 2, 8.0 + 0.2 * i, 1.0 + 1.6 * i, 8.0);
+        teapot_geometry(s, 0);
+        hulls[i] = b3x_shape_add_hull(falling[i], 1.0, 0.6, 0.0);
+    }
+    CHECK(hulls[0] > 0 && b3x_shape_type(hulls[0]) == 3, "the teapot's points make a hull %d: %s", hulls[0], b3x_last_error());
+    CHECK(parse(b3x_shape_aabb(hulls[0]), v, 12) == 6 && near(v[3] - v[0], 6.434 * s, 0.1) && near(v[4] - v[1], 3.15 * s, 0.06) && near(v[5] - v[2], 4.0 * s, 0.06),
+          "the hull is the size of the model: '%s'", b3x_shape_aabb(hulls[0]));
+    /* a hull holds more than the pot (it fills the gap under the handle and
+     * the spout) and less than its bounding box */
+    double potVolume = 25.77 * s * s * s, boxVolume = 6.434 * 3.15 * 4.0 * s * s * s;
+    CHECK(b3x_body_mass(falling[0]) > potVolume && b3x_body_mass(falling[0]) < boxVolume,
+          "hull mass %g lies between the pot's volume %g and its box's %g", b3x_body_mass(falling[0]), potVolume, boxVolume);
+    int steps = 0;
+    while (steps < 1800)
+    {
+        b3x_world_step(w, 1.0 / 60.0, 4);
+        steps++;
+        int awake = 0;
+        for (int i = 0; i < 5; i++) awake += b3x_body_is_awake(falling[i]);
+        if (awake == 0) break;
+    }
+    int rested = 0;
+    for (int i = 0; i < 5; i++)
+    {
+        double lo, hi;
+        teapot_span_y(falling[i], s, &lo, &hi);
+        /* On the floor: the lowest point of the MODEL may dip a few
+         * centimetres under the floor's top, because what collides is the
+         * simplified hull, and it lies just inside the model (measured:
+         * up to 0.03 at this scale). Sunk or fallen through is far more. */
+        if (hulls[i] > 0 && b3x_body_is_awake(falling[i]) == 0 && lo > -0.06 && hi < 4.0) rested++;
+        else printf("  teapot %d: awake %d, its points span y %g to %g\n", i, b3x_body_is_awake(falling[i]), lo, hi);
+        if (i == 0) CHECK(near(lo, 0.0, 0.06), "the first teapot sits on the floor: its lowest point is at y %g", lo);
+    }
+    CHECK(rested == 5, "%d of 5 falling teapots came to rest above the floor within %d steps", rested, steps);
+    CHECK(b3x_unstable_count() == 0 && b3x_last_error()[0] == 0, "no body was removed and no call refused: '%s'", b3x_last_error());
+
+    /* 5. the mesh is owned by its shape: destroy the pot, and a ray that
+     * hit it finds only the floor */
+    b3x_body_destroy(pot);
+    CHECK(b3x_shape_is_valid(mesh) == 0, "the mesh went with its body");
+    CHECK(b3x_cast_ray_closest(w, 1.0131, 6.0, 0.5173, 0, -7.0, 0) == 1 && b3x_hit_body(1) == ground, "a ray through where the pot stood reaches the floor");
+    b3x_world_destroy(w);
+}
+
 int main(void)
 {
     test_library();
@@ -1697,6 +1952,7 @@ int main(void)
     test_quaternions();
     test_locale();
     test_stress();
+    test_model();
     CHECK(b3x_text_length("") == 0 && b3x_text_length(NULL) == 0 && b3x_text_length(b3x_library_version()) == (int)strlen(b3x_library_version()),
           "the text length the binding copies by");
     int assertsElsewhere = b3x_assert_count();

@@ -5,10 +5,12 @@
 -- archive of a release), which is the same engine core, the same LCB virtual
 -- machine and the same foreign-function interface as the IDE's:
 --
---   server-community tests/engine-selftest.lc MODULE LIBRARY
+--   server-community tests/engine-selftest.lc MODULE LIBRARY MODEL
 --      MODULE   box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile
 --      LIBRARY  the built native library WITHOUT its extension
 --               (.../box3dxt for .../box3dxt.so)
+--      MODEL    the full path of tests/models/teapot.obj (a missing one is
+--               a FAIL, not a skipped scene)
 --
 -- tests/smoke_test.c proves the C shim. This proves the layer above it, the
 -- one a compile cannot: that every binding resolves by name in the built
@@ -16,7 +18,8 @@
 -- C string as text, a double as a number), and that a scene built from
 -- SCRIPT simulates. Two halves:
 --
---   the SCENES, written by hand: a drop, a ray, events, a hinge, a hull;
+--   the SCENES, written by hand: a drop, a ray, events, a hinge, a hull,
+--     and a real model read from its .obj file;
 --   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
 --     gate holds it): every public handler called once with zeros. Zeros
 --     are safe by the binding's contract (a 0 handle is a no-op), so a call
@@ -264,6 +267,70 @@ command testJointsAndGeometry
    check "height field", tField > 0 and b3ShapeType(tField) is 2, tField && b3LastError()
    b3WorldDestroy tWorld
 end testJointsAndGeometry
+
+-- A REAL MODEL, loaded the way a stack would: the Utah teapot's .obj file
+-- (tests/models/teapot.obj) read as text, its "v" lines into
+-- b3GeometryAddPoint and its "f" lines into b3GeometryAddTriangle. The C
+-- smoke test checks the same model against a ray-triangle test of its own;
+-- this checks that thousands of points and triangles cross the binding from
+-- SCRIPT and make the same shapes.
+command testModel pPath
+   local tData, tLine, tPoints, tTriangles, tTop, tWorld, tGround, tPot, tMesh
+   local tFalling, tHull, tSteps, tMass
+   put url ("binfile:" & pPath) into tData
+   check "the model file is read", the number of lines of tData > 1000, "'" & pPath & "': " & the result
+   if the number of lines of tData <= 1000 then exit testModel
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   put b3BodyCreate(tWorld, 0, 0, -0.5, 0) into tGround
+   get b3ShapeAddBox(tGround, 20, 0.5, 20, 0, 0.6, 0)
+
+   -- the mesh: every point, then every triangle (an .obj counts points from 1,
+   -- and so does b3GeometryAddTriangle)
+   put 0 into tPoints
+   put 0 into tTriangles
+   put 0 into tTop
+   b3GeometryBegin
+   repeat for each line tLine in tData
+      if word 1 of tLine is "v" then
+         put b3GeometryAddPoint(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0) into tPoints
+         put max(tTop, word 3 of tLine) into tTop
+      else if word 1 of tLine is "f" then
+         put b3GeometryAddTriangle(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0) into tTriangles
+      end if
+   end repeat
+   check "every point and triangle of the model was taken", tPoints is 3644 and tTriangles is 6320 and b3GeometryPointCount() is 3644, \
+         tPoints && tTriangles && b3LastError()
+   put b3BodyCreate(tWorld, 0, 0, 0, 0) into tPot
+   put b3ShapeAddMesh(tPot, 0.6, 0) into tMesh
+   check "the teapot is a mesh", tMesh > 0 and b3ShapeType(tMesh) is 4, tMesh && b3LastError()
+   check "a ray from above lands on its knob", b3CastRayClosest(tWorld, 0.0131, 6, 0.0173, 0, -5.9, 0) is 1 and b3HitShape(1) is tMesh \
+         and near(item 2 of b3HitPoint(1), tTop, 0.05), b3HitCount() && b3HitPoint(1) && "top" && tTop
+   check "a ray from the side lands on its body", b3CastRayClosest(tWorld, -6, 1.0, 0.5, 12, 0, 0) is 1 and b3HitShape(1) is tMesh \
+         and item 1 of b3HitPoint(1) < 0, b3HitCount() && b3HitPoint(1)
+   -- a mesh is ONE-SIDED: from inside the pot a ray meets only the backs of
+   -- its triangles, and passes through
+   check "a ray from inside the pot passes out through it", b3CastRayClosest(tWorld, 0.0131, 1, 0.0173, 0, 10, 0) is 0, b3HitCount() && b3HitPoint(1)
+
+   -- the same file as a convex hull on a body that falls, at 0.3 of its size
+   put b3BodyCreate(tWorld, 2, 8, 1, 8) into tFalling
+   b3GeometryBegin
+   repeat for each line tLine in tData
+      if word 1 of tLine is "v" then get b3GeometryAddPoint(word 2 of tLine * 0.3, word 3 of tLine * 0.3, word 4 of tLine * 0.3)
+   end repeat
+   put b3ShapeAddHull(tFalling, 1, 0.6, 0) into tHull
+   check "the teapot's points make a hull", tHull > 0 and b3ShapeType(tHull) is 3, tHull && b3LastError()
+   put b3BodyMass(tFalling) into tMass
+   check "the hull weighs more than the pot holds and less than its box", tMass > 0.69 and tMass < 2.19, tMass
+   put 0 into tSteps
+   repeat while b3BodyIsAwake(tFalling) and tSteps < 900
+      b3WorldStep tWorld, 1/60, 4
+      add 1 to tSteps
+   end repeat
+   check "the falling teapot comes to rest on the floor", b3BodyIsAwake(tFalling) is false and b3BodyY(tFalling) > -0.1 and b3BodyY(tFalling) < 1.5, \
+         tSteps && b3BodyPosition(tFalling)
+   b3WorldDestroy tWorld
+   check "the model's world is gone", b3ShapeIsValid(tMesh) is false and b3BodyIsValid(tFalling) is false, b3ShapeIsValid(tMesh)
+end testModel
 
 -- The typed boundary (suite engine note 6.4): an EMPTY value into a typed
 -- parameter is an error the engine raises before the call is made. That is
@@ -1074,6 +1141,7 @@ try
       testQueriesAndEvents
       testJointsAndGeometry
       testTypedBoundary
+      testModel $2
       sweepEveryHandler
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && b3AssertText() && b3UnstableCount()

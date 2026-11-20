@@ -98,6 +98,42 @@ get b3ShapeAddHull(tBody, 1, 0.6, 0)
 
 A mesh or a height field goes on a static body only.
 
+## Loading a 3D model
+
+box3dxt simulates a model; it does not read model files or draw them. Reading one is a few
+lines of script. A Wavefront `.obj` file keeps a point on each `v` line and a triangle on
+each `f` line, counting points from 1 as `b3GeometryAddTriangle` does:
+
+```
+b3GeometryBegin
+repeat for each line tLine in url ("binfile:" & tPath)
+   if word 1 of tLine is "v" then
+      get b3GeometryAddPoint(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0)
+   else if word 1 of tLine is "f" then
+      get b3GeometryAddTriangle(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0)
+   end if
+end repeat
+put b3ShapeAddMesh(tStaticBody, 0.6, 0) into tMesh
+```
+
+(That reads triangles written as plain numbers. A file whose faces are `7/3/2` forms or have
+four corners needs its `f` lines split first.) What to know before choosing a shape:
+
+- **A mesh is for scenery.** It needs a static body, and may be concave and large. It is
+  one-sided: a triangle stops what meets its front, the side its points run
+  counter-clockwise around, and lets through what comes from behind. Exported models face
+  outwards, so things land on them; a ray cast from INSIDE a model passes out through it.
+- **A hull is for things that move.** `b3ShapeAddHull` uses the points alone and wraps them
+  in a convex solid, so a handle or a hollow is filled in. Box3D holds a hull to 128 corners,
+  faces and edges, and the points of a rounded model are simplified to about 40: the hull
+  lies a few percent inside the model.
+- **Scale as you add the points.** Box3D wants metres and objects between about 10 cm and
+  10 m; multiply each coordinate if the file is in other units.
+
+Both paths are tested on a real model, the Utah teapot (`tests/models/teapot.obj`, 3644
+points and 6320 triangles): natively against a ray-triangle test written for the purpose, and
+from script on the server engine (`tests/engine-selftest.lc`).
+
 ## Five rules that decide whether a scene works
 
 1. **Events are off until you ask.** A shape reports nothing by default. Call

@@ -1342,7 +1342,7 @@ Adds the convex hull of the points added since `b3GeometryBegin`.
 
 Returns: A shape handle, or 0 if the arguments were refused (see `b3LastError`).
 
-Needs at least 4 points that are not all in one plane. The hull is the tightest convex solid around them, simplified to at most 128 corners.
+Needs at least 4 points that are not all in one plane. The hull is the tightest convex solid around them, SIMPLIFIED to what Box3D can hold: at most 128 corners, 128 faces and 128 edges. A boxy shape keeps its corners; the points of a rounded model (thousands are fine) come down to about 40, so the hull lies a little inside the model. A hull is convex: a hollow, a handle or a spout is filled in. For a concave moving object, add several hulls to one body.
 
 ### `b3ShapeAddMesh`
 
@@ -1356,7 +1356,7 @@ Adds a triangle mesh built from the points and triangles added since `b3Geometry
 
 Returns: A shape handle, or 0 if the arguments were refused (see `b3LastError`).
 
-For static scenery only: the body must be static. A mesh may be concave.
+For static scenery only: the body must be static. A mesh may be concave and may hold many thousands of triangles, such as a model read from a file. It is ONE-SIDED: a triangle stops bodies and rays that meet its front, the side from which its three points run counter-clockwise, and lets through whatever comes from behind. Models are normally exported with their fronts facing out; if things fall through one, its triangles are wound the other way, so swap two points of each.
 
 ### `b3ShapeAddHeightField`
 

@@ -374,7 +374,11 @@ MEMBERS = [
         # src/box3dxt.map (GNU ld) and the derived -exported_symbols_list
         # (ld64) export b3x_* and nothing else; Box3D is linked in with
         # hidden visibility (measured on the x86_64-linux build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        # wasm: decided before any archive is committed, because a locally
+        # built one (the web build writes src/code/wasm32-emscripten/) met
+        # this gate on 2026-11-20 with no entry to read.
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "box2dxt",

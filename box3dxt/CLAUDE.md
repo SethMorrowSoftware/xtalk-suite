@@ -59,6 +59,7 @@ member's CLAUDE.md for the reasons behind the shared shape.
 | the declaration blocks of both C tests, the joint family table, the fuzz call table | `tools/check-smoke-coverage.py --write` |
 | `sweepEveryHandler` in `tests/engine-selftest.lc` | `tools/check-lcb-signatures.py --write` |
 | `docs/api-reference.md` | `tools/build-api-reference.py` |
+| `tests/teapot_model.h`, from `tests/models/teapot.obj` | `tools/build-test-model.py` |
 
 ## As built
 
@@ -69,6 +70,13 @@ member's CLAUDE.md for the reasons behind the shared shape.
   sets what the next shapes are created with. A sensor needs events on itself and its visitor.
 - **A shape's category defaults to every bit**, so a query filter separates nothing until
   shapes have categories of their own.
+- **A mesh is one-sided and a hull is simplified** (both found by the first real model,
+  the teapot of the smoke test, 2026-11-20). Box3D culls the back of a mesh triangle for
+  contacts and for rays. It holds a hull to 128 corners, faces AND edges while its builder
+  takes a corner budget only, so `b3x_shape_add_hull` walks the budget down until the hull
+  fits: asked for 128 corners of a rounded model, Box3D builds some 250 faces and refuses.
+- **A shape's AABB is loose** (Box3D fattens it), so a test that asks where a body rests
+  moves the model's points through the body's transform and does not read the AABB.
 - **Box3D re-pairs shapes only when one leaves its fat bounding box**: destroying a filter
   joint does not make two resting bodies collide until one of them moves far enough.
 - **32-bit x86 is built with SSE2**, not scalar: Box3D's determinism test fails on x87.
@@ -93,6 +101,9 @@ member's CLAUDE.md for the reasons behind the shared shape.
 
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
-library). No desktop IDE and no other platform's engine has loaded it: verified statically;
-needs an OXT pass. No binaries are committed yet. Open work is in the suite's
+library), and in OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built on
+that machine, loaded by `load extension` and `revLibraryMapping`; one drop scene with a ray
+cast and contact events; README "Status"). No other platform's engine has loaded it and no
+IDE has loaded a release library or an installed extension: verified statically; needs an
+OXT pass. No binaries are committed yet. Open work is in the suite's
 `docs/WORK-PLAN.md`.

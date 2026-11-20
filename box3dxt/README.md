@@ -70,8 +70,19 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, dropped and stacked bodies, cast rays, read events and joints, and
   called every public handler once.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. No library is
+- **In the desktop IDE**, the same day: OXT-Beyond's IDE on 64-bit Linux (engine
+  9.7.1-BeyondEngine build 25923; Ubuntu 24.04) loaded a library built on that machine from
+  the suite's commit 144d529, by `load extension` and a `revLibraryMapping` line, not as an
+  installed extension. A stack built there dropped twelve boxes and spheres in a `send in`
+  frame loop: they fell as gravity says, landed at the right height and slept, a ray cast
+  found the ground, contact events arrived, a reset repeated the run exactly, and Box3D
+  counted no assert. That is one stack on one machine, not the release library.
+- **A real model** (2026-11-20): the Utah teapot, 3644 points and 6320 triangles, is loaded
+  as a static mesh and as falling hulls by the smoke test, which checks rays at it against
+  a ray-triangle test of its own, and from its `.obj` file by the engine self-test.
+- **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
+  loaded a release library or an installed extension: on those it is verified statically;
+  needs an OXT pass. No library is
   committed under `src/code/` yet; the suite's release-binaries dispatch lands them.
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins

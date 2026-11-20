@@ -58,10 +58,11 @@ is built scalar and single-threaded. No web engine has linked it yet.
 
 ```sh
 lc-compile -Werror --modulepath <engine>/modules/lci --modulepath out --output out/box3dxt.lcm src/box3dxt.lcb
-server-community tests/engine-selftest.lc out/box3dxt.lcm build/box3dxt
+server-community tests/engine-selftest.lc out/box3dxt.lcm build/box3dxt "$PWD/tests/models/teapot.obj"
 ```
 
-The second argument is the library's path without its extension. It prints PASS and FAIL
+The second argument is the library's path without its extension; the third is the model
+its last scene loads, by its full path. It prints PASS and FAIL
 lines and a `SUMMARY passed failed` line, and exits non-zero on any failure. Part of it is
 generated: a sweep that calls every public handler once (`tools/check-lcb-signatures.py
 --write`).
