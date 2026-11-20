@@ -3880,16 +3880,22 @@ static void rt_point(const RT *t, double x, double y, double z, double *out)
  * the two halves. yOffset slides the half along the axis. */
 #define B3X_BALL_SEGMENTS 20
 #define B3X_BALL_RINGS    12
-static void ball_bands(const double *center, const double *axis, const double *e1, const double *e2, double radius, int ringFrom, int ringTo)
+/* `segs` around and `rings` from pole to pole (at most the two numbers
+ * above; ringFrom and ringTo count in `rings`). The sines are worked out
+ * once a call, not once a corner: a scene of balls was mostly trigonometry
+ * before (the first IDE run, 2026-11-20). */
+static void ball_bands(const double *center, const double *axis, const double *e1, const double *e2, double radius, int ringFrom, int ringTo, int segs, int rings)
 {
+    double sinT[B3X_BALL_RINGS + 1], cosT[B3X_BALL_RINGS + 1], sinP[B3X_BALL_SEGMENTS + 1], cosP[B3X_BALL_SEGMENTS + 1];
+    if (segs < 3 || segs > B3X_BALL_SEGMENTS || rings < 2 || rings > B3X_BALL_RINGS) return;
+    for (int i = 0; i <= rings; i++) { sinT[i] = sin(B3_PI * i / rings); cosT[i] = cos(B3_PI * i / rings); }
+    for (int i = 0; i <= segs; i++) { sinP[i] = sin(2.0 * B3_PI * i / segs); cosP[i] = cos(2.0 * B3_PI * i / segs); }
     for (int ring = ringFrom; ring < ringTo; ring++) {
-        double t0 = B3_PI * ring / B3X_BALL_RINGS, t1 = B3_PI * (ring + 1) / B3X_BALL_RINGS;
-        for (int seg = 0; seg < B3X_BALL_SEGMENTS; seg++) {
-            double p0 = 2.0 * B3_PI * seg / B3X_BALL_SEGMENTS, p1 = 2.0 * B3_PI * (seg + 1) / B3X_BALL_SEGMENTS;
+        for (int seg = 0; seg < segs; seg++) {
             double n[4][3], q[4][3], l[4];
-            const double ts[4] = { t0, t0, t1, t1 }, ps[4] = { p0, p1, p1, p0 };
+            const int ts[4] = { ring, ring, ring + 1, ring + 1 }, ps[4] = { seg, seg + 1, seg + 1, seg };
             for (int k = 0; k < 4; k++) {
-                double sa = sin(ts[k]), ca = cos(ts[k]), cp = cos(ps[k]), sp = sin(ps[k]);
+                double sa = sinT[ts[k]], ca = cosT[ts[k]], cp = cosP[ps[k]], sp = sinP[ps[k]];
                 for (int d = 0; d < 3; d++) {
                     n[k][d] = axis[d] * ca + (e1[d] * cp + e2[d] * sp) * sa;
                     q[k][d] = center[d] + radius * n[k][d];
@@ -3900,7 +3906,7 @@ static void ball_bands(const double *center, const double *axis, const double *e
              * ball is a black blot */
             int e = (ring % 3 == 0 ? 1 : 0) | (seg % 5 == 0 ? 4 : 0);
             if (ring > 0) triangle3(q[0], q[1], q[2], l[0], l[1], l[2], e & 1);
-            if (ring < B3X_BALL_RINGS - 1) triangle3(q[0], q[2], q[3], l[0], l[2], l[3], e & 4);
+            if (ring < rings - 1) triangle3(q[0], q[2], q[3], l[0], l[2], l[3], e & 4);
         }
     }
 }
@@ -3924,8 +3930,28 @@ static void draw_sphere(const RT *t, b3Sphere s)
     rt_point(t, s.center.x, s.center.y, s.center.z, c);
     /* the ball's own frame, turned with the body, so a rolling ball rolls */
     double axis[3] = { t->m[1], t->m[4], t->m[7] }, e1[3] = { t->m[0], t->m[3], t->m[6] }, e2[3] = { t->m[2], t->m[5], t->m[8] };
+    /* In a picture, a ball that is small gets fewer sides and one that
+     * cannot be in it gets none. The sides are chosen so the flat edges
+     * stay within a third of a pixel of the round one (an N-sided ring
+     * falls short of its circle by 1 - cos(pi / N) of the radius). The
+     * triangle list always gets the full ball. */
+    int segs = B3X_BALL_SEGMENTS, rings = B3X_BALL_RINGS;
+    if (!s_rCollect) {
+        RV v = to_view(c[0], c[1], c[2]);
+        double r = fabs(s.radius);
+        if (!(v.z + r >= B3X_RENDER_NEAR)) return;
+        if (v.z - r > B3X_RENDER_NEAR) {
+            /* wholly in front: its picture lies within this many pixels of its centre's */
+            double near = v.z - r, reach = r * s_rScale / near;
+            RS at = to_screen(v, 0.0);
+            double slack = reach * (1.0 + (fabs(v.x) + fabs(v.y)) / near);
+            if (at.sx + slack < 0.0 || at.sy + slack < 0.0 || at.sx - slack > s_rW || at.sy - slack > s_rH) return;
+            if (reach < 4.0) { segs = 8; rings = 6; }
+            else if (reach < 9.0) { segs = 12; rings = 8; }
+        }
+    }
     s_rOutside = c;
-    ball_bands(c, axis, e1, e2, s.radius, 0, B3X_BALL_RINGS);
+    ball_bands(c, axis, e1, e2, s.radius, 0, rings, segs, rings);
     s_rOutside = NULL;
 }
 static void draw_capsule(const RT *t, b3Capsule cap)
@@ -3939,9 +3965,9 @@ static void draw_capsule(const RT *t, b3Capsule cap)
     else { axis[0] /= len; axis[1] /= len; axis[2] /= len; }
     frame_about(axis, e1, e2);
     s_rOutside = b;
-    ball_bands(b, axis, e1, e2, cap.radius, 0, B3X_BALL_RINGS / 2);
+    ball_bands(b, axis, e1, e2, cap.radius, 0, B3X_BALL_RINGS / 2, B3X_BALL_SEGMENTS, B3X_BALL_RINGS);
     s_rOutside = a;
-    ball_bands(a, axis, e1, e2, cap.radius, B3X_BALL_RINGS / 2, B3X_BALL_RINGS);
+    ball_bands(a, axis, e1, e2, cap.radius, B3X_BALL_RINGS / 2, B3X_BALL_RINGS, B3X_BALL_SEGMENTS, B3X_BALL_RINGS);
     for (int seg = 0; seg < B3X_BALL_SEGMENTS; seg++) {
         double p0 = 2.0 * B3_PI * seg / B3X_BALL_SEGMENTS, p1 = 2.0 * B3_PI * (seg + 1) / B3X_BALL_SEGMENTS;
         double n0[3], n1[3], q[4][3];

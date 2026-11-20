@@ -2335,6 +2335,58 @@ static void test_render(void)
           "half a second later it is drawn lower (%g then %g)", y0[1], y1[1]);
     b3x_world_destroy(w);
     CHECK(b3x_render_shape_at(160, 100) == 0 && b3x_render_width() == 320 && b3x_render_pixel(160, 100) >= 0, "the world gone, the picture stays and names no shape");
+
+    /* 8. balls far and near. A small ball in the picture is drawn with
+     * fewer sides and one outside it with none, and neither may change what
+     * a pixel says: the picture is still held to the rays. */
+    w = b3x_world_create(0, -10, 0, 1);
+    b3x_render_set_camera(0, 0, 10, 0, 0, 0, 50);
+    int one = b3x_body_create(w, 0, 0, 0, 0);
+    int sone = b3x_shape_add_sphere(one, 0, 0, 0, 1.0, 0, 0.5, 0);
+    b3x_render_world(w, 320, 200, 0);
+    int full = b3x_render_triangle_count();
+    CHECK(full == 2 * 20 * 12 - 2 * 20 && b3x_render_shape_at(160, 100) == sone, "a near ball has all its sides (%d)", full);
+    b3x_body_set_position(one, 0, 0, -15);
+    b3x_render_world(w, 320, 200, 0);
+    int mid = b3x_render_triangle_count();
+    b3x_body_set_position(one, 0, 0, -190);
+    b3x_render_world(w, 320, 200, 0);
+    int few = b3x_render_triangle_count();
+    CHECK(mid < full && few < mid && few > 0 && b3x_render_shape_at(160, 100) == sone && b3x_render_depth(160, 100) > 198.99 && b3x_render_depth(160, 100) < 199.6,
+          "a far ball has fewer sides and is still there (%d, %d; depth %g)", mid, few, b3x_render_depth(160, 100));
+    t = triangles_of(sone, 0, 0, 0);
+    CHECK(t.lines == full, "its triangle list is the full ball whatever the camera sees (%d)", t.lines);
+    b3x_body_set_position(one, 40, 0, 0);
+    b3x_render_world(w, 320, 200, 0);
+    CHECK(b3x_render_triangle_count() == 0, "a ball outside the picture costs nothing (%d)", b3x_render_triangle_count());
+    b3x_body_set_position(one, 0, 0, 30);
+    b3x_render_world(w, 320, 200, 0);
+    CHECK(b3x_render_triangle_count() == 0, "nor one behind the camera");
+    /* half in the picture at its right edge: x = 7.46 projects to the edge */
+    b3x_body_set_position(one, 7.46, 0, 0);
+    b3x_render_world(w, 320, 200, 0);
+    CHECK(b3x_render_triangle_count() == full && b3x_render_shape_at(319, 100) == sone && b3x_render_shape_at(285, 100) == 0,
+          "a ball half in the picture is drawn to its edge");
+    /* the eye inside the ball's reach of the near plane: all of it is given */
+    b3x_body_set_position(one, 0, 0, 9.2);
+    CHECK(b3x_render_world(w, 320, 200, 0) == 1 && b3x_render_triangle_count() == full, "a ball across the near plane is drawn whole");
+    b3x_body_destroy(one);
+    /* a field of balls of every size in the picture, off-centre and at the
+     * edges, against rays */
+    for (int i = 0; i < 120; i++) {
+        int b = b3x_body_create(w, 0, -14.0 + 4.1 * (i % 8) + 0.37 * (i / 8), -7.0 + 1.9 * ((i * 5) % 9), -3.0 - 2.4 * (i / 8) - 0.9 * (i % 3));
+        b3x_shape_add_sphere(b, 0, 0, 0, 0.15 + 0.11 * (i % 7), 0, 0.5, 0);
+    }
+    for (int view = 0; view < 2; view++) {
+        b3x_render_set_camera(view ? 6.0 : 0.0, view ? 4.0 : 0.0, 10, 0, 0, -12, view ? 75 : 50);
+        CHECK(b3x_render_world(w, 480, 300, 0) == 1, "a field of balls rendered");
+        int compared = 0, shapeBad = 0, depthBad = 0, covered = 0;
+        picture_against_rays(w, 2, &compared, &shapeBad, &depthBad, &covered);
+        CHECK(compared > 30000 && covered > 300 && shapeBad * 100 <= compared && depthBad * 100 <= compared && b3x_render_triangle_count() < 120 * full * 3 / 4,
+              "view %d: balls with fewer sides are still what rays see (%d pixels, %d drawn; %d name another shape, %d another depth; %d triangles)",
+              view, compared, covered, shapeBad, depthBad, b3x_render_triangle_count());
+    }
+    b3x_world_destroy(w);
     b3x_render_set_background(0x20, 0x24, 0x2A);
     b3x_render_set_camera(0, 4, 12, 0, 1, 0, 50);
 }
