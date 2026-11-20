@@ -2286,11 +2286,11 @@ typedef struct SV {
     float u, v, d[3], s[3], fog;
 } SV;
 
-typedef struct DrawState {
+typedef struct DrawSt {
     const Material *mat;
     const Texture *tex;
     float kd[3], ke[3];
-} DrawState;
+} DrawSt;
 
 /* Two 0xAARRGGBB colours blended, t from 0 (all a) to 256 (all b): two
  * multiplies for four channels. */
@@ -2407,7 +2407,7 @@ static inline int top_left(float ax, float ay, float bx, float by)
 /* A triangle ready to fill: oriented, with its pixel bounds. */
 typedef struct TriJob {
     SV a, b, c;
-    DrawState ds;
+    DrawSt ds;
     float inv;                 /* 1 / (twice the area) */
     int x0, x1, y0, y1;        /* inclusive, inside the picture */
     unsigned char tl0, tl1, tl2;
@@ -2448,7 +2448,7 @@ static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, 
     int y0 = j->y0 < ylo ? ylo : j->y0, y1 = j->y1 > yhi - 1 ? yhi - 1 : j->y1;
     if (y0 > y1) return;
     const SV a = j->a, b = j->b, c = j->c;
-    const DrawState *ds = &j->ds;
+    const DrawSt *ds = &j->ds;
     const int x0 = j->x0, x1 = j->x1;
     /* edge functions: w0 opposite a (edge b->c), w1 opposite b, w2 opposite
      * c; each grows by its A for one pixel to the right */
@@ -2766,7 +2766,7 @@ static void flush_queue(Frame *fr, int pLast)
     s_queued = 0;
 }
 
-static void queue_triangle(Frame *fr, const DrawState *ds, const SV *a, const SV *b, const SV *c)
+static void queue_triangle(Frame *fr, const DrawSt *ds, const SV *a, const SV *b, const SV *c)
 {
     if (!s_queue) {
         s_queue = (TriJob *)malloc(sizeof(TriJob) * R3X_QUEUE);
@@ -2790,7 +2790,7 @@ static void queue_triangle(Frame *fr, const DrawState *ds, const SV *a, const SV
 
 /* Clip a triangle at the near plane (depth >= nearZ), then draw the one or
  * two triangles left. */
-static void clip_and_draw(Frame *fr, const DrawState *ds, const CV *in, float nearZ,
+static void clip_and_draw(Frame *fr, const DrawSt *ds, const CV *in, float nearZ,
                           double tanH, double aspect)
 {
     CV poly[4];
@@ -2865,7 +2865,7 @@ static void draw_node(Frame *fr, const Scene *sc, const CamFrame *cam, const Nod
         int twoSided = mat ? mat->twoSided : 0;
         if (back && !twoSided) continue;
         int flat = mat ? mat->flat : 0;
-        DrawState ds;
+        DrawSt ds;
         ds.mat = mat;
         ds.tex = mat ? textures_get(mat->texture) : NULL;
         for (int k = 0; k < 3; k++) {
