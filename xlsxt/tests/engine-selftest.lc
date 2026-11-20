@@ -1,0 +1,525 @@
+<?lc
+-- engine-selftest.lc - xlsxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   xlsxt.lcm, compiled from src/xlsxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../xlsxt for .../xlsxt.so)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int,
+-- script text as UTF-8 and back, a double as a number), and that a workbook
+-- written from SCRIPT is read back by script. Two halves:
+--
+--   the SCENES, written by hand: a workbook with formats, a table, a chart
+--     and a picture, written and read back; text outside ASCII both ways;
+--     the refusals;
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros and empty
+--     text. Those are safe by the binding's contract (a 0 handle is a
+--     no-op, an empty path opens nothing), so a call that throws or kills
+--     the engine here is a binding that does not match its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web, and not a file opened by Excel. It runs the Linux x86-64 library on
+-- the Linux x86-64 server engine, and reads its files back with the
+-- library's own reader.
+
+local sPassed, sFailed, sFolder
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=xlsxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- A file of this run's own, in the engine's temporary folder.
+function scratchFile pName
+   return sFolder & "/xlsxt-engine-" & the milliseconds & "-" & pName
+end scratchFile
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", xlABIVersion() is 1, xlABIVersion()
+   check "version text", xlLibraryVersion() begins with "xlsxt ABI 1; libxlsxwriter ", xlLibraryVersion()
+   check "nothing open at the start", xlWorkbookCount() is 0 and xlReadCount() is 0, xlWorkbookCount() && xlReadCount()
+   check "column name", xlColumnName(28) is "AB" and xlColumnName(16384) is "XFD", xlColumnName(28)
+   check "cell name", xlCellName(2, 3) is "C2", xlCellName(2, 3)
+   check "range name", xlRangeName(1, 1, 7, 2) is "A1:B7", xlRangeName(1, 1, 7, 2)
+   check "cell name read back", xlCellRow("AB10") is 10 and xlCellColumn("AB10") is 28, xlCellRow("AB10") && xlCellColumn("AB10")
+   check "range formula quotes a name with a space", xlRangeFormula("My Sheet", 2, 1, 7, 1) is "='My Sheet'!$A$2:$A$7", \
+         xlRangeFormula("My Sheet", 2, 1, 7, 1)
+   check "a double goes in and comes back", xlDateToSerial(2024, 1, 1, 12, 0, 0) is 45292.5, xlDateToSerial(2024, 1, 1, 12, 0, 0)
+   check "serial to date", xlSerialToDate(45292.5) is "2024-01-01 12:00:00", xlSerialToDate(45292.5)
+   check "seconds to serial and back", near(xlSerialToSeconds(xlSecondsToSerial(1700000000)), 1700000000, 0.001), \
+         xlSerialToSeconds(xlSecondsToSerial(1700000000))
+   check "not a date", xlDateToSerial(2023, 2, 30, 0, 0, 0) is -1, xlDateToSerial(2023, 2, 30, 0, 0, 0)
+end testLibrary
+
+command testWriteAndRead
+   local tPath, tBook, tSheet, tSecond, tBold, tMoney, tChart, tTable, tReader, tPicture, tGrid, tWide
+   put scratchFile("book.xlsx") into tPath
+   put scratchFile("dot.png") into tPicture
+   put base64Decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==") into URL ("binfile:" & tPicture)
+
+   put xlWorkbookNew(tPath) into tBook
+   check "workbook made", tBook > 0 and xlWorkbookIsValid(tBook) is true and xlWorkbookCount() is 1, tBook && xlLastError()
+   xlWorkbookSetProperty tBook, "title", "Engine self-test"
+   put xlWorkbookAddSheet(tBook, "Sales") into tSheet
+   put xlWorkbookAddSheet(tBook, "") into tSecond
+   check "sheets made", tSheet > 0 and tSecond > 0 and xlSheetIsValid(tSheet) is true and xlWorkbookSheetCount(tBook) is 2, \
+         tSheet && tSecond && xlLastError()
+   check "sheet names", xlSheetName(tSheet) is "Sales" and xlSheetName(tSecond) is "Sheet2", xlSheetName(tSheet) && xlSheetName(tSecond)
+
+   put xlWorkbookAddFormat(tBook) into tBold
+   xlFormatSetBold tBold, true
+   xlFormatSetBackgroundColor tBold, "#DDEBF7"
+   xlFormatSetBorderSide tBold, "bottom", "thin"
+   put xlWorkbookAddFormat(tBook) into tMoney
+   xlFormatSetNumberFormat tMoney, "#,##0.00"
+   check "formats made", xlFormatIsValid(tBold) is true and xlFormatIsValid(tMoney) is true and tBold is not tMoney, tBold && tMoney
+   check "a handle of one kind is not another", xlFormatIsValid(tSheet) is false and xlSheetIsValid(tBook) is false, \
+         xlFormatIsValid(tSheet) && xlSheetIsValid(tBook)
+
+   -- a table in one call: tabs and returns, numbers recognised
+   put "Month" & tab & "Units" & tab & "Price" & return & \
+         "January" & tab & "12" & tab & "9.5" & return & \
+         "February" & tab & "7" & tab & "10.25" & return & \
+         "March" & tab & "00420" & tab & "1e3" into tTable
+   check "grid written", xlSheetWriteGrid(tSheet, 1, 1, tTable, "numbers", 0) is 12, xlLastError()
+   xlSheetWriteText tSheet, 1, 1, "Month", tBold
+   xlSheetWriteNumber tSheet, 6, 2, 0.1 + 0.2, tMoney
+   xlSheetWriteFormulaValue tSheet, 6, 3, "=SUM(C2:C4)", 1019.75, tMoney
+   xlSheetWriteFormula tSheet, 7, 3, "=C6*2", 0
+   xlSheetWriteBoolean tSheet, 8, 1, true, 0
+   xlSheetWriteBoolean tSheet, 8, 2, false, 0
+   xlSheetWriteDate tSheet, 9, 1, xlDateToSerial(2026, 11, 20, 0, 0, 0), 0
+   xlSheetWriteDate tSheet, 9, 2, xlDateToSerial(2026, 11, 20, 14, 30, 0), 0
+   xlSheetWriteLink tSheet, 10, 1, "https://example.com/", "a link", 0
+   xlSheetWriteComment tSheet, 10, 1, "a note"
+   xlSheetMerge tSheet, 12, 1, 12, 3, "one wide cell", tBold
+   xlSheetSetColumns tSheet, 1, 1, 18, 0
+   xlSheetFreeze tSheet, 1, 0
+   xlSheetAutofilter tSheet, 1, 1, 4, 3
+   xlSheetValidateList tSheet, 14, 1, 14, 1, "yes,no,maybe"
+   xlSheetSetLandscape tSheet, true
+   xlSheetInsertImage tSheet, 16, 1, tPicture, 1, 1
+   check "picture taken", xlLastError() is empty, xlLastError()
+
+   -- text outside ASCII, built by number because this file is ASCII: Latin-1,
+   -- a snowman (three bytes of UTF-8) and a face outside the BMP (four)
+   put "caf" & numToCodepoint(233) && numToCodepoint(9731) && numToCodepoint(128512) into tWide
+   xlSheetWriteText tSecond, 1, 1, tWide, 0
+   xlSheetWriteText tSecond, 2, 1, "two" & numToChar(10) & "lines", 0
+   xlSheetHide tSecond
+
+   put xlWorkbookAddChart(tBook, "column") into tChart
+   check "chart made", tChart > 0 and xlChartIsValid(tChart) is true, tChart && xlLastError()
+   check "series added", xlChartAddSeries(tChart, xlRangeFormula("Sales", 2, 1, 4, 1), xlRangeFormula("Sales", 2, 3, 4, 3)) is 1 \
+         and xlChartSeriesCount(tChart) is 1, xlLastError()
+   xlChartSeriesSetName tChart, 1, "Price"
+   xlChartSeriesSetColor tChart, 1, "navy"
+   xlChartSeriesSetLabels tChart, 1, true
+   xlChartSetTitle tChart, "Price by month"
+   xlChartSetAxisTitle tChart, "y", "Price"
+   xlChartSetLegend tChart, "bottom"
+   xlSheetInsertChart tSheet, 2, 6, tChart, 1, 1
+   check "chart placed", xlLastError() is empty, xlLastError()
+
+   check "nothing was refused", xlWorkbookErrorCount(tBook) is 0 and xlWorkbookFirstError(tBook) is empty, \
+         xlWorkbookErrorCount(tBook) && xlWorkbookFirstError(tBook)
+   check "close writes the file", xlWorkbookClose(tBook) is true and there is a file tPath, xlLastError()
+   check "the handles are dead after close", xlWorkbookIsValid(tBook) is false and xlSheetIsValid(tSheet) is false \
+         and xlFormatIsValid(tBold) is false and xlChartIsValid(tChart) is false and xlWorkbookCount() is 0, xlWorkbookCount()
+   xlSheetWriteNumber tSheet, 1, 1, 5, 0
+   check "a stale handle is refused, not a fault", xlLastError() is not empty, "no error"
+
+   -- and back
+   put xlReadOpen(tPath) into tReader
+   check "reader opened", tReader > 0 and xlReadIsValid(tReader) is true and xlReadCount() is 1, tReader && xlLastError()
+   check "sheet count and names", xlReadSheetCount(tReader) is 2 and xlReadSheetName(tReader, 1) is "Sales" \
+         and xlReadSheetNumber(tReader, "Sheet2") is 2, xlReadSheetCount(tReader) && xlReadSheetName(tReader, 1)
+   check "hidden sheet", xlReadSheetIsHidden(tReader, 2) is true and xlReadSheetIsHidden(tReader, 1) is false, xlReadSheetIsHidden(tReader, 2)
+   check "1900 dates", xlReadUses1904(tReader) is false, xlReadUses1904(tReader)
+   check "load", xlReadLoad(tReader, 1) is true, xlLastError()
+   check "size", xlReadRowCount(tReader, 1) >= 12 and xlReadColumnCount(tReader, 1) >= 3, \
+         xlReadRowCount(tReader, 1) && xlReadColumnCount(tReader, 1)
+   check "text cell", xlReadCell(tReader, 1, 2, 1) is "January" and xlReadCellKind(tReader, 1, 2, 1) is "text", xlReadCell(tReader, 1, 2, 1)
+   check "number cell", xlReadCell(tReader, 1, 3, 3) is "10.25" and xlReadCellKind(tReader, 1, 3, 3) is "number" \
+         and xlReadCellNumber(tReader, 1, 3, 3) is 10.25, xlReadCell(tReader, 1, 3, 3)
+   check "a leading zero stays text", xlReadCell(tReader, 1, 4, 2) is "00420" and xlReadCellKind(tReader, 1, 4, 2) is "text", \
+         xlReadCell(tReader, 1, 4, 2) && xlReadCellKind(tReader, 1, 4, 2)
+   check "an exponent is a number", xlReadCellNumber(tReader, 1, 4, 3) is 1000, xlReadCell(tReader, 1, 4, 3)
+   check "a double keeps every digit", xlReadCellNumber(tReader, 1, 6, 2) is 0.1 + 0.2 and xlReadCellFormat(tReader, 1, 6, 2) is "#,##0.00", \
+         xlReadCell(tReader, 1, 6, 2) && xlReadCellFormat(tReader, 1, 6, 2)
+   check "formula and its stored result", xlReadCellFormula(tReader, 1, 6, 3) is "=SUM(C2:C4)" and xlReadCellNumber(tReader, 1, 6, 3) is 1019.75, \
+         xlReadCellFormula(tReader, 1, 6, 3) && xlReadCell(tReader, 1, 6, 3)
+   check "booleans", xlReadCell(tReader, 1, 8, 1) is "true" and xlReadCell(tReader, 1, 8, 2) is "false" \
+         and xlReadCellKind(tReader, 1, 8, 1) is "boolean", xlReadCell(tReader, 1, 8, 1) && xlReadCell(tReader, 1, 8, 2)
+   check "a date reads as a date", xlReadCell(tReader, 1, 9, 1) is "2026-11-20" and xlReadCellKind(tReader, 1, 9, 1) is "date", \
+         xlReadCell(tReader, 1, 9, 1) && xlReadCellKind(tReader, 1, 9, 1)
+   check "a date and time", xlReadCell(tReader, 1, 9, 2) is "2026-11-20 14:30:00", xlReadCell(tReader, 1, 9, 2)
+   check "a date as its serial", xlReadCellValue(tReader, 1, 9, 1) is xlDateToSerial(2026, 11, 20, 0, 0, 0), xlReadCellValue(tReader, 1, 9, 1)
+   check "link text", xlReadCell(tReader, 1, 10, 1) is "a link", xlReadCell(tReader, 1, 10, 1)
+   check "merged block", xlReadMerged(tReader, 1) is "A12:C12" and xlReadCell(tReader, 1, 12, 1) is "one wide cell", xlReadMerged(tReader, 1)
+   check "empty cell", xlReadCell(tReader, 1, 11, 1) is empty and xlReadCellKind(tReader, 1, 11, 1) is "empty", xlReadCellKind(tReader, 1, 11, 1)
+   put xlReadGrid(tReader, 1, 1, 1, 4, 3) into tGrid
+   -- a number comes back as the number it is, not as it was typed
+   replace "1e3" with "1000" in tTable
+   check "grid read back as it was written", tGrid is tTable, oneLine(tGrid)
+   set the itemDelimiter to tab
+   check "grid by chunks", item 3 of line 3 of xlReadGrid(tReader, 1, 1, 1, 0, 0) is "10.25", item 3 of line 3 of xlReadGrid(tReader, 1, 1, 1, 0, 0)
+   check "text outside ASCII survives both ways", xlReadCell(tReader, 2, 1, 1) is tWide and the number of chars of xlReadCell(tReader, 2, 1, 1) is 8, \
+         the number of chars of xlReadCell(tReader, 2, 1, 1)
+   check "a line break in a cell", xlReadCell(tReader, 2, 2, 1) is "two" & numToChar(10) & "lines", oneLine(xlReadCell(tReader, 2, 2, 1))
+   check "a line break in a grid is a vertical tab", line 2 of xlReadGrid(tReader, 2, 1, 1, 0, 0) is "two" & numToChar(11) & "lines", \
+         the number of lines of xlReadGrid(tReader, 2, 1, 1, 0, 0)
+   check "out of range reads are empty", xlReadCell(tReader, 3, 1, 1) is empty and xlReadCell(tReader, 1, 0, 0) is empty, xlReadCell(tReader, 3, 1, 1)
+   xlReadClose tReader
+   check "reader closed", xlReadIsValid(tReader) is false and xlReadCount() is 0, xlReadCount()
+   delete file tPath
+   delete file tPicture
+end testWriteAndRead
+
+command testRefusals
+   local tBook, tSheet, tPath
+   check "no path, no workbook", xlWorkbookNew("") is 0 and xlLastError() is not empty, xlLastError()
+   check "a missing file does not open", xlReadOpen(sFolder & "/xlsxt-engine-no-such-file.xlsx") is 0 and xlLastError() is not empty, xlLastError()
+   put scratchFile("not-a-book.xlsx") into tPath
+   put "this is not a zip" into URL ("binfile:" & tPath)
+   check "a file that is not a workbook does not open", xlReadOpen(tPath) is 0 and xlLastError() is not empty, xlLastError()
+   delete file tPath
+   put scratchFile("discarded.xlsx") into tPath
+   put xlWorkbookNew(tPath) into tBook
+   put xlWorkbookAddSheet(tBook, "A") into tSheet
+   check "a second sheet of the same name is refused", xlWorkbookAddSheet(tBook, "a") is 0 and xlWorkbookErrorCount(tBook) is 1, \
+         xlWorkbookErrorCount(tBook) && xlLastError()
+   xlSheetWriteNumber tSheet, 0, 1, 5, 0
+   xlSheetWriteLink tSheet, 1, 1, "just words", "", 0
+   check "refusals are counted and the first is kept", xlWorkbookErrorCount(tBook) is 3 and xlWorkbookFirstError(tBook) is not empty, \
+         xlWorkbookErrorCount(tBook) && xlWorkbookFirstError(tBook)
+   check "an unknown chart kind", xlWorkbookAddChart(tBook, "hologram") is 0, xlLastError()
+   xlWorkbookDiscard tBook
+   check "discard writes nothing", there is no file tPath and xlWorkbookCount() is 0, xlWorkbookCount()
+end testRefusals
+
+-- The boundary is TYPED: text handed to an Integer parameter is an error a
+-- script can catch and not a fault, and the library is still usable after.
+command testTypedBoundary
+   local tCaught
+   put false into tCaught
+   try
+      get xlColumnName("three")
+   catch tError
+      put true into tCaught
+   end try
+   check "text for an Integer is a catchable error", tCaught, "no error was thrown"
+   check "the library still answers", xlColumnName(3) is "C", xlColumnName(3)
+end testTypedBoundary
+
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/xlsxt.lcb, in file order, called once with
+-- zeros (false for a Boolean, empty for text). One try for the lot: tName
+-- is the call that was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "xlABIVersion" into tName
+      get xlABIVersion()
+      put "xlLibraryVersion" into tName
+      get xlLibraryVersion()
+      put "xlLastError" into tName
+      get xlLastError()
+      put "xlSetTempFolder" into tName
+      xlSetTempFolder ""
+      put "xlTempFolder" into tName
+      get xlTempFolder()
+      put "xlColumnName" into tName
+      get xlColumnName(0)
+      put "xlCellName" into tName
+      get xlCellName(0, 0)
+      put "xlRangeName" into tName
+      get xlRangeName(0, 0, 0, 0)
+      put "xlRangeFormula" into tName
+      get xlRangeFormula("", 0, 0, 0, 0)
+      put "xlCellRow" into tName
+      get xlCellRow("")
+      put "xlCellColumn" into tName
+      get xlCellColumn("")
+      put "xlDateToSerial" into tName
+      get xlDateToSerial(0, 0, 0, 0, 0, 0)
+      put "xlSerialToDate" into tName
+      get xlSerialToDate(0)
+      put "xlSecondsToSerial" into tName
+      get xlSecondsToSerial(0)
+      put "xlSerialToSeconds" into tName
+      get xlSerialToSeconds(0)
+      put "xlWorkbookCount" into tName
+      get xlWorkbookCount()
+      put "xlWorkbookNew" into tName
+      get xlWorkbookNew("")
+      put "xlWorkbookIsValid" into tName
+      get xlWorkbookIsValid(0)
+      put "xlWorkbookClose" into tName
+      get xlWorkbookClose(0)
+      put "xlWorkbookDiscard" into tName
+      xlWorkbookDiscard 0
+      put "xlWorkbookErrorCount" into tName
+      get xlWorkbookErrorCount(0)
+      put "xlWorkbookFirstError" into tName
+      get xlWorkbookFirstError(0)
+      put "xlWorkbookSheetCount" into tName
+      get xlWorkbookSheetCount(0)
+      put "xlWorkbookAddSheet" into tName
+      get xlWorkbookAddSheet(0, "")
+      put "xlWorkbookAddFormat" into tName
+      get xlWorkbookAddFormat(0)
+      put "xlWorkbookAddChart" into tName
+      get xlWorkbookAddChart(0, "")
+      put "xlWorkbookSetProperty" into tName
+      xlWorkbookSetProperty 0, "", ""
+      put "xlWorkbookDefineName" into tName
+      xlWorkbookDefineName 0, "", ""
+      put "xlFormatIsValid" into tName
+      get xlFormatIsValid(0)
+      put "xlFormatSetBold" into tName
+      xlFormatSetBold 0, false
+      put "xlFormatSetItalic" into tName
+      xlFormatSetItalic 0, false
+      put "xlFormatSetStrikeout" into tName
+      xlFormatSetStrikeout 0, false
+      put "xlFormatSetUnderline" into tName
+      xlFormatSetUnderline 0, ""
+      put "xlFormatSetScript" into tName
+      xlFormatSetScript 0, ""
+      put "xlFormatSetFontName" into tName
+      xlFormatSetFontName 0, ""
+      put "xlFormatSetFontSize" into tName
+      xlFormatSetFontSize 0, 0
+      put "xlFormatSetFontColor" into tName
+      xlFormatSetFontColor 0, ""
+      put "xlFormatSetBackgroundColor" into tName
+      xlFormatSetBackgroundColor 0, ""
+      put "xlFormatSetNumberFormat" into tName
+      xlFormatSetNumberFormat 0, ""
+      put "xlFormatSetAlign" into tName
+      xlFormatSetAlign 0, ""
+      put "xlFormatSetVerticalAlign" into tName
+      xlFormatSetVerticalAlign 0, ""
+      put "xlFormatSetTextWrap" into tName
+      xlFormatSetTextWrap 0, false
+      put "xlFormatSetShrink" into tName
+      xlFormatSetShrink 0, false
+      put "xlFormatSetRotation" into tName
+      xlFormatSetRotation 0, 0
+      put "xlFormatSetIndent" into tName
+      xlFormatSetIndent 0, 0
+      put "xlFormatSetBorder" into tName
+      xlFormatSetBorder 0, ""
+      put "xlFormatSetBorderSide" into tName
+      xlFormatSetBorderSide 0, "", ""
+      put "xlFormatSetBorderColor" into tName
+      xlFormatSetBorderColor 0, ""
+      put "xlFormatSetLocked" into tName
+      xlFormatSetLocked 0, false
+      put "xlFormatSetFormulaHidden" into tName
+      xlFormatSetFormulaHidden 0, false
+      put "xlSheetIsValid" into tName
+      get xlSheetIsValid(0)
+      put "xlSheetName" into tName
+      get xlSheetName(0)
+      put "xlSheetWriteNumber" into tName
+      xlSheetWriteNumber 0, 0, 0, 0, 0
+      put "xlSheetWriteText" into tName
+      xlSheetWriteText 0, 0, 0, "", 0
+      put "xlSheetWriteFormula" into tName
+      xlSheetWriteFormula 0, 0, 0, "", 0
+      put "xlSheetWriteFormulaValue" into tName
+      xlSheetWriteFormulaValue 0, 0, 0, "", 0, 0
+      put "xlSheetWriteBoolean" into tName
+      xlSheetWriteBoolean 0, 0, 0, false, 0
+      put "xlSheetWriteBlank" into tName
+      xlSheetWriteBlank 0, 0, 0, 0
+      put "xlSheetWriteDate" into tName
+      xlSheetWriteDate 0, 0, 0, 0, 0
+      put "xlSheetWriteLink" into tName
+      xlSheetWriteLink 0, 0, 0, "", "", 0
+      put "xlSheetWriteComment" into tName
+      xlSheetWriteComment 0, 0, 0, ""
+      put "xlSheetWriteGrid" into tName
+      get xlSheetWriteGrid(0, 0, 0, "", "", 0)
+      put "xlSheetSetColumns" into tName
+      xlSheetSetColumns 0, 0, 0, 0, 0
+      put "xlSheetHideColumns" into tName
+      xlSheetHideColumns 0, 0, 0
+      put "xlSheetSetRow" into tName
+      xlSheetSetRow 0, 0, 0, 0
+      put "xlSheetHideRow" into tName
+      xlSheetHideRow 0, 0
+      put "xlSheetMerge" into tName
+      xlSheetMerge 0, 0, 0, 0, 0, "", 0
+      put "xlSheetFreeze" into tName
+      xlSheetFreeze 0, 0, 0
+      put "xlSheetAutofilter" into tName
+      xlSheetAutofilter 0, 0, 0, 0, 0
+      put "xlSheetValidateList" into tName
+      xlSheetValidateList 0, 0, 0, 0, 0, ""
+      put "xlSheetInsertImage" into tName
+      xlSheetInsertImage 0, 0, 0, "", 0, 0
+      put "xlSheetSetLandscape" into tName
+      xlSheetSetLandscape 0, false
+      put "xlSheetSetPaper" into tName
+      xlSheetSetPaper 0, 0
+      put "xlSheetSetMargins" into tName
+      xlSheetSetMargins 0, 0, 0, 0, 0
+      put "xlSheetFitToPages" into tName
+      xlSheetFitToPages 0, 0, 0
+      put "xlSheetSetHeader" into tName
+      xlSheetSetHeader 0, ""
+      put "xlSheetSetFooter" into tName
+      xlSheetSetFooter 0, ""
+      put "xlSheetRepeatRows" into tName
+      xlSheetRepeatRows 0, 0, 0
+      put "xlSheetPrintArea" into tName
+      xlSheetPrintArea 0, 0, 0, 0, 0
+      put "xlSheetSetZoom" into tName
+      xlSheetSetZoom 0, 0
+      put "xlSheetShowGridlines" into tName
+      xlSheetShowGridlines 0, false, false
+      put "xlSheetSetTabColor" into tName
+      xlSheetSetTabColor 0, ""
+      put "xlSheetActivate" into tName
+      xlSheetActivate 0
+      put "xlSheetHide" into tName
+      xlSheetHide 0
+      put "xlSheetProtect" into tName
+      xlSheetProtect 0, ""
+      put "xlChartIsValid" into tName
+      get xlChartIsValid(0)
+      put "xlChartSeriesCount" into tName
+      get xlChartSeriesCount(0)
+      put "xlChartAddSeries" into tName
+      get xlChartAddSeries(0, "", "")
+      put "xlChartSeriesSetName" into tName
+      xlChartSeriesSetName 0, 0, ""
+      put "xlChartSeriesSetColor" into tName
+      xlChartSeriesSetColor 0, 0, ""
+      put "xlChartSeriesSetLabels" into tName
+      xlChartSeriesSetLabels 0, 0, false
+      put "xlChartSeriesSetSmooth" into tName
+      xlChartSeriesSetSmooth 0, 0, false
+      put "xlChartSeriesSetMarker" into tName
+      xlChartSeriesSetMarker 0, 0, ""
+      put "xlChartSetTitle" into tName
+      xlChartSetTitle 0, ""
+      put "xlChartSetAxisTitle" into tName
+      xlChartSetAxisTitle 0, "", ""
+      put "xlChartSetAxisRange" into tName
+      xlChartSetAxisRange 0, "", 0, 0
+      put "xlChartSetAxisNumberFormat" into tName
+      xlChartSetAxisNumberFormat 0, "", ""
+      put "xlChartSetAxisGridlines" into tName
+      xlChartSetAxisGridlines 0, "", false
+      put "xlChartSetLegend" into tName
+      xlChartSetLegend 0, ""
+      put "xlChartSetStyle" into tName
+      xlChartSetStyle 0, 0
+      put "xlSheetInsertChart" into tName
+      xlSheetInsertChart 0, 0, 0, 0, 0, 0
+      put "xlReadCount" into tName
+      get xlReadCount()
+      put "xlReadOpen" into tName
+      get xlReadOpen("")
+      put "xlReadClose" into tName
+      xlReadClose 0
+      put "xlReadIsValid" into tName
+      get xlReadIsValid(0)
+      put "xlReadSheetCount" into tName
+      get xlReadSheetCount(0)
+      put "xlReadSheetName" into tName
+      get xlReadSheetName(0, 0)
+      put "xlReadSheetNumber" into tName
+      get xlReadSheetNumber(0, "")
+      put "xlReadSheetIsHidden" into tName
+      get xlReadSheetIsHidden(0, 0)
+      put "xlReadUses1904" into tName
+      get xlReadUses1904(0)
+      put "xlReadLoad" into tName
+      get xlReadLoad(0, 0)
+      put "xlReadRowCount" into tName
+      get xlReadRowCount(0, 0)
+      put "xlReadColumnCount" into tName
+      get xlReadColumnCount(0, 0)
+      put "xlReadCell" into tName
+      get xlReadCell(0, 0, 0, 0)
+      put "xlReadCellValue" into tName
+      get xlReadCellValue(0, 0, 0, 0)
+      put "xlReadCellNumber" into tName
+      get xlReadCellNumber(0, 0, 0, 0)
+      put "xlReadCellKind" into tName
+      get xlReadCellKind(0, 0, 0, 0)
+      put "xlReadCellFormula" into tName
+      get xlReadCellFormula(0, 0, 0, 0)
+      put "xlReadCellFormat" into tName
+      get xlReadCellFormat(0, 0, 0, 0)
+      put "xlReadGrid" into tName
+      get xlReadGrid(0, 0, 0, 0, 0, 0)
+      put "xlReadMerged" into tName
+      get xlReadMerged(0, 0)
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 121 public handlers called with zeros, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["xlsxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.xlsxt" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & xlLibraryVersion() & return
+      put the temporary folder into sFolder
+      testLibrary
+      testWriteAndRead
+      testRefusals
+      testTypedBoundary
+      sweepEveryHandler
+      check "nothing is left open", xlWorkbookCount() is 0 and xlReadCount() is 0, xlWorkbookCount() && xlReadCount()
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>
