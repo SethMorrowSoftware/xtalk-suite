@@ -852,7 +852,42 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
+| 7 | The suite board's row pitch: 29 when box3dxt made the fourteenth row, 27 since pdfxt made the fifteenth the same day (2.11 #7 is the row to run) | S1 | 48 | the rows do not touch on an engine |
+
+### 2.11 pdfxt
+
+- Joined 2026-11-20: PDFium (the prebuilt shared library of bblanchon/pdfium-binaries release
+  `chromium/8165`, pinned by SHA-256 in `pdfxt/src/pdfium.pin`, shipped as a second file
+  beside the shim and loaded at run time) behind the `pdx_*` C shim (ABI 1) and the `pdf*`
+  binding, whose names are mechanical. Read-only: open, draw, text, search, outline, links.
+  Records: the shim's smoke test over two PDFs it carries, clean under ASan/UBSan; and
+  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally built
+  library (2026-11-20), which its native lane repeats on every change. No desktop IDE has
+  loaded it: for everything beyond that server run it is verified statically; needs an OXT
+  pass.
+- Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
+  Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
+  reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
+- Binaries: none committed when it joined. The first release-binaries dispatch lands TWO
+  files per platform (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`), 4 to 8 MB of PDFium each (16 MB for the universal mac one), 80 MB across the ten
+  platforms; the change after it lists the platforms in `check-binary-freshness.py`'s `ships`
+  row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
+  installer, the freshness gate and the Android script, by fixtures; no dispatch has
+  exercised it yet.
+- Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt pdfxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: pdfxt`, then the `ships` row | owner (pressing Run is rule 5's decision; it adds 80 MB of PDFium to the repository) | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `pdfLibraryVersion()`, open a PDF, a page into an image both ways (`pdfRenderPageBMP` as its text, `pdfRenderPage` as its imageData), `pdfPageText`, a search with its highlight rectangles, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `pdfxt/docs/api-reference.md` says, and the colours are right (red is red) on each platform |
+| 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
+| 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
+| 6 | A viewer demo stack (pages, zoom, search, outline; the kit's look) | coding | - | a paste-and-run example in `pdfxt/examples/` |
+| 7 | The suite board at its new row pitch (27): fifteen rows clear the members caption, two pixels between rows. A sixteenth member needs the caption moved, not a smaller pitch | S1 | 48 | the rows do not touch on an engine |
+| 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 
 ---
 

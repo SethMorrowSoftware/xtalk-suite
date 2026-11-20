@@ -9,14 +9,16 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Thirteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Fourteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
-  calls by name over it; joined 2026-11-14) and box3dxt (Box3D, 3D rigid-body physics; joined
-  2026-11-20 with no committed library yet).
+  calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics; joined
+  2026-11-20 with no committed library yet) and pdfxt (PDFium, read-only: draw, text, search,
+  outline; joined 2026-11-20 with no committed library yet; the one member that ships a SECOND
+  library, a pinned prebuilt PDFium its shim loads from beside itself, see Building).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -325,7 +327,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, pdfxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -376,6 +378,17 @@ worse than no gate, because it answers the question nobody asks twice.
   on Android has run any of them. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
   builder writes into an app's manifest (verified statically).
+- **Companions (2026-11-20).** pdfxt does not build or link PDFium: each platform folder holds
+  `pdfxt.<ext>` and a prebuilt `pdfium.<ext>` the shim loads at run time, from one release of
+  bblanchon/pdfium-binaries pinned by SHA-256 in `pdfxt/src/pdfium.pin`. A companion cannot be
+  held to the suite's floors (PDFium's are its builders': macOS 13, Android API 23, glibc 2.16),
+  so it is held to the pin instead, in every place a library moves: the member's CMake and
+  packager, `install-release-binaries.py` (`COMPANIONS`), `check-binary-freshness.py` (the
+  row's `companions` key) and `build-android.sh` (`companion_of`). Both files or neither; the
+  companion byte for byte, never stripped. `test-build-android.py` holds the three tables
+  together. A device test that could run only part of itself prints `XTALK_TEST_PARTIAL:` and
+  `build-android.sh`'s last line then says "passed IN PART". All verified statically and by
+  fixtures; no release dispatch has landed a companion yet.
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

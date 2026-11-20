@@ -1,0 +1,35 @@
+# pdfium.pin - the ONE table of which PDFium pdfxt builds against and ships.
+#
+# PDFium is not built here: each platform takes the prebuilt shared library
+# of one release of https://github.com/bblanchon/pdfium-binaries (which
+# builds Google's own tree with the args.gn each archive carries: no V8, no
+# XFA). CMakeLists.txt reads this file, fetches the archive for the platform
+# being built, and refuses one whose SHA-256 is not the one below; the
+# suite's tools/install-release-binaries.py refuses to land a pdfium library
+# whose SHA-256 is not the one in the last column. tools/check-pdfium-pin.py
+# holds the docs and the licence page to this file.
+#
+# Hashes taken from the files themselves on 2026-11-20. The floors are read
+# from the same files (the Mach-O build version of both slices, the NDK note
+# of each Android library, the highest GLIBC_ version each Linux one asks
+# for) and are PDFium's builders', not the suite's:
+#     macOS 13.0     Android API 23 (6.0)     glibc 2.16
+#
+# To move the pin: change the release and EVERY row together, run the tests
+# on every platform (the shim compiles against the new headers, so a changed
+# signature is a compile error), rebuild every platform (suite rule 5), and
+# read the new archives' licenses/ folder against THIRD-PARTY-LICENSES.md.
+
+release chromium/8165
+
+# platform-id    archive        SHA-256 of pdfium-<archive>.tgz                                   SHA-256 of the library inside it
+x86_64-linux     linux-x64      ba7865e16c0271daab75256790be06c26272190afe6e2a70eae0bb39bb99089c  63b70290e3e88eff6b236a4c87cb58461b4fe9fae56217314eeda31aff741479
+x86-linux        linux-x86      78c5f2baba626570ee6727a76a3c886d00d0a81946d8913edc082ef9d0e30b1f  0049ab0ee8b1934a4919641d475e4bf8a315589411a780e5f503187bef0c9d1c
+arm64-linux      linux-arm64    338f5dcc907a20331812ae8ab01b16ff18966f4a247d790c8ad8fb49029d768b  963309fe119e4614afb750bc6a4e35272bd5b8bad61fb84df282c9c821f7de8b
+x86_64-win32     win-x64        ca7338ae7779b8b1b82f4580305c4d762d214f8df1d54b47647fe3cc75989ded  31d249b8535dd5f351ae7f4b714dc4bb1d76b6069b321a309bc99271dd65f566
+x86-win32        win-x86        fc697d735516b2dd408072ecdd808a67e12c6402f3e762299015da1d81142986  b30585c8c17c466306d7c26945c232e427bd2f04d90ee5de6d6c8155449fa05c
+universal-mac    mac-univ       80d88c4bec1876e04448523b76d1a70ece00bbc33e15301419d4fb9d2f8cc895  fdc694fe7e2681bf239c3462d036d4ff88c41b6f74c1533c25f36c33cfea4482
+arm64-android    android-arm64  ce4f17fea8881cdf163950748ab90854cf33f296309fab68de9441a1d41ff6cc  6cce3408a07e37d6d8fa6ec7e4792a3f4115567f4559b1d039333a9d66d7ce5a
+armv7-android    android-arm    3698a4fcf0349d78be2bc04b90d828f25b3ea2154d1ada2ed6c528edc2797a10  c44905b16d780785c12c8da4295b533263a7b65827916804962057c831e56008
+x86_64-android   android-x64    e5d8646165eff2f837e5d8fc356eda6b7e624cbfad5915e2500428e244a89b44  2de2a90bc16e4c5af0b6d208be1ab4634583458a559293554f025838ae1a9925
+x86-android      android-x86    83d4074c9492de28f0739529f22afdfef9a89973b1b65d10ab37d068f91bc7fd  b484761ea74a8bf3bdbd07449e092e1470ef0a2f4fdb6d8c35c4cf7822ba0d28
