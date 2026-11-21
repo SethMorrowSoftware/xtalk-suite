@@ -18,7 +18,7 @@ nothing here opens a socket, starts a thread or calls back.
 `examples/artnet-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
 `tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (the rig's ArtPollReply checked byte by byte against an oracle written from the Art-Net 4 field table). It builds its window with messages locked, then centres it: built unlocked it held
 OXT-Beyond 0.2.8-dp.1's IDE on Windows for 112 s as it opened (each scripted create and rename
-ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre, so it
+ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre (5.17), so it
 opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
 `TestTheWindowOpensCentredOnTheScreen` failed against that build.
 

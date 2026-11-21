@@ -1512,6 +1512,25 @@ reported one unreadable (INFERRED: a dark theme draws its face dark, with its wh
 so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
 dark theme has been run on either (UNEVIDENCED either way).
 
+### 5.17 A new stack is 32,32,288,288, and a size set keeps its centre
+**OBSERVED 2026-11-21** on OXT-Beyond's headless engine (`9.7.1-OXT`, Linux, `-ui`):
+`create invisible stack` makes a stack at rect 32,32,288,288, and setting its width to
+1100 keeps its centre, so its left edge lands at -390. The same day, in OXT-Beyond
+0.2.8-dp.1's IDE on Windows, the three ShowControl showcases, 1100 wide and built by
+script, each opened at rect -390,-3,710,617, their left 390 pixels past the screen's edge
+(runbook section 8; where the IDE put their tops is not explained). A headless engine has
+no screen: `the screenRect` and `the working screenRect` read 0,0,0,0 and `the screenLoc`
+0,0, with a display or without one.
+**Rule:** a window built by script sets its size, then its place:
+`set the loc of this stack to the screenLoc`. start-here centres each window it opens
+after the window's own build (`slOpenSelected`); box2dxt's games, box3dxt's Orb Island and
+the ShowControl showcases centre themselves, so they open whole however they are opened.
+**Gate:** the ShowControl showcases' `TestTheWindowOpensCentredOnTheScreen` (in each
+member's `tests/lcs/demo_test.livecodescript`), which starts the stack where Windows put
+it; no suite-wide gate.
+**Does NOT mean:** that start-here's windows needed it. It bites a window opened any other
+way, as the Windows run opened the showcases.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

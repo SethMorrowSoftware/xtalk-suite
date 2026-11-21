@@ -1350,10 +1350,10 @@ command albBuild
    set the width of this stack to kAlbW
    set the height of this stack to kAlbH
    -- Then centred on the screen. A new stack is 32,32,288,288 and a size
-   -- set keeps its centre, so 1100 wide put its left at -390: the window
-   -- opened 390 pixels past the screen's edge on Windows (the same day).
-   -- start-here centres a window it opens; one opened any other way now
-   -- centres itself.
+   -- set keeps its centre (engine note 5.17), so 1100 wide put its left at
+   -- -390: the window opened 390 pixels past the screen's edge on Windows
+   -- (the same day). start-here centres a window it opens; one opened any
+   -- other way now centres itself.
    set the loc of this stack to the screenLoc
    set the resizable of this stack to false
    set the label of this stack to "Art-Net Light Board - OXT-Beyond"
