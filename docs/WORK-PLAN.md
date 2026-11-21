@@ -967,18 +967,19 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   stack, passed 89 and failed 0; and the demo was driven on the Linux desktop engine (row 7).
   Nobody has heard it: for everything beyond those runs it is verified statically; needs an
   OXT pass.
-- Binaries: the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12, the
-  same bytes from two build folders) was committed 2026-11-21 for OXT-Beyond's web engine and
-  is in the `ships` row; no desktop or Android library was committed when it joined: the
-  first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
+  first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
+  later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
+  those platforms), and the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten
+  6.0.12, the same bytes from two build folders) was built outside that workflow, as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded a committed one yet:
+  the runs above used locally built or CI-built libraries.
 - Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
   publish-members run adopts it (`--adopt audioxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: audioxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-21 (run 44847619287, commit 78223d8, and the web archive): the first release-binaries dispatch, then the `ships` row | - | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass, with ears: install the extension, `auLibraryVersion()`, the README's music-and-click stack, a tone, a clone played several times at once, and a microphone recorded to a WAV and played back, on Windows, Linux and a Mac | S1, after #1 | - | each is HEARD and answers as `audioxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | a tone is heard in the web IDE after one click |
 | 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |

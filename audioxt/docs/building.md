@@ -94,5 +94,8 @@ changing a doc block, `python3 tools/build-api-reference.py`.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine.
+The libraries under `src/code/` for the desktop platforms and Android come from the suite's
+`release-binaries.yml` dispatch, never from a developer's machine (first on 2026-11-21). The
+web archive is the exception, as it is for every member: that workflow does not build it, so
+it is built as above with the Emscripten version OXT-Beyond pins (6.0.12) and committed with
+its `MANIFEST.sha256` line.

@@ -388,12 +388,16 @@ MEMBERS = [
         "name": "audioxt",
         "lib": "audioxt",
         "lcb": ["audioxt/src/audioxt.lcb"],
-        # No desktop or Android library until the first release-binaries
-        # dispatch lands them (joined 2026-11-20 with none committed), as
-        # box3dxt's row above was. The web archive is built outside that
-        # workflow (Emscripten 6.0.12, byte for byte the same from two build
-        # folders) and was committed 2026-11-21 for OXT-Beyond's web engine.
-        "ships": ["wasm32-emscripten"],
+        # The six desktop and four Android libraries came from the first
+        # release-binaries dispatch (run 44847619287 from 7dcbb41, commit
+        # 78223d8, 2026-11-21). The web archive is built outside that workflow
+        # (Emscripten 6.0.12, byte for byte the same from two build folders),
+        # as every member's is, and was committed the same day for
+        # OXT-Beyond's web engine.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android", "wasm32-emscripten"],
         "shim": "audioxt/src/audio_shim.c",
         "prefix": "aux_",
         "abi_header": "audioxt/src/audio_shim.c",

@@ -119,8 +119,9 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **Not yet:** nobody has HEARD it: the runs above played through the silent device or
   rendered into memory. No engine on macOS, Android or the web has run it, and no IDE has
   loaded a release library or an installed extension: on those it is verified statically;
-  needs an OXT pass. Only the web archive is committed under `src/code/` yet; the
-  suite's release-binaries dispatch lands the desktop and Android libraries.
+  needs an OXT pass. The libraries committed under `src/code/` on 2026-11-21 (six desktop
+  platforms, four Android ABIs, a web archive) were tested where they were built; no engine
+  has loaded one of them yet.
 
 ## Building and testing
 

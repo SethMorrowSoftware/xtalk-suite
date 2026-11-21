@@ -140,6 +140,7 @@ from C) and in the IDE on Windows (2026-11-21, the maintainer's 64-bit OXT-Beyon
 stack, passed 89 and failed 0). No engine on macOS, Android or the web has loaded it, and
 nobody has HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
 through the silent device, headless and in a window (`tests/demo-drive.livecodescript`,
-2026-11-21); nobody has used it by hand. Only the web archive
-(`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12) is committed; no desktop or
-Android library yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+2026-11-21); nobody has used it by hand. Release libraries were committed on 2026-11-21 (six
+desktop platforms and four Android ABIs from the suite's release run; the web archive,
+Emscripten 6.0.12, built separately); no engine has loaded one of them yet. Open work is in
+the suite's `docs/WORK-PLAN.md`.
