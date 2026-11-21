@@ -26,7 +26,7 @@ CASES = [
     ("a value changed in the .lcb", "lcb", "constant kOptProxy is 103", "constant kOptProxy is 104"),
     ("two values swapped", "lcb", "constant kInfoBytesDown is 4\nconstant kInfoBytesUp is 5",
      "constant kInfoBytesDown is 5\nconstant kInfoBytesUp is 4"),
-    ("an ABI bump on one side only", "hdr", "#define CUX_ABI_VERSION 1", "#define CUX_ABI_VERSION 2"),
+    ("an ABI bump on one side only", "hdr", "#define CUX_ABI_VERSION 2", "#define CUX_ABI_VERSION 3"),
     ("a new header option with no .lcb constant", "hdr", "#define CUO_ACCEPT_ENCODING   117",
      "#define CUO_ACCEPT_ENCODING   117\n#define CUO_NEW_THING 118"),
     ("a constant that mirrors nothing", "lcb", "constant kTextMethod is 5",
@@ -39,6 +39,11 @@ CASES = [
      'pName is "bodySize" then\n      return kTextHeaders'),
     ("a name listed twice", "lcb", 'pName is "cancelled" then',
      'pName is "state" then'),
+    ("a WebSocket state changed in the header", "hdr", "#define CUX_WS_CLOSED        4",
+     "#define CUX_WS_CLOSED        5"),
+    ("a WebSocket kind with no .lcb constant", "lcb", "constant kWsKindPong is 4\n", ""),
+    ("a WebSocket bind dropped", "lcb", 'private foreign handler _cux_ws_poll()', 'private foreign handler _cux_ws_pol()'),
+    ("a WebSocket info field with no name", "lcb", 'else if pName is "wsPongs" then\n      return kInfoWsPongs\n', ""),
     ("an option with no name", "lcb", 'else if pName is "referer" then\n      return kOptReferer\n', ""),
 ]
 
