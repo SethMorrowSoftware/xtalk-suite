@@ -1,0 +1,86 @@
+<?lc
+-- engine-demo.lc - Orb Island (examples/box3dxt-orb-island.livecodescript),
+-- the b3k Kit's example game, on a REAL engine with no window.
+--
+--   server-community tests/engine-demo.lc MODULE LIBRARY DEMO PROBE [R3MODULE R3LIBRARY]
+--      MODULE     box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile;
+--                 "-" runs the game WITHOUT box3dxt (it must say why and
+--                 throw nothing)
+--      LIBRARY    the built box3dxt library without its extension
+--      DEMO       the full path of examples/box3dxt-orb-island.livecodescript
+--      PROBE      the full path of tests/engine-demo-probe.livecodescript
+--      R3MODULE   optional: render3dxt.lcm, to run the game over render3dxt
+--      R3LIBRARY  optional: the built render3dxt library without its extension
+--
+-- The game file becomes the script of a stack made here, exactly as a
+-- player pastes it (so the ENGINE compiles it, the embedded Kit included),
+-- and the probe becomes the script of a button on its card, where every
+-- call resolves as a click would. openStack builds the window and starts
+-- the game; the probe then pauses the loop and hand-steps it. The checks
+-- live in the probe; this file loads, runs and reports.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures.
+
+global gPrOut, gPrPassed, gPrFailed
+local sPassed, sFailed, sR3, sB3
+
+on check pName, pOk, pDetail
+   if pOk is true then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=Orb Island engine test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " | " in pText
+   return pText
+end oneLine
+
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   put false into sB3
+   if $0 is not "-" then
+      set the revLibraryMapping["box3dxt"] to $1
+      load extension from file $0
+      check "box3dxt loads", the result is empty, oneLine(the result)
+      put true into sB3
+   end if
+   put false into sR3
+   if $4 is not empty then
+      set the revLibraryMapping["render3dxt"] to $5
+      load extension from file $4
+      check "render3dxt loads", the result is empty, oneLine(the result)
+      put true into sR3
+   end if
+   put "INFO box3dxt loaded: " & sB3 & "; render3dxt loaded: " & sR3 & return
+   create stack "OrbIsland"
+   set the defaultStack to "OrbIsland"
+   set the script of stack "OrbIsland" to URL ("file:" & $2)
+   check "the game compiles on the engine, its embedded Kit included", the result is empty, oneLine(the result)
+   create button "Probe" in card 1 of stack "OrbIsland"
+   set the script of button "Probe" of card 1 of stack "OrbIsland" to URL ("file:" & $3)
+   check "the probe compiles", the result is empty, oneLine(the result)
+   if sFailed is 0 then
+      send ("prRunAll" && sR3 & comma & sB3) to button "Probe" of card 1 of stack "OrbIsland"
+      put gPrOut
+      add gPrPassed to sPassed
+      add gPrFailed to sFailed
+      if sB3 then
+         check "nothing in the game tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
+               b3AssertCount() && b3UnstableCount()
+      end if
+   end if
+catch tError
+   put gPrOut
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>
