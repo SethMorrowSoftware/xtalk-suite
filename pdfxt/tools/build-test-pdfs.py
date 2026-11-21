@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """build-test-pdfs.py - writes the PDF files pdfxt's tests and demo read.
 
-tests/fixtures/basic.pdf and tests/fixtures/locked.pdf (and tests/fixtures.h,
-the same bytes as C arrays for the native test) are written BY THIS FILE,
+tests/fixtures/basic.pdf, locked.pdf and form.pdf (and tests/fixtures.h, the
+same bytes as C arrays for the native test) are written BY THIS FILE,
 byte for byte, from the tables below: no PDF tool made them, so every
 number a test asserts (a page size, where a word is, where a link leads) is
 a number written here, in one place, and a test never has to trust a file
@@ -41,6 +41,15 @@ locked.pdf: page 1 of the above alone ("Hello pdfxt", the red square),
 encrypted with the standard security handler, revision 2 (RC4, 40 bits):
 user password "secret", owner password "owner", printing not allowed.
 Opening it with no password must fail; "secret" opens it.
+
+form.pdf, one page of 200 x 100 with a filled-in form: "Name:" at 20,70 in
+10 pt Helvetica, and a text field "name" holding "pdfxt" whose widget covers
+20,20 to 180,60 of PDF space, so 20..180 across and 40..80 down as
+displayed. Its normal appearance fills that box in pure green (0,255,0) and
+writes the value in black near its bottom left. PDFium draws a form's fields
+only through its form module (FPDF_FFLDraw), never in a plain page drawing:
+with flag 1 the box is green, without it the paper there is white. The
+field's value is not text of the page.
 
 Standard library only.
 """
@@ -124,10 +133,13 @@ class Builder(object):
     def add(self, num, body):
         self.objects[num] = body
 
-    def stream(self, num, data):
+    def stream(self, num, data, entries=b""):
+        """A stream object; `entries` are more of its dictionary's entries
+        (a form XObject's /Type, /Subtype and /BBox), written before /Length."""
         if self.crypt:
             data = self.crypt.encrypt(num, data)
-        self.add(num, b"<< /Length %d >>\nstream\n" % len(data) + data + b"\nendstream")
+        self.add(num, b"<< " + (entries + b" " if entries else b"") + b"/Length %d >>\nstream\n" % len(data)
+                 + data + b"\nendstream")
 
     def build(self, root, info, version=b"1.4"):
         out = bytearray(b"%PDF-" + version + b"\n%\xe2\xe3\xcf\xd3\n")
@@ -212,6 +224,29 @@ def locked():
     return b.build(1, 6)
 
 
+# The field's normal appearance: its whole box in pure green, with its value
+# in black. Pure green, so a test can ask for the exact colour.
+FORM_FIELD_LOOK = (b"0 1 0 rg\n0 0 160 40 re\nf\n"
+                   b"0 0 0 rg\nBT\n/F1 12 Tf\n8 14 Td\n(pdfxt) Tj\nET\n")
+
+
+def form():
+    b = Builder()
+    b.add(1, b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] /DA (/F1 12 Tf 0 g) >> >>")
+    b.add(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    b.add(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R "
+             b"/Resources << /Font << /F1 6 0 R >> >> /Annots [5 0 R] >>")
+    b.stream(4, b"0 0 0 rg\nBT\n/F1 10 Tf\n20 70 Td\n(Name:) Tj\nET\n")
+    # One dictionary that is both the field and its widget, as most forms write it.
+    b.add(5, b"<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (pdfxt) /DA (/F1 12 Tf 0 g) "
+             b"/Rect [20 20 180 60] /F 4 /P 3 0 R /AP << /N 7 0 R >> >>")
+    b.add(6, FONT)
+    b.stream(7, FORM_FIELD_LOOK, b"/Type /XObject /Subtype /Form /BBox [0 0 160 40] "
+                                 b"/Resources << /Font << /F1 6 0 R >> >>")
+    b.add(8, b"<< /Title (pdfxt form test file) >>")
+    return b.build(1, 8)
+
+
 # ---------------------------------------------------------------------------
 # The demo's sample: "A short guide to pdfxt", five pages, which
 # examples/pdfxt-demo.livecodescript opens without a file. It is written here
@@ -221,7 +256,11 @@ def locked():
 #
 #   i    612 x 792. A band in the suite's accent colour with the title in
 #        white; three lines of text, one naming PDFium; a red, a green and a
-#        blue square; https://openxtalk.org/ as a web link.
+#        blue square; https://openxtalk.org/ as a web link; and a filled-in
+#        form field, "Made with:" OXT-Beyond and pdfxt, its box 140..440
+#        across and 512..540 down as displayed, light blue (the kit's
+#        kUiAccentSub) inside an accent-coloured line. A form's fields are
+#        drawn only with flag 1 (PDFium's form module draws them).
 #   ii   612 x 792. "Contents": three lines, each a link to its page.
 #   1    612 x 792. "1 Opening a document", then "Passwords".
 #   2    A4 (595 x 842) with /Rotate 90, so it DISPLAYS 842 x 595, and its
@@ -311,6 +350,8 @@ SAMPLE_PAGES = [
     + box(72, 420, 100, 100, RED) + box(222, 420, 100, 100, GREEN) + box(372, 420, 100, 100, BLUE)
     + show(b"F1", 10, 72, 400, "Three squares, to see the colours come through.", GREY)
     + show(b"F1", 12, 72, 340, "https://openxtalk.org/", LINK)
+    + show(b"F1", 10, 72, 296, "A form field, filled in: drawn only with flag 1, Annotations and forms on the Draw tab.", GREY)
+    + show(b"F1", 12, 72, 262, "Made with:")
     + footer("i"),
     # ii: the contents, each line a link
     show(b"F2", 24, 72, 700, "Contents")
@@ -359,14 +400,21 @@ SAMPLE_PAGES = [
 ]
 
 
+# The cover's form field: its normal appearance, 300 x 28 points.
+SAMPLE_FIELD_LOOK = (box(0, 0, 300, 28, ACCENT_SUB)
+                     + rgb(ACCENT) + b" RG\n1 w\n0.5 0.5 299 27 re\nS\n"
+                     + show(b"F1", 12, 6, 9, "OXT-Beyond and pdfxt"))
+
+
 def sample():
     b = Builder()
     fonts = b"/Resources << /Font << /F1 13 0 R /F2 14 0 R >> >>"
     b.add(1, b"<< /Type /Catalog /Pages 2 0 R /Outlines 21 0 R /PageMode /UseOutlines "
-             b"/PageLabels << /Nums [0 << /S /r >> 2 << /S /D >>] >> >>")
+             b"/PageLabels << /Nums [0 << /S /r >> 2 << /S /D >>] >> "
+             b"/AcroForm << /Fields [30 0 R] /DA (/F1 12 Tf 0 g) >> >>")
     b.add(2, b"<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 7 0 R] /Count 5 >>")
     b.add(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R "
-             + fonts + b" /Annots [15 0 R] >>")
+             + fonts + b" /Annots [15 0 R 30 0 R] >>")
     b.add(4, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R "
              + fonts + b" /Annots [16 0 R 17 0 R 18 0 R] >>")
     b.add(5, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R " + fonts + b" >>")
@@ -399,6 +447,10 @@ def sample():
     b.add(28, b"<< /Title (Searching) /Parent 27 0 R /Dest [7 0 R /XYZ 72 590 0] >>")
     b.add(29, b"<< /Title (OpenXTalk on the web) /Parent 21 0 R /Prev 27 0 R "
               b"/A << /S /URI /URI (https://openxtalk.org/) >> >>")
+    b.add(30, b"<< /Type /Annot /Subtype /Widget /FT /Tx /T (madewith) /V (OXT-Beyond and pdfxt) "
+              b"/DA (/F1 12 Tf 0 g) /Rect [140 252 440 280] /F 4 /P 3 0 R /AP << /N 31 0 R >> >>")
+    b.stream(31, SAMPLE_FIELD_LOOK, b"/Type /XObject /Subtype /Form /BBox [0 0 300 28] "
+                                    b"/Resources << /Font << /F1 13 0 R >> >>")
     return b.build(1, 20, b"1.7")
 
 
@@ -410,7 +462,7 @@ def header():
     out = ["/* GENERATED by tools/build-test-pdfs.py from the files beside this one's",
            " * folder (tests/fixtures/). Do not edit: run the script. */",
            "#ifndef PDFXT_TEST_FIXTURES_H", "#define PDFXT_TEST_FIXTURES_H", ""]
-    for name, make in (("basic", basic), ("locked", locked)):
+    for name, make in (("basic", basic), ("locked", locked), ("form", form)):
         data = make()
         out.append("static const unsigned char k_%s_pdf[%d] = {" % (name, len(data)))
         for i in range(0, len(data), 16):
@@ -423,7 +475,7 @@ def header():
 
 # Every file this script writes, by its path from the member root.
 FILES = {"tests/fixtures/basic.pdf": basic, "tests/fixtures/locked.pdf": locked,
-         "tests/fixtures.h": header}
+         "tests/fixtures/form.pdf": form, "tests/fixtures.h": header}
 
 # The demo stack carries the sample and locked.pdf as text, so it stays one
 # paste-and-run file: a block of it, between these two marker lines, is

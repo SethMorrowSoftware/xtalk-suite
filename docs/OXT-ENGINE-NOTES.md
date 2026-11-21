@@ -1504,7 +1504,8 @@ plus the room wanted above its first line. The engine's default margin, 8, leave
 **Gate:** for pdfxt's demo only, `pdfxt/tests/demo-drive.livecodescript` (2026-11-21): every
 field of the window that does not scroll must hold its lines (the formattedRect of them)
 inside its rect, and a line that does not wrap must fit across it. It named all 28 fields of
-the window before the fix. No suite-wide gate.
+the window before the fix, and with the 6 added to every top margin the window met the same
+Windows PC that day with no label cut (OBSERVED). No suite-wide gate.
 **Does NOT mean:** that a field that scrolls must keep its lines inside (they are meant to run
 on), nor that the bottom margin moves the words: by the engine's own comment
 (`exec-interface-field.cpp`, `GetFormattedHeight`) it only enters the formatted height.

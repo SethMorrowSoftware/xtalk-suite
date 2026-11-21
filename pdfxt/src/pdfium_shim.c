@@ -46,8 +46,9 @@
  * file adds: every handle and every number is validated before PDFium sees
  * it, a page drawing is bounded (PDX_MAX_SIDE, PDX_MAX_PIXELS), text results
  * are bounded, the outline walk is bounded against a cyclic file, and no
- * callback reaches script: the one callback (the file reader) runs inside
- * the call that asked, on the caller's thread (suite rule 1).
+ * callback reaches script: the file reader runs inside the call that asked,
+ * on the caller's thread (suite rule 1), and the form module's callbacks
+ * (see "Forms" below) do nothing at all.
  *
  * PDFium is NOT thread-safe and neither is this file: one thread, the
  * script's.
@@ -70,6 +71,7 @@
 #include "fpdfview.h"
 #include "fpdf_doc.h"
 #include "fpdf_edit.h"
+#include "fpdf_formfill.h"
 #include "fpdf_text.h"
 
 #include <math.h>
@@ -156,6 +158,11 @@ static void ok_clear(void) { s_error[0] = 0; }
     X(FPDFBitmap_FillRect)            \
     X(FPDFBitmap_Destroy)             \
     X(FPDF_RenderPageBitmap)          \
+    X(FPDFDOC_InitFormFillEnvironment) \
+    X(FPDFDOC_ExitFormFillEnvironment) \
+    X(FORM_OnAfterLoadPage)           \
+    X(FORM_OnBeforeClosePage)         \
+    X(FPDF_FFLDraw)                   \
     X(FPDFText_LoadPage)              \
     X(FPDFText_ClosePage)             \
     X(FPDFText_CountChars)            \
@@ -389,6 +396,12 @@ typedef struct pdx_doc {
     int pageNo;                  /* 1-based; 0 = none loaded             */
     FPDF_PAGE page;
     FPDF_TEXTPAGE text;          /* loaded on first text call, or NULL   */
+    /* The form module (see "Forms"): its callbacks must outlive it, so
+     * they live here too. formPage is 1 once the loaded page has been told
+     * to it, which happens on the first drawing that draws form fields. */
+    FPDF_FORMFILLINFO forms;
+    FPDF_FORMHANDLE form;        /* NULL if PDFium would not start it    */
+    int formPage;
 } pdx_doc;
 
 static pdx_doc *s_docs[PDX_MAX_DOCS];
@@ -425,6 +438,11 @@ static int doc_add(pdx_doc *d)
 static void drop_page(pdx_doc *d)
 {
     if (d->text) { p_FPDFText_ClosePage(d->text); d->text = NULL; }
+    if (d->formPage) {
+        /* before the page closes, as fpdf_formfill.h asks */
+        if (d->page && d->form) p_FORM_OnBeforeClosePage(d->page, d->form);
+        d->formPage = 0;
+    }
     if (d->page) { p_FPDF_ClosePage(d->page); d->page = NULL; }
     d->pageNo = 0;
 }
@@ -432,6 +450,8 @@ static void drop_page(pdx_doc *d)
 static void doc_destroy(pdx_doc *d)
 {
     drop_page(d);
+    /* the pages first, then the form module, then the document */
+    if (d->form) { p_FPDFDOC_ExitFormFillEnvironment(d->form); d->form = NULL; }
     if (d->doc) p_FPDF_CloseDocument(d->doc);
     if (d->fp) fclose(d->fp);
     free(d->mem);
@@ -781,6 +801,70 @@ LC_API void pdx_shutdown(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Forms                                                               */
+/* FPDF_RenderPageBitmap draws every annotation but two kinds when    */
+/* asked to (flag 1): widgets, which are a form's fields, and pop-ups */
+/* (fpdfview.h says so). A filled-in form drawn that way comes out    */
+/* blank. Its fields are drawn by PDFium's form module, FPDF_FFLDraw, */
+/* over the page once the page is drawn, and that module needs        */
+/* starting for each document (FPDFDOC_InitFormFillEnvironment) and   */
+/* telling about each page it draws on (FORM_OnAfterLoadPage, then    */
+/* FORM_OnBeforeClosePage before the page closes).                    */
+/*                                                                    */
+/* Nothing here makes a form INTERACTIVE: no click or key is ever     */
+/* passed to it, no action is run, and this build has no JavaScript.  */
+/* Its callbacks are the ones fpdf_formfill.h marks required, and     */
+/* each does nothing: no timer is set (so none fires later), nothing  */
+/* is invalidated, no named action ("next page", "print") is taken,   */
+/* and no page is handed out. None reaches script (suite rule 1).     */
+/* ------------------------------------------------------------------ */
+static void form_invalidate(FPDF_FORMFILLINFO *self, FPDF_PAGE page,
+                            double left, double top, double right, double bottom)
+{
+    (void)self; (void)page; (void)left; (void)top; (void)right; (void)bottom;
+}
+static void form_set_cursor(FPDF_FORMFILLINFO *self, int cursor) { (void)self; (void)cursor; }
+static int form_set_timer(FPDF_FORMFILLINFO *self, int elapse, TimerCallback fn)
+{
+    (void)self; (void)elapse; (void)fn;
+    return 0;                         /* no timer: 0 is never a timer's id */
+}
+static void form_kill_timer(FPDF_FORMFILLINFO *self, int id) { (void)self; (void)id; }
+static FPDF_SYSTEMTIME form_local_time(FPDF_FORMFILLINFO *self)
+{
+    FPDF_SYSTEMTIME t;                /* read only by JavaScript, which this build lacks */
+    (void)self;
+    memset(&t, 0, sizeof t);
+    return t;
+}
+static FPDF_PAGE form_get_page(FPDF_FORMFILLINFO *self, FPDF_DOCUMENT doc, int index)
+{
+    (void)self; (void)doc; (void)index;
+    return NULL;                      /* this file loads its pages itself */
+}
+static int form_rotation(FPDF_FORMFILLINFO *self, FPDF_PAGE page) { (void)self; (void)page; return 0; }
+static void form_named_action(FPDF_FORMFILLINFO *self, FPDF_BYTESTRING name) { (void)self; (void)name; }
+
+/* Start the form module for a document just opened. A document with no
+ * form gets one too (PDFium answers it cheaply); if PDFium will not start
+ * it, the document is still opened, and drawn without its form fields. */
+static void form_start(pdx_doc *d)
+{
+    memset(&d->forms, 0, sizeof d->forms);
+    d->forms.version = 1;             /* the stable calls only; this build has no XFA */
+    d->forms.FFI_Invalidate = form_invalidate;
+    d->forms.FFI_SetCursor = form_set_cursor;
+    d->forms.FFI_SetTimer = form_set_timer;
+    d->forms.FFI_KillTimer = form_kill_timer;
+    d->forms.FFI_GetLocalTime = form_local_time;
+    d->forms.FFI_GetPage = form_get_page;
+    d->forms.FFI_GetRotation = form_rotation;
+    d->forms.FFI_ExecuteNamedAction = form_named_action;
+    d->form = p_FPDFDOC_InitFormFillEnvironment(d->doc, &d->forms);
+    d->formPage = 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Opening and closing                                                 */
 /* ------------------------------------------------------------------ */
 static int open_failed(pdx_doc *d)
@@ -802,6 +886,7 @@ static int open_finish(pdx_doc *d)
 {
     d->pages = p_FPDF_GetPageCount(d->doc);
     if (d->pages < 0) d->pages = 0;
+    form_start(d);
     int h = doc_add(d);
     if (!h) {
         doc_destroy(d);
@@ -1020,11 +1105,26 @@ LC_API int pdx_page_rotation(int doc, int pageNo)
 /* Drawing                                                             */
 /* ------------------------------------------------------------------ */
 /* The flags a script may pass, PDFium's own values: 1 draw annotations
- * (form fields included), 2 LCD-optimised text, 8 grayscale, 2048 draw for
- * print, 4096 / 8192 / 16384 no smoothing of text / images / paths. Any
- * other bit is dropped: FPDF_REVERSE_BYTE_ORDER would change the bytes this
- * file reorders itself. */
+ * and form fields (the fields by FPDF_FFLDraw, see "Forms"), 2
+ * LCD-optimised text, 8 grayscale, 2048 draw for print, 4096 / 8192 /
+ * 16384 no smoothing of text / images / paths. Any other bit is dropped:
+ * FPDF_REVERSE_BYTE_ORDER would change the bytes this file reorders
+ * itself. */
 #define PDX_RENDER_FLAGS (0x01 | 0x02 | 0x08 | 0x800 | 0x1000 | 0x2000 | 0x4000)
+
+/* Gray, in place, by PDFium's own formula (FXRGB2GRAY: 30% red, 59% green,
+ * 11% blue), over BGRx. A pixel that is already gray stays exactly as it
+ * is, so this changes only what was drawn in colour. It is needed because
+ * the form module ignores gray: asked for flag 1 and 8 together, the
+ * pinned PDFium drew form.pdf's green field green (the smoke test,
+ * 2026-11-21) over a page it had drawn gray. */
+static void to_gray(unsigned char *p, size_t pixels)
+{
+    for (size_t i = 0; i < pixels; i++, p += 4) {
+        unsigned g = (p[0] * 11u + p[1] * 59u + p[2] * 30u) / 100u;
+        p[0] = p[1] = p[2] = (unsigned char)g;
+    }
+}
 
 /* Draw into s_data as BGRx rows, top row first. The page is scaled to
  * zoomW x zoomH and the window width x height is cut from it at left, top. */
@@ -1051,6 +1151,15 @@ static unsigned char *draw(int doc, int pageNo, int zoomW, int zoomH, int left, 
     if (!bmp) { fail("the bitmap could not be made"); return NULL; }
     p_FPDFBitmap_FillRect(bmp, 0, 0, width, height, 0xFFFFFFFFu);      /* white paper */
     p_FPDF_RenderPageBitmap(bmp, d->page, -left, -top, zoomW, zoomH, 0, flags & PDX_RENDER_FLAGS);
+    if ((flags & 0x01) && d->form) {
+        /* the form's fields over the page, on the same window of it */
+        if (!d->formPage) {
+            p_FORM_OnAfterLoadPage(d->page, d->form);
+            d->formPage = 1;
+        }
+        p_FPDF_FFLDraw(d->form, bmp, d->page, -left, -top, zoomW, zoomH, 0, flags & PDX_RENDER_FLAGS);
+        if (flags & 0x08) to_gray(buf, (size_t)width * (size_t)height);
+    }
     p_FPDFBitmap_Destroy(bmp);                                  /* not our buffer */
     return buf;
 }

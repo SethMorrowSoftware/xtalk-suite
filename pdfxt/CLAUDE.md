@@ -17,7 +17,8 @@ box3dxt is the member this one was shaped on.
 ## The rules
 
 1. **Never call script from a foreign thread.** The shim starts no thread and registers no
-   callback that reaches script; PDFium is called on the caller's thread only.
+   callback that reaches script (the form module's eight do nothing); PDFium is called on the
+   caller's thread only.
 2. **Nothing crosses the boundary but values.** The shim is C: there is no exception to
    firewall. What stands in its place: every export validates its handle, page and arguments
    before it calls PDFium, and nothing throws but the binding's ABI check. A refusal is 0 or
@@ -76,6 +77,15 @@ box3dxt is the member this one was shaped on.
   other pointer measures 0.
 - **A drawing is converted in place** from PDFium's BGRx to the engine's `imageData` order (a
   zero byte, then red, green, blue), on white.
+- **Form fields are drawn by PDFium's form module**, over the page, when flag 1 asks:
+  `FPDF_RenderPageBitmap` draws every annotation but widgets and pop-ups, so a filled-in form
+  came out blank until 2026-11-21 (a review found it). Each document starts the module when it
+  opens (`FPDFDOC_InitFormFillEnvironment`, version 1, the eight callbacks `fpdf_formfill.h`
+  marks required, each doing nothing: no timer, no action, no page handed out); the cached
+  page is told to it on its first such drawing and before it closes; then `FPDF_FFLDraw`. No
+  click or key ever reaches a form. The module ignores gray, so flag 8 with flag 1 is made
+  gray afterwards by PDFium's own formula (`to_gray`; a gray pixel stays as it is).
+  `tests/fixtures/form.pdf` holds one filled field, and the sample's cover another.
 - **`pdx_open` keeps the file open** and PDFium reads it through a callback; `pdx_open_data`
   keeps its own copy of the bytes. Both live until `pdx_close`.
 - **Linux loads PDFium with `RTLD_DEEPBIND`** (it exports its own FreeType and calls it
@@ -126,8 +136,11 @@ own frames (`pvShowRun`). Its earlier, kit look met the Windows IDE on 2026-11-2
 fields white on white under the dark appearance. This look met it the same day (the
 maintainer's PC, OXT-Beyond 0.2.8-dp.1): PDFium loaded and the tour ran to its end, and it
 showed the window opening partly off the screen and every label's words 5 pixels above it,
-the tops of some letters cut off. Both were fixed that day and are held by the drive; the
-fixed window has met Linux only (verified statically; needs an OXT pass on Windows). The Windows IDE loaded it on
+the tops of some letters cut off. Both were fixed that day and are held by the drive, and the
+fixed window met the same PC that day: it moved itself onto the screen from the spot that had
+put it off, and no label was cut. Form fields (flag 1, above) have been drawn since
+2026-11-21: the smoke test, the engine self-test and the drive on Linux; the native lane runs
+the smoke test on the other platforms. The Windows IDE loaded it on
 2026-11-21 (the maintainer's 64-bit OXT-Beyond, CI's `x86_64-win32` library): the engine
 self-test passed 64 checks and failed its 2 first-load checks, which cannot hold once PDFium
 has been loaded in the process (pdfxt had been used in that session first; loading and

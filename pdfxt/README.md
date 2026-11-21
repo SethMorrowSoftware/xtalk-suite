@@ -20,7 +20,8 @@ does not write, edit, print or fill in a PDF.
 - **Open** a file by path or from bytes in memory, with a password if it has one; any number of
   documents at once (4095). A file is read as pages are asked for, so a large one opens at once.
 - **Draw** a page at any size as the `imageData` of an image, as a ready BMP picture an image
-  takes as its `text`, or one window of a zoomed page (what a viewer scrolls).
+  takes as its `text`, or one window of a zoomed page (what a viewer scrolls), with its
+  annotations and a filled-in form's fields when you ask for them (flag 1).
 - **Read** a page's text, a range of it, the text inside a rectangle, the character under a
   point, and where each character sits, for selection and highlighting.
 - **Search** a page, with or without case and whole words, and get the rectangles to highlight.
@@ -80,10 +81,14 @@ On an older system the extension still loads and every call is refused with a re
 
 Joined the suite on 2026-11-20. What has run, and where:
 
-- **Natively**, on x86_64 Linux: the smoke test calls every export of the shim against two
+- **Natively**, on x86_64 Linux: the smoke test calls every export of the shim against three
   PDFs it carries (three pages with text, shapes, links, an outline and labels; one protected
-  by a password) and checks what comes back, down to the colour of single pixels. Clean under
-  ASan/UBSan.
+  by a password; one with a filled-in form field) and checks what comes back, down to the
+  colour of single pixels. Clean under ASan/UBSan. Form fields have been drawn since
+  2026-11-21, when a review found them missing: PDFium leaves a form's fields out of a page
+  drawing, so the shim has PDFium's form module draw them over it. That has run on Linux (the
+  smoke test, the engine self-test and the demo drive); the native lane runs the smoke test
+  on the other platforms with each change.
 - **Natively on every platform it ships for**, by its own lane (`native-pdfxt.yml`, run
   44840908920, 2026-11-21): the same smoke test passed on Windows (x86_64 and x86), macOS
   (arm64, and x86_64 under Rosetta), Linux (x86_64, x86 and arm64) and an Android 6.0 emulator
@@ -100,7 +105,8 @@ Joined the suite on 2026-11-20. What has run, and where:
   character, by box and by click, the outline and the links followed, a locked PDF unlocked),
   and any click hands the window over: zoom and scroll, the outline, links, search, a page's
   text, the word you click and the text in a box you drag, the document's information and
-  permissions, the drawing flags, a page saved as a BMP, and one button that checks all of it.
+  permissions, the drawing flags (the first, lit when the window opens, draws the sample's
+  filled-in form field), a page saved as a BMP, and one button that checks all of it.
   Without pdfxt it still opens, and says in red what is missing. `tests/demo-drive.livecodescript`
   drives it on OXT-Beyond's Linux desktop engine with no display (2026-11-21, a locally built
   library): the window built with every colour its own, the tour started by the engine's timer,
@@ -117,8 +123,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   pixels above it, so the tops of some letters were cut off (a field's first line starts 6
   pixels above its top margin, the suite's engine note 5.19; every margin now allows for it);
   and the toolbar's words sat above the buttons' line, for the same reason. The drive holds
-  all three. The fixed window has met Linux only: on Windows it is verified statically; needs
-  an OXT pass. Nobody has used the window by hand yet.
+  all three. The fixed window met the same PC that day: put back where it had opened off the
+  screen, it moved itself onto the screen, no label was cut, the toolbar's words sat on the
+  buttons' line, and the tour played. Nobody has used the window by hand yet.
 - **In the Windows IDE**, on 2026-11-21: the maintainer's 64-bit OXT-Beyond (engine 9.7.1)
   loaded the module, compiled there from this source, over CI's `x86_64-win32` library (run
   44840908920), and `tests/engine-selftest.lc`, run inside the IDE as a script-only stack,

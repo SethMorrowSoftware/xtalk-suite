@@ -15,6 +15,8 @@
  *   - sizes, rotation, labels, the information entries (UTF-16 to UTF-8);
  *   - drawing: imageData byte order, a region equal to the same window of a
  *     full drawing, the BMP file, the limits;
+ *   - a filled-in form: its field drawn with flag 1 only, by PDFium's form
+ *     module over the page, in all three drawings;
  *   - text: all of it, a range, a rectangle, a character's box, the
  *     character at a point, searching, the rectangles of a run;
  *   - the outline and the links, on a plain page and a rotated one;
@@ -379,7 +381,69 @@ static void test_drawing(void)
     /* a far zoom of a small window, the kind a viewer asks for */
     px = pdx_render_page_region(d, 1, 612000, 792000, 150000, 642000, 64, 64, 0);
     CHECK(pdx_data_length() == 64 * 64 * 4 && pixel_is(px, 64, 32, 32, 255, 0, 0), "a thousandfold zoom into the square is red");
+    /* flag 1 on a document with no form: the page as before */
+    px = pdx_render_page(d, 1, 612, 792, 1);
+    CHECK(pixel_is(px, 612, 150, 642, 255, 0, 0) && pixel_is(px, 612, 10, 10, 255, 255, 255), "flag 1 with no form draws the page as before");
     pdx_close(d);
+}
+
+/* A filled-in form (form.pdf): PDFium leaves a form's fields out of a page
+ * drawing, so they are drawn by its form module over the page, with flag 1
+ * only, in each of the three drawings. The field's box is 20..180 across
+ * and 40..80 down at one pixel a point, all pure green. */
+static void test_forms(void)
+{
+    int d = pdx_open_data(k_form_pdf, (int)sizeof k_form_pdf, "");
+    CHECK(d > 0, "the form opens");
+    const unsigned char *px = pdx_render_page(d, 1, 200, 100, 0);
+    CHECK(pdx_data_length() == 200 * 100 * 4 && pixel_is(px, 200, 170, 45, 255, 255, 255),
+          "without flag 1 the form field is not drawn: paper where it is");
+    px = pdx_render_page(d, 1, 200, 100, 1);
+    CHECK(pdx_data_length() == 200 * 100 * 4 && pixel_is(px, 200, 170, 45, 0, 255, 0)
+          && pixel_is(px, 200, 23, 77, 0, 255, 0), "flag 1 draws the form field: its box is green");
+    CHECK(pixel_is(px, 200, 170, 36, 255, 255, 255) && pixel_is(px, 200, 185, 45, 255, 255, 255)
+          && pixel_is(px, 200, 170, 84, 255, 255, 255), "and nothing beyond its box");
+    px = pdx_render_page(d, 1, 200, 100, 0);
+    CHECK(pixel_is(px, 200, 170, 45, 255, 255, 255), "flag 0 again: not drawn again");
+
+    /* twice the size, a window over the field's right end (the field is
+     * 40..360 across and 80..160 down there) */
+    px = pdx_render_page_region(d, 1, 400, 200, 300, 60, 80, 60, 1);
+    CHECK(pdx_data_length() == 80 * 60 * 4 && pixel_is(px, 80, 30, 40, 0, 255, 0), "a region draws the field too");
+    CHECK(pixel_is(px, 80, 70, 40, 255, 255, 255) && pixel_is(px, 80, 30, 10, 255, 255, 255), "where it is and only there");
+
+    /* the BMP file: bottom row first, blue green red */
+    const unsigned char *bmp = pdx_render_page_bmp(d, 1, 200, 100, 1);
+    CHECK(pdx_data_length() == 54 + 600 * 100, "a BMP of the form");
+    if (pdx_data_length() == 54 + 600 * 100) {
+        const unsigned char *p = bmp + 54 + (size_t)(100 - 1 - 45) * 600 + 170 * 3;
+        CHECK(p[0] == 0 && p[1] == 255 && p[2] == 0, "the BMP has the field");
+    }
+
+    /* gray: the green box is some gray */
+    px = pdx_render_page(d, 1, 200, 100, 1 | 8);
+    {
+        const unsigned char *p = px + ((size_t)45 * 200 + 170) * 4u;
+        CHECK(p[1] == p[2] && p[2] == p[3] && p[1] > 20 && p[1] < 235, "flag 8 draws the field in gray too");
+    }
+
+    /* the value a field holds is not text of the page */
+    CHECK_TEXT(pdx_page_text(d, 1), "Name:", "the page's text is its own, not the field's value");
+
+    /* a page told to the form module, then its text, then closed; and a form
+     * opened and closed without a drawing (the sanitizers watch both) */
+    (void)pdx_render_page(d, 1, 50, 25, 1);
+    CHECK(pdx_page_char_count(d, 1) == 5, "text after a drawing with the form");
+    pdx_close(d);
+    d = pdx_open_data(k_form_pdf, (int)sizeof k_form_pdf, "");
+    CHECK(d > 0 && pdx_page_count(d) == 1, "opened again");
+    pdx_close(d);
+    for (int i = 0; i < 50; i++) {
+        d = pdx_open_data(k_form_pdf, (int)sizeof k_form_pdf, "");
+        (void)pdx_render_page(d, 1, 20, 10, 1);
+        pdx_close(d);
+    }
+    CHECK(pdx_open_count() == 0, "fifty forms drawn and closed");
 }
 
 static void test_text(void)
@@ -608,6 +672,7 @@ int main(void)
     test_document();
     test_password();
     test_drawing();
+    test_forms();
     test_text();
     test_outline_and_links();
     test_handles();

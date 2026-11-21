@@ -9,9 +9,9 @@
 --      MODULE    pdfxt.lcm, compiled from src/pdfxt.lcb by lc-compile
 --      LIBRARY   the built native library WITHOUT its extension
 --                (.../pdfxt for .../pdfxt.so), with PDFium beside it
---      FIXTURES  the folder tests/fixtures (basic.pdf and locked.pdf, which
---                tools/build-test-pdfs.py writes: its header says what is
---                on each page)
+--      FIXTURES  the folder tests/fixtures (basic.pdf, locked.pdf and
+--                form.pdf, which tools/build-test-pdfs.py writes: its
+--                header says what is on each page)
 --
 -- tests/smoke_test.c proves the C shim. This proves the layer above it, the
 -- one a compile cannot: that every binding resolves by name in the built
@@ -154,6 +154,18 @@ command testDrawing
    check "a BMP file", byte 1 to 2 of tBmp is "BM" and the number of bytes in tBmp is 54 + 600 * 100, the number of bytes in tBmp
    check "too large is refused, empty, with a reason", pdfRenderPage(tDoc, 1, 10000, 10000, 0) is empty and pdfLastError() is not empty, pdfLastError()
    check "no such page is refused", pdfRenderPage(tDoc, 9, 10, 10, 0) is empty and pdfLastError() contains "page", pdfLastError()
+   pdfClose tDoc
+   -- form.pdf: a filled-in field, green over 20..180 across and 40..80 down,
+   -- drawn by PDFium's form module with flag 1 only
+   put pdfOpen(sFixtures & "/form.pdf", empty) into tDoc
+   put pdfRenderPage(tDoc, 1, 200, 100, 0) into tData
+   check "a form field is left out without flag 1", pixelOf(tData, 200, 170, 45) is "255,255,255", pixelOf(tData, 200, 170, 45)
+   put pdfRenderPage(tDoc, 1, 200, 100, 1) into tData
+   check "flag 1 draws the form field", pixelOf(tData, 200, 170, 45) is "0,255,0", pixelOf(tData, 200, 170, 45)
+   put pdfRenderPageRegion(tDoc, 1, 400, 200, 300, 60, 80, 60, 1) into tPart
+   check "a region draws it too", pixelOf(tPart, 80, 30, 40) is "0,255,0" and pixelOf(tPart, 80, 70, 40) is "255,255,255", \
+         pixelOf(tPart, 80, 30, 40) && pixelOf(tPart, 80, 70, 40)
+   check "the field's value is not the page's text", pdfPageText(tDoc, 1) is "Name:", pdfPageText(tDoc, 1)
    pdfClose tDoc
 end testDrawing
 

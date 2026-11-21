@@ -16,12 +16,14 @@ script "pdfxtDemoDrive"
 -- what each one did. Then it does what a person would: follows the
 -- outline, zooms and scrolls, searches with and without the flags, types a
 -- page label, clicks a link, a word and a web address, drags out a box,
--- draws in gray, saves a page, unlocks the locked sample with a wrong and
--- then the right password, runs every check from the Checks tab, starts a
--- scene with its button and closes the document. A click is the message
--- the engine sends (mouseUp, returnInField, scrollbarDrag); a click or a
--- drag ON THE PAGE is the handler the demo's mouse handlers call with the
--- point they read (pvClickAt, pvSelectBox), since no pointer moves here.
+-- leaves out the filled-in form field on page i and draws it again (flag
+-- 1, lit when the window opens), draws in gray, saves a page, unlocks the
+-- locked sample with a wrong and then the right password, runs every check
+-- from the Checks tab, starts a scene with its button and closes the
+-- document. A click is the message the engine sends (mouseUp,
+-- returnInField, scrollbarDrag); a click or a drag ON THE PAGE is the
+-- handler the demo's mouse handlers call with the point they read
+-- (pvClickAt, pvSelectBox), since no pointer moves here.
 -- The look is held too: every field and button of the window says its own
 -- colours (under Windows' dark appearance a field without them got white
 -- text on a white ground), and no button is a tick box. Every field that
@@ -434,6 +436,17 @@ on startup
             the width of image "draw:thumb" && the height of image "draw:thumb"
       put drPixel(the imageData of image "view:page", the width of image "view:page", 5, 5) into tPixel
       drCheck tPixel is "44,90,160", "page i's band is the accent colour", tPixel
+      -- page i's form field (light blue, 79..249 across and 290..305 down at
+      -- this size), drawn by PDFium's form module when flag 1 asks
+      put drPixel(the imageData of image "view:page", the width of image "view:page", 230, 297) into tPixel
+      drCheck the hilite of button "draw:annots" and tPixel is "199,216,241", \
+            "Annotations and forms is lit in a new window, and page i's form field is drawn filled in", tPixel
+      drClick the long id of button "draw:annots"
+      put drPixel(the imageData of image "view:page", the width of image "view:page", 230, 297) into tPixel
+      drCheck not the hilite of button "draw:annots" and tPixel is "255,255,255", "unlit, the form field is left out", tPixel
+      drClick the long id of button "draw:annots"
+      put drPixel(the imageData of image "view:page", the width of image "view:page", 230, 297) into tPixel
+      drCheck the hilite of button "draw:annots" and tPixel is "199,216,241", "lit again, it is drawn again", tPixel
       drClick the long id of button "draw:gray"
       put drPixel(the imageData of image "view:page", the width of image "view:page", 5, 5) into tPixel
       drCheck the hilite of button "draw:gray" and item 1 of tPixel is item 2 of tPixel and item 2 of tPixel is item 3 of tPixel \
