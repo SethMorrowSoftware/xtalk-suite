@@ -54,8 +54,10 @@ script "RenderThreeDDemo"
 -- buttons are painted by this stack (rdButton) and the log, the small print
 -- and the footer say their own colours, because what is left to the system
 -- comes out white on white under a dark theme (Windows, 2026-11-20). The
--- look as rebuilt that day (the buttons, the sky, the wheel, the corner's
--- pictures-a-second) is verified statically; needs an OXT pass.
+-- look as rebuilt that day was seen on Windows on 2026-11-21 (OXT-Beyond
+-- 0.2.8-dp.1, dark appearance: everything readable); the wheel and the
+-- buttons' hover and pressed states have had no real pointer there:
+-- verified statically; needs an OXT pass.
 
 
 -- ==========================================================================
@@ -63,7 +65,7 @@ script "RenderThreeDDemo"
 -- ==========================================================================
 
 -- Bumped whenever the generated UI changes so a saved stack rebuilds.
-constant kRdUiVersion = "render3d-kit2-3"
+constant kRdUiVersion = "render3d-kit2-4"
 constant kRdWinW = 980
 constant kRdWinH = 620
 -- The picture: 4 by 3, and small enough that a frame with smooth edges
@@ -127,6 +129,9 @@ local sRdTurning             -- true while the camera walks slowly round by itse
 local sRdDistance            -- the camera's distance from kRdTarget, metres
 local sRdShown               -- pictures shown since the stats were last written
 local sRdStatsAt             -- the milliseconds when they were
+local sRdGap                 -- the longest wait between two frames since the stats were written, ms
+local sRdQuick               -- true while pictures of things in motion go without smooth edges, to keep up
+local sRdDrawnAt             -- the samples a side (1 or 2) the scene is set to draw with
 local sRdPressed             -- the button the mouse went down on, or empty
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
@@ -963,7 +968,7 @@ command rdBuild
    set the borderColor of field "rdLog" to kRdConsole
    uiCap "rdStats", empty, "16,546,964,564"
    rdQuiet "rdStats"
-   uiFooter "render3dxt draws, in an ordinary image, what box3dxt simulates. This stack reads and writes no file and uses no network; where it has run is at the top of its script.", "16,568,964,604"
+   uiFooter "render3dxt draws, in an ordinary image, what box3dxt simulates. This stack reads and writes no file and uses no network.", "16,568,964,604"
    set the foregroundColor of field "uiFooter" to kRdQuiet
    set the uRdUiVersion of this stack to kRdUiVersion
    unlock screen
@@ -1114,6 +1119,9 @@ command rdStart
    put 0 into sRdOwed
    put 0 into sRdShown
    put sRdClock into sRdStatsAt
+   put 0 into sRdGap
+   put false into sRdQuick
+   put empty into sRdDrawnAt
    put empty into sRdPressed
    put kRdDistance into sRdDistance
    put empty into sRdFrameMsg
@@ -1217,33 +1225,8 @@ function rdCheckerMaterial pCells, pR1, pG1, pB1, pR2, pG2, pB2
    return tMaterial
 end rdCheckerMaterial
 
--- The sky's picture, as imageData: 4 pixels wide and 64 high, four bytes
--- a pixel with the first unused. Its top row is straight overhead and its
--- middle row is the horizon; below that it darkens again, for the depths
--- under the floor.
-function rdSkyData
-   local tData, tRow, tT, tR, tG, tB, tPixel
-   repeat with tRow = 0 to 63
-      if tRow < 32 then
-         -- overhead to horizon, quickening as it comes down
-         put (tRow / 31) ^ 3 into tT
-         put 22 + (176 - 22) * tT into tR
-         put 34 + (192 - 34) * tT into tG
-         put 78 + (218 - 78) * tT into tB
-      else
-         put ((tRow - 32) / 31) ^ 0.6 into tT
-         put 176 + (40 - 176) * tT into tR
-         put 192 + (48 - 192) * tT into tG
-         put 218 + (72 - 218) * tT into tB
-      end if
-      put numToByte(255) & numToByte(round(tR)) & numToByte(round(tG)) & numToByte(round(tB)) into tPixel
-      put tPixel & tPixel & tPixel & tPixel after tData
-   end repeat
-   return tData
-end rdSkyData
-
 command rdMakeScene
-   local tFloorMat, tNode, tMaterial, tGemMat, tTexture, tSkyMat
+   local tFloorMat, tNode, tMaterial, tGemMat, tTexture
    -- the simulation: gravity down the y axis, one worker thread
    put b3WorldCreate(0, -10, 0, 1) into sRdWorld
    put b3BodyCreate(sRdWorld, 0, 0, -0.5, 0) into sRdFloorBody
@@ -1251,11 +1234,14 @@ command rdMakeScene
 
    -- the picture of it
    put r3SceneCreate() into sRdScene
-   r3SceneSetBackground sRdScene, 26, 30, 44
+   -- a pale sky, and a haze of the same colour that the far end of the
+   -- floor fades into: without it the far tiles, each smaller than a pixel,
+   -- shimmer (seen on Windows, 2026-11-21). A sky drawn as a thing in the
+   -- scene was tried and taken out: it cost every picture a second coat of
+   -- paint over the whole frame.
+   r3SceneSetBackground sRdScene, 168, 186, 214
    r3SceneSetAmbient sRdScene, 70, 74, 90
-   -- the haze begins beyond everything that falls: it is there for the sky
-   r3SceneSetFog sRdScene, 150, 170, 204, 70, 400
-   r3SceneSetClip sRdScene, 0.05, 200
+   r3SceneSetFog sRdScene, 168, 186, 214, 9, 30
    get r3LightCreatePoint(sRdScene, -5, 6, 4, 255, 214, 170, 1.2, 30)
    put 0.6 into sRdYaw
    put 0.3 into sRdPitch
@@ -1266,7 +1252,6 @@ command rdMakeScene
    put empty into sRdTextures
    put empty into sRdTexOfMat
    put r3MeshBox(8, 0.5, 8) into sRdMeshes["floor"]
-   put r3MeshSphere(1, 24, 16) into sRdMeshes["sky"]
    put r3MeshBox(0.5, 0.5, 0.5) into sRdMeshes["crate"]
    put r3MeshSphere(0.5, 28, 16) into sRdMeshes["ball"]
    put r3MeshParseObj(rdGemObj(), rdGemMtl()) into sRdMeshes["gem"]
@@ -1287,23 +1272,6 @@ command rdMakeScene
    r3NodeSetMaterial tNode, tFloorMat
    r3NodeSetTransformText tNode, b3BodyTransform(sRdFloorBody)
    r3NodeSetTag tNode, sRdFloorBody
-
-   -- the sky: the renderer clears to one colour, so the sky is a thing in
-   -- the scene like any other: a great ball seen from inside, wearing a
-   -- picture that runs from deep blue overhead to a pale horizon. It is
-   -- unlit (no lamp reaches the sky) and tagged with nothing, so a click on
-   -- it finds no body.
-   put r3TextureFromImageData(rdSkyData(), 4, 64) into tTexture
-   r3TextureSetRepeat tTexture, false
-   put r3MaterialCreate(255, 255, 255) into tSkyMat
-   r3MaterialSetTexture tSkyMat, tTexture
-   r3MaterialSetUnlit tSkyMat, true
-   r3MaterialSetDoubleSided tSkyMat, true
-   put tTexture & comma after sRdTextures
-   put tSkyMat & comma after sRdMaterials
-   put r3NodeCreate(sRdScene, sRdMeshes["sky"]) into tNode
-   r3NodeSetMaterial tNode, tSkyMat
-   r3NodeSetScale tNode, 60, 60, 60
 
    put empty into sRdCrateMats
    put rdCheckerMaterial(2, 196, 148, 92, 150, 106, 60) & comma after sRdCrateMats
@@ -1446,7 +1414,7 @@ end rdFirstThings
 -- ==========================================================================
 
 on rdFrame
-   local tStarted, tSpent, tSteps, tMoved
+   local tStarted, tSpent, tSteps, tMoved, tWant
    -- pinned at the timer's entry: a delayed handler's unqualified controls
    -- resolve against the defaultStack (docs/OXT-ENGINE-NOTES.md 5.3)
    set the defaultStack to the short name of this stack
@@ -1455,6 +1423,21 @@ on rdFrame
       exit rdFrame
    end if
    put the milliseconds into tStarted
+   -- THE PACE. A frame is due a sixtieth of a second after the last, by
+   -- the clock. A timer is not trusted to say when that is: asked for 16
+   -- milliseconds, a system whose clock ticks every 15.6 (Windows) answers
+   -- after one tick or after two, and the pictures come at 60 and at 30 a
+   -- second by turns (seen in this suite's 3D stacks on Windows,
+   -- 2026-11-21). So the timer is asked for less than is left, and a frame
+   -- that comes early looks at the clock and goes back to wait.
+   if tStarted - sRdClock < 15 then
+      send "rdFrame" to me in max(1, 16 - (tStarted - sRdClock) - 8) milliseconds
+      put the result into sRdFrameMsg
+      exit rdFrame
+   end if
+   put max(sRdGap, tStarted - sRdClock) into sRdGap
+   -- one redraw of the window for the picture and the words round it
+   lock screen
    -- 1. the picture begun a frame ago was drawn while the engine did its
    -- own work: show it (r3SceneFrame waits if it is not quite finished)
    if sRdBegun is true then
@@ -1497,14 +1480,27 @@ on rdFrame
    end if
    put tStarted into sRdClock
    -- 3. begin the next picture, if anything in it would differ. The call
-   -- returns once the scene is read; the pixels are drawn in the background
-   if sRdStale is true then
+   -- returns once the scene is read; the pixels are drawn in the background.
+   -- Smooth edges are four samples a pixel. Where that is too slow to keep
+   -- up (sRdQuick, decided in rdShowStats), a picture of things in motion
+   -- is drawn with one, and the smooth one when they have come to rest.
+   if sRdSmooth is true and not (sRdQuick is true and sRdStale is true) then
+      put 2 into tWant
+   else
+      put 1 into tWant
+   end if
+   if sRdStale is true or (tWant is not sRdDrawnAt and sRdBegun is not true) then
       put false into sRdStale
+      if tWant is not sRdDrawnAt then
+         r3SceneSetSupersample sRdScene, tWant
+         put tWant into sRdDrawnAt
+      end if
       put (r3SceneRenderBegin(sRdScene, kRdViewW, kRdViewH) > 0) into sRdBegun
    end if
-   -- sixty frames a second when a frame costs less than a sixtieth
+   unlock screen
+   -- and wait for the clock: a little less than what is left of the frame
    put the milliseconds - tStarted into tSpent
-   send "rdFrame" to me in max(1, 16 - tSpent) milliseconds
+   send "rdFrame" to me in max(1, 16 - tSpent - 8) milliseconds
    put the result into sRdFrameMsg
 end rdFrame
 
@@ -1549,7 +1545,7 @@ end rdSweepFallen
 -- corner: pictures shown a second since the last time, and what the last
 -- one cost to draw.
 command rdShowStats pNow
-   local tStats, tSpan
+   local tStats, tSpan, tGap
    set the defaultStack to the short name of this stack
    put r3SceneStats(sRdScene) into tStats
    if pNow is not a number then
@@ -1562,11 +1558,26 @@ command rdShowStats pNow
    else
       put round(sRdShown * 1000 / tSpan) && "fps   " & format("%.1f", item 3 of tStats) && "ms" into field "rdFps"
    end if
+   -- the badge is as wide as its words, whatever the font: a fixed box had
+   -- them off its middle on Windows
+   if the formattedWidth of field "rdFps" > 0 then
+      set the rect of field "rdFps" to 24, 72, 24 + the formattedWidth of field "rdFps", 72 + max(20, the formattedHeight of field "rdFps")
+   end if
+   -- a smooth picture that takes more than 6 ms leaves too little of a
+   -- frame for the rest; a plain one that would be under 5 ms smooth (four
+   -- times the samples, about three times the time) can be smooth again
+   if sRdDrawnAt is 2 and item 3 of tStats > 6 and sRdShown > 0 then
+      put true into sRdQuick
+   else if sRdDrawnAt is 1 and item 3 of tStats * 3 < 5 then
+      put false into sRdQuick
+   end if
+   put sRdGap into tGap
+   put 0 into sRdGap
    put 0 into sRdShown
    put pNow into sRdStatsAt
    put the number of lines of sRdThings && "things," && item 1 of tStats && "triangles;" \
          && "the last picture took" && format("%.1f", item 3 of tStats) && "ms on" && r3ThreadCount() && "threads;" \
-         && b3WorldAwakeBodyCount(sRdWorld) && "bodies awake" into field "rdStats"
+         && b3WorldAwakeBodyCount(sRdWorld) && "bodies awake; the longest wait between frames" && tGap && "ms" into field "rdStats"
 end rdShowStats
 
 -- ==========================================================================
@@ -1643,8 +1654,10 @@ command rdSetSmooth pOn
    end if
    if sRdSmooth then
       r3SceneSetSupersample sRdScene, 2
+      put 2 into sRdDrawnAt
    else
       r3SceneSetSupersample sRdScene, 1
+      put 1 into sRdDrawnAt
    end if
    if sRdPaused is true then
       rdDraw
@@ -1700,7 +1713,7 @@ command rdKick pPx, pPy
       exit rdKick
    end if
    put r3NodeTag(tNode) into tBody
-   -- the sky has no body, and the floor's is not to be kicked
+   -- a node with no body is nobody's, and the floor's is not to be kicked
    if tBody is 0 or tBody is sRdFloorBody then
       exit rdKick
    end if
@@ -1761,6 +1774,9 @@ end rdThemed
 
 command rdScRun
    local tMissing, tFirst, tSpot
+   -- a stack that is opened again has last time's log in it: this run's
+   -- lines are the only ones that belong there
+   put empty into field "rdLog"
    scBegin "rdLog"
    put scMissing(kRdScControls) into tMissing
    scAssert "all 14 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
@@ -1773,8 +1789,8 @@ command rdScRun
       scAssert "the first picture is width x height x 4 bytes (" & scShow(r3SceneFrameLength(sRdScene)) & ")", \
             r3SceneFrameLength(sRdScene) is kRdViewW * kRdViewH * 4
       scAssert "the image holds a picture of that size", the number of bytes of the imageData of image "rdView" is kRdViewW * kRdViewH * 4
-      scAssert "one node for the floor, one for the sky and one for every body (" & scShow(r3SceneNodeCount(sRdScene)) & ")", \
-            r3SceneNodeCount(sRdScene) is the number of lines of sRdThings + 2
+      scAssert "one node for the floor and one for every body (" & scShow(r3SceneNodeCount(sRdScene)) & ")", \
+            r3SceneNodeCount(sRdScene) is the number of lines of sRdThings + 1
       put item 1 of line 1 of sRdThings into tFirst
       scAssert "a body's transform is its node's transform", \
             rdSameNumbers(r3NodeTransform(r3SceneNodeByTag(sRdScene, tFirst)), b3BodyTransform(tFirst))

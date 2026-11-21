@@ -119,10 +119,9 @@ function logCloses
    return field "rdLog" of stack "rdDemo"
 end logCloses
 
--- the sky is a blue that is not the scene's clearing colour: more blue
--- than red, and not 26,30,44
+-- the sky: the pale blue the scene is cleared to
 function isSky pPixel
-   return pPixel is not "26,30,44" and item 3 of pPixel > item 1 of pPixel + 20
+   return pPixel is "168,186,214"
 end isSky
 
 command press pButton
@@ -186,6 +185,16 @@ command testWithBoth pPath
          and word 1 of field "rdFps" of stack "rdDemo" > 0, field "rdFps" of stack "rdDemo"
    put "INFO   " & field "rdFps" of stack "rdDemo" & return
    check "the paintCompression is left as it was found", the paintCompression is "png", the paintCompression
+   -- the pace: a frame is due every sixteen milliseconds and never sooner,
+   -- and one frame message waits, not a pile of them
+   put 0 into tCount
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine is "rdFrame" then add 1 to tCount
+   end repeat
+   check "one frame is waiting", tCount is 1, tCount
+   check "the stats line says the longest wait between frames, and it is at least a frame", field "rdStats" of stack "rdDemo" contains "the longest wait between frames" \
+         and word -2 of field "rdStats" of stack "rdDemo" >= 15, field "rdStats" of stack "rdDemo"
+   check "never more than sixty-odd pictures a second", word 1 of field "rdFps" of stack "rdDemo" <= 67, field "rdFps" of stack "rdDemo"
 
    -- the buttons, by message
    press "rdCrate"
@@ -263,6 +272,10 @@ command testWithBoth pPath
    wait 200 milliseconds with messages
    check "it opens a second time with the same controls", the number of controls of stack "rdDemo" is tCount \
          and field "uiStatus" of stack "rdDemo" begins with "Running", the number of controls of stack "rdDemo" && tCount
+   put logCloses() into tLog
+   check "opened again, the log holds this run only", linesStarting(tLog, "==") is 1, linesStarting(tLog, "==")
+   check "the corner's badge is as wide as its words", abs(the width of field "rdFps" of stack "rdDemo" - the formattedWidth of field "rdFps" of stack "rdDemo") <= 1 \
+         or field "rdFps" of stack "rdDemo" is empty, the width of field "rdFps" of stack "rdDemo" && the formattedWidth of field "rdFps" of stack "rdDemo"
    send "closeStack" to stack "rdDemo"
    check "and closes clean again", r3LiveCounts() is "0,0,0,0,0,0" and "rdFrame" is not in the pendingMessages, r3LiveCounts()
 end testWithBoth
