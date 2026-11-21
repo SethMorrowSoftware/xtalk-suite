@@ -185,7 +185,9 @@ one clock read per pass; UI text at most about 4 Hz and only on change.
 - **A native change is done when the committed binary is refreshed** (root
   `CLAUDE.md` rule 5). The per-push `native-<member>.yml` lanes upload artifacts
   and NEVER commit; `release-binaries.yml` (manual dispatch) builds every native
-  member, installs, runs the gates and commits.
+  member, installs, runs the gates and commits. To release one member's change,
+  dispatch it with `build: named` and `members: <member>`: only that member's
+  lanes build, and the rest of the run is the same.
 - **A new binding joins the suite** by the departure list in
   `docs/MEMBER-REPO-SPLIT.md` section 8 run in reverse, plus the native tables
   (the three gates above, a root `native-<member>.yml`, `release-binaries.yml`).
