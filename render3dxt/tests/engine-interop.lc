@@ -1,0 +1,218 @@
+<?lc
+-- engine-interop.lc - render3dxt drawing a box3dxt simulation, on a REAL
+-- engine, with no window.
+--
+--   server-community tests/engine-interop.lc R3MODULE R3LIBRARY B3MODULE B3LIBRARY
+--      R3MODULE, B3MODULE     render3dxt.lcm and box3dxt.lcm (lc-compile)
+--      R3LIBRARY, B3LIBRARY   the built native libraries WITHOUT extension
+--
+-- The two members are separate libraries that never link to each other:
+-- what joins them is a handful of TEXT formats and conventions a script
+-- carries from one to the other (a transform as "x,y,z,qx,qy,qz,qw", the
+-- move list as one line a body, y up, metres, a body's handle as a node's
+-- tag). tests/smoke_test.c pins render3dxt's half of each format against
+-- text written by hand. This test pins the JOIN: Box3D really simulates,
+-- box3dxt really prints, render3dxt really reads and draws, and the picture
+-- is checked against where Box3D says the bodies are.
+--
+-- It is run by the suite's native-render3dxt lane, where box3dxt sits beside
+-- this member; a published render3dxt repository on its own has no box3dxt
+-- to build, and its lane says so instead of running this.
+--
+-- Every check prints PASS or FAIL, then SUMMARY passed failed; the exit
+-- status is the number of failures (1 when the run did not finish).
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=render3dxt interop test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- two comma lists of numbers, item for item, within pTolerance
+function sameNumbers pA, pB, pTolerance
+   local tIndex
+   if the number of items of pA is not the number of items of pB or pA is empty then return false
+   repeat with tIndex = 1 to the number of items of pA
+      if item tIndex of pA is not a number or item tIndex of pB is not a number then return false
+      if abs(item tIndex of pA - item tIndex of pB) > pTolerance then return false
+   end repeat
+   return true
+end sameNumbers
+
+-- "r,g,b" of the pixel that holds picture point pPx,pPy (continuous, from
+-- the top left; a pixel's centre is at +0.5, so its index is the floor)
+function pixelAt pData, pWidth, pPx, pPy
+   local tAt
+   put (trunc(pPy) * pWidth + trunc(pPx)) * 4 into tAt
+   return byteToNum(byte tAt + 2 of pData) & comma & byteToNum(byte tAt + 3 of pData) & comma & byteToNum(byte tAt + 4 of pData)
+end pixelAt
+
+command testDrop
+   local tWorld, tFloor, tBall, tCrate, tScene, tBallMesh, tCrateMesh, tFloorMesh
+   local tRed, tBlue, tGreen, tBallNode, tCrateNode, tFloorNode, tData, tSpot, tStart
+   local tStep, tMoved, tApplied, tMovesSeen, tText, tPos, tLine, tCamera, tError, tReach
+   constant kW = 320
+   constant kH = 240
+
+   -- the simulation: a floor whose top is y 0, a ball above it, a crate on it
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   put b3BodyCreate(tWorld, 0, 0, -0.5, 0) into tFloor
+   get b3ShapeAddBox(tFloor, 10, 0.5, 10, 0, 0.6, 0)
+   put b3BodyCreate(tWorld, 2, 0, 3, 0) into tBall
+   get b3ShapeAddSphere(tBall, 0, 0, 0, 0.5, 1, 0.6, 0)
+   put b3BodyCreate(tWorld, 2, 2.5, 0.5, 0) into tCrate
+   get b3ShapeAddBox(tCrate, 0.5, 0.5, 0.5, 1, 0.6, 0)
+   check "the world and its three bodies exist", tWorld > 0 and tFloor > 0 and tBall > 0 and tCrate > 0, b3LastError()
+
+   -- the picture: one node a body, tagged with the body's handle
+   put r3SceneCreate() into tScene
+   r3SceneSetBackground tScene, 0, 0, 0
+   r3SceneSetCamera tScene, 0, 2, 10, 0, 1, 0, 50
+   put r3MeshSphere(0.5, 24, 12) into tBallMesh
+   put r3MeshBox(0.5, 0.5, 0.5) into tCrateMesh
+   put r3MeshBox(10, 0.5, 10) into tFloorMesh
+   put r3MaterialCreate(255, 0, 0) into tRed
+   put r3MaterialCreate(0, 0, 255) into tBlue
+   put r3MaterialCreate(0, 255, 0) into tGreen
+   r3MaterialSetUnlit tRed, true
+   r3MaterialSetUnlit tBlue, true
+   r3MaterialSetUnlit tGreen, true
+   put r3NodeCreate(tScene, tBallMesh) into tBallNode
+   put r3NodeCreate(tScene, tCrateMesh) into tCrateNode
+   put r3NodeCreate(tScene, tFloorMesh) into tFloorNode
+   r3NodeSetMaterial tBallNode, tRed
+   r3NodeSetMaterial tCrateNode, tBlue
+   r3NodeSetMaterial tFloorNode, tGreen
+   r3NodeSetTag tBallNode, tBall
+   r3NodeSetTag tCrateNode, tCrate
+   r3NodeSetTag tFloorNode, tFloor
+   check "a body's handle is a node's tag", r3NodeTag(tBallNode) is tBall and r3SceneNodeByTag(tScene, tCrate) is tCrateNode, r3NodeTag(tBallNode) && tBall
+
+   -- a body's transform text places a node, as it stands
+   r3NodeSetTransformText tBallNode, b3BodyTransform(tBall)
+   r3NodeSetTransformText tCrateNode, b3BodyTransform(tCrate)
+   r3NodeSetTransformText tFloorNode, b3BodyTransform(tFloor)
+   check "b3BodyTransform is read by r3NodeSetTransformText", sameNumbers(r3NodeTransform(tBallNode), b3BodyTransform(tBall), 0.00001) \
+         and sameNumbers(r3NodeTransform(tFloorNode), b3BodyTransform(tFloor), 0.00001), r3NodeTransform(tBallNode) && "/" && b3BodyTransform(tBall) && r3LastError()
+
+   -- before a step: the ball is drawn where Box3D has it
+   put r3SceneRender(tScene, kW, kH) into tData
+   put r3SceneProject(tScene, kW, kH, item 1 of b3BodyPosition(tBall), item 2 of b3BodyPosition(tBall), item 3 of b3BodyPosition(tBall)) into tStart
+   check "the ball is drawn where Box3D has it (before)", pixelAt(tData, kW, item 1 of tStart, item 2 of tStart) is "255,0,0", tStart && pixelAt(tData, kW, item 1 of tStart, item 2 of tStart)
+   check "its depth is the distance along the view", item 3 of tStart > 9 and item 3 of tStart < 11, tStart
+
+   -- three seconds of physics, each step carried to the picture by ONE call
+   put 0 into tMovesSeen
+   put true into tApplied
+   repeat with tStep = 1 to 180
+      b3WorldStep tWorld, 1/60, 4
+      put b3WorldUpdateMoves(tWorld) into tMoved
+      put b3MovesText() into tText
+      add tMoved to tMovesSeen
+      if tStep is 1 then put line 1 of tText into tLine
+      -- every moved body has a node here, so every line must move one
+      if r3SceneApplyMoves(tScene, tText) is not tMoved then put false into tApplied
+      -- the crate spins a little so that a rotation crosses too
+      if tStep is 1 then b3BodySetAngularVelocity tCrate, 0, 2, 0
+   end repeat
+   check "a move line is nine items", the number of items of tLine is 9, tLine
+   check "bodies moved", tMovesSeen > 60, tMovesSeen
+   check "every move line moved one node", tApplied, r3LastError()
+
+   put b3BodyPosition(tBall) into tPos
+   check "the ball came to rest on the floor", abs(item 2 of tPos - 0.5) < 0.05, tPos
+   check "the ball's node is where the ball is", sameNumbers(r3NodePosition(tBallNode), tPos, 0.0001), r3NodePosition(tBallNode) && "/" && tPos
+   check "the crate's node has the crate's whole transform", sameNumbers(r3NodeTransform(tCrateNode), b3BodyTransform(tCrate), 0.0001), \
+         r3NodeTransform(tCrateNode) && "/" && b3BodyTransform(tCrate)
+   check "the crate did turn", abs(item 5 of b3BodyTransform(tCrate)) > 0.01, b3BodyTransform(tCrate)
+
+   -- after: the picture agrees with Box3D, and the old place is empty
+   put r3SceneRender(tScene, kW, kH) into tData
+   put r3SceneProject(tScene, kW, kH, item 1 of tPos, item 2 of tPos, item 3 of tPos) into tSpot
+   check "the ball is drawn where Box3D has it (after)", pixelAt(tData, kW, item 1 of tSpot, item 2 of tSpot) is "255,0,0", tSpot && pixelAt(tData, kW, item 1 of tSpot, item 2 of tSpot)
+   check "where it started is background now", pixelAt(tData, kW, item 1 of tStart, item 2 of tStart) is "0,0,0", pixelAt(tData, kW, item 1 of tStart, item 2 of tStart)
+   put b3BodyPosition(tCrate) into tPos
+   put r3SceneProject(tScene, kW, kH, item 1 of tPos, item 2 of tPos, item 3 of tPos) into tSpot
+   check "the crate is drawn where Box3D has it", pixelAt(tData, kW, item 1 of tSpot, item 2 of tSpot) is "0,0,255", tSpot && pixelAt(tData, kW, item 1 of tSpot, item 2 of tSpot)
+   check "the floor is drawn under them", pixelAt(tData, kW, kW / 2, kH - 20) is "0,255,0", pixelAt(tData, kW, kW / 2, kH - 20)
+
+   -- a click on the picture finds the node, and the node names the body
+   put b3BodyPosition(tBall) into tPos
+   put r3SceneProject(tScene, kW, kH, item 1 of tPos, item 2 of tPos, item 3 of tPos) into tSpot
+   check "a click on the ball picks the ball's body", r3NodeTag(r3ScenePick(tScene, kW, kH, item 1 of tSpot, item 2 of tSpot)) is tBall, r3ScenePick(tScene, kW, kH, item 1 of tSpot, item 2 of tSpot)
+   -- the eye is at 0,2,10: the hit is one radius short of the ball's centre
+   -- (less a hair: the drawn sphere is flat-faced, inside the true one)
+   put sqrt(item 1 of tPos ^ 2 + (item 2 of tPos - 2) ^ 2 + (item 3 of tPos - 10) ^ 2) - 0.5 into tReach
+   check "the hit is on the ball's surface", abs(item 4 of r3HitText() - tReach) < 0.02, r3HitText() && tReach
+
+   -- a body destroyed in the simulation: its node stays until the script
+   -- removes it, and a move list that no longer names it moves nothing
+   b3BodyDestroy tBall
+   r3NodeDestroy r3SceneNodeByTag(tScene, tBall)
+   b3WorldStep tWorld, 1/60, 4
+   get b3WorldUpdateMoves(tWorld)
+   get r3SceneApplyMoves(tScene, b3MovesText())
+   check "a destroyed body's node is gone and the rest still draw", r3NodeIsValid(tBallNode) is false and r3SceneNodeCount(tScene) is 2 \
+         and the number of bytes of r3SceneRender(tScene, kW, kH) is kW * kH * 4, r3LastError()
+
+   -- box3dxt's own camera text (its ABI 2 and later) is this scene's camera text
+   put empty into tCamera
+   try
+      do "put b3RenderCamera() into tCamera"
+   catch tError
+      put empty into tCamera
+   end try
+   if tCamera is empty then
+      put "INFO this box3dxt has no b3RenderCamera (before its ABI 2): the shared camera text was not exercised" & return
+   else
+      r3SceneSetCameraText tScene, tCamera
+      check "b3RenderCamera is read by r3SceneSetCameraText", sameNumbers(r3SceneCamera(tScene), tCamera, 0.00001), r3SceneCamera(tScene) && "/" && tCamera && r3LastError()
+   end if
+
+   r3SceneDestroy tScene
+   r3MeshDestroy tBallMesh
+   r3MeshDestroy tCrateMesh
+   r3MeshDestroy tFloorMesh
+   r3MaterialDestroy tRed
+   r3MaterialDestroy tBlue
+   r3MaterialDestroy tGreen
+   b3WorldDestroy tWorld
+   check "nothing is left alive in the renderer", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+end testDrop
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["render3dxt"] to $1
+   set the revLibraryMapping["box3dxt"] to $3
+   load extension from file $0
+   check "render3dxt loads", the result is empty and "org.openxtalk.library.renderthreed" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   load extension from file $2
+   check "box3dxt loads beside it", the result is empty and "org.openxtalk.library.boxthreed" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & r3LibraryVersion() & return
+      put "INFO " & b3LibraryVersion() & return
+      testDrop
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

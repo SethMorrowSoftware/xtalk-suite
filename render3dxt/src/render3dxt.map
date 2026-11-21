@@ -1,0 +1,15 @@
+/* render3dxt.map - the linker version script for the shipped shared library.
+ *
+ * render3dxt compiles stb_image and fast_obj into itself. Their functions
+ * are static or hidden already; this script makes exporting only r3x_* a
+ * decision instead of a default (the enetxt lesson, release run 10,
+ * 2026-08-26: a vendored library's symbols leaked from a dylib and could
+ * interpose on another extension's copy). CMakeLists.txt gives ld64 the same
+ * pattern.
+ */
+{
+    global:
+        r3x_*;
+    local:
+        *;
+};

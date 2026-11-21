@@ -863,11 +863,66 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 7 | The suite board on an engine: box3dxt has no row since 2026-11-21, when pdfxt made a seventeenth member; its name sits in the band of the members with no harness, under the rows (2.11 #10 has the change) | S1 | 48 | the rows and the band clear one another and the members caption |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
-| 7 | The suite board's row pitch: 29 when box3dxt made the fourteenth row, 25 since pdfxt and xlsxt made the fifteenth and sixteenth the same day (2.12 #7 is the row to run) | S1 | 48 | the rows do not touch on an engine |
 
-### 2.11 xlsxt
+### 2.11 render3dxt
+
+- Joined 2026-11-20, beside box3dxt: a software 3D renderer of this suite's own (textured,
+  lit, multi-threaded) behind the `r3x_*` C shim (ABI 1) and the `r3*` binding, whose names
+  are mechanical; stb_image and fast_obj are compiled in at pinned commits. Records: the
+  shim's smoke test (pictures checked by reading pixels back) and random-call test, clean
+  under ASan/UBSan and under TSan, also as a 32-bit build and as WebAssembly under node; and
+  three tests on OXT-Beyond's headless Linux server engine over locally built libraries
+  (2026-11-20), which its native lane repeats on every change: the binding alone
+  (`tests/engine-selftest.lc`), a Box3D simulation drawn with box3dxt beside it
+  (`tests/engine-interop.lc`), and its demo stack opened and driven by message
+  (`tests/engine-demo.lc`). One desktop IDE has run it, the same day: OXT-Beyond
+  0.2.8-dp.2 on the owner's Linux machine, locally built libraries installed as extensions.
+  The demo's window was built, its boot self-check read 11 passed, 0 failed, 0 skipped, the
+  picture was seen and recorded, and a real pointer dragged the camera, kicked a thing and
+  pressed every button. Its first frame loop showed 20 pictures a second, 36 of each
+  frame's 47 ms in `set the imageData` (the engine encoding a PNG, #11); with "rle" set
+  around that line and the picture begun in the background it showed 57 with nine things
+  and 50 to 52 with about fifty, the engine busy 12 ms a frame. On Windows (OXT-Beyond
+  0.2.8-dp.1, 64-bit, dark system appearance, a locally built library, 2026-11-21 UTC)
+  the demo drew (7.8 ms a picture on six threads, its words white on white) and then its
+  rebuilt look was readable; the faults that run found are fixed (5fabc82, 904bb16), and
+  those fixes, the wheel and the buttons' hover have not run there (#2). macOS, Android and
+  the web have not run it: there it is verified statically; needs an OXT pass.
+- The contract with box3dxt (world, transform text, move lines, camera text, picture
+  coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
+  smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
+  test, so a box3dxt change to one of those texts shows red in render3dxt's lane only when
+  render3dxt next changes (#7).
+- Binaries: none committed when it joined. The web archive
+  (`src/code/wasm32-emscripten/render3dxt.a`) was committed by hand on 2026-11-20, built with
+  emsdk 6.0.12 as the native lane's wasm job builds it, so OXT-Beyond's web engine can pin
+  it (#4), and the `ships` row lists that one platform. The first release-binaries dispatch
+  lands the rest (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/render3dxt` was created empty by the owner on 2026-11-20;
+  a publish-members run adopts it (`--adopt render3dxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above; Windows showed the demo on 2026-11-21 but no pointer was driven there): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
+| 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
+| 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's render3dxt row has a pill and a Run |
+| 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
+| 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
+| 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
+| 10 | The suite board was full: at row pitch 25 its sixteen rows fitted, each touching the next, and a seventeenth fitted at no pitch. CODED 2026-11-21 with pdfxt, the seventeenth member: the members with no harness have no row, their names sit in a band under the rows (three to a line, room for three more), and the eleven rows that keep a Run are back at a pitch of 29; the boot self-check's `suBoardFits` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows or band overrun the members caption. Verified statically; needs an OXT pass | S1 | 48 | the rows and the band clear one another and the members caption on an engine |
+| 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
+| 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
+| 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped, so a stack SAVED before the fix keeps its controls until it is rebuilt. Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
+
+### 2.12 xlsxt
 
 - Joined 2026-11-20: libxlsxwriter 1.2.4, zlib 1.4 (with its minizip) and Expat 2.10.0, each
   pinned to a commit, behind the `xlx_*` C shim (ABI 1) and the `xl*` binding, whose names
@@ -895,7 +950,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
 
-### 2.12 pdfxt
+### 2.13 pdfxt
 
 - Joined 2026-11-20: PDFium (the prebuilt shared library of bblanchon/pdfium-binaries release
   `chromium/8165`, pinned by SHA-256 in `pdfxt/src/pdfium.pin`, shipped as a second file
@@ -932,7 +987,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
 | 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
-| 7 | The suite board at its new row pitch (25): sixteen rows clear the members caption, and a row's buttons end one pixel above the next row's. A seventeenth member needs the harness-less members moved out of the rows, not a smaller pitch | S1 | 48 | the rows do not touch on an engine |
+| 7 | The suite board on an engine with pdfxt on it: pdfxt made the seventeenth member, so the members with no harness moved into a band of their own under the rows (2.11 #10), pdfxt's name among them | S1 | 48 | the rows and the band clear one another and the members caption |
 | 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 
 ---
