@@ -139,8 +139,10 @@ socket, and a stack that opens none sees no difference. The smoke test drives th
 against a WebSocket server it runs itself (clean under ASan/UBSan), and the helpers' calls run
 headlessly over the built library against `ws://` and, with a certificate made for the run, `wss://`
 servers. On 2026-11-21 OXT-Beyond's headless Linux server engine opened `ws://` and `wss://` sockets
-through the binding and the helpers (the record below); no IDE and no Windows, mac or Android engine
-has opened one yet: needs an OXT pass there. The ABI number moved from 1 to 2, so the `.lcb` and the
+through the binding and the helpers, and the same day OXT-Beyond's IDE on Windows opened them too:
+`ws://` in the demo's scenes, and `wss://` over Schannel to a public echo service through the binding
+and the helpers (the records below). No mac or Android engine and no Linux or mac IDE has opened one
+yet: needs an OXT pass there. The ABI number moved from 1 to 2, so the `.lcb` and the
 native library must come from the same build, as always. There is no web (Emscripten) build of
 curlxt, so none of this reaches an HTML5 standalone; a browser has its own WebSocket.
 
@@ -230,8 +232,27 @@ were still cut: a field lays its first line out 6 px above its top margin (the s
 once more from commit 104f95a, rebuilding its window on reopen in 0.34 s: every label whole, the
 boot self-check green (27 passed, among them its new measure of each field's first line, all 47
 inside; on Linux that measure fails all 46 quiet fields with the old margins), and scene 4 seven
-times more, 105 of 105 answered. The WebSocket scenes on Windows, the demo's look on Linux, mac and
-Android, and the demo in those IDEs are verified statically; needs an OXT pass.
+times more, 105 of 105 answered.
+
+**WebSockets on Windows (2026-11-21).** The same IDE then ran the WebSocket scenes over ABI 2: the
+binding compiled there by the IDE's own `lc-compile -Werror` from commit 104f95a and loaded in place
+of the built-in 0.1.0, over the committed `x86_64-win32` library of run 44825160471
+(`curlxt ABI 2; libcurl/8.22.0 Schannel libssh2/1.11.1`), the demo's script also from 104f95a. The
+boot self-check was green (28 passed, none failed). Scene 1 started by itself and made 84 round
+trips, 18.3 ms on average and 16 ms at the fastest (Linux's desktop engine: 98, 6.3 ms and under 1
+ms), and kept going; scene 2 had all 8 back identical; scene 3 echoed 1,199 messages in 8.5 s, every
+one back in order (141 a second, where Linux has about 1,450); scene 4 answered 15 of 15 local
+requests and reached the internet over https; and scene 5 closed cleanly (1000), heard the server
+go (1001), found nothing there twice and reconnected 3.1 s after it went. No scene stopped on an
+error, closing the demo left no request or socket behind, and it opened again in 0.29 s with a
+green boot self-check and scene 1 running. The window was looked at during scene 1: every label
+whole. The slower round trips match the 16 ms tick of Windows' timers (inferred, not measured). In
+the same session `wss://echo.websocket.org/` answered over Schannel through the binding (opened in
+0.35 s; a UTF-8 text message and a 7-byte binary one back identical; a ping's pong; a close with
+1000) and through the helpers: `cuWsOpen` with a handler that sent on "open", the socket then left
+idle for 85 s and still open (each message once and in order, then "closed" once with 1000), and
+`cuWsOpenSync` with `cuWsWait` and `cuWsReadText`. The IDE answered throughout. The demo's look on
+Linux, mac and Android, and the demo in those IDEs, are verified statically; needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

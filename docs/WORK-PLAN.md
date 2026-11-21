@@ -837,8 +837,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   binding, requests through the binding and the helpers, and `ws://` and `wss://` sockets
   through the binding and the helpers' timer; the same day again over the committed
   `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
-  `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
-  opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
+  `engine` job runs it on every change. OXT-Beyond 0.2.8-dp.1's IDE on Windows opened them
+  the same day: `ws://` in curlxt Live's scenes, and `wss://` over Schannel to a public echo
+  service through the binding and the helpers (`curlxt/README.md`, Status). No mac or
+  Android engine and no Linux or mac IDE has opened one yet: needs an OXT pass there (row 3).
+  curlxt has no web archive, so none
   of it reaches an HTML5 standalone. A review's finding, fixed 2026-11-21: control frames
   had no bound (a peer that pinged without reading grew the pong queue without limit, and
   a flood of control frames held one pump); at most one automatic pong now waits behind
@@ -871,14 +874,18 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   were 2. Every field's top margin is 6 since, and the boot self-check measures each field's
   first line (it fails all 46 quiet fields with the old margins on Linux); from 104f95a on
   that PC every label read whole, the boot self-check passed 27 with none failed, and scene 4
-  answered 105 of 105 in seven more runs. Its WebSocket scenes on Windows wait for curlxt
-  ABI 2 in that IDE (row 6).
+  answered 105 of 105 in seven more runs. Its WebSocket scenes ran on that PC the same day
+  over ABI 2 (the binding compiled there and loaded in place of the built-in 0.1.0, over run
+  44825160471's `x86_64-win32` library): the boot self-check green (28), every scene's verdict
+  the one the Linux run checks, and a close and a reopen that left nothing behind; scene 1
+  was looked at, every label whole (`curlxt/README.md`, Status). Row 6 still wants each other
+  scene's picture there, light mode, Linux and a Mac.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
-| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
+| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21, and Windows' IDE the rest of this row the same day, over Schannel, bar seeing a ping: nothing counts a server's pings, and the socket stayed open through 85 s of idle: `curlxt/README.md`, Status): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
 | 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
 | 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 

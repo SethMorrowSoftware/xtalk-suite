@@ -4,7 +4,8 @@ Every public handler, from the doc blocks in the source (the IDE dictionary read
 blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
 gate). Every handler of the binding, and the helpers' requests and WebSocket calls, run on
 OXT-Beyond's headless Linux server engine in the native lane (`tests/engine-selftest.lc`;
-README, Status); the rest, the IDE and the other platforms need an OXT pass.
+README, Status), and every WebSocket call but `cuWsPoll` ran in OXT-Beyond's IDE on Windows
+too (README, Status); the rest, the other IDEs and platforms need an OXT pass.
 
 ## The binding: src/curl.lcb
 
