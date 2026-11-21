@@ -84,6 +84,10 @@ command prRunAll pR3, pB3
    put empty into gPrOut
    put 0 into gPrPassed
    put 0 into gPrFailed
+   -- C drops its crates at random spots: a fixed seed makes every run see
+   -- the same island, as the hand-stepping promises (2026-11-21: unseeded,
+   -- the picture behind one check differed from run to run)
+   set the randomSeed to 20261121
    if pB3 is not true then
       prNoExtension
       exit prRunAll
@@ -347,14 +351,23 @@ command prDrop
 end prDrop
 
 command prRenderers pR3
+   local tGround
    if pR3 then
+      -- back to the start first, so the camera frames the island as it did
+      -- for the first frame (prDraw): the blast and the crates leave the
+      -- player anywhere, and once left falling past the island's edge, with
+      -- nothing but sky behind the bottom of the view (2026-11-21)
+      b3kPlayerRespawn 0, 1, 11
+      prSteps 60
       oiNextRenderer
       prCheck "V's handler swaps to box3dxt's renderer", b3kRenderer() is "box3dxt", b3kRenderer()
       prCheck "and the button says so", the label of button "oiRender" of card 1 of stack "OrbIsland" is "Renderer: box3dxt (V)", \
             the label of button "oiRender" of card 1 of stack "OrbIsland"
       prSteps 2
-      prCheck "box3dxt's renderer draws the island", b3kFrameError() is empty and prPixel(300, 440) is not prPixel(384, 4), \
-            prPixel(300, 440) && prPixel(384, 4)
+      put prPixel(300, 440) into tGround
+      prCheck "box3dxt's renderer draws the island", b3kFrameError() is empty and \
+            not (prNear(item 1 of tGround, 150, 6) and prNear(item 2 of tGround, 192, 6) and prNear(item 3 of tGround, 232, 6)), \
+            tGround && b3kPosition(b3kPlayer())
       dispatch "keyDown" to stack "OrbIsland" with "v"
       prCheck "the V key swaps back to render3dxt", b3kRenderer() is "render3dxt", b3kRenderer()
    else
