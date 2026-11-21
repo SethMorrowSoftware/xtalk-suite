@@ -142,7 +142,9 @@ $capSrc = Join-Path $PSScriptRoot 'runner-cpu-cap.ps1'
 if (-not (Test-Path $capSrc)) { Die 'runner-cpu-cap.ps1 must sit beside this script' }
 Copy-Item -Force $capSrc "$Root\runner-cpu-cap.ps1"
 $capArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\runner-cpu-cap.ps1`" -CpuPercent $CpuPercent -MemoryGB $MemoryGB"
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $capArgs
+# By full path: Task Scheduler keeps the PATH it booted with, and on the maintainer's PC
+# (2026-11-21) that PATH had lost System32, so a bare powershell.exe never started
+$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument $capArgs
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 99 `
   -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
