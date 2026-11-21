@@ -59,6 +59,7 @@ ADOPTERS = [
     os.path.join("torrentxt", "examples", "torrent-dht-channels.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-quickshare.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
+    os.path.join("xlsxt", "examples", "xlsxt-demo.livecodescript"),
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),

@@ -112,6 +112,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc cmake ninja-build
+          # what the desktop engine opens even with -ui (no display)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libfreetype6 libfontconfig1
       - name: Release build + tests
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DXLSXT_BUILD_TESTS=ON
@@ -130,6 +133,7 @@ jobs:
           echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
             'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/LiveCode-Community' \
             'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
             'linux-x86_64-bin/modules/lci/*'
           mv "$oxt/linux-x86_64-bin" "$oxt/engine"
@@ -157,6 +161,20 @@ jobs:
             echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /'
           } >> "$GITHUB_STEP_SUMMARY"
+      # The demo stack, driven on the desktop engine with no display (-ui):
+      # its window built, every tab's workbook made and read back, a tick box
+      # and a cell clicked, and its own checks run. Green needs an exit of 0
+      # AND a last line "DRIVE <n> 0".
+      - name: Drive examples/xlsxt-demo.livecodescript on the engine
+        run: |
+          set -o pipefail
+          XLSXT_LCM="$RUNNER_TEMP/lcb/xlsxt.lcm" XLSXT_LIB="$PWD/build/xlsxt" \
+          XLSXT_DEMO="$PWD/examples/xlsxt-demo.livecodescript" \
+            timeout 300 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo.log"
+          tail -n 1 "$RUNNER_TEMP/demo.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/demo.log"
+          echo "Demo stack: $(tail -n 1 "$RUNNER_TEMP/demo.log" | awk '{print $2 " drive checks passed"}'), its own $(grep '^SUMMARY ' "$RUNNER_TEMP/demo.log" | awk '{print $2 " checks passed, " $3 " failed"}')." >> "$GITHUB_STEP_SUMMARY"
       - name: The member's gates
         run: bash tools/run-gates.sh
       # The half of the pins gate that needs the sources: each library's own
