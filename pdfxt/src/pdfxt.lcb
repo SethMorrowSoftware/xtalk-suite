@@ -1,0 +1,1013 @@
+/*
+pdfxt.lcb - xTalk Builder (LCB) binding library for PDFium, via the
+            pdfium_shim C shim. Part of pdfxt for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    put pdfOpen(tPath, empty) into sDoc
+
+Conventions (the shim, src/pdfium_shim.c, is where each is enforced):
+  * A document is an integer handle (0 = invalid). Every handler tolerates a
+    closed or 0 handle: getters return 0 or empty, actions do nothing.
+  * A page is its NUMBER, 1 for the first. So is a character of a page.
+  * NAMES ARE MECHANICAL: the handler for the shim's pdx_page_count is
+    pdfPageCount; nothing is renamed by hand. tools/check-lcb-signatures.py
+    holds the bijection (every export bound once, every binding wrapped by
+    the one public handler of that name).
+  * A point or rectangle of a page is in POINTS (1/72 inch) from the TOP
+    LEFT of the page as displayed, y downwards: "left,top,right,bottom".
+  * Text crosses as a Pointer to UTF-8 that textOf() copies, never as
+    ZStringNative (the engine frees a returned C string, and the shim's
+    texts are its own buffer). Bytes (a drawn page) cross the same way and
+    dataOf() copies them. Text INTO the shim is ZStringUTF8, which the
+    engine makes and frees itself.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (`tR is not 0` on the way back).
+  * Nothing here throws, bar the ABI check: a refused call returns 0 or empty
+    and pdfLastError() says why.
+
+The foreign handlers bind to the shared library "pdfxt" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time. PDFium itself is a SECOND file beside it ("pdfium"),
+which the shim loads on first use; if it is missing, nothing fails to load:
+calls return 0 or empty and pdfLastError() says where it was looked for.
+*/
+
+/**
+Open PDF files: draw their pages, read their text, find words, and follow
+their outline and links. Uses PDFium, the PDF engine of Chromium.
+
+Open a file with <pdfOpen> (or bytes with <pdfOpenData>) to get a document
+handle, ask <pdfPageCount> how long it is, and draw a page with
+<pdfRenderPageBMP> or <pdfRenderPage>. <pdfPageText> reads a page's text,
+<pdfPageSearch> finds words in it, and <pdfOutline> and <pdfPageLinks> give
+what a viewer needs to navigate. Close each document with <pdfClose>, and
+call <pdfShutdown> when your stack closes.
+
+Pages are numbered from 1. Sizes and positions are in points (1/72 inch)
+measured from the top left of the page, the way a rect is: a page drawn at
+one pixel per point has everything exactly where these numbers say, so
+multiply by your zoom. A handle of 0 means a call was refused; <pdfLastError>
+says why, and nothing here stops your script with an error.
+
+A PDF is someone else's file. This library reads it and never runs anything
+in it (the PDFium it ships has no JavaScript), but treat a link's address as
+you would any address a stranger hands you.
+
+PDFium is a second library file that sits beside pdfxt. If it is missing,
+every call returns 0 or empty and <pdfLastError> says where it was looked
+for. It needs macOS 13 or Android 6.0 at least; there is no web version.
+
+Tags: PDF, Documents, Library
+*/
+library org.openxtalk.library.pdfxt
+
+use com.livecode.foreign
+
+-- The engine's own builders, resolved by NAME (so no leading underscore):
+-- see textOf() and dataOf() below, and pdfOpenData for the third.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+
+metadata title is "PDFium for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Open PDF files: draw pages, read and search text, outline and links, via PDFium."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/pdfium_shim.c; tools/check-lcb-signatures.py holds every line to the
+-- C definition it binds (name, return type, each parameter type).
+-- =====================================================================
+
+
+-- ---- the library
+private foreign handler _pdx_abi_version() returns CInt binds to "c:pdfxt>pdx_abi_version!cdecl"
+private foreign handler _pdx_library_version() returns Pointer binds to "c:pdfxt>pdx_library_version!cdecl"
+private foreign handler _pdx_last_error() returns Pointer binds to "c:pdfxt>pdx_last_error!cdecl"
+private foreign handler _pdx_load(in pFolder as ZStringUTF8) returns CInt binds to "c:pdfxt>pdx_load!cdecl"
+private foreign handler _pdx_is_loaded() returns CInt binds to "c:pdfxt>pdx_is_loaded!cdecl"
+private foreign handler _pdx_shutdown() returns nothing binds to "c:pdfxt>pdx_shutdown!cdecl"
+
+-- ---- opening and closing
+private foreign handler _pdx_open(in pPath as ZStringUTF8, in pPassword as ZStringUTF8) returns CInt binds to "c:pdfxt>pdx_open!cdecl"
+private foreign handler _pdx_open_data(in pBytes as Pointer, in pLength as CInt, in pPassword as ZStringUTF8) returns CInt binds to "c:pdfxt>pdx_open_data!cdecl"
+private foreign handler _pdx_close(in pDocument as CInt) returns nothing binds to "c:pdfxt>pdx_close!cdecl"
+private foreign handler _pdx_close_all() returns CInt binds to "c:pdfxt>pdx_close_all!cdecl"
+private foreign handler _pdx_open_count() returns CInt binds to "c:pdfxt>pdx_open_count!cdecl"
+private foreign handler _pdx_is_open(in pDocument as CInt) returns CInt binds to "c:pdfxt>pdx_is_open!cdecl"
+
+-- ---- the document
+private foreign handler _pdx_page_count(in pDocument as CInt) returns CInt binds to "c:pdfxt>pdx_page_count!cdecl"
+private foreign handler _pdx_file_version(in pDocument as CInt) returns CInt binds to "c:pdfxt>pdx_file_version!cdecl"
+private foreign handler _pdx_permissions(in pDocument as CInt) returns CDouble binds to "c:pdfxt>pdx_permissions!cdecl"
+private foreign handler _pdx_metadata(in pDocument as CInt, in pTag as ZStringUTF8) returns Pointer binds to "c:pdfxt>pdx_metadata!cdecl"
+private foreign handler _pdx_page_label(in pDocument as CInt, in pPage as CInt) returns Pointer binds to "c:pdfxt>pdx_page_label!cdecl"
+private foreign handler _pdx_page_size(in pDocument as CInt, in pPage as CInt) returns Pointer binds to "c:pdfxt>pdx_page_size!cdecl"
+private foreign handler _pdx_page_width(in pDocument as CInt, in pPage as CInt) returns CDouble binds to "c:pdfxt>pdx_page_width!cdecl"
+private foreign handler _pdx_page_height(in pDocument as CInt, in pPage as CInt) returns CDouble binds to "c:pdfxt>pdx_page_height!cdecl"
+private foreign handler _pdx_page_rotation(in pDocument as CInt, in pPage as CInt) returns CInt binds to "c:pdfxt>pdx_page_rotation!cdecl"
+
+-- ---- drawing pages
+private foreign handler _pdx_render_page(in pDocument as CInt, in pPage as CInt, in pWidth as CInt, in pHeight as CInt, in pFlags as CInt) returns Pointer binds to "c:pdfxt>pdx_render_page!cdecl"
+private foreign handler _pdx_render_page_region(in pDocument as CInt, in pPage as CInt, in pZoomWidth as CInt, in pZoomHeight as CInt, in pLeft as CInt, in pTop as CInt, in pWidth as CInt, in pHeight as CInt, in pFlags as CInt) returns Pointer binds to "c:pdfxt>pdx_render_page_region!cdecl"
+private foreign handler _pdx_render_page_bmp(in pDocument as CInt, in pPage as CInt, in pWidth as CInt, in pHeight as CInt, in pFlags as CInt) returns Pointer binds to "c:pdfxt>pdx_render_page_bmp!cdecl"
+
+-- ---- text
+private foreign handler _pdx_page_char_count(in pDocument as CInt, in pPage as CInt) returns CInt binds to "c:pdfxt>pdx_page_char_count!cdecl"
+private foreign handler _pdx_page_text(in pDocument as CInt, in pPage as CInt) returns Pointer binds to "c:pdfxt>pdx_page_text!cdecl"
+private foreign handler _pdx_page_text_range(in pDocument as CInt, in pPage as CInt, in pStart as CInt, in pCount as CInt) returns Pointer binds to "c:pdfxt>pdx_page_text_range!cdecl"
+private foreign handler _pdx_page_text_in_rect(in pDocument as CInt, in pPage as CInt, in pLeft as CDouble, in pTop as CDouble, in pRight as CDouble, in pBottom as CDouble) returns Pointer binds to "c:pdfxt>pdx_page_text_in_rect!cdecl"
+private foreign handler _pdx_page_char_box(in pDocument as CInt, in pPage as CInt, in pIndex as CInt) returns Pointer binds to "c:pdfxt>pdx_page_char_box!cdecl"
+private foreign handler _pdx_page_char_at(in pDocument as CInt, in pPage as CInt, in pX as CDouble, in pY as CDouble, in pTolerance as CDouble) returns CInt binds to "c:pdfxt>pdx_page_char_at!cdecl"
+private foreign handler _pdx_page_search(in pDocument as CInt, in pPage as CInt, in pNeedle as ZStringUTF8, in pFlags as CInt) returns Pointer binds to "c:pdfxt>pdx_page_search!cdecl"
+private foreign handler _pdx_page_text_rects(in pDocument as CInt, in pPage as CInt, in pStart as CInt, in pCount as CInt) returns Pointer binds to "c:pdfxt>pdx_page_text_rects!cdecl"
+
+-- ---- outline and links
+private foreign handler _pdx_outline(in pDocument as CInt) returns Pointer binds to "c:pdfxt>pdx_outline!cdecl"
+private foreign handler _pdx_page_links(in pDocument as CInt, in pPage as CInt) returns Pointer binds to "c:pdfxt>pdx_page_links!cdecl"
+
+-- ---- results: the measure of a text, the measure and release of bytes
+private foreign handler _pdx_text_length(in pText as Pointer) returns CInt binds to "c:pdfxt>pdx_text_length!cdecl"
+private foreign handler _pdx_data_length() returns CInt binds to "c:pdfxt>pdx_data_length!cdecl"
+private foreign handler _pdx_data_release() returns nothing binds to "c:pdfxt>pdx_data_release!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+-- A Boolean for the C side, which takes an int.
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is PDX_ABI_VERSION in
+-- src/pdfium_shim.c (the suite's check-binary-freshness.py compares the
+-- two). Called where a script first reaches the library: the two opens,
+-- which everything else needs a handle from, pdfLoad and pdfLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _pdx_abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "pdfxt: incompatible native library (this binding needs ABI 1) - update the pdfxt library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing
+-- the shim's buffer kills the host (box3dxt's first engine run,
+-- 2026-11-20). The bytes are UTF-8; 4 is the engine's MCStringEncoding
+-- value for UTF-8, sodiumxt's proven way to build a String from bytes.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _pdx_text_length(pText) into tLength
+   end unsafe
+   if tLength is 0 then
+      return ""
+   end if
+   unsafe
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- A bytes result of the shim (a drawn page), copied into a Data, and the
+-- shim's own copy released: a page is megabytes, and the shim would
+-- otherwise hold the last one until the next.
+private handler dataOf(in pBytes as Pointer) returns Data
+   variable tLength as Integer
+   variable tResult as Data
+   variable tOk as CBool
+   put the empty data into tResult
+   unsafe
+      put _pdx_data_length() into tLength
+   end unsafe
+   if tLength is 0 then
+      return tResult
+   end if
+   unsafe
+      put MCDataCreateWithBytes(pBytes, tLength, tResult) into tOk
+      _pdx_data_release()
+   end unsafe
+   if not tOk then
+      return the empty data
+   end if
+   return tResult
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler pdfABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the versions of the native library and of the PDFium it was
+built for.
+
+Returns: Text such as "pdfxt ABI 1; PDFium chromium/8165".
+
+Example:
+put pdfLibraryVersion() into field "status"
+
+Description: It throws if the library on disk has a different ABI from this
+binding, which means the two come from different releases. It does not
+load PDFium: <pdfIsLoaded> says whether that has happened.
+*/
+public handler pdfLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _pdx_library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns why the last refused call was refused.
+
+Returns: A short sentence, or empty if the last call that could be refused
+was not.
+
+Description: A call that cannot do what it was asked does nothing and
+returns 0 or empty; it never throws. This says what was wrong: a file that
+is not a PDF, a password that is needed, a page that is not there, a drawing
+that is too large, or the PDFium library missing from beside pdfxt.
+*/
+public handler pdfLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Loads the PDFium library now, and says whether it is ready.
+
+pFolder: A folder that holds the PDFium library, or empty for the folder
+pdfxt itself is in.
+
+Returns: True if PDFium is loaded and ready; false if not, and
+<pdfLastError> says where it was looked for.
+
+Example:
+if not pdfLoad(empty) then answer pdfLastError()
+
+Description: You rarely need this: every call that needs PDFium loads it on
+first use from the folder pdfxt is in. Call it with empty to find out early
+whether PDFium is there (to tell the user, before they pick a file), or with
+a folder if you keep the PDFium library somewhere else. Once PDFium is
+loaded it stays loaded and pFolder is ignored.
+*/
+public handler pdfLoad(in pFolder as String) returns Boolean
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _pdx_load(pFolder) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Says whether the PDFium library is loaded and running.
+
+Returns: True once any call has loaded it; false before that and after
+<pdfShutdown>.
+*/
+public handler pdfIsLoaded() returns Boolean
+   variable tR as Integer
+   unsafe
+      put _pdx_is_loaded() into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Closes every document and shuts PDFium down.
+
+Example:
+on closeStack
+   pdfShutdown
+end closeStack
+
+Description: Call it when your stack closes, since nothing else tells the
+library that you are done. It is safe to call twice, or when nothing was
+ever opened. Every document handle is dead afterwards. The next <pdfOpen>
+starts PDFium again. The PDFium library file itself stays loaded, since a
+library cannot safely be taken out of a running program: afterwards
+<pdfIsLoaded> is false, and <pdfLoad> answers true without looking in the
+folder it is given.
+*/
+public handler pdfShutdown() returns nothing
+   unsafe
+      _pdx_shutdown()
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Opening and closing
+-- =====================================================================
+
+/**
+Summary: Opens a PDF file.
+
+pPath: The path of a PDF file.
+
+pPassword: The document's password, or empty if it has none.
+
+Returns: A document handle, or 0 if the file could not be opened
+(<pdfLastError> says why).
+
+Example:
+put pdfOpen(specialFolderPath("documents") & "/manual.pdf", empty) into tDoc
+if tDoc is 0 then answer pdfLastError()
+
+Description: The file stays open, and is read as pages are asked for, until
+<pdfClose>: a large document opens at once and costs little memory. A file
+larger than 2 GB is refused. PDFium loads on the first call. It throws only
+if the native library has a different ABI from this binding.
+*/
+public handler pdfOpen(in pPath as String, in pPassword as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _pdx_open(pPath, pPassword) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Opens a PDF held in memory.
+
+pData: The bytes of a PDF file.
+
+pPassword: The document's password, or empty if it has none.
+
+Returns: A document handle, or 0 if the bytes are not a PDF that can be
+opened (<pdfLastError> says why).
+
+Example:
+put pdfOpenData(url ("binfile:" & tPath), empty) into tDoc
+
+Description: For a PDF that came from somewhere other than a file: a
+download, a database, a custom property. The library keeps its own copy of
+the bytes until <pdfClose>, so the variable you passed can be reused at
+once.
+*/
+public handler pdfOpenData(in pData as Data, in pPassword as String) returns Integer
+   variable tR as Integer
+   variable tBytes as Pointer
+   variable tLength as Integer
+   checkABI()
+   put the number of bytes in pData into tLength
+   if tLength is 0 then
+      return 0
+   end if
+   unsafe
+      put MCDataGetBytePtr(pData) into tBytes
+      put _pdx_open_data(tBytes, tLength, pPassword) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Closes a document and frees what it holds.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+Description: The handle is dead afterwards; using it again is harmless.
+Closing a handle that is not open does nothing.
+*/
+public handler pdfClose(in pDocument as Integer) returns nothing
+   unsafe
+      _pdx_close(pDocument)
+   end unsafe
+end handler
+
+/**
+Summary: Closes every open document.
+
+Returns: How many documents were open.
+*/
+public handler pdfCloseAll() returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_close_all() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many documents are open.
+
+Returns: The count. At most 4095 can be open at once.
+*/
+public handler pdfOpenCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_open_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Says whether a number is the handle of an open document.
+
+pDocument: A number that may be a document handle.
+
+Returns: True if it is; false for 0, for a closed handle, and for any other
+number.
+*/
+public handler pdfIsOpen(in pDocument as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _pdx_is_open(pDocument) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- =====================================================================
+-- The document
+-- =====================================================================
+
+/**
+Summary: Returns how many pages a document has.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+Returns: The number of pages, or 0 for a handle that is not open.
+*/
+public handler pdfPageCount(in pDocument as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_page_count(pDocument) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the PDF version a file says it is.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+Returns: The version times ten: 14 for PDF 1.4, 17 for PDF 1.7. 0 if the
+file does not say.
+*/
+public handler pdfFileVersion(in pDocument as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_file_version(pDocument) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns what a protected document allows.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+Returns: The permission bits of the PDF specification as one number.
+4294967295 means everything is allowed.
+
+Example:
+put ((pdfPermissions(tDoc) bitAnd 16) is not 0) into tMayCopy
+
+Description: Bit 3 (value 4) is printing, bit 4 (8) changing the document,
+bit 5 (16) copying text, bit 6 (32) adding notes. Test one with the bitAnd
+operator. These are the document's wishes: this library does not enforce
+them, and reads text and draws pages either way.
+*/
+public handler pdfPermissions(in pDocument as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _pdx_permissions(pDocument) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns one entry of a document's information.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pTag: Which entry: Title, Author, Subject, Keywords, Creator, Producer,
+CreationDate or ModDate.
+
+Returns: The entry's text, or empty if the document has none.
+
+Example:
+put pdfMetadata(tDoc, "Title") into field "title"
+
+Description: Dates come as the file wrote them, usually like
+"D:20261120153000Z".
+*/
+public handler pdfMetadata(in pDocument as Integer, in pTag as String) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_metadata(pDocument, pTag) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the label a page is known by.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The label, such as "iv" or "A-3", or empty if the document gives
+the page none.
+
+Description: A book whose preface is numbered i, ii, iii has labels that
+differ from its page numbers. Show the label to people; pass the page number
+to this library.
+*/
+public handler pdfPageLabel(in pDocument as Integer, in pPage as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_label(pDocument, pPage) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the size of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The width and height in points as text, "612,792", or empty if
+there is no such page.
+
+Example:
+put item 1 of pdfPageSize(tDoc, 1) * 2 into tWidth -- twice life size
+
+Description: A point is 1/72 inch, so 612,792 is US Letter and 595,842 is
+A4. The size is of the page as it is displayed: a page the document turns on
+its side reports its turned size. This does not load the page, so it is
+quick to ask of every page of a long document.
+*/
+public handler pdfPageSize(in pDocument as Integer, in pPage as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_size(pDocument, pPage) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the width of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The width in points as displayed, or 0 if there is no such page.
+*/
+public handler pdfPageWidth(in pDocument as Integer, in pPage as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _pdx_page_width(pDocument, pPage) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the height of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The height in points as displayed, or 0 if there is no such page.
+*/
+public handler pdfPageHeight(in pDocument as Integer, in pPage as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _pdx_page_height(pDocument, pPage) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how far the document turns a page for display.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: 0, 90, 180 or 270 degrees clockwise.
+
+Description: Every other call here already allows for it: sizes, drawings
+and rectangles are all of the page as displayed. This is for a viewer that
+wants to say so.
+*/
+public handler pdfPageRotation(in pDocument as Integer, in pPage as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_page_rotation(pDocument, pPage) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Drawing pages
+-- =====================================================================
+
+/**
+Summary: Draws a whole page as the imageData of an image.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pWidth: The width of the drawing in pixels, 1 to 16384.
+
+pHeight: The height of the drawing in pixels, 1 to 16384.
+
+pFlags: 0 for a plain drawing, or a sum of: 1 draw annotations and form
+fields, 2 text sharpened for an LCD screen, 8 gray, 2048 as for print, 4096
+/ 8192 / 16384 no smoothing of text / images / lines.
+
+Returns: pWidth x pHeight x 4 bytes in the engine's imageData order, or
+empty if the page could not be drawn (<pdfLastError> says why).
+
+Example:
+put pdfPageWidth(tDoc, 1) * 2 into tW
+put pdfPageHeight(tDoc, 1) * 2 into tH
+set the width of image "page" to tW
+set the height of image "page" to tH
+set the imageData of image "page" to pdfRenderPage(tDoc, 1, tW, tH, 0)
+
+Description: The page is stretched to exactly pWidth by pHeight, on white
+paper, so keep the page's own proportions (<pdfPageSize>). Size the image
+first, then set its imageData. A drawing may hold at most 40 million pixels.
+For one step that needs no image of the right size, use <pdfRenderPageBMP>.
+*/
+public handler pdfRenderPage(in pDocument as Integer, in pPage as Integer, in pWidth as Integer, in pHeight as Integer, in pFlags as Integer) returns Data
+   variable tP as Pointer
+   unsafe
+      put _pdx_render_page(pDocument, pPage, pWidth, pHeight, pFlags) into tP
+   end unsafe
+   return dataOf(tP)
+end handler
+
+/**
+Summary: Draws part of a page, at any zoom, as the imageData of an image.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pZoomWidth: The width in pixels the WHOLE page would have at this zoom, 1 to
+1000000.
+
+pZoomHeight: The height in pixels the whole page would have at this zoom, 1
+to 1000000.
+
+pLeft: The left edge of the part wanted, in pixels of the zoomed page.
+
+pTop: The top edge of the part wanted, in pixels of the zoomed page.
+
+pWidth: The width of the part wanted in pixels, 1 to 16384.
+
+pHeight: The height of the part wanted in pixels, 1 to 16384.
+
+pFlags: 0 for a plain drawing, or a sum of: 1 draw annotations and form
+fields, 2 text sharpened for an LCD screen, 8 gray, 2048 as for print, 4096
+/ 8192 / 16384 no smoothing of text / images / lines.
+
+Returns: pWidth x pHeight x 4 bytes in the engine's imageData order, or
+empty if it could not be drawn.
+
+Description: What a viewer uses when zoomed in: say how large the whole page
+would be, and which window of it you can see, and only that window is drawn.
+Memory and time follow the window, not the zoom. A window that reaches past
+the page's edge is white there.
+*/
+public handler pdfRenderPageRegion(in pDocument as Integer, in pPage as Integer, in pZoomWidth as Integer, in pZoomHeight as Integer, in pLeft as Integer, in pTop as Integer, in pWidth as Integer, in pHeight as Integer, in pFlags as Integer) returns Data
+   variable tP as Pointer
+   unsafe
+      put _pdx_render_page_region(pDocument, pPage, pZoomWidth, pZoomHeight, pLeft, pTop, pWidth, pHeight, pFlags) into tP
+   end unsafe
+   return dataOf(tP)
+end handler
+
+/**
+Summary: Draws a whole page as a BMP picture file.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pWidth: The width of the drawing in pixels, 1 to 16384.
+
+pHeight: The height of the drawing in pixels, 1 to 16384.
+
+pFlags: 0 for a plain drawing, or a sum of: 1 draw annotations and form
+fields, 2 text sharpened for an LCD screen, 8 gray, 2048 as for print, 4096
+/ 8192 / 16384 no smoothing of text / images / lines.
+
+Returns: The bytes of a BMP file, or empty if the page could not be drawn
+(<pdfLastError> says why).
+
+Example:
+set the text of image "page" to pdfRenderPageBMP(tDoc, 1, 612, 792, 0)
+
+Description: The simplest way to show a page: the bytes are a complete
+picture, so an image takes them as its text and sizes itself. They can also
+be written to a file as they are.
+*/
+public handler pdfRenderPageBMP(in pDocument as Integer, in pPage as Integer, in pWidth as Integer, in pHeight as Integer, in pFlags as Integer) returns Data
+   variable tP as Pointer
+   unsafe
+      put _pdx_render_page_bmp(pDocument, pPage, pWidth, pHeight, pFlags) into tP
+   end unsafe
+   return dataOf(tP)
+end handler
+
+-- =====================================================================
+-- Text
+-- =====================================================================
+
+/**
+Summary: Returns how many characters of text a page has.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The count, or 0.
+
+Description: Characters are counted as PDFium counts them, and the break
+between two lines counts as two. The numbers <pdfPageSearch> returns and
+<pdfPageTextRange> takes are positions in this count.
+*/
+public handler pdfPageCharCount(in pDocument as Integer, in pPage as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_page_char_count(pDocument, pPage) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns all the text of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: The text in reading order, one line of the page to a line, or
+empty.
+
+Example:
+put pdfPageText(tDoc, 1) into field "text"
+
+Description: A scanned page is a picture and has no text. Text comes out in
+the order the document stores it, which for most documents is reading order.
+*/
+public handler pdfPageText(in pDocument as Integer, in pPage as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_text(pDocument, pPage) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns part of the text of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pStart: The position of the first character wanted; 1 is the first on the
+page.
+
+pCount: How many characters.
+
+Returns: The characters, or empty. A range that runs past the end stops at
+the end.
+*/
+public handler pdfPageTextRange(in pDocument as Integer, in pPage as Integer, in pStart as Integer, in pCount as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_text_range(pDocument, pPage, pStart, pCount) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the text inside a rectangle of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pLeft: The left edge, in points from the left of the page.
+
+pTop: The top edge, in points from the top of the page.
+
+pRight: The right edge.
+
+pBottom: The bottom edge.
+
+Returns: The text, or empty.
+
+Description: What a viewer copies when the user drags out a box. The
+rectangle is in points from the top left of the page as displayed: divide a
+pixel position by your zoom.
+*/
+public handler pdfPageTextInRect(in pDocument as Integer, in pPage as Integer, in pLeft as Number, in pTop as Number, in pRight as Number, in pBottom as Number) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_text_in_rect(pDocument, pPage, pLeft, pTop, pRight, pBottom) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns where one character is on its page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pIndex: The position of the character; 1 is the first on the page.
+
+Returns: Its rectangle as text, "left,top,right,bottom" in points from the
+top left of the page, or empty.
+*/
+public handler pdfPageCharBox(in pDocument as Integer, in pPage as Integer, in pIndex as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_char_box(pDocument, pPage, pIndex) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns which character is at a point of a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pX: Points from the left of the page.
+
+pY: Points from the top of the page.
+
+pTolerance: How far from a character still counts, in points.
+
+Returns: The character's position, or 0 if none is that near.
+
+Description: What a viewer asks when the user clicks on text.
+*/
+public handler pdfPageCharAt(in pDocument as Integer, in pPage as Integer, in pX as Number, in pY as Number, in pTolerance as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _pdx_page_char_at(pDocument, pPage, pX, pY, pTolerance) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Finds every place some text occurs on a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pNeedle: The text to find.
+
+pFlags: 0, or a sum of: 1 capitals must match, 2 whole words only.
+
+Returns: One line for each match in reading order, "start,count": the
+position of its first character and how many characters it covers. Empty if
+there is none.
+
+Example:
+repeat for each line tMatch in pdfPageSearch(tDoc, tPage, "invoice", 0)
+   put pdfPageTextRects(tDoc, tPage, item 1 of tMatch, item 2 of tMatch) & return after tRects
+end repeat
+
+Description: Pass a match to <pdfPageTextRects> to learn where to draw a
+highlight.
+*/
+public handler pdfPageSearch(in pDocument as Integer, in pPage as Integer, in pNeedle as String, in pFlags as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_search(pDocument, pPage, pNeedle, pFlags) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the rectangles a run of text covers.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+pStart: The position of the first character; 1 is the first on the page.
+
+pCount: How many characters.
+
+Returns: One line for each rectangle, "left,top,right,bottom" in points from
+the top left of the page. Empty if there is no such text.
+
+Description: A run within one line covers one rectangle; a run that wraps
+covers one for each line. Multiply by your zoom and draw them to highlight
+the text.
+*/
+public handler pdfPageTextRects(in pDocument as Integer, in pPage as Integer, in pStart as Integer, in pCount as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_text_rects(pDocument, pPage, pStart, pCount) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Outline and links
+-- =====================================================================
+
+/**
+Summary: Returns a document's outline: its bookmarks.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+Returns: One line for each entry in reading order: its level, a tab, the
+page it leads to, a tab, its title. Empty if the document has no outline.
+
+Example:
+set the itemDelimiter to tab
+repeat for each line tEntry in pdfOutline(tDoc)
+   put item 3 of tEntry && "- page" && item 2 of tEntry & return after tList
+end repeat
+
+Description: Level 1 is a top entry, 2 an entry inside it, and so on. The
+page is 0 for an entry that leads nowhere in this document. At most 100000
+entries, 64 levels deep, are returned.
+*/
+public handler pdfOutline(in pDocument as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_outline(pDocument) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the links on a page.
+
+pDocument: A document handle from <pdfOpen> or <pdfOpenData>.
+
+pPage: The page number; 1 is the first page.
+
+Returns: One line for each link: its rectangle "left,top,right,bottom" in
+points from the top left of the page, a tab, the page it leads to, a tab,
+its web address. Empty if the page has none.
+
+Description: A link inside the document has a page and no address; a web
+link has an address and page 0. The address is what the document says,
+written by a stranger: show it to the user before opening it.
+*/
+public handler pdfPageLinks(in pDocument as Integer, in pPage as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _pdx_page_links(pDocument, pPage) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+end library

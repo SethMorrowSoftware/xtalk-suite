@@ -1046,7 +1046,51 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
 | 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
-| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the six members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt, and pdfxt since 2.14 joined it) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
+
+### 2.14 pdfxt
+
+- Joined 2026-11-20: PDFium (the prebuilt shared library of bblanchon/pdfium-binaries release
+  `chromium/8165`, pinned by SHA-256 in `pdfxt/src/pdfium.pin`, shipped as a second file
+  beside the shim and loaded at run time) behind the `pdx_*` C shim (ABI 1) and the `pdf*`
+  binding, whose names are mechanical. Read-only: open, draw, text, search, outline, links.
+  Records: the shim's smoke test over two PDFs it carries, clean under ASan/UBSan, and run by
+  its lane on every platform it ships for (run 44840908920, 2026-11-21: the six desktop rows,
+  and the Android 6.0 emulator for both x86 ABIs; the ARM ABIs built, not run); and
+  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally built
+  library (2026-11-20), which its native lane repeats on every change; and the Windows IDE
+  (2026-11-21, the maintainer's 64-bit OXT-Beyond over CI's `x86_64-win32` library): the
+  same self-test passed 64 checks and failed its 2 first-load checks, which cannot hold in a
+  process that had loaded PDFium before, as that session had (`pdfxt/README.md` has the
+  record; a fresh-session run is owed). The demo's dark look met the same PC that day
+  (OXT-Beyond 0.2.8-dp.1): PDFium loaded and its tour ran to its end, and it showed the window
+  opening partly off the screen and every label's words 5 pixels above it (engine note 5.18),
+  both fixed the same day and held by `pdfxt/tests/demo-drive.livecodescript`; the fixed window
+  has met Linux only. For everything beyond those runs it is verified statically; needs an OXT
+  pass.
+- Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
+  Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
+  reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
+- Binaries: none committed when it joined. The first release-binaries dispatch lands TWO
+  files per platform (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`), 4 to 8 MB of PDFium each (16 MB for the universal mac one), 80 MB across the ten
+  platforms; the change after it lists the platforms in `check-binary-freshness.py`'s `ships`
+  row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
+  installer, the freshness gate and the Android script, by fixtures; no dispatch has
+  exercised it yet.
+- Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt pdfxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: pdfxt`, then the `ships` row | owner (pressing Run is rule 5's decision; it adds 80 MB of PDFium to the repository) | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `pdfLibraryVersion()`, open a PDF, a page into an image both ways (`pdfRenderPageBMP` as its text, `pdfRenderPage` as its imageData), `pdfPageText`, a search with its highlight rectangles, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `pdfxt/docs/api-reference.md` says, and the colours are right (red is red) on each platform |
+| 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
+| 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
+| 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end; the dark look then played its whole tour there and opened partly off the screen with every label's words 5 pixels above it, both fixed that day, the fixed window not yet seen on Windows) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
+| 7 | The suite board on an engine with pdfxt's name in the band of the members with no harness (2.13 #9 has the band) | S1 | 48 | pdfxt's name shows whole in the band, and the band ends above the members caption |
+| 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 
 ---
 

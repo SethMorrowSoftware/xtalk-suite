@@ -1114,6 +1114,64 @@ def main():
           f"{shipping['name']} holds libraries and was excused as not yet "
           f"shipping: {[s for s in skips if 'ships no library' in s]}")
 
+    # THE COMPANION RULE (pdfxt, 2026-11-20), over a throwaway tree with a
+    # pin of its own: the member's library and its prebuilt companion ship
+    # together or not at all, and the companion is the pinned bytes.
+    import hashlib
+    comp = next(m for m in GATE.MEMBERS if m.get("companions"))
+    bare, pin_rel = sorted(comp["companions"].items())[0]
+    lib = comp["lib"]
+    with tempfile.TemporaryDirectory(prefix="test-freshness-companion-") as croot:
+        good, other = b"the pinned companion", b"some other file"
+        os.makedirs(os.path.dirname(os.path.join(croot, pin_rel)))
+        with open(os.path.join(croot, pin_rel), "w", encoding="utf-8") as fh:
+            fh.write("release chromium/1\nx86_64-linux linux-x64 %s %s\n"
+                     % ("0" * 64, hashlib.sha256(good).hexdigest()))
+
+        def folder(tag, platform, files):
+            pdir = os.path.join(croot, tag, platform)
+            os.makedirs(pdir)
+            for fn, data in files.items():
+                with open(os.path.join(pdir, fn), "wb") as fh:
+                    fh.write(data)
+            return pdir
+
+        saved_root, GATE.ROOT = GATE.ROOT, croot
+        try:
+            def said(tag, platform, files):
+                return GATE.companion_problems(comp, platform,
+                                               folder(tag, platform, files), "so")
+            got = said("both", "x86_64-linux", {lib + ".so": b"x", bare + ".so": good})
+            check(got == [], f"a library with its pinned companion passes: {got}")
+            got = said("empty", "x86_64-linux", {})
+            check(got == [], f"an empty platform folder says nothing: {got}")
+            got = said("alone", "x86_64-linux", {lib + ".so": b"x"})
+            check(any("is missing" in g for g in got),
+                  f"a library without its companion is refused: {got}")
+            got = said("orphan", "x86_64-linux", {bare + ".so": good})
+            check(any("without " + lib + ".so" in g for g in got),
+                  f"a companion without its library is refused: {got}")
+            got = said("wrong", "x86_64-linux", {lib + ".so": b"x", bare + ".so": other})
+            check(any("not the pinned file" in g for g in got),
+                  f"a companion that is not the pinned bytes is refused: {got}")
+            got = said("norow", "x86-linux", {lib + ".so": b"x", bare + ".so": good})
+            check(any("no readable row for x86-linux" in g for g in got),
+                  f"a platform the pin has no row for is refused: {got}")
+            os.remove(os.path.join(croot, pin_rel))
+            got = said("nopin", "x86_64-linux", {lib + ".so": b"x", bare + ".so": good})
+            check(any("no readable row" in g for g in got),
+                  f"a companion with no pin file is refused: {got}")
+        finally:
+            GATE.ROOT = saved_root
+    # ...and a member WITHOUT the key gets no such tolerance: the same file
+    # name in its folder stays "a binary nothing checks" (the row is the only
+    # way in).
+    check(GATE.companion_problems(shipping, "x86_64-linux", os.path.join(
+              GATE.ROOT, shipping["name"], "src", "code", "x86_64-linux"), "so") == [],
+          "a member with no companions has no companion problems")
+    check("companions" not in shipping,
+          "the shipping member used above declares no companion")
+
     # A guarded DLL whose value disagrees with its header is a FAILURE.
     if guarded_live:
         member, plat, path, code_at, value = guarded_live[0]

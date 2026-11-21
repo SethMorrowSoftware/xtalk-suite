@@ -91,8 +91,13 @@ def main():
     # width line and a height line at kAdWidth x kAdHeight (960 x 600).
     # 59 since 2026-11-21: xlsxt/examples/xlsxt-demo.livecodescript, one
     # uiChrome call at kXdWidth x kXdHeight (960 x 640).
-    if "59 stack window dimension" not in out:
-        print("test-stack-size: expected 59 measured dimensions, got:\n" + out)
+    # 61 the same day, merged with the pdfxt branch: pdfxt/examples/
+    # pdfxt-demo.livecodescript, the PDF viewer, a width line and a height
+    # line at kPvWidth x kPvHeight (1180 x 630). (It first carried one
+    # uiChrome call at that size, then left the kit for OXT-Beyond's dark
+    # look the same day.)
+    if "61 stack window dimension" not in out:
+        print("test-stack-size: expected 61 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

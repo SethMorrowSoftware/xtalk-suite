@@ -445,13 +445,16 @@ Every selftest and demo is a single stack script that builds its own UI:
 Run all and Copy results ran on an engine on 2026-09-24, and a second Run all in
 one launch on 2026-09-25 (Linux, row 48). A row's Run, Show, the
 filters and the pills' look are "verified statically; needs an OXT pass" (row 48). It still builds itself and runs everything on open
-(step 4). Down the left, one row per member of `tools/member-registry.py` plus a
-cross-member row: a pill (`OK`, `N FAILED`, `skipped`, `absent`, `unavailable` for
+(step 4). Down the left, one row per member of `tools/member-registry.py` that has an
+in-engine harness, plus a cross-member row: a pill (`OK`, `N FAILED`, `skipped`, `absent`, `unavailable` for
 torrentxt, `running...` while a loopback is live, `not run` outside the run's
 scope; a finished row that counted nothing reads `nothing ran`, a defect), its
 pass / fail / skip counts, **Run** (that member alone, end to end: the probe, its
 sections, teardown and a summary) and **Show** (only the lines its row counted).
-nocloud's row is a caption: its tests run headlessly in the gates. Across the top,
+The members with no in-engine harness (audioxt, box3dxt, curlxt, nocloud, pdfxt,
+render3dxt and xlsxt when this was written) have no row: since 2026-11-21 they are names
+in a band under the rows, three to a line, whose caption says their tests run headlessly
+in the gates (verified statically; needs an OXT pass, row 48). Across the top,
 **Run all** (the old Re-run: everything, and the only run that is the suite
 record) and **Copy results**. Over the report, **All**, **Failures**, **Skips** and
 **Boot check** (the window's own boot self-check, never counted in the totals).

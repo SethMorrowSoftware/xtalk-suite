@@ -1388,25 +1388,66 @@ the controls it last heard of until it is closed and reopened (its
 ### 5.16 A control that names no text colour takes the system theme's, and a dark theme's is white
 **OBSERVED 2026-11-21** (Windows, OXT-Beyond 64-bit, the maintainer's PC under its dark
 theme; the day before, render3dxt's physics demo showed the same there, by that member's
-record). No error: a field's text and a tick box's label do not show, and selecting the
-text shows it is there. xlsxt's demo had its table (a kit `uiInput`) and every tick box's
-words white on the white the UI kit paints. On the same window every control that names a
-colour of its own drew right: the kit's labels, captions, status line and footer. The
-colour is inherited, control then card then stack, and reaches the theme only when none of
-them names one: OBSERVED the same day on Linux under xvfb with a stand-in, where the demo's
-stack named white and every field and tick box that named nothing drew white words, and
-each that named a colour drew its own.
+record, and the same day pdfxt's demo, in its first look on the kit, drew its page number
+and outline white on white, by pdfxt's record). No error: a field's text and a tick box's
+label do not show, and selecting the text shows it is there. xlsxt's demo had its table (a
+kit `uiInput`) and every tick box's words white on the white the UI kit paints. On the same
+window every control that names a colour of its own drew right: the kit's labels, captions,
+status line and footer. The colour is inherited, control then card then stack, and reaches
+the theme only when none of them names one: OBSERVED the same day on Linux under xvfb with
+a stand-in, where the demo's stack named white and every field and tick box that named
+nothing drew white words, and each that named a colour drew its own.
 **Rule:** give every control whose words sit on a fill you paint a `foregroundColor` of
 its own; a window that paints its own backgrounds cannot leave its text to the theme.
 OBSERVED to hold on that PC the same day: xlsxt's rebuilt demo, which names the colour of
 every field, label and tick box and the background of every entry field and list, and
 draws its own push buttons, read right throughout under the dark theme.
-**Gate:** for xlsxt's demo only, `xlsxt/tests/demo-drive.livecodescript` (2026-11-21),
-which fails a window where a field or tick box names no colour; no suite-wide gate.
+**Gate:** none suite-wide; two demos each hold their own window on the Linux engine:
+`xlsxt/tests/demo-drive.livecodescript` (2026-11-21) fails a window where a field or tick
+box names no colour, and `pdfxt/tests/demo-drive.livecodescript` (2026-11-21) one where a
+field or button names no colour of its own, or where any tick box or radio button is drawn.
 **Does NOT mean:** that a push button needs one. The theme draws a push button, and no run
 reported one unreadable (INFERRED: a dark theme draws its face dark, with its white words),
 so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
 dark theme has been run on either (UNEVIDENCED either way).
+
+### 5.17 Deleting the defaultStack and then creating a stack kills the engine
+**OBSERVED 2026-11-21** (OXT-Beyond 0.2.7-rc.6, its Linux desktop engine run
+as `LiveCode-Community -ui` with no display, version 9.7.1-OXT build 25923;
+found when `pdfxt/tests/demo-drive.livecodescript` grew a stack it deletes).
+A script made a stack the defaultStack, by `go stack` or by
+`set the defaultStack`, deleted that stack, and then ran `create stack`: the
+engine ended on signal 11, with nothing for a `try` to catch. Each variant
+ran once that day: a stack that was never the defaultStack, deleted and
+followed by a create, ran clean; so did `close stack` in place of the
+delete, and so did setting the defaultStack to another stack before the
+delete.
+**Rule:** before deleting a stack, set the defaultStack to another one.
+**Does NOT mean:** a crash in the IDE (whose own scripts move the
+defaultStack; not tried), or on Windows or macOS (not tried); nor that a
+delete alone, or a create alone, is unsafe.
+
+### 5.18 A field's first line starts 6 pixels above its top margin
+**OBSERVED 2026-11-21** on OXT-Beyond's Linux desktop engine (0.2.7-rc.6, `-ui`, no
+display) and on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit), and the engine
+source says why (DOCUMENTED: `MCField::getcontenty` in `engine/src/fieldf.cpp` puts the
+content's top at the field's top plus its border less `TEXT_Y_OFFSET`, which `objdefs.h`
+sets to 6, and the first line starts the top margin below that). On Linux, `the
+formattedRect of line 1` of a borderless field with margins "2,1,2,1" began 5 pixels above
+the field's top, and with a top margin of 7, 1 pixel below it; pdfxt's demo had 28 fields
+whose lines began above them, every label 5 pixels so. On Windows the same window showed it:
+the kicker's capitals touched the top edge of its field, and a 10-point caption lost the tops
+of its tall letters, while every field had room to spare below its words. No error.
+**Rule:** a top margin places the first line only from 6 pixels up: a margin of 6 puts the
+line's box at the inside of the field's border (the suite kit's "6,6,6,6"), so give a field 6
+plus the room wanted above its first line. The engine's default margin, 8, leaves 2.
+**Gate:** for pdfxt's demo only, `pdfxt/tests/demo-drive.livecodescript` (2026-11-21): every
+field of the window that does not scroll must hold its lines (the formattedRect of them)
+inside its rect, and a line that does not wrap must fit across it. It named all 28 fields of
+the window before the fix. No suite-wide gate.
+**Does NOT mean:** that a field that scrolls must keep its lines inside (they are meant to run
+on), nor that the bottom margin moves the words: by the engine's own comment
+(`exec-interface-field.cpp`, `GetFormattedHeight`) it only enters the formatted height.
 
 ## 6. Sockets and processes
 

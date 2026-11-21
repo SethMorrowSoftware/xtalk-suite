@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Seventeen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -21,9 +21,11 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
   render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
-  transform, move and camera texts it reads, with only its web archive committed yet) and xlsxt
-  (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
-  libraries committed 2026-11-21).
+  transform, move and camera texts it reads, with only its web archive committed yet), pdfxt
+  (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
+  yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
+  beside itself, see Building) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files
+  written and read; joined 2026-11-20, its libraries committed 2026-11-21).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -210,10 +212,14 @@ their real names: coinxt, onionxt, the b2k Kit, riptide and the nostrxt core. (T
 because a harness once ran against a stale in-memory library and reported failures already fixed.)
 
 - **The board (D-23).** The paste wears the demos' look: one row per `tools/member-registry.py`
-  member plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a results filter
-  and the boot self-check. nocloud's row is a caption: the generator's `NO_HARNESS`, and it refuses
-  a registry member with neither a harness nor such a reason. A row's Run is a subsequence of Run
-  all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
+  member with an in-engine harness plus a cross-member row (a pill, its counts, a scoped **Run**,
+  **Show**), a results filter and the boot self-check. The members in the generator's
+  `NO_HARNESS` (it refuses a registry member with neither a harness nor such a reason) have no
+  row: since 2026-11-21, when a seventeenth row would have fitted at no pitch, they are names in
+  a band under the rows, three to a line with room for twelve, and the boot self-check
+  (`suRowsFit`) fails a board whose rows or names reach the members caption. A row's Run is a
+  subsequence of Run all, never a reordering, and every block tallies into its row. The kit
+  builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
@@ -332,7 +338,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -387,6 +393,17 @@ worse than no gate, because it answers the question nobody asks twice.
   the engine load was of its ABI 1 files. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
   builder writes into an app's manifest (observed in that app, 2026-11-19).
+- **Companions (2026-11-20).** pdfxt does not build or link PDFium: each platform folder holds
+  `pdfxt.<ext>` and a prebuilt `pdfium.<ext>` the shim loads at run time, from one release of
+  bblanchon/pdfium-binaries pinned by SHA-256 in `pdfxt/src/pdfium.pin`. A companion cannot be
+  held to the suite's floors (PDFium's are its builders': macOS 13, Android API 23, glibc 2.16),
+  so it is held to the pin instead, in every place a library moves: the member's CMake and
+  packager, `install-release-binaries.py` (`COMPANIONS`), `check-binary-freshness.py` (the
+  row's `companions` key) and `build-android.sh` (`companion_of`). Both files or neither; the
+  companion byte for byte, never stripped. `test-build-android.py` holds the three tables
+  together. A device test that could run only part of itself prints `XTALK_TEST_PARTIAL:` and
+  `build-android.sh`'s last line then says "passed IN PART". All verified statically and by
+  fixtures; no release dispatch has landed a companion yet.
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

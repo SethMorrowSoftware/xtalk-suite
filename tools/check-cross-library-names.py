@@ -108,6 +108,8 @@ LCB_LIBS = {
     # render3dxt joined 2026-11-20: the renderer beside the two physics
     # bindings, and no other prefix begins with "r3".
     "render3dxt/src/render3dxt.lcb": ("r3",),
+    # pdfxt joined 2026-11-20. No other library's prefix begins "pdf".
+    "pdfxt/src/pdfxt.lcb": ("pdf",),
     "curlxt/src/curl.lcb": ("cu",),
     # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
     "xlsxt/src/xlsxt.lcb": ("xl",),
