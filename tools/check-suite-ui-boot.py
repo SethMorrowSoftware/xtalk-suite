@@ -1166,7 +1166,7 @@ def rect_of(ctl):
 
 
 def row_controls(board, key):
-    names = ["suName", "suNote", "suPill", "suCount", "suRun", "suShow"]
+    names = ["suName", "suPill", "suCount", "suRun", "suShow"]
     out = [board.ctl(n + key) for n in names]
     out.append(board.ctl("suPill" + key + "Bg"))
     return [ct for ct in out if ct is not None]
@@ -1210,12 +1210,15 @@ def check_build(c, board):
          repr(rects))
     c.eq("exactly one results view shows",
          sum(1 for v in views if board.visible(v)), 1)
-    # Since the seventeenth row (2026-11-21; work plan 2.11 #10) a
-    # member with no harness has no row: its name sits in the band
-    # under the rows, between the band's caption and the members caption,
-    # with no pill, no count and no Run. The rows' controls end above the
-    # band's caption, and nothing of a row lies inside it.
-    band = rect_of(board.ctl("suBandCap"))
+    # Since the seventeenth row would have fitted at no pitch (2026-11-21;
+    # work plan 2.13 #9) a member with no harness has no row: its name sits
+    # in the band under the rows, between the band's caption and the members
+    # caption, with no pill, no count and no Run (and, since the band's
+    # first engine draw that day, no "gates" beside it to squeeze the name).
+    # The rows' controls end above the band's caption. The boot self-check's
+    # suRowsFit asks the members caption half of this from inside the paste;
+    # this asks it from the built window, and the band's caption half too.
+    band = rect_of(board.ctl("suNotesCap"))
     cap = rect_of(board.ctl("suMembersCap"))
     placed = []
     for k in board.no_harness:

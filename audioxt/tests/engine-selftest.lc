@@ -1,0 +1,628 @@
+<?lc
+-- engine-selftest.lc - audioxt on a REAL engine, with no window and no
+-- sound card.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   audioxt.lcm, compiled from src/audioxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../audioxt for .../audioxt.so)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int, a
+-- script string as a C string, a C string as text, binary data in and out,
+-- a double as a number), and that sound made from SCRIPT is the sound that
+-- comes back. Two halves:
+--
+--   the SCENES, written by hand: a tone rendered offline and measured, a
+--     WAV made in script and decoded back bit for bit, files on disk
+--     (one with a name that is not ASCII), a sound played to its end and
+--     reported, groups and 3D, and the silent test device playing and
+--     recording in real time;
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros. Zeros
+--     are safe by the binding's contract (a 0 handle is a no-op), so a call
+--     that throws or kills the engine here is a binding that does not match
+--     its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web, and not a sound anyone heard. It runs the Linux x86-64 library on the
+-- Linux x86-64 server engine, through miniaudio's silent device.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=audioxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- One second of a 440 Hz sine, mono, 8000 Hz, 16-bit: 16000 bytes made by
+-- script, so what crosses the boundary is known to the last bit.
+function sineSamples
+   local tData, tIndex
+   put empty into tData
+   repeat with tIndex = 0 to 7999
+      put binaryEncode("s", round(8000 * sin(2 * pi * 440 * tIndex / 8000))) after tData
+   end repeat
+   return tData
+end sineSamples
+
+-- The loudest 16-bit sample of a block, 0 to 32768.
+function loudest16 pData
+   local tIndex, tValue, tMost
+   put 0 into tMost
+   repeat with tIndex = 1 to the number of bytes in pData - 1 step 2
+      get binaryDecode("s", byte tIndex to tIndex + 1 of pData, tValue)
+      if abs(tValue) > tMost then put abs(tValue) into tMost
+   end repeat
+   return tMost
+end loudest16
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", auABIVersion() is 1, auABIVersion()
+   check "version text", auLibraryVersion() begins with "audioxt ABI 1; miniaudio ", auLibraryVersion()
+   check "the backend name is text and asking is safe with no sound card", auBackendName() is empty or the number of chars in auBackendName() > 2, auBackendName()
+   check "a scan answers a number, -1 when there is no audio system", auDeviceScan() is an integer and auDeviceScan() >= -1, auDeviceScan()
+   check "device lists are readable whatever the scan found", auPlaybackDeviceCount() >= 0 and auCaptureDeviceCount() >= 0 \
+         and auPlaybackDeviceName(9999) is empty and auCaptureDeviceIsDefault(9999) is false, auPlaybackDeviceCount() && auCaptureDeviceCount()
+end testLibrary
+
+command testOfflineTone
+   local tEngine, tTone, tBlock, tPeak, tWave
+   put auEngineCreateOffline(8000, 2) into tEngine
+   check "offline engine created", tEngine > 0 and auEngineIsValid(tEngine) is true and auEngineIsOffline(tEngine) is true, tEngine && auLastError()
+   check "rate and channels", auEngineSampleRate(tEngine) is 8000 and auEngineChannels(tEngine) is 2, auEngineSampleRate(tEngine) && auEngineChannels(tEngine)
+   put auSoundTone(tEngine, "sine", 440, 0.5) into tTone
+   check "a text argument reaches C (the shape of a tone)", tTone > 0 and auSoundIsValid(tTone) is true and auSoundEngine(tTone) is tEngine, tTone && auLastError()
+   check "a wrong text argument is refused with a reason", auSoundTone(tEngine, "wobble", 440, 0.5) is 0 and auLastError() contains "sine", auLastError()
+   put auEngineRender(tEngine, 800, "s16") into tBlock
+   check "render: bytes come back, the right number", the number of bytes in tBlock is 800 * 2 * 2, the number of bytes in tBlock && auLastError()
+   check "nothing started: silence", loudest16(tBlock) is 0, loudest16(tBlock)
+   auSoundStart tTone
+   check "a Boolean result (playing)", auSoundIsPlaying(tTone) is true, auSoundIsPlaying(tTone)
+   put auEngineRender(tEngine, 800, "s16") into tBlock
+   check "a tone of amplitude 0.5 peaks at half scale", near(loudest16(tBlock), 16384, 400), loudest16(tBlock)
+   check "the out format is reported", auOutSampleRate() is 8000 and auOutChannels() is 2, auOutSampleRate() && auOutChannels()
+   check "the clock counts what was rendered", near(auEngineTime(tEngine), 0.2, 0.0001), auEngineTime(tEngine)
+   put auEnginePeak(tEngine) into tPeak
+   check "peak is text with two items", the number of items of tPeak is 2 and near(item 1 of tPeak, 0.5, 0.02) and near(item 2 of tPeak, 0.5, 0.02), tPeak
+   put auEngineWaveform(tEngine, 64) into tWave
+   check "waveform is text with the points asked for", the number of items of tWave is 64 and item 1 of tWave is a number, the number of items of tWave
+
+   -- numbers both ways
+   auSoundSetVolume tTone, 0.25
+   check "Number in, Number out (volume)", near(auSoundVolume(tTone), 0.25, 0.000001), auSoundVolume(tTone)
+   put auEngineRender(tEngine, 800, "s16") into tBlock
+   check "and it is heard: a quarter of the level", near(loudest16(tBlock), 4096, 200), loudest16(tBlock)
+   auSoundSetPan tTone, -1
+   check "pan", auSoundPan(tTone) is -1, auSoundPan(tTone)
+   put auEngineRender(tEngine, 800, "f32") into tBlock
+   check "a float render is twice the bytes", the number of bytes in tBlock is 800 * 2 * 4, the number of bytes in tBlock
+   auSoundSetPan tTone, 0
+   auSoundSetPitch tTone, 2
+   check "pitch", auSoundPitch(tTone) is 2, auSoundPitch(tTone)
+   auSoundSetFrequency tTone, 880
+   auEngineSetVolume tEngine, 0.5
+   check "engine volume", auEngineVolume(tEngine) is 0.5, auEngineVolume(tEngine)
+
+   -- Booleans, both ways across the boundary
+   auSoundSetLooping tTone, true
+   check "Boolean in, Boolean out (true)", auSoundIsLooping(tTone) is true, auSoundIsLooping(tTone)
+   auSoundSetLooping tTone, false
+   check "Boolean in, Boolean out (false)", auSoundIsLooping(tTone) is false, auSoundIsLooping(tTone)
+
+   -- refusals: 0 or empty back, an explanation, no throw
+   auSoundSetPan tTone, 7
+   check "a pan of 7 is refused and says why", auSoundPan(tTone) is 0 and auLastError() contains "pan", auLastError()
+   check "a render in an unknown format is empty", auEngineRender(tEngine, 100, "s99") is empty and auLastError() contains "format", auLastError()
+   check "a dead handle reads as nothing", auSoundVolume(987654) is 0 and auSoundPositionXYZ(987654) is empty and auSoundIsValid(987654) is false, \
+         auSoundVolume(987654) && auSoundPositionXYZ(987654)
+   check "one sound counted", auEngineSoundCount(tEngine) is 1, auEngineSoundCount(tEngine)
+   auSoundStop tTone
+   auSoundFree tTone
+   check "freed: the handle is dead", auSoundIsValid(tTone) is false and auEngineSoundCount(tEngine) is 0, auSoundIsValid(tTone)
+   auSoundFree tTone
+   auSoundStart tTone
+   auEngineFree tEngine
+   check "engine freed", auEngineIsValid(tEngine) is false, auEngineIsValid(tEngine)
+end testOfflineTone
+
+command testBytesAndFiles
+   local tSamples, tWav, tBack, tFolder, tPath, tOddPath, tEngine, tSound, tStream, tFromData, tFromPCM, tClone, tBlock
+   put sineSamples() into tSamples
+   put auWAVEncode(tSamples, "s16", 8000, 1) into tWav
+   check "data in, data out: a WAV file of the right size", the number of bytes in tWav is 16000 + 44 and byte 1 to 4 of tWav is "RIFF" and byte 9 to 12 of tWav is "WAVE", \
+         the number of bytes in tWav && auLastError()
+   put auDecodeData(tWav, "s16", 0, 0) into tBack
+   check "decoded back bit for bit", tBack is tSamples, the number of bytes in tBack && auLastError()
+   check "the decoder reports the file's own format", auOutSampleRate() is 8000 and auOutChannels() is 1, auOutSampleRate() && auOutChannels()
+   put auDecodeData(tWav, "f32", 16000, 2) into tBack
+   check "converted on the way: twice the rate, two channels, floats", near(the number of bytes in tBack, 16000 * 2 * 4, 64) and auOutSampleRate() is 16000 and auOutChannels() is 2, \
+         the number of bytes in tBack && auOutSampleRate() && auOutChannels()
+   check "bytes that are not a sound are refused", auDecodeData("this is not a sound file", "s16", 0, 0) is empty and auLastError() is not empty, auLastError()
+   check "empty data is refused, not read", auDecodeData(empty, "s16", 0, 0) is empty and auWAVEncode(empty, "s16", 8000, 1) is empty, auLastError()
+
+   -- files: a path is text that must arrive as the same file name
+   put the tempName into tFolder
+   create folder tFolder
+   put tFolder & "/tone.wav" into tPath
+   put tWav into url ("binfile:" & tPath)
+   check "decode a file by path", auDecodeFile(tPath, "s16", 0, 0) is tSamples, auLastError()
+   put tFolder & "/s" & numToCodepoint(233) & "n " & numToCodepoint(26085) & ".wav" into tOddPath
+   put tWav into url ("binfile:" & tOddPath)
+   if there is a file tOddPath then
+      check "a path that is not ASCII names the same file in C", auDecodeFile(tOddPath, "s16", 0, 0) is tSamples, auLastError()
+   else
+      -- The ENGINE could not name the file: in the C locale it has no way
+      -- to write these characters to disk at all. Nothing of the binding
+      -- has been tried, so this is reported and not passed; the native
+      -- lane runs with LC_ALL=C.UTF-8 and refuses a run that says SKIPPED.
+      put "INFO SKIPPED the non-ASCII path: this engine's locale cannot create the file (run with LC_ALL=C.UTF-8)" & return
+      put tPath into tOddPath
+   end if
+   check "a missing file is refused with a reason", auDecodeFile(tFolder & "/nothing.wav", "s16", 0, 0) is empty and auLastError() is not empty, auLastError()
+
+   put auEngineCreateOffline(8000, 1) into tEngine
+   put auSoundLoad(tEngine, tPath, false) into tSound
+   check "load a file whole", tSound > 0 and near(auSoundLength(tSound), 1, 0.001), tSound && auSoundLength(tSound) && auLastError()
+   put auSoundLoad(tEngine, tOddPath, true) into tStream
+   check "load a file as a stream (a Boolean beside a path)", tStream > 0 and near(auSoundLength(tStream), 1, 0.001), tStream && auLastError()
+   put auSoundLoadData(tEngine, tWav, false) into tFromData
+   check "load from data", tFromData > 0 and near(auSoundLength(tFromData), 1, 0.001), tFromData && auLastError()
+   put auSoundFromPCM(tEngine, tSamples, "s16", 8000, 1) into tFromPCM
+   check "a sound from raw samples", tFromPCM > 0 and near(auSoundLength(tFromPCM), 1, 0.001), tFromPCM && auLastError()
+   put auSoundClone(tFromPCM) into tClone
+   check "clone", tClone > 0 and tClone is not tFromPCM and auEngineSoundCount(tEngine) is 5, tClone && auLastError()
+   check "a stream cannot be cloned, and says so", auSoundClone(tStream) is 0 and auLastError() contains "clone", auLastError()
+
+   -- the samples heard are the samples given
+   auSoundStart tFromPCM
+   put auEngineRender(tEngine, 8000, "s16") into tBlock
+   -- through the mixer, which works in floats: the same sound to within
+   -- one step of 16 bits, not the same bits
+   check "raw samples play back as they were given", the number of bytes in tBlock is 16000 and near(loudest16(tBlock), 8000, 2) \
+         and byte 1 to 2 of tBlock is byte 1 to 2 of tSamples, the number of bytes in tBlock && loudest16(tBlock)
+   auSoundStart tStream
+   put auEngineRender(tEngine, 4000, "s16") into tBlock
+   check "the stream plays the same sound", near(loudest16(tBlock), 8000, 2), loudest16(tBlock)
+   auSoundSeek tSound, 0.5
+   check "seek and position", near(auSoundPosition(tSound), 0.5, 0.001), auSoundPosition(tSound)
+   auEngineFree tEngine
+   delete file tPath
+   if tOddPath is not tPath then delete file tOddPath
+   delete folder tFolder
+end testBytesAndFiles
+
+command testEndsGroupsAndPlace
+   local tEngine, tShort, tKeep, tCount, tGroup, tBlock, tWhen
+   put auEngineCreateOffline(8000, 2) into tEngine
+   -- a quarter of a second of sound, played to its end
+   put auSoundFromPCM(tEngine, byte 1 to 4000 of sineSamples(), "s16", 8000, 1) into tShort
+   put auSoundClone(tShort) into tKeep
+   auSoundSetAutoFree tShort, true
+   auSoundStart tShort
+   auSoundStart tKeep
+   check "nothing has ended yet", auPollEnded() is 0 and auEndedSound(1) is 0, auEndedSound(1)
+   put auEngineRender(tEngine, 4000, "s16") into tBlock
+   put auPollEnded() into tCount
+   check "both sounds are reported at their end", tCount is 2 and tShort is among the items of (auEndedSound(1) & comma & auEndedSound(2)) \
+         and tKeep is among the items of (auEndedSound(1) & comma & auEndedSound(2)), tCount && auEndedSound(1) && auEndedSound(2)
+   check "the one marked auto-free is gone, the other is at its end", auSoundIsValid(tShort) is false and auSoundIsValid(tKeep) is true \
+         and auSoundAtEnd(tKeep) is true and auSoundIsPlaying(tKeep) is false, auSoundIsValid(tShort) && auSoundAtEnd(tKeep)
+   check "reported once", auPollEnded() is 0, auEndedSound(1)
+
+   -- scheduled to the sample
+   put auEngineTime(tEngine) + 0.1 into tWhen
+   auSoundStartAt tKeep, tWhen
+   put auEngineRender(tEngine, 800, "s16") into tBlock
+   check "silent until its start time", loudest16(tBlock) is 0, loudest16(tBlock)
+   put auEngineRender(tEngine, 800, "s16") into tBlock
+   check "then heard", loudest16(tBlock) > 2000, loudest16(tBlock)
+   auSoundStopAt tKeep, auEngineTime(tEngine)
+   auSoundFade tKeep, -1, 0, 0.1
+   auSoundStopWithFade tKeep, 0.05
+   auEngineStopAll tEngine
+
+   -- groups
+   put auGroupCreate(tEngine) into tGroup
+   check "group created", tGroup > 0 and auGroupIsValid(tGroup) is true, tGroup && auLastError()
+   auSoundSetGroup tKeep, tGroup
+   check "a sound joins a group", auSoundGroup(tKeep) is tGroup, auSoundGroup(tKeep)
+   auGroupSetVolume tGroup, 0.5
+   auGroupSetPan tGroup, 0.25
+   auGroupSetPitch tGroup, 1.5
+   check "group volume, pan and pitch", auGroupVolume(tGroup) is 0.5 and auGroupPan(tGroup) is 0.25 and auGroupPitch(tGroup) is 1.5, \
+         auGroupVolume(tGroup) && auGroupPan(tGroup) && auGroupPitch(tGroup)
+   auGroupStop tGroup
+   auGroupStart tGroup
+   auGroupFree tGroup
+   check "a freed group lets its sound go", auGroupIsValid(tGroup) is false and auSoundGroup(tKeep) is 0 and auSoundIsValid(tKeep) is true, auSoundGroup(tKeep)
+
+   -- a place in 3D: three numbers in, text out
+   auSoundSetSpatial tKeep, true
+   check "spatial on", auSoundIsSpatial(tKeep) is true, auSoundIsSpatial(tKeep)
+   auSoundSetPosition tKeep, 1.5, 0, -2
+   check "position text", auSoundPositionXYZ(tKeep) is "1.5,0,-2", auSoundPositionXYZ(tKeep)
+   auEngineSetListenerPosition tEngine, 0, 1, 0
+   auEngineSetListenerDirection tEngine, 1, 0, 0
+   check "listener text", auEngineListenerPosition(tEngine) is "0,1,0" and auEngineListenerDirection(tEngine) is "1,0,0", \
+         auEngineListenerPosition(tEngine) && auEngineListenerDirection(tEngine)
+   auEngineSetListenerUp tEngine, 0, 1, 0
+   auEngineSetListenerVelocity tEngine, 0, 0, 0
+   auSoundSetVelocity tKeep, 1, 0, 0
+   auSoundSetDistanceRange tKeep, 1, 50
+   auSoundSetRolloff tKeep, 1
+   auSoundSetDoppler tKeep, 1
+   auSoundSetLoopRange tKeep, 0.05, 0.2
+   check "none of those was refused", auLastError() is empty or auSoundIsValid(tKeep), auLastError()
+   auEngineSetListenerDirection tEngine, 0, 0, 0
+   check "a direction of all zeros is refused", auLastError() contains "direction" and auEngineListenerDirection(tEngine) is "1,0,0", auLastError()
+   auEngineFree tEngine
+end testEndsGroupsAndPlace
+
+-- The silent test device: miniaudio's null backend, which runs a real
+-- device thread on a real clock and needs no sound card. This is the one
+-- scene where the library's own threads run beside the engine.
+command testSilentDevice
+   local tEngine, tTone, tMic, tFolder, tPath, tHeard, tSeconds, tStarted
+   put auEngineCreate(-1, 0, 0) into tEngine
+   check "the silent device opens", tEngine > 0 and auEngineIsOffline(tEngine) is false and auEngineSampleRate(tEngine) > 0, tEngine && auLastError()
+   check "it has a name", auEngineDeviceName(tEngine) is not empty, auEngineDeviceName(tEngine)
+   put auSoundTone(tEngine, "square", 220, 0.3) into tTone
+   auSoundStart tTone
+   wait 300 milliseconds
+   check "the device thread mixes in real time", auEngineTime(tEngine) > 0.05, auEngineTime(tEngine)
+   check "and the meter saw the tone", item 1 of auEnginePeak(tEngine) > 0.2, auEnginePeak(tEngine)
+   check "a device engine is not rendered by hand", auEngineRender(tEngine, 100, "s16") is empty, auLastError()
+   auEngineStop tEngine
+   auEngineStart tEngine
+
+   put auCaptureOpen(-1, "s16", 16000, 1, 2) into tMic
+   check "the silent microphone opens", tMic > 0 and auCaptureIsValid(tMic) is true, tMic && auLastError()
+   check "it is what was asked for", auCaptureFormat(tMic) is "s16" and auCaptureSampleRate(tMic) is 16000 and auCaptureChannels(tMic) is 1, \
+         auCaptureFormat(tMic) && auCaptureSampleRate(tMic) && auCaptureChannels(tMic)
+   check "not running until started", auCaptureIsRunning(tMic) is false and auCaptureAvailable(tMic) is 0, auCaptureAvailable(tMic)
+   put auCaptureStart(tMic) into tStarted
+   check "start answers a Boolean", tStarted is true and auCaptureIsRunning(tMic) is true, tStarted
+   put the tempName into tFolder
+   create folder tFolder
+   put tFolder & "/memo.wav" into tPath
+   check "recording to a file begins", auCaptureRecordStart(tMic, tPath) is true and auCaptureIsRecording(tMic) is true, auLastError()
+   check "a second recording on the same capture is refused", auCaptureRecordStart(tMic, tPath & "2") is false, auLastError()
+   wait 400 milliseconds
+   check "sound arrives", auCaptureAvailable(tMic) > 1600, auCaptureAvailable(tMic)
+   put auCaptureRead(tMic) into tHeard
+   check "read: whole 16-bit frames, as data", the number of bytes in tHeard > 1600 and the number of bytes in tHeard mod 2 is 0, the number of bytes in tHeard
+   check "the read reports its format", auOutSampleRate() is 16000 and auOutChannels() is 1, auOutSampleRate() && auOutChannels()
+   check "nothing was dropped, and the level is a number", auCaptureDropped(tMic) is 0 and auCapturePeak(tMic) >= 0, auCaptureDropped(tMic)
+   check "the device has a label", auCaptureDeviceLabel(tMic) is not empty, auCaptureDeviceLabel(tMic)
+   put auCaptureRecordStop(tMic) into tSeconds
+   check "the recording has a length", tSeconds > 0.1 and auCaptureIsRecording(tMic) is false, tSeconds
+   auCaptureStop tMic
+   auCaptureClose tMic
+   check "capture closed", auCaptureIsValid(tMic) is false, auCaptureIsValid(tMic)
+   get auDecodeFile(tPath, "s16", 0, 0)
+   check "the file it wrote is a WAV of that length", near(the number of bytes in it / 2 / 16000, tSeconds, 0.001) and auOutSampleRate() is 16000, \
+         the number of bytes in it && auLastError()
+   delete file tPath
+   delete folder tFolder
+
+   auShutDown
+   check "shutdown closes everything", auEngineIsValid(tEngine) is false and auSoundIsValid(tTone) is false, auEngineIsValid(tEngine)
+   auShutDown
+   put auEngineCreateOffline(8000, 1) into tEngine
+   check "and the library works again afterwards", tEngine > 0, auLastError()
+   auEngineFree tEngine
+end testSilentDevice
+
+-- The typed boundary (suite engine note 6.4): an EMPTY value into a typed
+-- number parameter is an error the engine raises before the call is made.
+-- That is the engine's rule and not the binding's; what is held here is that
+-- it is an error a script can catch and not a fault, and that 0 is the safe
+-- "no handle".
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get auSoundVolume(empty)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty handle is a catchable script error (pass 0, not empty)", tThrew, "auSoundVolume(empty) did not throw on this engine"
+   check "0 is the safe no-handle", auSoundVolume(0) is 0 and auSoundIsValid(0) is false, auSoundVolume(0)
+end testTypedBoundary
+
+-- ---------------------------------------------------------------------
+-- The sweep
+-- ---------------------------------------------------------------------
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/audioxt.lcb, in file order, called once with
+-- zeros (false for a Boolean, empty for text and for data; the silent
+-- test device where 0 would open a real one). One try for the lot: tName
+-- is the call that was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "auABIVersion" into tName
+      get auABIVersion()
+      put "auLibraryVersion" into tName
+      get auLibraryVersion()
+      put "auLastError" into tName
+      get auLastError()
+      put "auOutSampleRate" into tName
+      get auOutSampleRate()
+      put "auOutChannels" into tName
+      get auOutChannels()
+      put "auBackendName" into tName
+      get auBackendName()
+      put "auDeviceScan" into tName
+      get auDeviceScan()
+      put "auPlaybackDeviceCount" into tName
+      get auPlaybackDeviceCount()
+      put "auPlaybackDeviceName" into tName
+      get auPlaybackDeviceName(0)
+      put "auPlaybackDeviceIsDefault" into tName
+      get auPlaybackDeviceIsDefault(0)
+      put "auCaptureDeviceCount" into tName
+      get auCaptureDeviceCount()
+      put "auCaptureDeviceName" into tName
+      get auCaptureDeviceName(0)
+      put "auCaptureDeviceIsDefault" into tName
+      get auCaptureDeviceIsDefault(0)
+      put "auEngineCreate" into tName
+      get auEngineCreate(-1, 0, 0)
+      put "auEngineCreateOffline" into tName
+      get auEngineCreateOffline(0, 0)
+      put "auEngineFree" into tName
+      auEngineFree 0
+      put "auEngineIsValid" into tName
+      get auEngineIsValid(0)
+      put "auEngineIsOffline" into tName
+      get auEngineIsOffline(0)
+      put "auEngineStart" into tName
+      auEngineStart 0
+      put "auEngineStop" into tName
+      auEngineStop 0
+      put "auEngineSetVolume" into tName
+      auEngineSetVolume 0, 0
+      put "auEngineVolume" into tName
+      get auEngineVolume(0)
+      put "auEngineSampleRate" into tName
+      get auEngineSampleRate(0)
+      put "auEngineChannels" into tName
+      get auEngineChannels(0)
+      put "auEngineTime" into tName
+      get auEngineTime(0)
+      put "auEngineSoundCount" into tName
+      get auEngineSoundCount(0)
+      put "auEngineDeviceName" into tName
+      get auEngineDeviceName(0)
+      put "auEngineStopAll" into tName
+      auEngineStopAll 0
+      put "auEnginePeak" into tName
+      get auEnginePeak(0)
+      put "auEngineWaveform" into tName
+      get auEngineWaveform(0, 0)
+      put "auEngineRender" into tName
+      get auEngineRender(0, 0, empty)
+      put "auEngineSetListenerPosition" into tName
+      auEngineSetListenerPosition 0, 0, 0, 0
+      put "auEngineListenerPosition" into tName
+      get auEngineListenerPosition(0)
+      put "auEngineSetListenerDirection" into tName
+      auEngineSetListenerDirection 0, 0, 0, 0
+      put "auEngineListenerDirection" into tName
+      get auEngineListenerDirection(0)
+      put "auEngineSetListenerUp" into tName
+      auEngineSetListenerUp 0, 0, 0, 0
+      put "auEngineSetListenerVelocity" into tName
+      auEngineSetListenerVelocity 0, 0, 0, 0
+      put "auSoundLoad" into tName
+      get auSoundLoad(0, empty, false)
+      put "auSoundLoadData" into tName
+      get auSoundLoadData(0, empty, false)
+      put "auSoundFromPCM" into tName
+      get auSoundFromPCM(0, empty, empty, 0, 0)
+      put "auSoundTone" into tName
+      get auSoundTone(0, empty, 0, 0)
+      put "auSoundNoise" into tName
+      get auSoundNoise(0, empty, 0)
+      put "auSoundClone" into tName
+      get auSoundClone(0)
+      put "auSoundFree" into tName
+      auSoundFree 0
+      put "auSoundIsValid" into tName
+      get auSoundIsValid(0)
+      put "auSoundEngine" into tName
+      get auSoundEngine(0)
+      put "auSoundStart" into tName
+      auSoundStart 0
+      put "auSoundStartAt" into tName
+      auSoundStartAt 0, 0
+      put "auSoundStop" into tName
+      auSoundStop 0
+      put "auSoundStopAt" into tName
+      auSoundStopAt 0, 0
+      put "auSoundStopWithFade" into tName
+      auSoundStopWithFade 0, 0
+      put "auSoundFade" into tName
+      auSoundFade 0, 0, 0, 0
+      put "auSoundIsPlaying" into tName
+      get auSoundIsPlaying(0)
+      put "auSoundAtEnd" into tName
+      get auSoundAtEnd(0)
+      put "auSoundSeek" into tName
+      auSoundSeek 0, 0
+      put "auSoundPosition" into tName
+      get auSoundPosition(0)
+      put "auSoundLength" into tName
+      get auSoundLength(0)
+      put "auSoundSetVolume" into tName
+      auSoundSetVolume 0, 0
+      put "auSoundVolume" into tName
+      get auSoundVolume(0)
+      put "auSoundSetPan" into tName
+      auSoundSetPan 0, 0
+      put "auSoundPan" into tName
+      get auSoundPan(0)
+      put "auSoundSetPitch" into tName
+      auSoundSetPitch 0, 0
+      put "auSoundPitch" into tName
+      get auSoundPitch(0)
+      put "auSoundSetLooping" into tName
+      auSoundSetLooping 0, false
+      put "auSoundIsLooping" into tName
+      get auSoundIsLooping(0)
+      put "auSoundSetLoopRange" into tName
+      auSoundSetLoopRange 0, 0, 0
+      put "auSoundSetFrequency" into tName
+      auSoundSetFrequency 0, 0
+      put "auSoundSetAutoFree" into tName
+      auSoundSetAutoFree 0, false
+      put "auSoundSetGroup" into tName
+      auSoundSetGroup 0, 0
+      put "auSoundGroup" into tName
+      get auSoundGroup(0)
+      put "auSoundSetSpatial" into tName
+      auSoundSetSpatial 0, false
+      put "auSoundIsSpatial" into tName
+      get auSoundIsSpatial(0)
+      put "auSoundSetPosition" into tName
+      auSoundSetPosition 0, 0, 0, 0
+      put "auSoundPositionXYZ" into tName
+      get auSoundPositionXYZ(0)
+      put "auSoundSetVelocity" into tName
+      auSoundSetVelocity 0, 0, 0, 0
+      put "auSoundSetDistanceRange" into tName
+      auSoundSetDistanceRange 0, 0, 0
+      put "auSoundSetRolloff" into tName
+      auSoundSetRolloff 0, 0
+      put "auSoundSetDoppler" into tName
+      auSoundSetDoppler 0, 0
+      put "auGroupCreate" into tName
+      get auGroupCreate(0)
+      put "auGroupFree" into tName
+      auGroupFree 0
+      put "auGroupIsValid" into tName
+      get auGroupIsValid(0)
+      put "auGroupSetVolume" into tName
+      auGroupSetVolume 0, 0
+      put "auGroupVolume" into tName
+      get auGroupVolume(0)
+      put "auGroupSetPan" into tName
+      auGroupSetPan 0, 0
+      put "auGroupPan" into tName
+      get auGroupPan(0)
+      put "auGroupSetPitch" into tName
+      auGroupSetPitch 0, 0
+      put "auGroupPitch" into tName
+      get auGroupPitch(0)
+      put "auGroupStart" into tName
+      auGroupStart 0
+      put "auGroupStop" into tName
+      auGroupStop 0
+      put "auPollEnded" into tName
+      get auPollEnded()
+      put "auEndedSound" into tName
+      get auEndedSound(0)
+      put "auCaptureOpen" into tName
+      get auCaptureOpen(0, empty, 0, 0, 0)
+      put "auCaptureClose" into tName
+      auCaptureClose 0
+      put "auCaptureIsValid" into tName
+      get auCaptureIsValid(0)
+      put "auCaptureStart" into tName
+      get auCaptureStart(0)
+      put "auCaptureStop" into tName
+      auCaptureStop 0
+      put "auCaptureIsRunning" into tName
+      get auCaptureIsRunning(0)
+      put "auCaptureAvailable" into tName
+      get auCaptureAvailable(0)
+      put "auCaptureRead" into tName
+      get auCaptureRead(0)
+      put "auCaptureFormat" into tName
+      get auCaptureFormat(0)
+      put "auCaptureSampleRate" into tName
+      get auCaptureSampleRate(0)
+      put "auCaptureChannels" into tName
+      get auCaptureChannels(0)
+      put "auCaptureDeviceLabel" into tName
+      get auCaptureDeviceLabel(0)
+      put "auCaptureDropped" into tName
+      get auCaptureDropped(0)
+      put "auCapturePeak" into tName
+      get auCapturePeak(0)
+      put "auCaptureRecordStart" into tName
+      get auCaptureRecordStart(0, empty)
+      put "auCaptureRecordStop" into tName
+      get auCaptureRecordStop(0)
+      put "auCaptureIsRecording" into tName
+      get auCaptureIsRecording(0)
+      put "auDecodeFile" into tName
+      get auDecodeFile(empty, empty, 0, 0)
+      put "auDecodeData" into tName
+      get auDecodeData(empty, empty, 0, 0)
+      put "auWAVEncode" into tName
+      get auWAVEncode(empty, empty, 0, 0)
+      put "auShutDown" into tName
+      auShutDown
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 112 public handlers called with zeros, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["audioxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.audioxt" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & auLibraryVersion() & return
+      put "INFO backend '" & auBackendName() & "'" & return
+      testLibrary
+      testOfflineTone
+      testBytesAndFiles
+      testEndsGroupsAndPlace
+      testSilentDevice
+      testTypedBoundary
+      sweepEveryHandler
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

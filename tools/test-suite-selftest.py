@@ -138,7 +138,7 @@ C_SCOPE_NOTE = '   stNote "Scope:" && suScopeLabel() & "."\n'
 C_NAMES = "Riptide Social,No Cloud Quick Share"
 C_KEYS = "riptide,nocloud,holde-em,cross"
 C_NX_SCOPE = 'if suInScope("nostrxt") then'
-C_NOHARNESS = 'constant kSuNoHarness = "artnetxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt,xlsxt"'
+C_NOHARNESS = 'constant kSuNoHarness = "artnetxt,audioxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt,xlsxt"'
 # the one suNoHarness ask inside suRowControls (a band member is its name
 # alone since 2026-11-21, so the ask is for the rows' controls)
 C_NOHARNESS_ASK = ('      if not suNoHarness(tKey) then\n'
@@ -382,7 +382,7 @@ CASES = [
                             "suRowControls' suNoHarness ask"),
      {"17"}, "compares a row key to kSuNoHarness with `is`"),
     ("17: kSuNoHarness names a member the generator's NO_HARNESS does not",
-     "both", lambda t: swap(t, C_NOHARNESS, 'constant kSuNoHarness = "artnetxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt,xlsxt,riptide"',
+     "both", lambda t: swap(t, C_NOHARNESS, 'constant kSuNoHarness = "artnetxt,audioxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt,xlsxt,riptide"',
                             "kSuNoHarness"),
      {"17"}, "kSuNoHarness is"),
     ("17: a member's scope test spelled with the wrong key",

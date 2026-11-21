@@ -79,7 +79,7 @@ class Member(object):
 
 
 # The order is the order every generated document lists them in: the
-# fourteen extensions first (native before pure-script, as the root README's
+# sixteen extensions first (native before pure-script, as the root README's
 # table has them; artnetxt, pure LCB with no library, rides with the native
 # ones because it has their lane), then the three apps.
 MEMBERS = [
@@ -123,6 +123,11 @@ MEMBERS = [
            # Its gates read its own files only: no sibling beside it.
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository is "
+                       "created empty for the suite to publish into"),
+    Member("audioxt", "audioxt", "extension", OWNER + "/audioxt",
+           # Its gates read its own files only: no sibling beside it.
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
                        "created empty for the suite to publish into"),
     Member("render3dxt", "render3dxt", "extension", OWNER + "/render3dxt",
            # Its gates read its own files only: no sibling beside it. (Its

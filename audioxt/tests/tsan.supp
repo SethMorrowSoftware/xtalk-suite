@@ -1,0 +1,9 @@
+# tests/tsan.supp - what ThreadSanitizer is told to leave alone, and why.
+# One line, inside miniaudio and not the shim: a sound's pan is one float
+# that the script thread writes (aux_sound_set_pan, aux_group_set_pan) while
+# the audio thread reads it for the block it is mixing. miniaudio leaves it
+# unsynchronised on purpose: either value is a valid pan, and the next block
+# reads the new one. The volume, pitch and position beside it are atomics.
+# Everything the SHIM shares with miniaudio's threads is checked: nothing
+# under src/ is named here.
+race:ma_panner_set_pan
