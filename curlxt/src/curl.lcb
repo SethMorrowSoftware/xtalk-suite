@@ -61,7 +61,7 @@ library org.openxtalk.library.curl
 
 use com.livecode.foreign
 
-metadata version is "0.2.0"
+metadata version is "0.2.1"
 metadata author is "Seth Morrow Software"
 metadata title is "curlxt"
 
