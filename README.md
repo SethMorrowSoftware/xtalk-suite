@@ -183,6 +183,11 @@ emulators (Android 13, and Android 16 with 16 KB pages), where each library load
 one call. No member's selftest has run on an Android engine, and no `x86-android` or ARM library
 has been loaded by one: needs an OXT pass on Android. curlxt's four were rebuilt at ABI 2 on
 2026-11-21 and tested on the emulator again; the engine load was of its ABI 1 files.
+torrentxt's committed Android libraries do not work inside an app on Android 11 or later (found
+2026-11-21 in OXT-Beyond's app on an Android 13 emulator: a session starts paused, because
+libtorrent built for API 21 uses a socket those Androids refuse an app). The recipe now builds
+torrentxt alone for API 24 (Android 7.0), where it does not; the rebuild is owed, and no library
+built for API 24 has run on an Android yet.
 box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
 render3dxt and xlsxt joined the same day and are in the recipe; none of their Android libraries

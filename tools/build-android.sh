@@ -4,6 +4,7 @@
 #   bash tools/build-android.sh <member> <platform-id>
 #   bash tools/build-android.sh --list          # the members and platform ids
 #   bash tools/build-android.sh --pins          # the pinned versions, one a line
+#   bash tools/build-android.sh --api <member>  # the Android API level it is built for
 #
 #   <member>       sodiumxt | enetxt | box2dxt | box3dxt | render3dxt |
 #                  xlsxt | coinxt | curlxt | datachannelxt | torrentxt
@@ -26,7 +27,8 @@
 # above (its kAndroidArchitectures), and puts it in the app as lib<name>.so.
 # The libraries are built the way OXT-Beyond builds its own Android engine
 # (its BUILDING.md, "Building the Android engine"): the NDK's Clang with
-# API 21 (Android 5.0) as the lowest Android, libc++ linked INTO each
+# API 21 (Android 5.0) as the lowest Android (torrentxt alone: API 24,
+# Android 7.0, for the reason beside its pin below), libc++ linked INTO each
 # library (never libc++_shared.so, which an app would have to carry), and
 # 16 KB segment alignment on the 64-bit ABIs (Android 15's 16 KB devices
 # load nothing aligned to less). tools/install-release-binaries.py
@@ -65,6 +67,21 @@ NDK_REVISION="30.0.16248370"
 # The lowest Android: API 21 (Android 5.0), the lowest a current NDK builds
 # for and the floor of OXT-Beyond's own Android engine.
 ANDROID_API="21"
+# torrentxt ALONE is built for API 24 (Android 7.0). The reason is Android 11,
+# not Android 7: an app that targets API 30 or later may no longer bind a
+# NETLINK_ROUTE socket or ask it for the links (RTM_GETLINK), and that socket
+# is how libtorrent learns the machine's addresses on Linux. Built for an
+# Android below API 24, libtorrent takes the Linux path (its config.hpp:
+# TORRENT_USE_NETLINK), and inside such an app the session's address watcher
+# fails to bind, the session pauses itself at birth, and "listen on every
+# address" finds no address to listen on (observed in OXT-Beyond's app on an
+# Android 13 emulator, 2026-11-21: a torrent of a local file never left
+# checking). Built for API 24 or later, libtorrent takes its own Android path
+# instead: getifaddrs(), which bionic has from API 24 and keeps working for
+# every app, and no netlink at all. So this one library asks for Android 7.0,
+# and the others keep Android 5.0. tools/install-release-binaries.py holds
+# the same number (ANDROID_API_FOR) and refuses a torrentxt built for less.
+TORRENTXT_ANDROID_API="24"
 # OpenSSL and Boost are the release workflow's own pins (its "Acquire pinned
 # deps" step); tools/test-build-android.py fails when the two disagree, so a
 # bump in one place cannot leave Android on the old version.
@@ -76,6 +93,16 @@ BOOST_SHA256="2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26"
 MEMBERS="sodiumxt enetxt box2dxt box3dxt render3dxt xlsxt coinxt curlxt datachannelxt torrentxt"
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
+# The Android a member is built for: the suite's floor, or the one member
+# with a floor of its own (the pins, above).
+api_for() {
+  if [ "$1" = "torrentxt" ]; then
+    echo "$TORRENTXT_ANDROID_API"
+  else
+    echo "$ANDROID_API"
+  fi
+}
+
 case "${1:-}" in
   --list)
     echo "members:   $MEMBERS"
@@ -84,13 +111,22 @@ case "${1:-}" in
   --pins)
     echo "ndk $NDK_REVISION"
     echo "api $ANDROID_API"
+    echo "api-torrentxt $TORRENTXT_ANDROID_API"
     echo "openssl $OPENSSL_VERSION $OPENSSL_SHA256"
     echo "boost $BOOST_VERSION $BOOST_SHA256"
     exit 0 ;;
+  --api)
+    # Asked by whoever boots the emulator a member's tests run on (the
+    # release workflow's android job), so the number is read, never copied.
+    case " $MEMBERS " in
+      *" ${2:-} "*) api_for "$2"; exit 0 ;;
+    esac
+    echo "build-android: '${2:-}' is not a native member ($MEMBERS)" >&2
+    exit 2 ;;
 esac
 
 if [ $# -ne 2 ]; then
-  sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 fi
 MEMBER="$1"
@@ -103,6 +139,11 @@ esac
 
 # One row per ABI: the NDK's name for it, the compiler's target triple, and
 # OpenSSL's Configure target. The API level rides on the triple.
+# From here ANDROID_API is THIS member's. FLOOR_API stays the suite's: a
+# dependency built once and shared between members is built for that.
+FLOOR_API="$ANDROID_API"
+ANDROID_API="$(api_for "$MEMBER")"
+
 case "$PLATFORM" in
   arm64-android)  ABI="arm64-v8a";   TRIPLE="aarch64-linux-android";    OPENSSL_TARGET="android-arm64" ;;
   armv7-android)  ABI="armeabi-v7a"; TRIPLE="armv7a-linux-androideabi"; OPENSSL_TARGET="android-arm" ;;
@@ -167,6 +208,21 @@ if [ -n "$SERIAL" ]; then
       echo "  Unset XTALK_ANDROID_SERIAL to build without running the tests." >&2
       exit 1 ;;
   esac
+  # ...and one whose Android is older than the library's own floor would fail
+  # them at load ("cannot locate symbol"), which reads as a broken library
+  # and is only the wrong emulator (torrentxt's tests need Android 7.0:
+  # tools/android-emulator.sh start 24).
+  sdk=$("${ADB:-adb}" -s "$SERIAL" shell getprop ro.build.version.sdk 2> /dev/null | tr -d '\r' || true)
+  case "$sdk" in
+    ''|*[!0-9]*)
+      echo "build-android: the device $SERIAL would not say which Android it runs (ro.build.version.sdk: '$sdk')." >&2
+      exit 1 ;;
+  esac
+  if [ "$sdk" -lt "$ANDROID_API" ]; then
+    echo "build-android: the device $SERIAL runs Android API $sdk, and $MEMBER is built for API $ANDROID_API or later." >&2
+    echo "  Its tests cannot load there. Boot the emulator for it: bash tools/android-emulator.sh start $ANDROID_API" >&2
+    exit 1
+  fi
 fi
 
 # --------------------------------------------------------- pinned downloads
@@ -202,10 +258,14 @@ need_openssl() {
   (
     cd "$src/openssl-$OPENSSL_VERSION"
     # OpenSSL's Android targets find the NDK through ANDROID_NDK_ROOT and its
-    # clang on PATH; -D__ANDROID_API__ is how they take the API level.
+    # clang on PATH; -D__ANDROID_API__ is how they take the API level. That
+    # level is the SUITE's floor whichever member asked first: this folder is
+    # shared by curlxt, datachannelxt and torrentxt, and an OpenSSL built for
+    # torrentxt's higher floor would carry what Android 5.0 lacks into the
+    # other two, whose own check (the note of the final link) could not see it.
     export ANDROID_NDK_ROOT="$NDK"
     export PATH="$TOOLCHAIN_BIN:$PATH"
-    ./Configure "$OPENSSL_TARGET" "-D__ANDROID_API__=$ANDROID_API" \
+    ./Configure "$OPENSSL_TARGET" "-D__ANDROID_API__=$FLOOR_API" \
       no-shared no-module no-tests -fPIC \
       --prefix="$OPENSSL_PREFIX" --libdir=lib > "$src/configure.log" 2>&1 \
       || { tail -40 "$src/configure.log" >&2; exit 1; }
