@@ -1,11 +1,10 @@
 # lce-packages.yml - the suite's extensions as finished .lce packages, the
 # files an end user installs with Tools > Extension Manager > + in any IDE
 # built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,
-# HyperXTalk, OXT-Beyond). One package per extension: each LiveCode
-# Builder library with its native code for every committed platform, and
-# each script library (the table in tools/build-lce-packages.py, which says
-# what a package holds and why; tools/lce-engine-check.lc is the engine's
-# half).
+# HyperXTalk, OXT-Beyond). One package per extension: the six LiveCode
+# Builder libraries with their native code for every committed platform,
+# and the nine script libraries. tools/build-lce-packages.py says what a
+# package holds and why; tools/lce-engine-check.lc is the engine's half.
 #
 # WHAT A RUN DOES, in about five minutes on one Linux runner (plus a minute
 # on Windows for the Visual C++ runtime):
@@ -52,7 +51,6 @@ on:
       - 'box2dxt/src/**'
       - 'coinxt/src/**'
       - 'coinxt/native/vendor/**'
-      - 'curlxt/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'
       - '*/examples/*-helpers.livecodescript'
