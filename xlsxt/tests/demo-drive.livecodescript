@@ -9,7 +9,8 @@ script "xlsxtDemoDrive"
 -- It puts the demo's script on a new stack (as the demo's header tells a
 -- person to), builds the window, and then does what a person would: plays
 -- each of the Showcase's four scenes by clicking its button (each writes a
--- file and reads it back) and leaves one half way, opens each tab by
+-- file and reads it back), leaves one half way and the tour in its pause
+-- between two scenes, opens each tab by
 -- clicking its button, makes each tab's workbook and the one with
 -- everything, clicks a tick box, shows the workbook in the Read tab, clicks
 -- a cell, and runs every check from the About tab. The native lane
@@ -188,6 +189,26 @@ on startup
       drCheck xlWorkbookCount() is 0 and xlReadCount() is 0 and "xdShowFrame" is not in the pendingMessages, \
             "leaving the tab mid-scene stops it and closes its reader", xlWorkbookCount() && xlReadCount()
       set the uXdFast of stack kStack to false
+
+      -- The tour left in its pause between two scenes, at the real speed
+      -- so the pause lasts. No scene plays then, but the next is on its
+      -- way: left running, it started behind the other tab, wrote its
+      -- workbook there and became the file Save and the Read tab use
+      -- (found by review, 2026-11-21). Leaving the tab stops the tour too.
+      drClick the long id of button "ui:show"
+      set the uXdShowDone of stack kStack to empty
+      drClick the long id of button "show:all"
+      put drUntilDone("sheet", 60000) into tDone
+      drCheck word 2 of tDone is "ok" and "xdShowNext" is in the pendingMessages, \
+            "the tour rests after its first scene", tDone
+      drClick the long id of button "ui:tbl"
+      drCheck "xdShowNext" is not in the pendingMessages and "xdShowFrame" is not in the pendingMessages, \
+            "leaving the tab in the pause stops the tour", the pendingMessages
+      -- longer than the pause, so a tour still running would have moved on
+      wait 3000 milliseconds with messages
+      drCheck the uXdShowDone of stack kStack is "sheet ok" and xlWorkbookCount() is 0 \
+            and "xdShowFrame" is not in the pendingMessages, \
+            "and no scene starts behind the other tab", the uXdShowDone of stack kStack && xlWorkbookCount()
 
       repeat for each item tKey in "tbl,sty,fx,ch,pg"
          drClick the long id of button ("ui:" & tKey)

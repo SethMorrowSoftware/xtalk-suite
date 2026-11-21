@@ -108,10 +108,11 @@ Joined the suite on 2026-11-20. What has run, and where:
   `tests/demo-drive.livecodescript` drives the new window on OXT-Beyond's Linux desktop
   engine (that day, a locally built library, headless and under xvfb): it opens playing,
   each scene and the whole tour ends with every cell matched and nothing left open, leaving
-  mid-scene stops it cleanly, every tab's workbook is made and read back, a tick box and a
-  cell are clicked, and its own checks are green. The native lane repeats that on every
-  change. The same day the new window ran on the maintainer's Windows PC (64-bit
-  OXT-Beyond under its dark theme, the saved stack file, over the lane-built DLL above): it
+  mid-scene or in the tour's pause between two scenes stops it cleanly, every tab's workbook
+  is made and read back, a tick box and a cell are clicked, and its own checks are green.
+  The native lane repeats that on every change. The same day the new window ran on the
+  maintainer's Windows PC (64-bit OXT-Beyond under its dark theme, the saved stack file,
+  over the lane-built DLL above): it
   opened at 960 x 640 already playing, the tour played all four scenes, About's checks
   passed 39/0, and every word was readable. The one fault it showed, the ten-thousand-cell
   scene's last column cutting a five-digit number to four, was fixed that day; the drive

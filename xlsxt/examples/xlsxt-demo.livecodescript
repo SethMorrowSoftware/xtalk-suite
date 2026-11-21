@@ -1096,8 +1096,12 @@ on xdShowTab pKey
    if pKey is not among the items of kXdTabs then
       exit xdShowTab
    end if
-   -- leaving the Showcase stops its scene and closes what the scene had open
-   if pKey is not "show" and sShowScene is not empty then
+   -- Leaving the Showcase stops its scene and closes what the scene had
+   -- open. It stops the tour in its pause between two scenes as well: no
+   -- scene plays then, but the next is on its way, and left to come it
+   -- would play behind this tab and its file would become the one Save
+   -- and the Read tab use (found by review, 2026-11-21).
+   if pKey is not "show" and (sShowScene is not empty or sShowTour is true) then
       xdShowStop
       xdShowSay "Stopped when you left this tab. Click a scene to play it again.", "run"
    end if
@@ -2279,6 +2283,12 @@ on xdShowNext pGen, pAt
    end if
    set the defaultStack to the short name of this stack
    if there is no field "show:count" then
+      exit xdShowNext
+   end if
+   -- never behind another tab: leaving the Showcase stops the tour, and
+   -- this holds that if anything else ever changes the tab
+   if sTab is not "show" then
+      xdShowStop
       exit xdShowNext
    end if
    xdShowPlay item pAt of kXdScenes, true
