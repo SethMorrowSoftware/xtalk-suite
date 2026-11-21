@@ -1,0 +1,9 @@
+newmtl front
+Kd 1 1 1
+Ks 0 0 0
+map_Kd quadrants.png
+
+newmtl rest
+Kd 0.2 0.4 0.8
+Ks 0.5 0.5 0.5
+Ns 64

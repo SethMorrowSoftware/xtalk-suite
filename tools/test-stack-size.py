@@ -81,10 +81,12 @@ def main():
     # 52 since 2026-09-25: the same core's stamped rebuild re-asserts that
     # size, a width line and a height line at kStWidth x kStHeight (review:
     # a board resized and reopened failed its own 1200 x 640 boot check).
-    # 54 since 2026-11-21: curlxt/examples/curlxt-live.livecodescript, the
+    # 53 since 2026-11-20: render3dxt/examples/render3d-physics-demo
+    # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
+    # 55 since 2026-11-21: curlxt/examples/curlxt-live.livecodescript, the
     # first curlxt demo, a width line and a height line at 1180 x 640.
-    if "54 stack window dimension" not in out:
-        print("test-stack-size: expected 54 measured dimensions, got:\n" + out)
+    if "55 stack window dimension" not in out:
+        print("test-stack-size: expected 55 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

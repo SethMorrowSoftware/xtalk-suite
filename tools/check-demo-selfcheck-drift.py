@@ -81,6 +81,8 @@ ADOPTERS = {
     # the kit's but carries this block like every other demo
     os.path.join("curlxt", "examples",
                  "curlxt-live.livecodescript"): "cd",
+    os.path.join("render3dxt", "examples",
+                 "render3d-physics-demo.livecodescript"): "rd",
     # the suite paste's hand-written half, since D-23 (2026-09-24)
     os.path.join("tests", "suite-selftest.core.livecodescript"): "su",
 }
