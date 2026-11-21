@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # run-gates.sh - box3dxt's OWN gate list: what CI and a contributor run.
-# Compiler-free: python3 and sha256sum are all it needs. The three tests that
-# need a compiler or an engine are not this list's: tests/smoke_test.c and
-# tests/fuzz_test.c are the CMake build's (ctest), and
-# tests/engine-selftest.lc is run by the native lane on a real engine over
-# the library that build made. Any gate file added under tools/ or tests/
+# Compiler-free: python3 and sha256sum are all it needs. The tests that need a
+# compiler or an engine are not this list's: tests/smoke_test.c and
+# tests/fuzz_test.c are the CMake build's (ctest), and tests/engine-selftest.lc,
+# tests/engine-kit.lc and tests/engine-demo.lc (the game Kit and its example
+# game) are run by the native lane on a real engine over the library that
+# build made. Any gate file added under tools/ or tests/
 # MUST be named here: the suite's tools/check-member-standalone.py refuses a
 # gate file this script never names.
 #
@@ -47,6 +48,17 @@ python3 tools/check-lcb-signatures.py
 # docs/api-reference.md is generated from the doc blocks; stale is a failure.
 echo "== box3dxt: tools/build-api-reference.py --check =="
 python3 tools/build-api-reference.py --check
+
+# The game Kit: its one source in src/, the copy the example game carries
+# between its markers, and docs/kit-reference.md built from its doc blocks,
+# whose --check also holds the Kit's header cheat sheet to its handlers and
+# every b3k name in the hand-written pages to the real ones.
+echo "== box3dxt: tools/sync-embedded-kit.py --check =="
+python3 tools/sync-embedded-kit.py --check
+echo "== box3dxt: tools/test-kit-reference.py =="
+python3 tools/test-kit-reference.py
+echo "== box3dxt: tools/build-kit-reference.py --check =="
+python3 tools/build-kit-reference.py --check
 
 # Committed-binary integrity manifest: a committed blob that is unlisted or
 # does not match its recorded SHA256 fails the gate. Empty until the suite's

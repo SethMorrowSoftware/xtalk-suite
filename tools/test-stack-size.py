@@ -85,8 +85,10 @@ def main():
     # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
     # 55 since 2026-11-21: curlxt/examples/curlxt-live.livecodescript, the
     # first curlxt demo, a width line and a height line at 1180 x 640.
-    if "55 stack window dimension" not in out:
-        print("test-stack-size: expected 55 measured dimensions, got:\n" + out)
+    # 56 since 2026-11-21: box3dxt/examples/box3dxt-orb-island.livecodescript,
+    # the b3k Kit's example game, one uiChrome call at 1104x640.
+    if "56 stack window dimension" not in out:
+        print("test-stack-size: expected 56 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()
