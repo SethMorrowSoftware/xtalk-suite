@@ -1,0 +1,5 @@
+# build trees (any variant: build, build-asan, build-web, ...)
+build*/
+dist/
+__pycache__/
+*.pyc
