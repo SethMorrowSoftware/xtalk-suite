@@ -25,7 +25,7 @@ normal `socketReceived` handler (docs/getting-started.md, "Receiving").
 Conventions (shared across the suite):
   * Handles are integers (0 = invalid); the C shim validates them, so a stale
     handle is a harmless no-op. Script never sees a handle -- every public
-    handler brackets create...use...free internally.
+    LCB handler brackets create...use...free internally.
   * Byte buffers (OSC datagrams, blobs) are LiveCode `Data`. They cross the FFI
     as a (Pointer, length) pair -- see the MARSHALLING note below.
   * Short strings (address, type tag, errors) cross as ZStringUTF8.

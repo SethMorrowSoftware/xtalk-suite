@@ -21,8 +21,8 @@ latency scales with the interval.
 
 Conventions:
   * Handles are integers (0 = invalid); a stale handle is a harmless no-op.
-  * Channels in the public API are 1-based (1..16). Raw MIDI bytes are 0-based
-    on the wire; the convenience senders convert.
+  * Channels in the public API are 1-based (1..16). Raw MIDI bytes are
+    0-based on the wire; the convenience senders convert.
   * MIDI byte buffers are LiveCode `Data`. A Data does NOT auto-bridge to a
     foreign `Pointer` (it marshals as an MCDataRef), so -- exactly as osc.lcb and
     the other suite bindings do -- sends pass MCDataGetBytePtr(theData), and the

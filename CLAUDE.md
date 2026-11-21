@@ -186,7 +186,9 @@ The gates whose reason is not in their name:
   hands to the NEXT entry it recognises. Every public handler of its `CORPUS` has its own block
   (a Summary, its own parameters), no block is orphaned, a script library's first block is its
   library entry, and every `<link>` resolves; `EXEMPT` names the send targets left out, each
-  with a reason. Comments only: no handler changes for it.
+  with a reason. The parser reads a plain `/* */` comment as source, so no line of one may
+  start with a word that opens an entry there (`library`, `handler`, `on`, ...): on 2026-11-21
+  oscxt's and midixt's swallowed their library entries. Comments only: no handler changes for it.
 - `build-preflight.py --check`: `tests/preflight.livecodescript` is GENERATED from the shims' C ABI
   macros, cross-checked against each `.lcb` literal and each guard's throw text (`ABI `); it reads
   the mac ABI from the one `universal-mac` row of `sodiumxt/CLAUDE.md`'s table.

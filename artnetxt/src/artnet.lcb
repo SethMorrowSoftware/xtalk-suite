@@ -29,9 +29,9 @@ artnetLastError() says why. An EMPTY value into a typed parameter is the
 engine's error, raised before any code here runs (the suite's engine note 6.4),
 and a fractional universe is cut toward zero where it becomes a byte (6.17).
 
-Art-Net(TM) Designed by and Copyright Artistic Licence Holdings Ltd. This
-library implements the published protocol ("Art-Net compatible"); no
-endorsement is implied.
+Art-Net(TM) Designed by and Copyright Artistic Licence Holdings Ltd.
+This library implements the published protocol ("Art-Net compatible");
+no endorsement is implied.
 */
 
 /**
