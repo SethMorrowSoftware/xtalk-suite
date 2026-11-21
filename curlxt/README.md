@@ -98,6 +98,28 @@ put tsNetGetSync("https://example.com/", tHeaders, tRespHeaders, tResult, tBytes
 if tData begins with "tsneterr:" then answer tData
 ```
 
+## The demo
+
+`examples/curlxt-live.livecodescript`, **curlxt Live**, shows the extension at work in
+OXT-Beyond's look: five scenes that run themselves, against a server the stack runs itself on
+the engine's own sockets, so it needs no network and nothing set up.
+
+1. **Round trips**: a message every 120 ms over a WebSocket, each round trip drawn as it lands;
+   the stack opens into this scene, and it keeps one round trip a second going afterwards.
+2. **Text and bytes**: plain, accented, Greek and Japanese text, every byte value, random bytes
+   and two big messages, each checked identical when it comes back.
+3. **Full speed**: for eight seconds, 64 messages of 1 KB always in flight, the rate drawn every
+   quarter second and every echo checked to come back in the order it was sent.
+4. **Many requests at once**: sixteen requests started together with `cuRequestAsync` (GET,
+   POST, HEAD), one through `tsNetGet`, and one out to the internet, which says plainly when
+   there is no network.
+5. **Close and reconnect**: a clean close (1000), the server going away (1001), retries while
+   nothing listens, and the reconnect once it is back on the same port.
+
+Open it from the suite's `start-here.livecodescript`, or paste it into a stack script and
+close and reopen the stack. It carries curlxt's two script libraries, so there is nothing to
+put in use, and its boot self-check says in its log what it checked before the first scene.
+
 ## Status
 
 The shim and its smoke test are verified natively (the whole exported surface against loopback HTTP
@@ -149,6 +171,16 @@ with its callback, `tsNetVersion`, `tsNetGetSync` and `tsNetClose`; and opened `
 sockets through the binding and through the helpers' timer: text, UTF-8, binary, fragmented and
 burst messages, ping and pong, the peer's close, a dropped connection, the close timeout, the
 message cap (1009), a refused upgrade, a dead port and a refused certificate.
+
+**The demo on an engine, Linux x86-64 (2026-11-21).** `examples/curlxt-live.livecodescript` ran
+start to finish on OXT-Beyond 0.2.7-rc.6's desktop engine (9.7.1-OXT) with no screen, over a library
+built from this tree: `tests/engine-demo.livecodescript`, driven by `tools/run-engine-demo.py` in the
+native lane on every change, made 26 checks, none failed. The boot self-check was green; scene 1
+started by itself and kept going; every scene reached its own verdict (all 8 messages back
+identical, over 11,000 echoes in 8.1 s every one in order, 15 of 15 local requests answered, the server's
+1001 heard and the reconnect made); closing left no request, socket or listener behind; and the
+demo opened and ran again. That run sees nothing drawn: the demo's look, and the demo in the IDE
+and on Windows, mac and Android, are verified statically; needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.
@@ -224,6 +256,8 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- The boot self-check block (`tools/demo-selfcheck.livecodescript`; gate `tools/check-demo-selfcheck-drift.py`) in `examples/curlxt-live.livecodescript`.
+- This member's own library, embedded into its own stacks by the same tool so each is one file to paste: `examples/curlxt-live.livecodescript` carries `src/curl-helpers.livecodescript`; `examples/curlxt-live.livecodescript` carries `src/tsnet.livecodescript`.
 - `tools/check-livecodescript.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

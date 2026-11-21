@@ -50,6 +50,14 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    public handler goes into the test's SWEEP in the same change (`--check-sweep` is a gate);
    new behaviour gets a check there too. It runs the server engine only: the IDE, Windows,
    mac and Android still need an OXT pass, and a label says which.
+9. **The demo runs on an engine too** (since 2026-11-21): the same job runs
+   `examples/curlxt-live.livecodescript` start to finish on that release's DESKTOP engine with
+   `-ui` and no screen (`tools/run-engine-demo.py`, driver `tests/engine-demo.livecodescript`),
+   because the demo serves its own scenes and the server engine delivers no `accept` (the
+   suite's engine notes 6.15 and 6.16). The driver waits for each scene's verdict line in the
+   demo's log and checks its words: a change to a verdict changes the driver in the same
+   change. A change to the demo is done when the native lane's run is green; it sees nothing
+   drawn, so the look keeps its "needs an OXT pass" label until a screen shows it.
 
 ## As built
 
@@ -108,6 +116,13 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
     0 never opened). The helpers send "open" only to a socket whose upgrade answered 101.
 - **Only `cux_*` is exported**: `src/curlxt.map` for GNU ld and a derived
   `-exported_symbols_list` for ld64.
+- **The demo** (`examples/curlxt-live.livecodescript`) is one paste-and-run file: the helpers
+  and the tsNet layer are EMBEDDED by the suite's `tools/sync-demo-embeds.py`, the boot
+  self-check is carried from its master, and its control list is derived
+  (`check-demo-control-lists.py --write`). It wears OXT-Beyond's dark look at the owner's
+  request (2026-11-21), so the suite's UI-kit gate lists it in `EXEMPT`. Its server answers
+  127.0.0.1 only and every write is the background kind; every scene uses curlxt's background
+  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it.
 
 ## Gotchas
 
@@ -132,3 +147,6 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    does not read (it reads `.lcb` and `.livecodescript`): `does not contain` is not xTalk (the
    checker's check 7 refuses it in a script; the engine stops the whole file at it), and
    `unicodeText` is a reserved word, so a handler of that name cannot be called.
+8. **A chunk inside a chunk needs parentheses when a bound is a sum**: the demo's
+   `word 1 to -1 of char tColon + 1 to -1 of tLine` stopped its whole 4,400-line script from
+   compiling (the suite's engine note 1.10). The checker cannot see it; the engine run can.
