@@ -134,9 +134,11 @@ window; `-ui` has none).
 
 Verified natively (smoke and fuzz, ASan/UBSan and TSan, x86_64 Linux; wasm under node), on
 the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
-library, through the silent device) and in headless Chromium (`tests/web/`, the archive
-called from C). No desktop IDE and no other platform's engine has loaded it, and nobody has
-HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
+library, through the silent device), in headless Chromium (`tests/web/`, the archive called
+from C) and in the IDE on Windows (2026-11-21, the maintainer's 64-bit OXT-Beyond: a CI-built
+`x86_64-win32` DLL loaded on WASAPI and `tests/engine-selftest.lc`, run as a script-only
+stack, passed 89 and failed 0). No engine on macOS, Android or the web has loaded it, and
+nobody has HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
 through the silent device, headless and in a window (`tests/demo-drive.livecodescript`,
 2026-11-21); nobody has used it by hand. Only the web archive
 (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12) is committed; no desktop or

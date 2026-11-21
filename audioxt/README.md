@@ -104,6 +104,11 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **In a browser**, the same day: the web archive, called from C as the web engine will call
   it, opened Web Audio in headless Chromium, played a tone after one click and recorded from
   Chromium's fake microphone (`tests/web/`).
+- **In the IDE on Windows**, 2026-11-21: on the maintainer's PC, in their installed 64-bit
+  OXT-Beyond (its version not recorded), the binding compiled with that install's
+  `lc-compile` over a CI-built `x86_64-win32` DLL (the native lane's build of 7dcbb41) loaded
+  and answered `audioxt ABI 1; miniaudio 0.11.26` on WASAPI, and `tests/engine-selftest.lc`,
+  run inside the IDE as a script-only stack, passed 89 and failed 0.
 - **The demo**, Sound Stage, on 2026-11-21: `tests/demo-drive.livecodescript` drove it on
   OXT-Beyond's Linux desktop engine (9.7.1-OXT) over a locally built library, with no sound
   card (so through the silent device, as the window itself chooses), headless and in a
@@ -111,9 +116,10 @@ Joined the suite on 2026-11-20. What has run, and where:
   and button with its own colours, no words cut off; and without the extension the window
   said so and survived every click. The native lane repeats that on every change. Nobody has
   used it by hand yet.
-- **Not yet:** nobody has HEARD it. No machine with a sound card, no desktop IDE, and no
-  engine on Windows, macOS, Android or the web has run it: on those it is verified
-  statically; needs an OXT pass. Only the web archive is committed under `src/code/` yet; the
+- **Not yet:** nobody has HEARD it: the runs above played through the silent device or
+  rendered into memory. No engine on macOS, Android or the web has run it, and no IDE has
+  loaded a release library or an installed extension: on those it is verified statically;
+  needs an OXT pass. Only the web archive is committed under `src/code/` yet; the
   suite's release-binaries dispatch lands the desktop and Android libraries.
 
 ## Building and testing

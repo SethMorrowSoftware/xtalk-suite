@@ -908,9 +908,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   as OXT-Beyond's web engine links it (Asyncify and the engine's own settings, in Chromium),
   and two web faults were fixed: on a page with no microphone API (any page served over
   plain http) or no AudioContext, miniaudio's JavaScript threw through the whole engine; and
-  a key press did not start a device the browser held (miniaudio waits for a click). No machine with a sound card and no
-  desktop IDE has run it, and nobody has heard it: for everything beyond those runs it is
-  verified statically; needs an OXT pass.
+  a key press did not start a device the browser held (miniaudio waits for a click). The
+  same day the IDE on the maintainer's Windows PC (64-bit OXT-Beyond) loaded a CI-built
+  `x86_64-win32` DLL on WASAPI, and `tests/engine-selftest.lc`, run there as a script-only
+  stack, passed 89 and failed 0; and the demo was driven on the Linux desktop engine (row 7).
+  Nobody has heard it: for everything beyond those runs it is verified statically; needs an
+  OXT pass.
 - Binaries: the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12, the
   same bytes from two build folders) was committed 2026-11-21 for OXT-Beyond's web engine and
   is in the `ships` row; no desktop or Android library was committed when it joined: the
