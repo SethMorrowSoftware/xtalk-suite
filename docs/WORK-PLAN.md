@@ -868,10 +868,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   again from f5309f5: boot self-check green, the window centred and open in 1.6 s, scene 4
   seven times with 105 of 105 local requests answered. Its labels were still cut, because a
   field lays its first line out 6 px above its top margin (engine note 5.19) and the demo's
-  were 2; every field's top margin is 6 since, which on that window read every label whole,
-  and the boot self-check measures each field's first line (it fails all 46 quiet fields with
-  the old margins on Linux). Its WebSocket scenes on Windows wait for curlxt ABI 2 in that
-  IDE (row 6).
+  were 2. Every field's top margin is 6 since, and the boot self-check measures each field's
+  first line (it fails all 46 quiet fields with the old margins on Linux); from 104f95a on
+  that PC every label read whole, the boot self-check passed 27 with none failed, and scene 4
+  answered 105 of 105 in seven more runs. Its WebSocket scenes on Windows wait for curlxt
+  ABI 2 in that IDE (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|

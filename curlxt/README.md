@@ -226,11 +226,12 @@ reason goes to the log) the demo ran there again the same day, from commit f5309
 the boot self-check green (26 passed, the WebSocket scenes skipped), the window centred and open in
 1.6 s, and scene 4 run seven times, 105 of 105 local requests answered, HEAD included. The labels
 were still cut: a field lays its first line out 6 px above its top margin (the suite's engine note
-5.19), and the demo's margins were 2. Every field's top margin is 6 since; set so on that window,
-every label read whole, and the boot self-check's new measure of each field's first line passed for
-all 47 (on Linux it fails all 46 with the old margins). The WebSocket scenes on Windows, the demo's
-look on Linux, mac and Android, and the demo in those IDEs are verified statically; needs an OXT
-pass.
+5.19), and the demo's margins were 2. Every field's top margin is 6 since, and the demo ran there
+once more from commit 104f95a, rebuilding its window on reopen in 0.34 s: every label whole, the
+boot self-check green (27 passed, among them its new measure of each field's first line, all 47
+inside; on Linux that measure fails all 46 quiet fields with the old margins), and scene 4 seven
+times more, 105 of 105 answered. The WebSocket scenes on Windows, the demo's look on Linux, mac and
+Android, and the demo in those IDEs are verified statically; needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.
