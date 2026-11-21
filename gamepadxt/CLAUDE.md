@@ -100,7 +100,7 @@ box3dxt is the member its shape was taken from.
    asserts beside the tables.
 4. **`SDL_UNIX_CONSOLE_BUILD=ON`** is what lets SDL configure with no X11 or Wayland.
 5. **The demo window keeps its own colours, so it draws its own scroll bars.** The engine
-   draws a field's scroll bar light whatever the field's colours (suite engine note 5.16), so
+   draws a field's scroll bar light whatever the field's colours (suite engine note 5.17), so
    Gamepad Lab's log and mapping box have none: the wheel arrives as `rawKeyDown` 65308 and
    65309 and `glWheel` scrolls them, and `glScrollMark` draws a thin bar. A mapping has no
    space but in the pad's name and the engine breaks a line only at a space, so the box shows
