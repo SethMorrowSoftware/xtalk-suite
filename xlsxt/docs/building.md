@@ -70,8 +70,10 @@ table. After bumping a pin, rewrite the header from a native build:
 python3 tools/check-web-names.py --write --from build/libxlsxt_deps.a
 ```
 
-No web engine has linked the archive yet. In a browser a workbook is written to, and read
-from, the engine's in-memory file system.
+OXT-Beyond's web engine first linked the archive in that repository's pull request 605
+(2026-11-21, not merged yet), whose web IDE check wrote a workbook and read it back in
+Chromium, Firefox and WebKit. In a browser a workbook is written to, and read from, the
+engine's in-memory file system.
 
 ## The engine self-test
 
@@ -103,5 +105,8 @@ binding's example together: `tools/check-pins.py` names whichever was missed, an
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine.
+The libraries under `src/code/` for the desktop platforms and Android come from the suite's
+`release-binaries.yml` dispatch, never from a developer's machine (first on 2026-11-21). The
+web archive is the exception, as it is for every member: that workflow does not build it, so
+it is built as above with the Emscripten version OXT-Beyond pins (6.0.12) and committed with
+its `MANIFEST.sha256` line.
