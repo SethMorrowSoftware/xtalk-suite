@@ -27,7 +27,10 @@ script "tsNetCompat"
 -- Every ID's request stays in memory until tsNetCloseConn, until the ID is
 -- reused for a new transfer, or until tsNetClose.
 --
--- Verified statically; needs an OXT pass.
+-- On an engine: tsNetVersion and tsNetGetSync on Windows x86-64
+-- (2026-11-15, with an async tsNetGet), and tsNetVersion, tsNetGetSync and
+-- tsNetClose on OXT-Beyond's headless Linux server engine (2026-11-21,
+-- tests/engine-selftest.lc). Every other call needs an OXT pass.
 
 constant kTsnxVersion = "1.4.5"
 constant kTsnxSettingKeys = "username,password,user_agent,referer,use_ssl,try_ssl,use_ssl_control,ssh_private_key,ssh_public_key,ssh_passphrase,pre_commands,post_commands,max_file_size,no_verify"

@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **curlxt** binds libcurl 8.22.0 (with libssh2 1.11.1 for SFTP/SCP) for OXT: libcurl and
 libssh2 (static, PIC, FetchContent from pinned release tarballs with SHA256) -> the C++ shim
-`src/curl_shim.cpp` (exports `cux_*`, **ABI 1**: `CUX_ABI_VERSION` in `src/cux_abi.h` equals
+`src/curl_shim.cpp` (exports `cux_*`, **ABI 2**: `CUX_ABI_VERSION` in `src/cux_abi.h` equals
 `kABIVersion` in `src/curl.lcb`) -> ONE library `curlxt.{so,dll,dylib}` (bare token) -> the
 LCB binding `src/curl.lcb` (`org.openxtalk.library.curl`, public `cu*`) -> the helpers
 `src/curl-helpers.livecodescript` (stack `curlHelpers`, public `cu*`) -> the tsNet calls
@@ -43,6 +43,21 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    callback parameters follow the public tsNet dictionary only (docs/tsnet-compat.md marks
    the two entries that could not be read). Never change one to taste; never take tsNet code.
    It must never touch libURL: a stack that does not use it must behave exactly as before.
+8. **The engine run is `tests/engine-selftest.lc`** (since 2026-11-21): the root
+   `native-curlxt.yml` `engine` job compiles the binding with OXT-Beyond's `lc-compile
+   -Werror` and runs the test on that release's headless Linux server engine through
+   `tools/run-engine-selftest.py`, against the same loopback servers as rule 6's gate. A new
+   public handler goes into the test's SWEEP in the same change (`--check-sweep` is a gate);
+   new behaviour gets a check there too. It runs the server engine only: the IDE, Windows,
+   mac and Android still need an OXT pass, and a label says which.
+9. **The demo runs on an engine too** (since 2026-11-21): the same job runs
+   `examples/curlxt-live.livecodescript` start to finish on that release's DESKTOP engine with
+   `-ui` and no screen (`tools/run-engine-demo.py`, driver `tests/engine-demo.livecodescript`),
+   because the demo serves its own scenes and the server engine delivers no `accept` (the
+   suite's engine notes 6.15 and 6.16). The driver waits for each scene's verdict line in the
+   demo's log and checks its words: a change to a verdict changes the driver in the same
+   change. A change to the demo is done when the native lane's run is green; it sees nothing
+   drawn, so the look keeps its "needs an OXT pass" label until a screen shows it.
 
 ## As built
 
@@ -73,14 +88,45 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   test ran that day on an Android 5.0 emulator for both x86 ABIs (157 certificates read from its
   store); the ARM libraries are built, not run. An engine first loaded the `x86_64-android`
   library on 2026-11-19, in an app OXT-Beyond's CI ran on x86_64 emulators: `cuLibraryVersion()`
-  answered, 149 certificates on Android 16 (the conscrypt path). One call, no request made:
-  the selftest on an Android engine and any ARM run still need an OXT pass on Android.
+  answered, 149 certificates on Android 16 (the conscrypt path). One call, no request made,
+  and on the ABI 1 build: the four Android libraries were rebuilt at ABI 2 on 2026-11-21 (run
+  44825160471, its tests run on the emulator again), and no Android engine has loaded those.
+  The selftest on an Android engine and any ARM run still need an OXT pass on Android.
 - **Release builds** (the suite's `release-binaries.yml`): 64-bit Linux and the mac slices
   link a pinned static OpenSSL 3.5.9 (no `libssl.so.3` needed); 32-bit Linux links the
   system's, as datachannelxt does; Windows uses Schannel and the static CRT (`/MT`), so
   `curlxt.dll` needs no Visual C++ Redistributable.
+- **WebSockets (ABI 2, 2026-11-20)** use libcurl's own support, no new library. A socket is a
+  Request made by `cux_ws_new` (`CURLOPT_CONNECT_ONLY` 2): the multi handle drives the upgrade,
+  and the handle then STAYS in the multi handle (libcurl's rule for a connect-only handle in
+  use) while `ws_service`, called by `pump()` for every live socket, writes the send queue with
+  `curl_ws_send` and reads whole messages with `curl_ws_recv`. What holds it together:
+  - **A socket is never listed by `cux_poll`** (`quiet` from birth): that list is consumed by
+    its reader, so a handle the helpers' timer does not know would be lost. State is read
+    (`wsState`), and `cux_ws_poll` pumps without consuming the list. `cux_wait` refuses a socket.
+  - **Whole messages only.** Fragments are reassembled; a message crosses into script once
+    (`cux_ws_read`, into a block of its exact size, like `cux_body`).
+  - **Both queues are bounded.** Reading stops at 4 MiB (or 4096 messages) unread, so TCP slows
+    the peer; `cux_ws_send` refuses past 16 MiB unsent. `maxBodyBytes` caps one message (close
+    1009, result 23).
+  - **Three things libcurl 8.22 does not do, done in the shim, each measured:** it holds its
+    automatic pong until the next frame (so `CURLWS_NOAUTOPONG`, and `ws_service` answers pings,
+    after the frame at the head of the queue, never inside it); it does not answer a close
+    (`ws_got_close` echoes it); and it applies no timeout to the wait for the upgrade's answer
+    (`timeout` and `connectTimeout` are kept on the shim's own clock, and `timeout` is never
+    given to libcurl for a socket: it bounds the opening, not the socket's life).
+  - **`closed` is one state for every ending**, told apart by `result` (0 a close, a CURLcode a
+    failure, 1000 cancelled) and `wsCloseCode` (the peer's, 1005 none, 1006 no close frame,
+    0 never opened). The helpers send "open" only to a socket whose upgrade answered 101.
 - **Only `cux_*` is exported**: `src/curlxt.map` for GNU ld and a derived
   `-exported_symbols_list` for ld64.
+- **The demo** (`examples/curlxt-live.livecodescript`) is one paste-and-run file: the helpers
+  and the tsNet layer are EMBEDDED by the suite's `tools/sync-demo-embeds.py`, the boot
+  self-check is carried from its master, and its control list is derived
+  (`check-demo-control-lists.py --write`). It wears OXT-Beyond's dark look at the owner's
+  request (2026-11-21), so the suite's UI-kit gate lists it in `EXEMPT`. Its server answers
+  127.0.0.1 only and every write is the background kind; every scene uses curlxt's background
+  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it.
 
 ## Gotchas
 
@@ -91,3 +137,20 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    `check-script-vectors.py` models `@` only for the calls it makes itself.
 3. **`return X for error` does not put a reason in `the result` as text**; the helpers keep the
    last reason in `cuHelpersError()` instead.
+4. **No handler-shaped line inside a `/** */` block** (a precaution, not a measured failure):
+   an example line starting `on name ...` at column 0 could be read as a handler by a tool
+   that splits a script by handlers. Describe the handler in a sentence, as `cuRequestAsync`'s
+   block does; the README can show it in full.
+5. **The WebSocket test servers answer ANY request with an upgrade.** Point an ordinary request
+   at the HTTP server (`base`), never at the WebSocket one.
+6. **`cuWsWait` answers 1 at once while a message waits, and moves nothing then** (by contract:
+   `cux_ws_wait` looks before it pumps). A loop that waits for a LATER state (closed, a count of
+   messages) with messages unread spins in place: the engine test's first run lost eight checks
+   to it (2026-11-21). Read the messages first, or loop on `cuWsPoll` with a short `wait`.
+7. **The engine's parser is the judge of a `.lc` test**, which `tools/check-livecodescript.py`
+   does not read (it reads `.lcb` and `.livecodescript`): `does not contain` is not xTalk (the
+   checker's check 7 refuses it in a script; the engine stops the whole file at it), and
+   `unicodeText` is a reserved word, so a handler of that name cannot be called.
+8. **A chunk inside a chunk needs parentheses when a bound is a sum**: the demo's
+   `word 1 to -1 of char tColon + 1 to -1 of tLine` stopped its whole 4,400-line script from
+   compiling (the suite's engine note 1.10). The checker cannot see it; the engine run can.
