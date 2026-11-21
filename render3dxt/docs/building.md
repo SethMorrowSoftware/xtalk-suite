@@ -55,7 +55,11 @@ cmake --build build-web -j && (cd build-web && ctest --output-on-failure)
 A browser loads no library, so the web build is a static archive, `render3dxt.a`, for
 OXT-Beyond's web engine to link in: the shim, the two readers, and a generated table of the
 symbols the binding names (`render3dxt_web_exports`). The two tests run against that archive
-under node. It draws on one thread. No web engine has linked it yet.
+under node. It draws on one thread. One web engine has linked it: a local build of OXT-Beyond's
+(2026-11-21, not a released engine), where the demo and OXT-Beyond's Render3D Tour played in
+Chromium. That was the archive as first committed; it was rebuilt the same way with a fix to
+how a model's materials are freed (457c244), after the tree before the fix had rebuilt the
+committed archive byte for byte.
 
 ## The engine tests
 
@@ -94,5 +98,8 @@ in `tests/assets/`, `python3 tools/build-test-assets.py`.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never
-from a developer's machine.
+The libraries under `src/code/` for the desktop platforms and Android come from the suite's
+`release-binaries.yml` dispatch, never from a developer's machine (first on 2026-11-21). The web
+archive is the exception, as it is for every member: that workflow does not build it, so it
+is built as above with the Emscripten version OXT-Beyond pins (6.0.12) and committed with its
+`MANIFEST.sha256` line.

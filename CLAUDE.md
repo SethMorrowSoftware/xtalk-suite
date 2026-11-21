@@ -19,7 +19,7 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   software renderer; joined 2026-11-20, its libraries committed that day), render3dxt (this
   suite's own software 3D renderer, textured and lit, into an image's imageData, with stb_image
   and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose transform, move and camera
-  texts it reads, with only its web archive committed yet) and xlsxt (libxlsxwriter + zlib +
+  texts it reads, its libraries committed 2026-11-21) and xlsxt (libxlsxwriter + zlib +
   Expat: Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).

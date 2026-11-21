@@ -889,29 +889,43 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   0.2.8-dp.1, 64-bit, dark system appearance, a locally built library, 2026-11-21 UTC)
   the demo drew (7.8 ms a picture on six threads, its words white on white) and then its
   rebuilt look was readable; the faults that run found are fixed (5fabc82, 904bb16), and
-  those fixes, the wheel and the buttons' hover have not run there (#2). macOS, Android and
-  the web have not run it: there it is verified statically; needs an OXT pass.
+  those fixes, the wheel and the buttons' hover have not run there (#2). Later that day the
+  demo as merged opened on the same Windows machine with its boot self-check green (12 passed,
+  0 failed, 0 skipped). In a browser, 2026-11-21: a locally built OXT-Beyond web engine with
+  the web archive linked (OXT-Beyond's box3dxt pull request with render3dxt's link applied on
+  top, not a released engine) played OXT-Beyond's Render3D Tour in Chromium at 59 to 60
+  pictures a second (2.2 ms a picture) and the demo at 34 to 36 (about 10 ms a picture,
+  textures on), its boot self-check green there too (#4). That was the archive as merged
+  (fa0a07a); the one rebuilt with the fix below has run its own tests under node only.
+  macOS and Android have not run it, nor has a released web engine: there it is verified
+  statically; needs an OXT pass.
+- Review of #182 found a leak, fixed 2026-11-21 (457c244): the materials a model's file made
+  were found at destroy time through the mesh's slots, so one the script had moved out of its
+  slot outlived the model. The mesh now lists them apart from the slots, as it already did its
+  textures, and the smoke test moves both of a model's materials and counts what is left
+  (three checks failed before the fix). Neither demo moves a model's material.
 - The contract with box3dxt (world, transform text, move lines, camera text, picture
   coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
   smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
   test, so a box3dxt change to one of those texts shows red in render3dxt's lane only when
   render3dxt next changes (#7).
-- Binaries: none committed when it joined. The web archive
-  (`src/code/wasm32-emscripten/render3dxt.a`) was committed by hand on 2026-11-20, built with
-  emsdk 6.0.12 as the native lane's wasm job builds it, so OXT-Beyond's web engine can pin
-  it (#4), and the `ships` row lists that one platform. The first release-binaries dispatch
-  lands the rest (six desktop rows in `cmake-members`, four Android ids through
-  `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
-- Publishing: `SethMorrowSoftware/render3dxt` was created empty by the owner on 2026-11-20;
-  a publish-members run adopts it (`--adopt render3dxt`).
+- Binaries: the web archive (`src/code/wasm32-emscripten/render3dxt.a`) was committed by
+  hand on 2026-11-20, built with emsdk 6.0.12 as the native lane's wasm job builds it, so
+  OXT-Beyond's web engine can pin it (#4), and rebuilt the same way with the leak fix on
+  2026-11-21 (the tree before the fix first rebuilt the committed archive byte for byte). The six desktop and four Android libraries were
+  committed on 2026-11-21 by its first release-binaries dispatch (run 44874931964 from 457c244, commit
+  f6c0b1a), and the `ships` row lists all eleven. No engine has loaded a committed desktop or
+  Android library yet: the engine and IDE runs above used locally built ones.
+- Publishing: `SethMorrowSoftware/render3dxt` exists (created empty by the owner on
+  2026-11-20); a publish-members run adopts it (`--adopt render3dxt`) now that the member is
+  on main.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-21 (run 44874931964, commit f6c0b1a, and the web archive): the first release-binaries dispatch with `members: render3dxt`, then the `ships` row | - | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above; Windows showed the demo on 2026-11-21 but no pointer was driven there): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
 | 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
-| 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
+| 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine (a local build with it linked played the Tour and the demo in Chromium on 2026-11-21, above; OXT-Beyond's pull request 607 links it) | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's render3dxt row has a pill and a Run |
 | 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |

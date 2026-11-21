@@ -388,13 +388,16 @@ MEMBERS = [
         "name": "render3dxt",
         "lib": "render3dxt",
         "lcb": ["render3dxt/src/render3dxt.lcb"],
-        # Only the web archive, committed by hand on 2026-11-20 (built with
-        # emsdk 6.0.12 as native-render3dxt.yml's wasm lane builds it) so
-        # OXT-Beyond's web engine can pin it. The desktop and Android rows
-        # wait for the first release-binaries dispatch that lands render3dxt's
-        # libraries: that run's --installing tolerates each gained platform,
-        # and the change after it lists them here.
-        "ships": ["wasm32-emscripten"],
+        # Its first release-binaries dispatch (run 44874931964, commit f6c0b1a,
+        # 2026-11-21) landed the ten desktop and Android libraries; the web
+        # archive, built with emsdk 6.0.12 as native-render3dxt.yml's wasm
+        # lane builds it, was committed by hand on 2026-11-20 so OXT-Beyond's
+        # web engine could pin it, as every member's is.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "render3dxt/src/render3d_shim.c",
         "prefix": "r3x_",
         # Like box2dxt and box3dxt, the ABI define lives in the shim itself.
