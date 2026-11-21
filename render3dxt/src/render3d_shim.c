@@ -246,6 +246,10 @@ typedef struct Mesh {
     char **slotTexName;              /* its map_Kd as written, or NULL   */
     float bmin[3], bmax[3];
     int boundsDirty;
+    /* what an OBJ's MTL made for this mesh, listed apart from the slots: a
+     * script may give a slot another material, and the mesh still frees the
+     * one its file made (0 where the script destroyed it first) */
+    int *ownedMat; int nOwnedMat;
     int *ownedTex; int nOwnedTex;
 } Mesh;
 
@@ -670,7 +674,15 @@ static void material_release(int h)
 LC_API void r3x_material_destroy(int material)
 {
     ok_clear();
-    if (!materials_get(material)) { fail(k_bad_handle); return; }
+    Material *mat = materials_get(material);
+    if (!mat) { fail(k_bad_handle); return; }
+    /* A material a mesh loaded is the mesh's; destroying it here is allowed,
+     * and the mesh forgets it so that it is not freed twice. */
+    if (mat->owner) {
+        Mesh *m = meshes_get(mat->owner);
+        if (m) for (int i = 0; i < m->nOwnedMat; i++)
+            if (m->ownedMat[i] == material) m->ownedMat[i] = 0;
+    }
     material_release(material);
 }
 
@@ -786,7 +798,7 @@ static void mesh_free_data(Mesh *m)
         if (m->slotTexName) free(m->slotTexName[i]);
     }
     free(m->slotMat); free(m->slotName); free(m->slotTexName);
-    free(m->ownedTex);
+    free(m->ownedMat); free(m->ownedTex);
     free(m);
 }
 
@@ -914,14 +926,16 @@ static int mesh_register(Mesh *m)
 }
 
 /* Frees a mesh, and the materials and textures it made for itself (an OBJ's
- * MTL). Anything the script made stays. */
+ * MTL), from its own lists rather than its slots: a slot the script gave
+ * another material, or 0, still leaves the mesh's own material to free.
+ * Anything the script made stays. */
 static void mesh_release(int h)
 {
     Mesh *m = meshes_get(h);
     if (!m) return;
-    for (int i = 0; i < m->nslots; i++) {
-        Material *mat = materials_get(m->slotMat[i]);
-        if (mat && mat->owner == h) material_release(m->slotMat[i]);
+    for (int i = 0; i < m->nOwnedMat; i++) {
+        Material *mat = materials_get(m->ownedMat[i]);
+        if (mat && mat->owner == h) material_release(m->ownedMat[i]);
     }
     for (int i = 0; i < m->nOwnedTex; i++) {
         Texture *t = textures_get(m->ownedTex[i]);
@@ -1471,12 +1485,18 @@ static int build_from_obj(fastObjMesh *o, int loadTextures)
     int h = mesh_register(m);
     if (!h) return 0;
 
-    /* materials: one per MTL material, owned by the mesh */
+    /* materials: one per MTL material, owned by the mesh, and listed in
+     * ownedMat as they are made, so a failure part way frees them too */
+    if (o->material_count > 0) {
+        m->ownedMat = (int *)calloc(o->material_count, sizeof(int));
+        if (!m->ownedMat) { mesh_release(h); return fail(k_no_memory); }
+    }
     for (unsigned int i = 0; i < o->material_count && (int)i < nslots; i++) {
         const fastObjMaterial *om = &o->materials[i];
         int mh = material_new(0, 0, 0, h);
         Material *mat = materials_get(mh);
         if (!mat) { mesh_release(h); return fail(k_no_memory); }
+        m->ownedMat[m->nOwnedMat++] = mh;
         for (int k = 0; k < 3; k++) {
             mat->kd[k] = clampf(isfinite(om->Kd[k]) ? om->Kd[k] : 1.0f, 0, 1);
             mat->ke[k] = clampf(isfinite(om->Ke[k]) ? om->Ke[k] : 0.0f, 0, 1);

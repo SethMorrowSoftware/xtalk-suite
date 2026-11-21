@@ -105,11 +105,22 @@ Joined the suite on 2026-11-20. What has run, and where:
   picture on six threads) with its words white on white; its rebuilt look was then readable
   throughout, and the faults that run showed (the corner's badge, the self-check printed twice
   after a quick reopen, the far floor shimmering) were fixed after it. Those last fixes, the
-  wheel and the painted buttons' hover have not run there.
-- **Not yet:** no engine on macOS, Android or the web has run it: on those it is verified
-  statically; needs an OXT pass. Only the web archive is committed under
-  `src/code/` yet; the suite's release-binaries dispatch lands the desktop and Android
-  libraries.
+  wheel and the painted buttons' hover have not run there. Later that day the demo as merged
+  opened on the same machine with its boot self-check green (12 passed, 0 failed, 0 skipped).
+- **In a browser:** a locally built OXT-Beyond web engine with the web archive linked (not a
+  released engine), in Chromium, 2026-11-21. OXT-Beyond's Render3D Tour played at 59 to 60
+  pictures a second (2.2 ms a picture, on the one thread the web build draws on) and the demo
+  at 34 to 36 (about 10 ms a picture, textures on), its boot self-check green. That was the
+  archive as first committed; the one committed now carries a fix that frees a model's
+  material the script had moved out of its slot (nothing it draws changed), and has run its
+  own tests under node.
+- **Not yet:** no engine on macOS or Android, and no released web engine, has run it: on
+  those it is verified statically; needs an OXT pass. The libraries under `src/code/` (six
+  desktop platforms and four Android ABIs from the suite's release-binaries dispatch,
+  2026-11-21, and the web archive) were tested where they were built; of them only the
+  x86_64-linux library has met an engine: OXT-Beyond 0.2.8-dp.1's Linux server engine loaded
+  it on 2026-11-21 and passed OXT-Beyond's Android functional test for render3dxt with it (a
+  model, its MTL and a TGA read from disk, drawn, clicked and freed).
 
 How fast it is depends on the machine. As one measure: a 624 by 468 picture of the demo's
 scene with smooth edges took about 8 ms on four threads of a 2.1 GHz virtual machine, and a
