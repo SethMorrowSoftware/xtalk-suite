@@ -332,8 +332,10 @@ PACKAGES = [
     P('lcb', 'render3dxt', 'org.openxtalk.library.renderthreed', 'src/render3dxt.lcb',
       'render3dxt', 'r3LibraryVersion()', '^render3dxt [0-9.]+ ABI [0-9]+;'),
     # xlsxt (2026-11-21): joined 2026-11-20 with no library committed, so
-    # this row waits (EVERY EXTENSION HAS A PACKAGE, above) until its first
-    # release-binaries dispatch lands them; nobody has to come back to it.
+    # this row waited (EVERY EXTENSION HAS A PACKAGE, above) until its first
+    # release-binaries dispatch landed them the next day (#196: the six
+    # desktop rows and the four Android ids); nobody had to come back to it.
+    # xlLibraryVersion() checks the ABI first.
     P('lcb', 'xlsxt', 'org.openxtalk.library.xlsxt', 'src/xlsxt.lcb', 'xlsxt',
       'xlLibraryVersion()', '^xlsxt ABI [0-9]+; libxlsxwriter [0-9]'),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
