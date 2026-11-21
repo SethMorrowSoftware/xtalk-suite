@@ -22,7 +22,9 @@
 --      (__extensionPackageExtract); for an LCB package, the libraries of
 --      the code folders for this platform and processor mapped into
 --      revLibraryMapping (__MapCodeLibraryForIDE) and module.lcm loaded
---      (__LoadExtension); for a script library, start using, then
+--      (__LoadExtension), or, for a pure LCB package (packages.tsv's sixth
+--      column "pure", native=False in the table), no code folder at all
+--      and nothing mapped; for a script library, start using, then
 --      extensionInitialize must put it into the back scripts and
 --      extensionFinalize take it out again. Then the package's probe, an
 --      expression whose value must match its regular expression.
@@ -216,13 +218,19 @@ command verifyPackages pDir, pUtils, pScratch
          put pScratch & "/" & tManifest["name"] & "." & tManifest["version"] into tTarget
          extractPackage tPackage, tTarget
          if tFields[1] is "lcb" then
-            if there is a folder (tTarget & "/code") then
-               mapCode tTarget & "/code", tMapped
+            if tFields[6] is "pure" then
+               -- a module that binds no library of its own: nothing to map
+               check tName & " carries no native code", there is no folder (tTarget & "/code"), \
+                     "a code folder in a pure LCB package"
             else
-               put 0 into tMapped
+               if there is a folder (tTarget & "/code") then
+                  mapCode tTarget & "/code", tMapped
+               else
+                  put 0 into tMapped
+               end if
+               check tName & " code for " & the platform && the processor, tMapped > 0, \
+                     "no library in code/ for this platform"
             end if
-            check tName & " code for " & the platform && the processor, tMapped > 0, \
-                  "no library in code/ for this platform"
             if there is a folder (tTarget & "/resources") then
                load extension from file (tTarget & "/module.lcm") with resource path (tTarget & "/resources")
             else
