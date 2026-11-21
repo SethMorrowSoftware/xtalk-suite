@@ -426,6 +426,15 @@ if [ -f tools/test-native-lane-paths.py ]; then
   echo "== suite: tools/test-native-lane-paths.py =="
   python3 tools/test-native-lane-paths.py
 fi
+# Which lanes may run on the maintainer's own PCs (docs/PC-RUNNERS.md): only
+# native-<member>.yml rows marked `pc:`, only behind the fork guard and the
+# repository-variable switch, and only lanes the PC can run (no containers,
+# no docker, and every sudo line accepted by the PC's stand-in sudo over the
+# setup script's package list, the real stand-in run here).
+if [ -f tools/test-pc-runner-lanes.py ]; then
+  echo "== suite: tools/test-pc-runner-lanes.py =="
+  python3 tools/test-pc-runner-lanes.py
+fi
 # The publisher itself (tools/publish-members.py) writes to eleven
 # repositories that are not this one, from .github/workflows/
 # publish-members.yml, so this is where its promises are held: it replays

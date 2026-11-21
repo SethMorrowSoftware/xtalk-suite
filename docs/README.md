@@ -16,6 +16,7 @@ front door; the root [CLAUDE.md](../CLAUDE.md) is the working guide (rules, gate
 | build, check or land the Android libraries, or ask what has run on Android | [ANDROID.md](ANDROID.md) |
 | work on the anonymous (Tor) transport of QuickShare or DHT Channels | [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md) |
 | publish a member, port a change made in its repository back here, or add or remove a member | [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md) |
+| run CI on the maintainer's own PCs, or pause or remove them | [PC-RUNNERS.md](PC-RUNNERS.md) |
 | build on Riptide, or interoperate with it | [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md) (design), [RIPTIDE-PROTOCOL.md](RIPTIDE-PROTOCOL.md) (bytes) |
 | find out what an extension does | the root [README.md](../README.md), then that member's `README.md` |
 | learn the suite's rules, gates and generators | the root [CLAUDE.md](../CLAUDE.md) |
@@ -28,6 +29,7 @@ front door; the root [CLAUDE.md](../CLAUDE.md) is the working guide (rules, gate
 - [OPEN-DECISIONS.md](OPEN-DECISIONS.md): the owner decision log, D-01 onward, one row per decision (outcome, date, where it is recorded), plus the brief of any decision still open.
 - [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md): publishing every member into its own repository while development stays here (live since 2026-09-23) - the model, setup, porting a change back, the sibling layout, and what a departing member must be removed from.
 - [ANDROID.md](ANDROID.md): the native members on Android (started 2026-11-18) - the four platform ids, the one build script and its pins, what is checked on every library, what is run on an emulator and what is only built, what differs per member, and how the libraries land.
+- [PC-RUNNERS.md](PC-RUNNERS.md): the maintainer's two PCs as self-hosted CI runners (since 2026-11-21) - which lanes may run there and why, the fork guard and the switch, how a runner stays out of the way of the person at the PC, and turning it on, pausing it and taking it away.
 - [BINDING-PLAYBOOK.md](BINDING-PLAYBOOK.md): wrapping a native C/C++ library for OXT the way the native members do - the house pattern, the three rules, the FFI contract, handles and records, threading, toolchain traps, the definition of done.
 - [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), titled "Model C - the anonymous transport": the optional Tor onion path of QuickShare and DHT Channels (design, threat model, onboarding, the VERIFY register, decisions); code cites its section numbers.
 - [RIPTIDE-SOCIAL-SPEC.md](RIPTIDE-SOCIAL-SPEC.md): the design authority for Riptide Social - rails, rules, the security model, the phase roadmap with dated status, decisions; code cites its section numbers.

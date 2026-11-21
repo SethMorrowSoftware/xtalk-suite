@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# tools/pc-runners/sudo - the `sudo` a job sees on the maintainer's Linux PC
+# runner (docs/PC-RUNNERS.md). setup-linux-runner.sh installs it as the first
+# entry of the runner's PATH.
+#
+# WHY. The suite's Linux lanes were written for GitHub's machines, where
+# `sudo apt-get install ...` is free. On the PC the runner's account has NO
+# sudo at all: a job is code from a branch, and root on the maintainer's own
+# computer is not something a branch should get. Rewriting every lane to skip
+# its toolchain step would fork the lanes between the two kinds of machine;
+# instead every lane runs as written, and this stand-in ANSWERS the few
+# commands the lanes use by checking that what they ask for is ALREADY true
+# (setup-linux-runner.sh made it so, as root, once):
+#
+#   apt-get update                      nothing to do
+#   apt-get install [-y ...] PKG...     every PKG installed, else a red step
+#   dpkg --add-architecture i386        i386 already added, else a red step
+#   sysctl -w vm.mmap_rnd_bits=N        already N or lower, else a red step
+#
+# Anything else fails LOUD, naming the command: a lane that starts needing
+# root for something new must be noticed, not quietly skipped.
+# tools/check-pc-runner-lanes.py runs every sudo line of every lane routed to
+# the PC through this grammar (and its package list against the setup
+# script's), so a lane change that would break here fails in the suite gates
+# first. Leading VAR=value words (sudo DEBIAN_FRONTEND=... apt-get) are
+# accepted and dropped.
+set -u
+
+refuse() {
+  echo "::error::sudo on the PC runner: $*" >&2
+  echo "This PC runner gives jobs no root. If a lane needs this, add it to" >&2
+  echo "tools/pc-runners/setup-linux-runner.sh (and this grammar), re-run the" >&2
+  echo "setup on the PC, or turn the lane's routing off (docs/PC-RUNNERS.md)." >&2
+  exit 1
+}
+
+while [ $# -gt 0 ] && [[ $1 == [A-Za-z_]*=* ]]; do shift; done
+[ $# -gt 0 ] || refuse "no command given"
+
+cmd=$1; shift
+case "$cmd" in
+  apt-get|apt|/usr/bin/apt-get)
+    sub=
+    pkgs=()
+    for a in "$@"; do
+      case "$a" in
+        -*) ;;                          # -y, -q, --no-install-recommends ...
+        *)
+          if [ -z "$sub" ]; then sub=$a; else pkgs+=("$a"); fi
+          ;;
+      esac
+    done
+    case "$sub" in
+      update) exit 0 ;;
+      install)
+        missing=()
+        for p in "${pkgs[@]}"; do
+          status=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
+          [ "$status" = "install ok installed" ] || missing+=("$p")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          refuse "apt-get install: not installed on this PC: ${missing[*]}"
+        fi
+        echo "(PC runner) already installed: ${pkgs[*]}"
+        exit 0
+        ;;
+      *) refuse "apt-get $sub" ;;
+    esac
+    ;;
+  dpkg|/usr/bin/dpkg)
+    if [ "$*" = "--add-architecture i386" ]; then
+      dpkg --print-foreign-architectures | grep -qx i386 && exit 0
+      refuse "dpkg --add-architecture i386: i386 is not added on this PC"
+    fi
+    refuse "dpkg $*"
+    ;;
+  sysctl|/usr/sbin/sysctl|/sbin/sysctl)
+    if [ $# -eq 2 ] && [ "$1" = -w ] && [[ $2 =~ ^vm\.mmap_rnd_bits=([0-9]+)$ ]]; then
+      want=${BASH_REMATCH[1]}
+      have=$(cat "${PC_RUNNER_MMAP_RND_BITS_FILE:-/proc/sys/vm/mmap_rnd_bits}")
+      [ "$have" -le "$want" ] && exit 0
+      refuse "sysctl: vm.mmap_rnd_bits is $have here, the lane wants $want or lower"
+    fi
+    refuse "sysctl $*"
+    ;;
+  *) refuse "$cmd $*" ;;
+esac
