@@ -921,6 +921,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   (six desktop rows in `cmake-members`), and the change after it lists the platforms in
   `check-binary-freshness.py`'s `ships` row. No Android build (`tools/build-android.sh`'s
   `DESKTOP_ONLY`: none has run yet).
+- The showcase, `examples/osc-show-surface.livecodescript` (2026-11-21, by Seth Morrow;
+  OXT-Beyond's dark look by the owner's request): its engine tests passed on OXT-Beyond's
+  headless Linux engine the same day; its window, look and feel are verified statically;
+  need an OXT pass (row 7).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
@@ -932,6 +936,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | all five scenes play by themselves, every word fits and none is white on white, and the footer says what it found |
 
 ### 2.13 midixt
 
@@ -948,6 +953,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   (the Linux rows install ALSA's headers in the manylinux containers), and the change
   after it fills its `ships` row. No Android library: RtMidi's Android backend needs API
   29 and JNI, above the suite's API 21 floor.
+- The showcase, `examples/midi-stage.livecodescript` (2026-11-21, by Seth Morrow): its
+  engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
+  library and over the real one with no MIDI service (where it decodes and says why). No
+  service has carried its messages and nobody has heard it: verified statically; needs an
+  OXT pass (row 6).
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
@@ -958,6 +968,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, and the keyboard's notes show in blue |
 
 ### 2.14 artnetxt
 
@@ -970,6 +981,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   on Linux, Windows and a Mac. No desktop IDE and no hardware node: verified statically;
   needs an OXT pass.
 - Binaries: none, ever; there is no `src/code/`. An lce package carries the module alone.
+- The showcase, `examples/artnet-light-board.livecodescript` (2026-11-21, by Seth
+  Morrow): its engine tests passed on OXT-Beyond's headless Linux engine the same day; its
+  window, look and feel, and a real node or desk, are verified statically; need an OXT
+  pass (row 7).
 - Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
 
@@ -981,6 +996,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
+| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | all five scenes play by themselves, the node's fixture follows the board, and the desk drives the rig |
 
 ---
 

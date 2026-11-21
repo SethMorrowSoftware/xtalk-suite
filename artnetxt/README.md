@@ -51,6 +51,20 @@ end scrollbarDrag
 
 [docs/getting-started.md](docs/getting-started.md) carries on from there.
 
+## The showcase: Art-Net Light Board
+
+`examples/artnet-light-board.livecodescript` (by Seth Morrow) is a lighting board and a
+virtual rig in one window, talking real Art-Net over UDP on this computer only (it never
+broadcasts). It opens straight into motion and plays five scenes by itself: a colour
+wash, a chase, two moving heads, all 512 channels of a universe, and node discovery, where
+the board finds the rig with ArtPoll and the rig answers with a byte-exact ArtPollReply.
+Every lamp and every square of the universe is drawn from the packets the rig READ.
+Paused, a lighting desk sending universe 0 to this computer drives the rig instead. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the artnetxt extension installed; without it the window still opens and says what is missing.
+
+Its engine tests, `tests/lcs/demo_test.livecodescript`, passed on 2026-11-21 in
+OXT-Beyond's headless engine (Linux x86_64). The window, its look, its feel and a real
+node or desk are verified statically; need an OXT pass.
+
 ## Status
 
 Joined the suite on 2026-11-21. What has run, and where:
@@ -135,6 +149,7 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- This member's own library, embedded into its own stacks by the same tool so each is one file to paste: `examples/artnet-light-board.livecodescript` carries `examples/artnet-helpers.livecodescript`.
 - `tools/build-api-reference.py`, `tools/check-livecodescript.py`, `tools/run-lcb-tests.py`, `tools/run-lcs-tests.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

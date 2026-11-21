@@ -13,6 +13,11 @@ nothing here opens a socket, starts a thread or calls back.
 `examples/artnet-helpers.livecodescript` holds the level, send, poll and routing helpers;
 `examples/artnet-selftest.livecodescript` the in-OXT self-test.
 
+`examples/artnet-light-board.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
+(EXEMPT from the suite's UI kit by the owner's request), a board and a virtual node over real UDP on 127.0.0.1, port 6454 (6464 at most), never a broadcast. It CARRIES
+`examples/artnet-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (the rig's ArtPollReply checked byte by byte against an oracle written from the Art-Net 4 field table).
+
 It is the Art-Net third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
 id, every public handler, the refusal texts and the helpers' ShowControl names are

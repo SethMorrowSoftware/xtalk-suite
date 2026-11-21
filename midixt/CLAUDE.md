@@ -14,6 +14,11 @@ in `src/midi_shim.h` equals the literal in `checkABI()` of the binding) -> ONE l
 poll dispatcher most stacks use; `examples/midi-selftest.livecodescript` the in-OXT
 self-test.
 
+`examples/midi-stage.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
+(EXEMPT from the suite's UI kit by the owner's request), a player and a stage joined by a virtual port, a loopback driver's pair, or, with neither, `midiDecode`. It CARRIES
+`examples/midi-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` over the mock (the stage draws only what arrives, against the mock's log of what left) and `demo_hw_test.livecodescript` over the real library.
+
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
 id, every public handler, the `midi_` export prefix, ABI 2, the helper's handler names and

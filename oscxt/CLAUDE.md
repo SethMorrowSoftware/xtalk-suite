@@ -14,6 +14,11 @@ script's own UDP sockets, so nothing here opens a socket, starts a thread or cal
 `examples/osc-helpers.livecodescript` holds the sending and routing helpers;
 `examples/osc-selftest.livecodescript` the in-OXT self-test.
 
+`examples/osc-show-surface.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
+(EXEMPT from the suite's UI kit by the owner's request), a surface and a virtual rig over real UDP on 127.0.0.1, ports 9000 to 9009. It CARRIES
+`examples/osc-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (opened as start-here opens it; each scene against an oracle written in the test).
+
 It is the OSC third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
 id, every public handler, the `osc_` export prefix, ABI 2 and the helpers' names are

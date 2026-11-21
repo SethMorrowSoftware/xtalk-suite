@@ -70,6 +70,25 @@ end closeCard
 
 [docs/getting-started.md](docs/getting-started.md) carries on from there.
 
+## The showcase: MIDI Stage
+
+`examples/midi-stage.livecodescript` (by Seth Morrow) is a player and a stage in one
+window. It opens straight into motion and plays five scenes by itself: an arpeggio, chords
+struck soft and hard, eight knobs, a pitch bend and drums with program changes. The stage
+draws ONLY what arrives: a piano roll, a keyboard, the knobs, the wheels, the program and a
+light per channel. On macOS and Linux the messages travel through a virtual port the stack
+makes, "MIDI Stage", and back through the system's MIDI service; on Windows a loopMIDI
+port carries them, and without one the stage reads each message with `midiDecode` and
+says so. Press Sound to hear it through the Microsoft GS Wavetable Synth on Windows (or the
+first output that is not a cable); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing.
+
+Its engine tests passed on 2026-11-21 in OXT-Beyond's headless engine (Linux x86_64):
+`tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only
+what arrives, checked byte for byte against the mock's log of what left) and
+`demo_hw_test.livecodescript` over the real one (with no MIDI service there, it decoded
+and said why). No MIDI service has carried its messages and nobody has heard it: the
+cable, Sound, the window and its look are verified statically; need an OXT pass.
+
 ## Status
 
 Joined the suite on 2026-11-21. What has run, and where:
@@ -155,6 +174,7 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- This member's own library, embedded into its own stacks by the same tool so each is one file to paste: `examples/midi-stage.livecodescript` carries `examples/midi-helpers.livecodescript`.
 - `tools/build-api-reference.py`, `tools/check-livecodescript.py`, `tools/run-lcb-tests.py`, `tools/run-lcs-tests.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

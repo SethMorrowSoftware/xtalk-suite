@@ -136,4 +136,6 @@ if the platform is "Linux" then get oscLoadNativeLib(tFolder & "/oscxt.so")
 
 Says why `oscLoadNativeLib` could not load the library.
 
-Returns: The system's reason, or empty.
+Returns: The system's reason for the last `oscLoadNativeLib` that returned 0, or empty when the last one loaded the library (or none has run).
+
+The reason is read when the load fails and kept until the next `oscLoadNativeLib`, so it can be asked for at any time after.

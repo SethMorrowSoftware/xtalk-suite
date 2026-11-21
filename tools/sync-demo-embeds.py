@@ -170,6 +170,17 @@ REGISTRY = {
     # back out (strip_spans on the holdem row, the coin-selftest precedent).
     "holde-em/src/holdem.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
+    # ShowControl's three showcases (2026-11-21), each carrying its member's
+    # helper layer, so each is one paste with nothing to `start using`. The
+    # helpers' handler names are held disjoint by check-cross-library-names
+    # (the old combined showcontrol-helpers file's split), which is what lets
+    # a stack carry two of them; these carry one each.
+    "oscxt/examples/osc-show-surface.livecodescript": [
+        "oscxt/examples/osc-helpers.livecodescript"],
+    "midixt/examples/midi-stage.livecodescript": [
+        "midixt/examples/midi-helpers.livecodescript"],
+    "artnetxt/examples/artnet-light-board.livecodescript": [
+        "artnetxt/examples/artnet-helpers.livecodescript"],
     # archivext's two demos (each carrying the library and its harness, the
     # nostrxt-demo shape) had rows here from 2026-09-15 until the member
     # left for its own repository on 2026-09-21. A member that leaves takes

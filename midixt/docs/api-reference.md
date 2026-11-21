@@ -336,4 +336,6 @@ if the platform is "Linux" then get midiLoadNativeLib(tFolder & "/midixt.so")
 
 Says why `midiLoadNativeLib` could not load the library.
 
-Returns: The system's reason, or empty.
+Returns: The system's reason for the last `midiLoadNativeLib` that returned 0, or empty when the last one loaded the library (or none has run).
+
+The reason is read when the load fails and kept until the next `midiLoadNativeLib`, so it can be asked for at any time after.

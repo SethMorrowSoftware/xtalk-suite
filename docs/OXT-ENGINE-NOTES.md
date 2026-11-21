@@ -1128,6 +1128,43 @@ the library (path, architecture, quarantine, the macOS floors in work plan
 shows its own "LCB Error" line first; a COMMAND called with `()` throws EE-0219
 too (3.4).
 
+### 4.2 `the loadedExtensions` tells an extension that is not loaded from one whose library will not load
+**OBSERVED 2026-11-21** (Linux x86_64, the standalone engine of OXT-Beyond
+0.2.7-rc.6, "9.7.1-OXT", headless with `-ui`; a probe script, then the three
+ShowControl showcases' tests). With midixt's module loaded and its library
+mapped to a path that does not exist (`set the revLibraryMapping["midixt"]`
+before the load), `the loadedExtensions` listed `org.openxtalk.library.midi`,
+and the first call, `midiVersion()`, threw these lines, innermost first, the
+shape 4.1 reads from the engine source:
+
+    863,9,11,runtime
+    864,9,11,unable to load foreign library 'midixt': /nonexistent/midixt-gone/midixt.so: cannot open shared object file: No such file or directory
+    865,9,11,midi.lcb
+    866,9,11,267
+    897,9,11,1
+    219,9,11,midiVersion
+    465,9,11
+
+After `unload extension "org.openxtalk.library.midi"` (its result empty), `the
+loadedExtensions` was empty and the same call threw only `219,19,11,midiVersion`
+and `465,19,11`: EE-0219 with the handler's name, as for any handler nothing
+answers (3.4).
+**Cost:** none; it is what lets a stack say WHICH of the two it met, in words,
+instead of showing a code or guessing.
+**Rule:** catch the first call. If the module's id is among the lines of `the
+loadedExtensions`, its library failed, and the engine's own sentence is the
+first error line whose fourth item onward contains a space (`osdEngineSays` in
+oscxt's showcase, `mdsEngineSays` in midixt's); otherwise the extension is not
+loaded. `unload extension` makes the second case headlessly; a mapping to a
+missing file makes the first.
+**Gate:** the showcases' missing-library tests in their members' engine suites:
+oscxt's `TestWithoutTheLibraryItSaysWhatIsMissing` (the library mapped away),
+artnetxt's (the module unloaded), and midixt's two (`...WithoutMidixt...` and
+`...WithoutItsNativeLibrary...`).
+**Does NOT mean:** that a listed extension WORKS: a foreign handler is bound
+at its first call (6.17), so a module can be listed and still fail there,
+which is the first case above. Windows and macOS engines: not examined.
+
 ## 5. Controls and the UI
 
 ### 5.1 A polygon graphic does not resize by setting its height
