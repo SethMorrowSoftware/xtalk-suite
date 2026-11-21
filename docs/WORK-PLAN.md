@@ -817,17 +817,46 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   tsNet's public dictionary only (`curlxt/docs/tsnet-compat.md`). Records: the shim's
   smoke test (90 checks, clean under ASan/UBSan) and a headless run of both script
   layers over the built library against loopback HTTP and SMTP servers, in its gates.
-  No engine has loaded it: verified statically; needs an OXT pass.
+  No engine had loaded it when it joined; since then Windows x86-64 has (2026-11-14 and
+  2026-11-15), and OXT-Beyond's headless Linux server engine (2026-11-21, below), by the
+  records in `curlxt/README.md`, Status.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands
   them (its rows ride `cmake-members` and `mac-lipo`), and the change after it lists
-  the platforms in `check-binary-freshness.py`'s `ships` row.
+  the platforms in `check-binary-freshness.py`'s `ships` row. Since 2026-11-21 all ten
+  committed libraries are the ABI 2 build of run 44825160471 (from ac22df8, commit
+  02b4238).
 - Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
+- WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
+  as new handlers only (`cuWs*` in the binding, `cuWsOpen` and its messages in the helpers).
+  Records: the smoke test's WebSocket sections against a server it runs itself, clean
+  under ASan/UBSan, and a headless run of the helpers' calls over the built library
+  against `ws://` and `wss://` servers, in its gates. On 2026-11-21 OXT-Beyond
+  0.2.7-rc.6's headless Linux server engine ran `curlxt/tests/engine-selftest.lc` over a
+  library built from the tree (138 checks, none failed): every public handler of the
+  binding, requests through the binding and the helpers, and `ws://` and `wss://` sockets
+  through the binding and the helpers' timer; the same day again over the committed
+  `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
+  `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
+  opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
+  of it reaches an HTML5 standalone.
+- The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
+  scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
+  the engine's own sockets, launched from `start-here`. It ran start to finish the same day
+  on OXT-Beyond 0.2.7-rc.6's desktop engine with no screen
+  (`curlxt/tests/engine-demo.livecodescript` through `curlxt/tools/run-engine-demo.py`, 26
+  checks, a close and a reopen included; again over the committed `x86_64-linux` library,
+  26 checks; the native lane's `engine` job runs it on every change). The server engine
+  cannot host it (engine note 6.15). What it draws needs an OXT pass on a screen (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
+| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
+| 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
+| 5 | `cux_ws_wait` pumps once before it answers 1 for a message already waiting, so a loop that waits for a later state with messages unread still moves the socket (curlxt gotcha 6, found by the engine test's first run); today's contract, documented in `cuWsWait`'s block, is to read first or loop on `cuWsPoll`. A shim change: it rides the next curlxt rebuild, and the smoke test and engine test pin both orders | coding, with the next rebuild | - | a `cuWsWait` loop waiting for "closed" with messages unread ends, in the smoke test and on the engine |
+| 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 
 ### 2.10 box3dxt
 

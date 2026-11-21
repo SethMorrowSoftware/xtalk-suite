@@ -128,6 +128,15 @@ EXEMPT = {
     # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
+    # curlxt Live wears OXT-Beyond's own look (the Render3D Tour's dark
+    # stage and orange section heads), at the owner's request on
+    # 2026-11-21: it is one of the showcase demos Beyond's users meet next
+    # to the 3D tour, and the kit's light cards would make it the odd one
+    # out there. It still carries the boot self-check (held by
+    # check-demo-selfcheck-drift.py) and writes the status line through its
+    # own uiStatus, in the dark palette.
+    os.path.join("curlxt", "examples", "curlxt-live.livecodescript"):
+        "OXT-Beyond's dark showcase look at the owner's request (2026-11-21); carries the boot self-check",
 }
 
 # The three spellings that mean "this file builds a window". Until the
