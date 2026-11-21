@@ -1462,8 +1462,11 @@ them. The three ShowControl showcases' builds sent 276, 494 and 1286 such
 messages with messages unlocked, and in OXT-Beyond 0.2.8-dp.1's IDE on Windows
 the same builds held the IDE for 42, 81 and 112 seconds as they opened, where
 Gamepad Lab, whose build locks messages, opened in under half a second (runbook
-section 8). That these messages were the cost is INFERRED: the locked builds
-have not been timed in that IDE yet.
+section 8). Built with messages locked, the same three opened in that IDE in
+1.7, 3.0 and 5.0 seconds that afternoon, each timed as its `go stack` (runbook
+section 8): those messages were nearly all of the cost. What the rest is, the
+IDE's own work as a stack of some hundreds of controls opens or the builds'
+own, is not measured.
 **Rule:** bulk create, rename and delete under `lock messages`, and lift it
 around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
 unlocked, the engine updates the screen after every statement that dirtied it

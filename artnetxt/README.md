@@ -65,10 +65,13 @@ Its engine tests, `tests/lcs/demo_test.livecodescript`, passed on 2026-11-21 in
 OXT-Beyond's headless engine (Linux x86_64). The same day it ran in OXT-Beyond
 0.2.8-dp.1's IDE on Windows: the board sent ArtDmx to this computer and the rig lit from
 what arrived. That run found the window opening with its left 390 pixels off the screen
-and the IDE held for 112 seconds as it opened; both were fixed the same day: it now builds its window with messages locked and
-centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
-OXT pass. Its look and feel on a
-Mac and on Linux, and a real node or desk, are verified statically; need an OXT pass.
+and the IDE held for 112 seconds as it opened; both were fixed the same day: it now builds
+its window with messages locked and centres it. Built so, it opened there that afternoon
+in 5 seconds and ran, wholly on the screen. Closing its window stops the show, by a close
+made with messages locked too: after each close in that IDE a frame of its loop was still
+queued, and it now stops itself once its stack is closed (that fix needs a Windows pass).
+Its look and feel on a Mac and on Linux, and a real node or desk, are verified statically;
+need an OXT pass.
 
 ## Status
 

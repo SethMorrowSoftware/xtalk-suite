@@ -1080,11 +1080,15 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   headless Linux engine the same day; with oscxt loaded, its window, look and feel are
   verified statically; need an OXT pass (row 7). It opened without oscxt in OXT-Beyond
   0.2.8-dp.1's IDE on Windows and said what was missing. That run found two faults in all
-  three ShowControl showcases: each opened with its left 390 pixels off the screen, and
-  held the IDE as it opened (42 s here; MIDI Stage 81 s, the Light Board 112 s), built with
-  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages
-  locked and centres its window, held by two engine tests that failed against the old
-  build; on Windows the fix needs an OXT pass (row 7).
+  three ShowControl showcases: each opened with its left 390 pixels off the screen, and held
+  the IDE as it opened (42 s here; MIDI Stage 81 s, the Light Board 112 s), built with
+  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages locked
+  and centres its window, held by two engine tests that failed against the old build. Built
+  so, it opened there that afternoon in 1.7 s, wholly on the screen (runbook section 8).
+  That run found a third fault: after each close a frame of the show's loop was still
+  queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
+  itself once its stack is closed, held by an engine test that failed first; that fix needs
+  a Windows pass (row 7).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
@@ -1122,8 +1126,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
   OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
   5.15). Fixed the same day: each builds with messages locked and centres its window, held
-  by two engine tests that failed against the old build; on Windows the fix needs an OXT
-  pass (row 6).
+  by two engine tests that failed against the old build. Built so, it opened there that
+  afternoon in 3.0 s, wholly on the screen (runbook section 8): over the two seconds row 6
+  asks, and what the rest is has not been measured. That run found a third fault: after each
+  close a frame of the show's loop was still queued, and the IDE keeps a closed stack in
+  memory. Fixed the same day: the loop stops itself once its stack is closed, held by an
+  engine test that failed first; that fix needs a Windows pass (row 6).
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
@@ -1155,10 +1163,15 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   pass (row 7). On Windows the same day it ran, the rig lighting from what the board sent
   ("35 sent, 34 read, 0 ignored" when its picture was taken). That run found two faults in
   all three ShowControl showcases: each opened with its left 390 pixels off the screen, and
-  held the IDE as it opened (112 s here; OSC Show Surface 42 s, MIDI Stage 81 s), built
-  with messages unlocked (engine note 5.15). Fixed the same day: each builds with messages
-  locked and centres its window, held by two engine tests that failed against the old
-  build; on Windows the fix needs an OXT pass (row 7).
+  held the IDE as it opened (112 s here; OSC Show Surface 42 s, MIDI Stage 81 s), built with
+  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages locked
+  and centres its window, held by two engine tests that failed against the old build. Built
+  so, it opened there that afternoon in 5.0 s, running, wholly on the screen (runbook
+  section 8): over the two seconds row 7 asks, and what the rest is has not been measured.
+  That run found a third fault: after each close a frame of the show's loop was still
+  queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
+  itself once its stack is closed, held by an engine test that failed first; that fix needs
+  a Windows pass (row 7).
 - Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
 
@@ -1171,6 +1184,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
 | 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, and the desk drives the rig |
+| 8 | The headless engine's rare abort at quit: 5 of 355 runs of `demo_test::TestAlsoToSendsOnlyWhenItNamesANode` on 2026-11-21 (OXT-Beyond's `9.7.1-OXT` build 25923, Linux x86_64; 1 of 211 with the showcase before that day's closed-window fix, 4 of 144 after) never exited. In one run of each, gdb found glibc reporting a corrupt heap (`free(): corrupted unsorted chunks`) as the engine freed its objects at quit, from the same engine frames, and the engine's abort handler then waiting in `exit()` on malloc's lock until the runner killed it, the run's TAP output lost with it. What wrote past its block is not found: one run under valgrind's memcheck reported no invalid read or write (only mismatched free and delete pairs, from 7 sites), and other suites were not counted. Until it is, a run of this suite on Linux that times out having printed nothing ("0 ok") is most likely this | S1 (Linux, valgrind) | - | the bad write is found and reported to OXT-Beyond, or the test passes 1000 runs in a row |
 
 ---
 

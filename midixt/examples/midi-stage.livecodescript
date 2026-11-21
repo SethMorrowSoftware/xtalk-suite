@@ -704,6 +704,16 @@ on mdsFrame pGen
       exit mdsFrame
    end if
    if sMyStack is not empty then
+      -- A closed window stops its own show. closeStack stops it, but a
+      -- close made with messages locked sends none, and the IDE keeps a
+      -- closed stack in memory, where this loop would run on unseen with
+      -- its ports open (after each close in OXT-Beyond 0.2.8-dp.1's IDE on
+      -- Windows a frame was still queued, 2026-11-21). An invisible window
+      -- is open: only a closed stack is mode 0.
+      if the mode of stack sMyStack is 0 then
+         mdsStop
+         exit mdsFrame
+      end if
       set the defaultStack to sMyStack
    end if
    put the milliseconds into tNow

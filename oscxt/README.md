@@ -70,10 +70,12 @@ Its engine tests, `tests/lcs/demo_test.livecodescript`, passed on 2026-11-21 in
 OXT-Beyond's headless engine (Linux x86_64). The same day it opened in OXT-Beyond
 0.2.8-dp.1's IDE on Windows without oscxt installed, drew its window and said what was
 missing. That run found the window opening with its left 390 pixels off the screen and the
-IDE held for 42 seconds as it opened; both were fixed the same day: it now builds its window with messages locked and
-centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
-OXT pass. With oscxt loaded, its look and
-its feel are verified statically; need an OXT pass.
+IDE held for 42 seconds as it opened; both were fixed the same day: it now builds its
+window with messages locked and centres it. Built so, it opened there that afternoon in
+1.7 seconds, wholly on the screen. Closing its window stops the show, by a close made with
+messages locked too: after each close in that IDE a frame of its loop was still queued,
+and it now stops itself once its stack is closed (that fix needs a Windows pass). With
+oscxt loaded, its look and its feel are verified statically; need an OXT pass.
 
 ## Status
 

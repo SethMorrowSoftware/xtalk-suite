@@ -17,6 +17,10 @@ script "MidiDemoTest"
 --     delete message reaches the IDE's script (the suite's engine notes,
 --     5.15), and it opens centred on the screen: each failed in OXT-Beyond's
 --     IDE on Windows, 2026-11-21;
+--   * closing the window stops the show and closes every port it opened, and
+--     so does a close made with messages locked, which sends no closeStack:
+--     the loop stops itself at its next frame (after each close in that IDE a
+--     frame was still queued, 2026-11-21);
 --   * every scene plays with nothing going wrong and does what its words
 --     say, checked against the score worked out by hand;
 --   * over a cable (the mock's loopback) every message the player sends
@@ -748,3 +752,50 @@ on TestTheWindowOpensCentredOnTheScreen
    TestAssertEqual "the window opens centred on the screen", the loc of stack sDemo, the screenLoc
    TestAssertEqual "at its own size", the width of stack sDemo & "x" & the height of stack sDemo, "1100x620"
 end TestTheWindowOpensCentredOnTheScreen
+
+-- Closing the window stops the show. closeStack stops it, and a close made
+-- with messages locked, which sends no closeStack, stops it at the loop's
+-- next frame: the IDE keeps a closed stack in memory, where a loop that ran
+-- on would run unseen with its ports open (after each close in OXT-Beyond
+-- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21)
+on TestAClosedWindowStopsItsShow
+   local tBefore
+   MockReset
+   -- the shim keeps one port-listing instance a side for good (its lazy
+   -- enumerators), so both sides are listed before the count is taken: what
+   -- it counts from here is ports
+   get midiInputPorts()
+   get midiOutputPorts()
+   put MockLiveWrappers() into tBefore
+   demoOpen
+   TestPump 300
+   TestAssert "the loop runs while the window is open", demoFramesQueued() > 0
+   TestAssert "with ports open (" & MockLiveWrappers() - tBefore & ")", MockLiveWrappers() > tBefore
+   close stack sDemo
+   TestPump 200
+   TestAssertEqual "a close stops it", demoFramesQueued(), 0
+   TestAssertEqual "and the show says so", demoGet("running"), false
+   TestAssertEqual "with every port it opened closed", MockLiveWrappers(), tBefore
+   go invisible stack sDemo
+   TestPump 300
+   TestAssert "a reopen starts it again", demoFramesQueued() > 0
+   lock messages
+   close stack sDemo
+   unlock messages
+   TestPump 200
+   TestAssertEqual "a close with messages locked stops it too", demoFramesQueued(), 0
+   TestAssertEqual "the show stopped itself", demoGet("running"), false
+   TestAssertEqual "and closed every port it opened", MockLiveWrappers(), tBefore
+end TestAClosedWindowStopsItsShow
+
+-- The frame messages queued for the demo's loop
+function demoFramesQueued
+   local tLine, tN
+   put 0 into tN
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine begins with "mdsFrame" then
+         add 1 to tN
+      end if
+   end repeat
+   return tN
+end demoFramesQueued

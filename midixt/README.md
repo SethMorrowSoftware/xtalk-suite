@@ -83,17 +83,19 @@ says so. Press Sound to hear it through the Microsoft GS Wavetable Synth on Wind
 first output that is not a cable); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing.
 
 Its engine tests passed on 2026-11-21 in OXT-Beyond's headless engine (Linux x86_64):
-`tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only
-what arrives, checked byte for byte against the mock's log of what left) and
+`tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only what
+arrives, checked byte for byte against the mock's log of what left) and
 `demo_hw_test.livecodescript` over the real one (with no MIDI service there, it decoded
 and said why). The same day it opened in OXT-Beyond 0.2.8-dp.1's IDE on Windows without
 midixt installed, drew its window and said what was missing. That run found the window
 opening with its left 390 pixels off the screen and the IDE held for 81 seconds as it
 opened; both were fixed the same day: it now builds its window with messages locked and
-centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
-OXT pass. No MIDI service has carried its messages and nobody has heard
-it: the cable, Sound, and the window's look with midixt loaded are verified statically;
-need an OXT pass.
+centres it. Built so, it opened there that afternoon in 3 seconds, wholly on the screen.
+Closing its window stops the show, by a close made with messages locked too: after each
+close in that IDE a frame of its loop was still queued, and it now stops itself once its
+stack is closed (that fix needs a Windows pass). No MIDI service has carried its messages
+and nobody has heard it: the cable, Sound, and the window's look with midixt loaded are
+verified statically; need an OXT pass.
 
 ## Status
 

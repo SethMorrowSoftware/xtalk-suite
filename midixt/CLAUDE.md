@@ -21,7 +21,11 @@ self-test.
 OXT-Beyond 0.2.8-dp.1's IDE on Windows for 81 s as it opened (each scripted create and rename
 ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre (5.17), so it
 opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
-`TestTheWindowOpensCentredOnTheScreen` failed against that build.
+`TestTheWindowOpensCentredOnTheScreen` failed against that build. Built so, it opened there in
+3.0 s, without midixt, wholly on the screen (the same day). Its loop stops itself at its next
+frame once its stack is closed, so a close made with messages locked, which sends no closeStack,
+cannot leave it running unseen in the IDE's memory with its ports open (after each close there a
+frame was still queued; `TestAClosedWindowStopsItsShow`).
 
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
