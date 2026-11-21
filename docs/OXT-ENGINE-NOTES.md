@@ -1427,6 +1427,28 @@ delete.
 defaultStack; not tried), or on Windows or macOS (not tried); nor that a
 delete alone, or a create alone, is unsafe.
 
+### 5.18 A field's first line starts 6 pixels above its top margin
+**OBSERVED 2026-11-21** on OXT-Beyond's Linux desktop engine (0.2.7-rc.6, `-ui`, no
+display) and on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit), and the engine
+source says why (DOCUMENTED: `MCField::getcontenty` in `engine/src/fieldf.cpp` puts the
+content's top at the field's top plus its border less `TEXT_Y_OFFSET`, which `objdefs.h`
+sets to 6, and the first line starts the top margin below that). On Linux, `the
+formattedRect of line 1` of a borderless field with margins "2,1,2,1" began 5 pixels above
+the field's top, and with a top margin of 7, 1 pixel below it; pdfxt's demo had 28 fields
+whose lines began above them, every label 5 pixels so. On Windows the same window showed it:
+the kicker's capitals touched the top edge of its field, and a 10-point caption lost the tops
+of its tall letters, while every field had room to spare below its words. No error.
+**Rule:** a top margin places the first line only from 6 pixels up: a margin of 6 puts the
+line's box at the inside of the field's border (the suite kit's "6,6,6,6"), so give a field 6
+plus the room wanted above its first line. The engine's default margin, 8, leaves 2.
+**Gate:** for pdfxt's demo only, `pdfxt/tests/demo-drive.livecodescript` (2026-11-21): every
+field of the window that does not scroll must hold its lines (the formattedRect of them)
+inside its rect, and a line that does not wrap must fit across it. It named all 28 fields of
+the window before the fix. No suite-wide gate.
+**Does NOT mean:** that a field that scrolls must keep its lines inside (they are meant to run
+on), nor that the bottom margin moves the words: by the engine's own comment
+(`exec-interface-field.cpp`, `GetFormattedHeight`) it only enters the formatted height.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

@@ -109,7 +109,16 @@ Joined the suite on 2026-11-20. What has run, and where:
   that on every change. The window's earlier look (the suite UI kit) was opened in the
   maintainer's Windows IDE on 2026-11-21: it built and opened the sample, and under Windows'
   dark appearance its page number and outline drew white on white, which this look was made to
-  end; this look has not met Windows yet. Nobody has used the window by hand yet.
+  end. This look met the same PC that day (OXT-Beyond 0.2.8-dp.1, 64-bit, its IDE driven
+  remotely, over the `x86_64-win32` library installed there): "Ready (pdfxt ABI 1; PDFium
+  chromium/8165)", and the tour started by itself and ran to its end. It also showed three
+  faults, fixed the same day: the window opened where it was last saved, partly off a smaller
+  screen (it now moves onto the screen when it would not fit); every label's words sat 5
+  pixels above it, so the tops of some letters were cut off (a field's first line starts 6
+  pixels above its top margin, the suite's engine note 5.18; every margin now allows for it);
+  and the toolbar's words sat above the buttons' line, for the same reason. The drive holds
+  all three. The fixed window has met Linux only: on Windows it is verified statically; needs
+  an OXT pass. Nobody has used the window by hand yet.
 - **In the Windows IDE**, on 2026-11-21: the maintainer's 64-bit OXT-Beyond (engine 9.7.1)
   loaded the module, compiled there from this source, over CI's `x86_64-win32` library (run
   44840908920), and `tests/engine-selftest.lc`, run inside the IDE as a script-only stack,

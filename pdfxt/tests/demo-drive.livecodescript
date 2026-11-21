@@ -24,7 +24,12 @@ script "pdfxtDemoDrive"
 -- point they read (pvClickAt, pvSelectBox), since no pointer moves here.
 -- The look is held too: every field and button of the window says its own
 -- colours (under Windows' dark appearance a field without them got white
--- text on a white ground), and no button is a tick box. The native lane
+-- text on a white ground), and no button is a tick box. Every field that
+-- does not scroll holds its words inside itself (a first line starts 6
+-- pixels above the top margin, engine note 5.18: the Windows IDE showed
+-- every label's words 5 pixels above it), what each scene shows fits its
+-- box, and a window placed partly off the screen moves onto it, as the
+-- Windows IDE opened it on 2026-11-21. The native lane
 -- runs it (the suite's .github/workflows/native-pdfxt.yml, job `engine`)
 -- and wants BOTH an exit of 0 and a last line "DRIVE <passed> 0": an
 -- engine that printed nothing must not read as a pass.
@@ -131,6 +136,60 @@ function drUnpainted
    return tOut
 end drUnpainted
 
+-- The fields of the window whose lines do not sit inside them, a line each,
+-- or empty: a label, a caption or an entry field whose first line rises
+-- above its top or whose last runs below its bottom. The engine starts a
+-- field's first line 6 pixels above its top margin (engine note 5.18): with
+-- a margin of 1, every label's words rose 5 pixels above it, and on Windows
+-- the tops of the letters were cut off (2026-11-21). The boxes are the ones
+-- the engine lays the lines out in (the formattedRect of the lines), so no
+-- display is needed, and a hidden field is laid out as a shown one is. A
+-- field that scrolls is left out, since its lines are meant to run on, and
+-- so is an empty one. A line that does not wrap must also fit across: the
+-- footer, made longer, ran off the window's side on Linux.
+function drUnplaced
+   local tI, tName, tBox, tRect, tOut
+   repeat with tI = 1 to the number of fields of card 1 of stack kStack
+      if the vScrollbar of field tI of card 1 of stack kStack or field tI of card 1 of stack kStack is empty then
+         next repeat
+      end if
+      put the short name of field tI of card 1 of stack kStack into tName
+      put the formattedRect of line 1 to -1 of field tI of card 1 of stack kStack into tBox
+      put the rect of field tI of card 1 of stack kStack into tRect
+      if item 2 of tBox < item 2 of tRect or item 4 of tBox > item 4 of tRect then
+         put "field" && tName && "(its lines" && item 2 of tBox & "-" & item 4 of tBox & ", the field" \
+               && item 2 of tRect & "-" & item 4 of tRect & ")" & return after tOut
+      end if
+      -- and a line that does not wrap must not run past the field's side
+      if the dontWrap of field tI of card 1 of stack kStack then
+         if the formattedWidth of field tI of card 1 of stack kStack > the width of field tI of card 1 of stack kStack then
+            put "field" && tName && "(its words" && the formattedWidth of field tI of card 1 of stack kStack && "wide, the field" \
+                  && the width of field tI of card 1 of stack kStack & ")" & return after tOut
+         end if
+      end if
+   end repeat
+   return tOut
+end drUnplaced
+
+-- What WHAT THIS SHOWS can be given that does not fit under it, a line
+-- each, or empty: what each scene shows, and the words before any
+-- (pvSceneAbout 1 to 5, and 0), each put in the field as a scene puts it and
+-- measured as drUnplaced measures. The field gets back what it had.
+function drAboutsOver
+   local tWas, tScene, tBox, tRect, tOut
+   put field "show:about" of card 1 of stack kStack into tWas
+   put the rect of field "show:about" of card 1 of stack kStack into tRect
+   repeat with tScene = 0 to 5
+      put value("pvSceneAbout(" & tScene & ")", stack kStack) into field "show:about" of card 1 of stack kStack
+      put the formattedRect of line 1 to -1 of field "show:about" of card 1 of stack kStack into tBox
+      if item 4 of tBox > item 4 of tRect then
+         put "scene" && tScene & ": its lines end at" && item 4 of tBox & ", the field at" && item 4 of tRect & return after tOut
+      end if
+   end repeat
+   put tWas into field "show:about" of card 1 of stack kStack
+   return tOut
+end drAboutsOver
+
 on startup
    local tError, tWas, tDoc, tBox, tPath, tData, tPixel, tLog, tTab, tNow, tScene
    put 0 into sPassed
@@ -172,6 +231,31 @@ on startup
             "the window is dark and its words light", the backgroundColor of stack kStack && the foregroundColor of stack kStack
       put drUnpainted() into tLog
       drCheck tLog is empty, "every field and button says its own colours, and none is a tick box", tLog
+      put drUnplaced() into tLog
+      drCheck tLog is empty, "every field's words sit inside it (a line starts 6 pixels above the top margin)", tLog
+      put drAboutsOver() into tLog
+      drCheck tLog is empty, "what each scene shows fits under WHAT THIS SHOWS", tLog
+
+      -- the window opens on a screen: one saved where it would reach past
+      -- the screen's edge (on Windows, 2026-11-21: at 803,205 on a screen
+      -- 1821 wide) moves to the middle of it, one that fits stays, on a
+      -- second screen too, and with no screen (this engine has no display)
+      -- nothing moves
+      set the rect of stack kStack to "803,205,1983,835"
+      dispatch "pvPlaceWindow" to stack kStack with "0,0,1821,960"
+      put the result into tNow
+      drCheck tNow is "moved" and the rect of stack kStack is "320,165,1500,795", \
+            "a window that would open off the screen moves to the middle of it", tNow && the rect of stack kStack
+      dispatch "pvPlaceWindow" to stack kStack with "0,0,1821,960" & return & "1821,0,3741,1080"
+      put the result into tNow
+      drCheck tNow is "fits" and the rect of stack kStack is "320,165,1500,795", "one that fits stays where it is", tNow && the rect of stack kStack
+      set the topLeft of stack kStack to "2000,100"
+      dispatch "pvPlaceWindow" to stack kStack with "0,0,1821,960" & return & "1821,0,3741,1080"
+      put the result into tNow
+      drCheck tNow is "fits" and item 1 of the rect of stack kStack is 2000, "one on a second screen stays on it", tNow && the rect of stack kStack
+      dispatch "pvPlaceWindow" to stack kStack with empty
+      put the result into tNow
+      drCheck tNow is "no screen" and item 1 of the rect of stack kStack is 2000, "with no screen, nothing moves", tNow
       drCheck field "tb:of" is "of 5" and the visible of image "view:page" and the width of image "view:page" is 346 \
             and field "out:h" is "Outline: 8 entries (pdfOutline)", "it opens on the sample, drawn whole, with its outline", field "tb:of" && field "out:h"
 
@@ -391,6 +475,9 @@ on startup
       drClick the long id of button "side:out"
       drCheck item 1 of drAsk("pvShowNow") is 0 and not drPending("pvShowTick") and not the hilite of button "show:2", \
             "and a click anywhere else stops it", drAsk("pvShowNow")
+
+      put drUnplaced() into tLog
+      drCheck tLog is empty, "and after all of that, every field's words still sit inside it", tLog
 
       drClick the long id of button "tb:close"
       drCheck field "tb:of" is empty and not the visible of image "view:page" and the visible of field "view:hint" \

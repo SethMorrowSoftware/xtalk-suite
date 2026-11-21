@@ -1062,8 +1062,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   (2026-11-21, the maintainer's 64-bit OXT-Beyond over CI's `x86_64-win32` library): the
   same self-test passed 64 checks and failed its 2 first-load checks, which cannot hold in a
   process that had loaded PDFium before, as that session had (`pdfxt/README.md` has the
-  record; a fresh-session run is owed). For everything beyond those runs it is verified
-  statically; needs an OXT pass.
+  record; a fresh-session run is owed). The demo's dark look met the same PC that day
+  (OXT-Beyond 0.2.8-dp.1): PDFium loaded and its tour ran to its end, and it showed the window
+  opening partly off the screen and every label's words 5 pixels above it (engine note 5.18),
+  both fixed the same day and held by `pdfxt/tests/demo-drive.livecodescript`; the fixed window
+  has met Linux only. For everything beyond those runs it is verified statically; needs an OXT
+  pass.
 - Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
   Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
   reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
@@ -1084,7 +1088,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
 | 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
-| 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
+| 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end; the dark look then played its whole tour there and opened partly off the screen with every label's words 5 pixels above it, both fixed that day, the fixed window not yet seen on Windows) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
 | 7 | The suite board on an engine with pdfxt's name in the band of the members with no harness (2.13 #9 has the band) | S1 | 48 | pdfxt's name shows whole in the band, and the band ends above the members caption |
 | 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 

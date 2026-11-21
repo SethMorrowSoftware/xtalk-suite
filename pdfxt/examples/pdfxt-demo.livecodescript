@@ -52,7 +52,7 @@ script "pdfxtDemo"
 -- which is kept true to what has run.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kPvUiVersion = "pdfxt-beyond-1"
+constant kPvUiVersion = "pdfxt-beyond-2"
 constant kPvWidth = 1180
 constant kPvHeight = 630
 -- The page view on the card: the drawn part of the page sits inside it, the
@@ -110,6 +110,15 @@ constant kPvSelect = "60,76,120"
 constant kPvOk = "96,214,142"
 constant kPvWarn = "242,193,78"
 constant kPvBad = "255,112,112"
+-- A field's first line begins 6 pixels ABOVE its top margin (the engine's
+-- TEXT_Y_OFFSET, engine note 5.18): a top margin of 6 puts the line at the
+-- field's top edge, and each builder below adds the room it wants to that.
+-- With the 1 of a margin "2,1,2,1", every label's words rose 5 pixels above
+-- it, and on Windows the tops of the letters were cut off (2026-11-21).
+constant kPvLift = 6
+-- The room a window's title bar takes above its card, kept on the screen
+-- when the window is moved onto it (pvPlaceWindow).
+constant kPvTitleBar = 32
 
 local sDoc          -- the open document's handle, or 0
 local sSource       -- where it came from: "sample", "locked" or a file's path
@@ -194,6 +203,7 @@ on preOpenStack
       put false into sShowAll
    end if
    pvBuildUI
+   pvPlaceWindow the working screenRects
    pvShowTab "out"
    if pvReady() then
       if sDoc is 0 then
@@ -221,6 +231,35 @@ on closeStack
    pvStopShow
    pvCloseDocument
 end closeStack
+
+-- The window opens where it was last saved, and one saved on a bigger screen
+-- can open partly off a smaller one (on Windows, 2026-11-21: saved at
+-- 803,205, it reached 1983 across a screen 1821 wide). So unless it fits on
+-- one of pScreens (the working screenRects: a rect a line, each screen
+-- less its taskbar, menu bar or dock), it moves to the middle of the
+-- first, its title bar kept on it. With no screen (an engine with no
+-- display) nothing moves. The result says which: fits, moved or no screen.
+command pvPlaceWindow pScreens
+   local tRect, tScreen, tLeft, tTop
+   put the rect of this stack into tRect
+   repeat for each line tScreen in pScreens
+      if item 3 of tScreen <= item 1 of tScreen then
+         next repeat
+      end if
+      if item 1 of tRect >= item 1 of tScreen and item 2 of tRect >= item 2 of tScreen + kPvTitleBar \
+            and item 3 of tRect <= item 3 of tScreen and item 4 of tRect <= item 4 of tScreen then
+         return "fits"
+      end if
+   end repeat
+   put line 1 of pScreens into tScreen
+   if item 3 of tScreen <= item 1 of tScreen then
+      return "no screen"
+   end if
+   put max(item 1 of tScreen, item 1 of tScreen + (item 3 of tScreen - item 1 of tScreen - the width of this stack) div 2) into tLeft
+   put max(item 2 of tScreen + kPvTitleBar, item 2 of tScreen + (item 4 of tScreen - item 2 of tScreen - the height of this stack) div 2) into tTop
+   set the topLeft of this stack to tLeft & comma & tTop
+   return "moved"
+end pvPlaceWindow
 
 -- ==========================================================================
 -- UI construction. Every generated control is named "prefix:role": "ui" the
@@ -372,9 +411,9 @@ on pvBuildUI
 
    -- The status line, and the honesty footer every demo carries.
    pvLabel "ui:status", empty, "16,592,1164,612", 12, kPvSoft, empty
-   pvLabel "ui:footer", "PDFium (BSD 3-clause, Apache 2.0) draws every page, through the pdfxt shim. Drawn and driven" \
-         && "on OXT-Beyond's Linux engine without a display, every check green (tests/demo-drive); on Windows" \
-         && "and macOS, needs an OXT pass.", "16,612,1164,629", 10, kPvSoft, "italic"
+   pvLabel "ui:footer", "PDFium (BSD 3-clause, Apache 2.0) draws every page through the pdfxt shim. Driven on" \
+         && "OXT-Beyond's Linux engine, every check green (tests/demo-drive); the tour has played on Windows;" \
+         && "macOS needs an OXT pass.", "16,612,1164,629", 10, kPvSoft, "italic"
    unlock messages
    set the uPvUiVersion of this stack to kPvUiVersion
    unlock screen
@@ -476,8 +515,10 @@ private command pvLabel pName, pText, pRect, pSize, pColor, pStyle
    set the opaque of field pName to false
    set the dontWrap of field pName to true
    -- 4-item margins only: OXT ignored the single-number form on an engine
-   -- pass (the suite kit's note)
-   set the margins of field pName to "2,1,2,1"
+   -- pass (the suite kit's note). The top one centres the line in the
+   -- field: kPvLift brings it down to the field's top edge, and half of the
+   -- room the field has beyond the line's height brings it to the middle.
+   set the margins of field pName to "2," & pvTopMargin(pName, 0) & ",2,1"
    set the foregroundColor of field pName to pColor
    if pStyle is empty then
       put "plain" into pStyle
@@ -489,13 +530,21 @@ end pvLabel
 private command pvText pName, pText, pRect, pSize, pColor
    pvLabel pName, pText, pRect, pSize, pColor, empty
    set the dontWrap of field pName to false
+   -- wrapped words start at the top, a pixel in
+   set the margins of field pName to "2," & (kPvLift + 1) & ",2,1"
 end pvText
+
+-- The top margin that centres one line of field pName in it, the field's
+-- border (pBorder pixels) left out: kPvLift, then half the room left over.
+function pvTopMargin pName, pBorder
+   return kPvLift + max(1, (the height of field pName - 2 * pBorder - the textHeight of field pName) div 2)
+end pvTopMargin
 
 -- A label with a ground of its own, part see-through: a tag over the page.
 private command pvTag pName, pBlend
    set the opaque of field pName to true
    set the backgroundColor of field pName to kPvPage
-   set the margins of field pName to "8,2,8,2"
+   set the margins of field pName to "8," & pvTopMargin(pName, 0) & ",8,2"
    set the blendLevel of field pName to pBlend
    set the visible of field pName to false
 end pvTag
@@ -509,7 +558,7 @@ private command pvInput pName, pRect
    set the dontWrap of field pName to true
    set the showBorder of field pName to true
    set the borderWidth of field pName to 1
-   set the margins of field pName to "6,3,6,3"
+   set the margins of field pName to "6," & pvTopMargin(pName, 1) & ",6,3"
    set the textFont of field pName to pvMonoFont()
 end pvInput
 
@@ -522,7 +571,8 @@ private command pvArea pName, pRect
    set the dontWrap of field pName to false
    set the showBorder of field pName to true
    set the borderWidth of field pName to 1
-   set the margins of field pName to "6,4,6,4"
+   -- the first line two pixels inside the border (kPvLift brings it there)
+   set the margins of field pName to "6," & (kPvLift + 2) & ",6,4"
    set the vScrollbar of field pName to true
    set the textFont of field pName to pvMonoFont()
 end pvArea

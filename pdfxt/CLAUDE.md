@@ -104,6 +104,11 @@ box3dxt is the member this one was shaped on.
    `libpdfium.so` of its own; `dlopen("libpdfium.so")` finds it, and it is another build. The
    first Android 6.0 emulator run (2026-11-20) caught a bare-name fallback doing exactly that.
 
+7. **A field's first line starts 6 pixels above its top margin** (engine note 5.18). The demo's
+   builders add `kPvLift` (6) to every top margin: with the 1 they had, every label's words
+   rose 5 pixels above it and Windows cut their tops off. The drive holds every field that
+   does not scroll to its lines (`drUnplaced`).
+
 ## Status
 
 Verified natively (smoke, ASan/UBSan, x86_64 Linux; and the smoke test on every platform
@@ -118,7 +123,11 @@ person has used its window. A click or a drag on the page is driven through the 
 demo's mouse handlers call (`pvClickAt`, `pvSelectBox`), since no pointer moves there; the tour's
 first frames come from the engine's timer, and each scene is then played to its end through its
 own frames (`pvShowRun`). Its earlier, kit look met the Windows IDE on 2026-11-21 and drew two
-fields white on white under the dark appearance; this look has not met Windows yet. The Windows IDE loaded it on
+fields white on white under the dark appearance. This look met it the same day (the
+maintainer's PC, OXT-Beyond 0.2.8-dp.1): PDFium loaded and the tour ran to its end, and it
+showed the window opening partly off the screen and every label's words 5 pixels above it,
+the tops of some letters cut off. Both were fixed that day and are held by the drive; the
+fixed window has met Linux only (verified statically; needs an OXT pass on Windows). The Windows IDE loaded it on
 2026-11-21 (the maintainer's 64-bit OXT-Beyond, CI's `x86_64-win32` library): the engine
 self-test passed 64 checks and failed its 2 first-load checks, which cannot hold once PDFium
 has been loaded in the process (pdfxt had been used in that session first; loading and
