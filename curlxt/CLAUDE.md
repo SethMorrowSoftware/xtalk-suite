@@ -102,9 +102,14 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
     (`wsState`), and `cux_ws_poll` pumps without consuming the list. `cux_wait` refuses a socket.
   - **Whole messages only.** Fragments are reassembled; a message crosses into script once
     (`cux_ws_read`, into a block of its exact size, like `cux_body`).
-  - **Both queues are bounded.** Reading stops at 4 MiB (or 4096 messages) unread, so TCP slows
-    the peer; `cux_ws_send` refuses past 16 MiB unsent. `maxBodyBytes` caps one message (close
-    1009, result 23).
+  - **Both queues are bounded, and so are control frames.** Reading stops at 4 MiB (or 4096
+    messages) unread, so TCP slows the peer; `cux_ws_send` refuses past 16 MiB unsent.
+    `maxBodyBytes` caps one message (close 1009, result 23). Pings and pongs put nothing in front
+    of script, so that brake never stops them, and they have bounds of their own (2026-11-21,
+    after a review): at most ONE automatic pong waits behind the frame in flight (a later ping
+    replaces its payload, as RFC 6455 5.5.3 allows), and one pass over a socket handles at most
+    1024 control frames (`kWsControlPerPass`). A peer that pings without reading cannot grow
+    memory, and one that floods control frames cannot hold a pump.
   - **Three things libcurl 8.22 does not do, done in the shim, each measured:** it holds its
     automatic pong until the next frame (so `CURLWS_NOAUTOPONG`, and `ws_service` answers pings,
     after the frame at the head of the queue, never inside it); it does not answer a close

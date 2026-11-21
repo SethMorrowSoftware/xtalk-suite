@@ -1032,7 +1032,10 @@ Returns: 0, or a negative error.
 Description:
 The other side answers a ping with a pong. <cuInfo>(pSocket, "wsPongs")
 counts the pongs received. Pings FROM the other side are answered for
-you.
+you. When they come faster than the socket can send, the answer still
+waiting is replaced by the answer to the latest ping, as the WebSocket
+standard (RFC 6455) allows, so a peer that pings without reading cannot
+fill memory.
 
 References: cuWsNew (handler), cuInfo (handler)
 */

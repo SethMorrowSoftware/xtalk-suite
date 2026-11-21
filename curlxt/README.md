@@ -144,6 +144,16 @@ has opened one yet: needs an OXT pass there. The ABI number moved from 1 to 2, s
 native library must come from the same build, as always. There is no web (Emscripten) build of
 curlxt, so none of this reaches an HTML5 standalone; a browser has its own WebSocket.
 
+**Control frames (2026-11-21).** A review found that pings and pongs had no bound: a peer that
+pinged and never read made the shim queue one pong per ping without limit, and a flood of control
+frames could hold one pump for as long as it lasted. Now at most one answer waits behind the frame
+being sent (a later ping replaces it, as RFC 6455 allows, so the last pong out answers the last
+ping), and one pass over a socket handles at most 1024 pings and pongs. The smoke test floods
+200,000 pings at a client whose answers cannot leave, and 5,000 pongs in one write; its three new
+checks failed on the earlier shim and pass now, clean under ASan/UBSan. A script sees the
+difference only under such a flood: `wsQueuedBytes` stays small, and a burst of pongs is counted
+in `wsPongs` over several pumps instead of one.
+
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test

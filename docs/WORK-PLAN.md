@@ -839,7 +839,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
   `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
   opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
-  of it reaches an HTML5 standalone.
+  of it reaches an HTML5 standalone. A review's finding, fixed 2026-11-21: control frames
+  had no bound (a peer that pinged without reading grew the pong queue without limit, and
+  a flood of control frames held one pump); at most one automatic pong now waits behind
+  the frame in flight, and a pass handles at most 1024 control frames, both pinned by the
+  smoke test (`curlxt/README.md`, Status).
 - The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
   scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
   the engine's own sockets, launched from `start-here`. It ran start to finish the same day
