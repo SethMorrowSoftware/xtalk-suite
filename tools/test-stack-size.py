@@ -89,8 +89,10 @@ def main():
     # the b3k Kit's example game, one uiChrome call at 1104x640.
     # 58 since 2026-11-21: audioxt/examples/audioxt-demo.livecodescript, a
     # width line and a height line at kAdWidth x kAdHeight (960 x 600).
-    if "58 stack window dimension" not in out:
-        print("test-stack-size: expected 58 measured dimensions, got:\n" + out)
+    # 59 since 2026-11-21: xlsxt/examples/xlsxt-demo.livecodescript, one
+    # uiChrome call at kXdWidth x kXdHeight (960 x 640).
+    if "59 stack window dimension" not in out:
+        print("test-stack-size: expected 59 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()
