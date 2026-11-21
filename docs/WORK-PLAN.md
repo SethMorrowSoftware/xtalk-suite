@@ -1015,9 +1015,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   Later that day the demo played in that IDE (OXT-Beyond 0.2.8-dp.1) through a real sound
   device, by its own status line, meters and oscilloscope, but opened off the screen and
   froze the IDE for 59 s on opening; both were fixed the same day (engine notes 5.15 and
-  5.17), and the fixed stack file opened in 0.14 s in that release's IDE on Linux, against
-  1.8 s before (runbook section 8). Nobody has heard it: for everything beyond those runs it
-  is verified statically; needs an OXT pass.
+  5.17): the fixed stack opened in 0.14 s in that release's IDE on Linux, against 1.8 s
+  before, and in 796 ms back in the Windows IDE, on the screen (runbook section 8). Nobody
+  has heard it: for everything beyond those runs it is verified statically; needs an OXT
+  pass.
 - Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
   first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
   later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
@@ -1037,7 +1038,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
-| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening, and its stack file, fixed to open on the screen and quickly, not yet re-run there) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening; fixed the same day to open on the screen and quickly, and re-run there: 796 ms, on the screen) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
 | 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the six members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
 

@@ -121,7 +121,10 @@ Joined the suite on 2026-11-20. What has run, and where:
   own report. It opened off the screen there, and took 59 s to open; both were fixed the same
   day (the window built with messages locked and placed on the screen when it opens), and in
   that release's IDE on Linux the fixed stack file opened in 0.14 s, against 1.8 s before.
-  The fixed file has not been run on Windows yet.
+  Back on the Windows PC the fixed demo opened in 796 ms, at 160,60 inside the screen's
+  working area, the beat machine playing by its meters (a stack made in that IDE with the
+  builder's steps and the fixed script, its SHA-256 checked: the file itself could not be
+  copied there).
 - **Not yet:** nobody has HEARD it: the runs above played through the silent device or
   rendered into memory, bar the demo on Windows, which played through a real device with
   nobody listening. No engine on macOS, Android or the web has run it: on those it is

@@ -1399,7 +1399,8 @@ stack of ours open), the same file's `go` took 1.8 s and left 514
 queued (0.23 s with the project browser open). The engine alone builds that
 window in about 30 ms. What made Windows thirty times slower than Linux is not
 measured: what that IDE had open, which an open project browser walks on every
-message, is not recorded.
+message, is not recorded. Built locked, the same window opened in that Windows
+IDE in 796 ms later the same day (runbook section 8).
 
 ### 5.17 A new stack is 32,32,288,288, and a size set keeps its centre
 **OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's desktop engine (Linux,
