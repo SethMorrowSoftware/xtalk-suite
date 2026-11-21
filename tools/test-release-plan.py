@@ -898,9 +898,11 @@ MUTANTS = [
      "      run:\n        working-directory: ${{ matrix.member }}\n"
      "    steps: *cmake-member-steps\n"),
     ("the Android build loop reads every member again",
-     "          for member in $ANDROID_MEMBERS; do\n            echo \"::group::",
+     # The line after the loop's head is the emulator switch for a member
+     # built for a later Android (torrentxt), not the group marker.
+     "          for member in $ANDROID_MEMBERS; do\n            if [ -n \"$booted\" ]; then",
      "          for member in $(bash tools/build-android.sh --list | sed -n "
-     "'s/^members: *//p'); do\n            echo \"::group::"),
+     "'s/^members: *//p'); do\n            if [ -n \"$booted\" ]; then"),
     ("the Choose step writes the whole list",
      'echo "ANDROID_MEMBERS=$chosen" >> "$GITHUB_ENV"',
      'echo "ANDROID_MEMBERS=$listed" >> "$GITHUB_ENV"'),
