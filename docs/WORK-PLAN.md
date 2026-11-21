@@ -881,10 +881,16 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
   and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
   members' are. The `ships` row lists all eleven. The engine and IDE runs above used locally
-  built libraries. The web archive is the one an engine has loaded: on 2026-11-21 a web engine
-  built locally from OXT-Beyond's pull request 606 linked it from that pull request's pin
-  (this repository at 46ad996, its SHA-256 checked) and played Orb Island in Chromium. No
-  engine has loaded a desktop or Android one yet.
+  built libraries. Of those ABI 2 files three met an engine on 2026-11-21: the web archive (a
+  web engine built locally from OXT-Beyond's pull request 606 linked it from that pull
+  request's pin, this repository at 46ad996, its SHA-256 checked, and played Orb Island in
+  Chromium), the `x86_64-win32` DLL (installed in OXT-Beyond 0.2.8-dp.1's IDE on Windows, its
+  SHA-256 read there; row 2) and the `x86_64-android` library (one call in an app that
+  OXT-Beyond's pull request 606 built). All eleven were rebuilt at ABI 3 the same day (the
+  web archive by hand with the sky, commit 562242c; the ten by release run 44914775780, commit
+  938befc), and of those only the `x86_64-linux` library has met an engine: OXT-Beyond
+  0.2.8-dp.1's Linux server engine loaded it (its SHA-256 as committed) and passed the engine
+  self-test, the Kit's test and Orb Island's with it, with render3dxt and without.
 - Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
   (`--adopt box3dxt`) once this member's changes are on main.
 - The b3k game Kit (2026-11-21): `src/box3dxt-kit.livecodescript`, box2dxt's b2k Kit in 3D,
@@ -905,7 +911,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-20 (run 44806507517, commit 6d132d3, and the web archive): the first release-binaries dispatch with `members: box3dxt`, then the `ships` row | - | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed. Windows ran them on 2026-11-21 with the ABI 2 release library installed, from script in a hidden stack, the steps in a loop and not on a timer: box3dxt's README, "Status". The ABI 3 library committed since has run nowhere.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed. Windows ran them on 2026-11-21 with the ABI 2 release library installed, from script in a hidden stack, the steps in a loop and not on a timer: box3dxt's README, "Status". Of the ABI 3 libraries committed since, only the `x86_64-linux` one has met an engine: OXT-Beyond 0.2.8-dp.1's Linux server engine, 2026-11-21, under the engine, Kit and Orb Island tests, not in an IDE.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package and a place on the extensions site. PACKAGED 2026-11-21: `box3dxt-0.1.0.lce` (`org.openxtalk.library.boxthreed`, the six desktop rows and the four Android ids) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `b3LibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine). The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |

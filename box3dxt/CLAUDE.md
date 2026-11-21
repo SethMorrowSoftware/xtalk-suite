@@ -168,5 +168,7 @@ OXT-Beyond's pull request 606 built (2026-11-21). No engine on macOS has loaded 
 statically; needs an OXT pass. Release libraries were committed on 2026-11-20 at ABI 2 (six
 desktop platforms, four Android ABIs; the web archive built separately with emsdk 6.0.12), and
 the browser, Windows and Android records are of those files; the ones committed now are ABI 3
-(release run 44914775780, 2026-11-21; the web archive again built separately), and no engine
-has loaded one of them yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+(release run 44914775780, 2026-11-21; the web archive again built separately), and of them only
+the `x86_64-linux` library has met an engine (OXT-Beyond 0.2.8-dp.1's Linux server engine,
+2026-11-21: `tests/engine-selftest.lc`, `tests/engine-kit.lc` and `tests/engine-demo.lc`
+passed with it, with render3dxt and without). Open work is in the suite's `docs/WORK-PLAN.md`.

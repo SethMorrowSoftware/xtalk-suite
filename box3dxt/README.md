@@ -117,8 +117,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   a ray-triangle test of its own, and from its `.obj` file by the engine self-test.
 - **The sky** (ABI 3, 2026-11-21): `b3RenderSetSky` paints the picture behind the shapes
   from one colour at the top to another at the bottom; `b3RenderSetBackground` is unchanged.
-  Held natively by hand-worked rows and on the headless Linux server engine over a locally
-  built library; no IDE has drawn one yet: verified statically; needs an OXT pass.
+  Held natively by hand-worked rows and on the headless Linux server engine, over a locally
+  built library and then over the committed `x86_64-linux` one (below); no IDE has drawn one
+  yet: verified statically; needs an OXT pass.
 - **The renderer** (ABI 2, 2026-11-20): the smoke test holds a picture to Box3D itself (the
   shape and the distance at a pixel against a ray cast through it, over every shape kind and
   the teapot, from five cameras) and to arithmetic done by hand for one square-on box; the
@@ -171,8 +172,11 @@ Joined the suite on 2026-11-20. What has run, and where:
   `b3LibraryVersion()` ("box3dxt ABI 2; Box3D 0.2.0") in an app that OXT-Beyond's pull
   request 606 built and ran on x86_64 emulators (Android 13, and Android 16 with 16 KB pages;
   its run 44863595033). The libraries committed now are ABI 3, from release run 44914775780
-  on 2026-11-21 (the web archive built separately), tested where they were built; no engine
-  has loaded one of them yet.
+  on 2026-11-21 (the web archive built separately), tested where they were built; of them
+  only the `x86_64-linux` library has met an engine: the same day OXT-Beyond 0.2.8-dp.1's
+  Linux server engine loaded it (its SHA-256 as committed, dc3280f7...) and passed with it
+  the engine self-test (107 checks, the sky's among them), the Kit's test (204 with
+  render3dxt, 193 without) and Orb Island's (102 with render3dxt, 99 without).
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins
 it to a commit and why the shim holds every argument to stated limits before Box3D sees it.
