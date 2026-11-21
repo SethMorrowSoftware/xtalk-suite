@@ -73,6 +73,19 @@ and no engine has loaded the `x86-android` or the ARM libraries: needs an OXT pa
 that includes this extension (observed in that app: it held INTERNET with no permission of its own
 chosen).
 
+**Android 11 and later: the committed libraries do not work inside an app yet (2026-11-21).** In
+OXT-Beyond's app on an Android 13 emulator a torrent of a local file stayed in "checking files"
+at progress 0. Built for API 21, libtorrent learns the device's addresses over a netlink socket,
+which Android 11 and later refuse an app; the session then starts PAUSED, and "listen on every
+address" opens no socket (the stall, the refused socket and the paused session were observed
+there, the last on Android 16 as well; both consequences were reproduced on Linux by refusing the
+same calls). The suite's recipe now builds
+this library for API 24, **Android 7.0 and up**, where libtorrent uses `getifaddrs()` and no
+netlink socket. The four libraries in `src/code/` are still the API 21 builds until the suite's
+next release dispatch; a build for API 24 has not run on an Android yet. Until then, an app on
+Android 11 or later can call `btSessionResume` after `btStartSession` and name the address it
+listens on (`btSetString tSession, "listen_interfaces", "<address>:<port>"`).
+
 ## Install
 
 Install the packaged extension in the OpenXTalk IDE like any other. Your stack then sees

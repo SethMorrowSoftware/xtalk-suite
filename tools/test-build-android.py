@@ -88,16 +88,23 @@ def fake_ndk(tmp, name, revision, clang=True):
     return ndk
 
 
-def fake_adb(tmp, name, abilist):
-    """An adb that answers the one question build-android.sh asks a device
-    before it builds (None: there is no such device)."""
+def fake_adb(tmp, name, abilist, sdk="21"):
+    """An adb that answers the two questions build-android.sh asks a device
+    before it builds: the ABIs it runs (None: there is no such device) and
+    its Android API level (None: it does not say)."""
     path = os.path.join(tmp, name)
     with open(path, "w") as fh:
         if abilist is None:
             fh.write("#!/bin/sh\necho \"adb: device 'x' not found\" >&2\nexit 1\n")
         else:
-            # CR LF, as adb shell prints without its shell protocol.
-            fh.write("#!/bin/sh\nprintf '%s\\r\\n'\n" % abilist)
+            # The property asked for is adb's last argument; CR LF, as adb
+            # shell prints without its shell protocol.
+            fh.write("#!/bin/sh\nfor a; do last=$a; done\ncase \"$last\" in\n"
+                     "  ro.product.cpu.abilist) printf '%s\\r\\n' ;;\n"
+                     % abilist)
+            if sdk is not None:
+                fh.write("  ro.build.version.sdk) printf '%s\\r\\n' ;;\n" % sdk)
+            fh.write("esac\n")
     os.chmod(path, 0o755)
     return path
 
@@ -184,15 +191,62 @@ def main():
           'bash tools/build-android.sh "$member"' in job,
           "  ...building every member the script lists, through the script",
           "")
+    # A member built for a later Android than the suite's floor is tested on
+    # the emulator for ITS level, which the job asks the script for (a copied
+    # number would test torrentxt on an Android its library cannot load on,
+    # and the script refuses that row).
+    check('tools/build-android.sh --api "$member"' in job
+          and 'tools/android-emulator.sh start "$want"' in job
+          and "tools/android-emulator.sh stop" in job
+          and "sed -n 's/^api //p'" in job
+          and 'tools/android-emulator.sh start "$floor"' in job,
+          "  ...and booting the emulator each member's API level asks for, "
+          "read from the script", "")
 
     # 2. The pins.
     rc, out, err = run(["--pins"])
     pins = {line.split()[0]: line.split()[1:] for line in out.splitlines()}
-    check(rc == 0 and set(pins) == {"ndk", "api", "openssl", "boost"},
-          "--pins names the NDK, the API level, OpenSSL and Boost", out)
+    check(rc == 0 and set(pins) == {"ndk", "api", "api-torrentxt", "openssl",
+                                    "boost"},
+          "--pins names the NDK, the API levels, OpenSSL and Boost", out)
     check(pins.get("api") == [str(installer.ANDROID_API_FLOOR)],
           "the API level it builds for is the installer's floor",
           (pins.get("api"), installer.ANDROID_API_FLOOR))
+    # The one member with a floor of its own (torrentxt: API 24, the level
+    # at which libtorrent stops reading the network over the netlink socket
+    # Android 11 and later refuse an app). Three files hold the number: the
+    # script builds to it, the installer refuses anything else, and the
+    # emulator script must be able to boot it.
+    own = {k[len("api-"):]: v for k, v in pins.items() if k.startswith("api-")}
+    check(own == {m: [str(a)] for m, a in installer.ANDROID_API_FOR.items()},
+          "  ...and the members with a level of their own, and those "
+          "levels, are the installer's ANDROID_API_FOR",
+          (own, installer.ANDROID_API_FOR))
+    asked = {}
+    for member in members:
+        rc, out, err = run(["--api", member])
+        asked[member] = (rc, out.strip())
+    check(asked == {m: (0, str(installer.android_api_for(m))) for m in members},
+          "--api <member> answers the installer's level for every member",
+          asked)
+    rc, out, err = run(["--api", "onionxt"])
+    check(rc == 2 and not out and "not a native member" in err,
+          "  ...and refuses a name that is not a native member (exit 2)",
+          (rc, out, err))
+    done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
+                           "--apis"], capture_output=True, text=True,
+                          timeout=60)
+    boots = done.stdout.split()
+    check(done.returncode == 0 and boots[:1] == ["apis"]
+          and sorted(boots[1:], key=int) == sorted({a for _rc, a in asked.values()}, key=int),
+          "the emulator script boots exactly the API levels the members "
+          "are built for", (done.returncode, done.stdout, asked))
+    done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
+                           "start", "23"], capture_output=True, text=True,
+                          timeout=60)
+    check(done.returncode == 2 and "not an Android this script boots" in done.stderr,
+          "  ...and refuses any other level (exit 2)",
+          (done.returncode, done.stderr))
     if len(pins.get("openssl", [])) == 2 and len(pins.get("boost", [])) == 2:
         version, sha = pins["openssl"]
         check(f"openssl-{version}/openssl-{version}.tar.gz" in workflow
@@ -279,6 +333,32 @@ def main():
         check(not os.path.exists(os.path.join(ROOT, "enetxt", "src", "code",
                                               "x86-android", "enetxt.so.tmp")),
               "  ...and a failed build leaves no half-written library")
+        # The second question: which Android. A member's tests cannot load
+        # on an Android older than the level its library is built for, and
+        # that failure reads as a broken library, so it is refused before
+        # the build with the emulator to boot instead.
+        rc, out, err = run(["torrentxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-21", "x86_64,x86")))
+        check(rc == 1 and "runs Android API 21, and torrentxt is built for "
+              "API 24 or later" in err
+              and "tools/android-emulator.sh start 24" in err,
+              "torrentxt on the Android 5.0 emulator is refused, naming the "
+              "emulator to boot", (rc, err))
+        check("== build-android: torrentxt for" not in out,
+              "  ...before the build starts", out)
+        rc, out, err = run(["enetxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-mute", "x86_64,x86",
+                                                  sdk=None)))
+        check(rc == 1 and "would not say which Android it runs" in err
+              and "== build-android: enetxt for" not in out,
+              "a device that does not say which Android it runs is refused",
+              (rc, out, err))
+        rc, out, err = run(["enetxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-24", "x86_64,x86",
+                                                  sdk="24")))
+        check(rc != 0 and "== build-android: enetxt for x86-android" in out,
+              "a device NEWER than a member's level gets past the question "
+              "(a floor is a floor)", (rc, out, err))
 
     if FAILURES:
         print(f"\n{TAG}: {len(FAILURES)} FAILURE(S)")

@@ -38,6 +38,13 @@ and picture files inside them, so they run from the folder the emulator is hande
 **xlsxt joined the same day**, the same way: named in `tools/build-android.sh`, built for the four
 ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`), with no
 Android library committed yet.
+**torrentxt as committed does not work inside an app on Android 11 or later** (found 2026-11-21;
+the record is below, "The torrent stall"). Its four libraries are built for API 21, where
+libtorrent reads the network over a socket those Androids refuse an app, so a session starts
+paused and "listen on every address" opens no socket. The recipe now builds torrentxt alone for
+API 24 (Android 7.0), where libtorrent does not use that socket. The four committed libraries are
+still the API 21 builds until a release dispatch rebuilds them (the installer now refuses them);
+no library built for API 24 has run on any Android yet.
 So the seven members' `x86_64-android` libraries are: native tests run on an Android emulator,
 and loaded by an engine in an app for one call each; a member's own selftest on an Android engine
 is still owed. Every other `x86_64-android` and every `x86-android` library: native tests run on
@@ -55,7 +62,7 @@ OXT-Beyond's Android standalone builder takes an extension's native code from
 |---|---|---|---|
 | `arm64-android` | arm64-v8a | nearly every phone and tablet since about 2017 | built, not run |
 | `armv7-android` | armeabi-v7a | older and low-end 32-bit devices | built, not run |
-| `x86_64-android` | x86_64 | emulators, some Chromebooks | run on an Android 5.0 emulator |
+| `x86_64-android` | x86_64 | emulators, some Chromebooks | run on an Android 5.0 emulator (torrentxt's: Android 7.0, from its next build) |
 | `x86-android` | x86 | older emulators | run on the same emulator |
 
 The two ARM rows are the ones real devices use and the ones CI cannot run: a hosted runner runs an
@@ -71,12 +78,20 @@ export ANDROID_NDK_HOME=/path/to/android-ndk      # the pinned revision
 bash tools/build-android.sh enetxt arm64-android  # writes enetxt/src/code/arm64-android/enetxt.so
 bash tools/build-android.sh --list                # the members and platform ids
 bash tools/build-android.sh --pins                # the NDK, API level, OpenSSL and Boost pins
+bash tools/build-android.sh --api torrentxt       # the Android API level one member is built for
 ```
 
 - **One NDK, pinned** (`--pins` prints it): the revision OXT-Beyond's `config/android-ndk-version`
   names, so the libraries and the engine that loads them come from one compiler. Another revision
   is refused; `XTALK_ANDROID_ANY_NDK=1` is for a trial, and says its output must not be committed.
 - **API 21 (Android 5.0)** is the floor, as for OXT-Beyond's own Android engine.
+- **torrentxt alone is built for API 24 (Android 7.0)**, since 2026-11-21 (the owner's choice that
+  day, over keeping API 21 with a patch to libtorrent). libtorrent decides at COMPILE time how it
+  learns the device's addresses: below API 24 over a NETLINK_ROUTE socket, as on Linux; from API 24
+  with `getifaddrs()`, which bionic has from that level. Android 11 and later refuse an app the
+  netlink socket, so only the second works there ("The torrent stall" below). The cost is that an
+  app using torrentxt needs Android 7.0; every other member keeps Android 5.0. The OpenSSL torrentxt
+  links stays built for API 21, because curlxt and datachannelxt share that build.
 - **libc++ is linked into each library** (`ANDROID_STL=c++_static`). Each exports a C ABI only, so
   no C++ object crosses a library boundary; the alternative, `libc++_shared.so`, is a file every
   app would have to carry.
@@ -103,6 +118,7 @@ before anything is committed:
 | ELF class and machine match the platform id | a build for another ABI filed under this one |
 | the NDK's Android note is present | a Linux library loads nowhere on a device |
 | the note's API level is 21 or lower | a higher one may import what an older Android lacks |
+| torrentxt: the note's API level is exactly 24 | a higher one as above; a LOWER one is the build that loads and then does not work in an app on Android 11 or later |
 | everything in `DT_NEEDED` is one of Android's own libraries | notably never `libc++_shared.so` |
 | no text relocations | Android 6.0 and later refuse such a library |
 | 64-bit: every loadable segment aligned to 16 KB | Android 15's 16 KB devices |
@@ -129,6 +145,23 @@ In CI the device is an Android 5.0 x86_64 emulator, `tools/android-emulator.sh`:
 libraries are built for, on a real Android libc, loader and certificate store. Its 64-bit system
 runs 32-bit x86 programs too, so it serves both x86 rows. The job fails an emulator row in which
 any member's tests did not run.
+
+torrentxt's tests need its own floor, Android 7.0: built for API 24, the library does not load on
+the Android 5.0 image. `tools/android-emulator.sh start 24` boots the same kind of image for that
+level, the job stops the first emulator and boots that one where torrentxt comes up in the list
+(asking `tools/build-android.sh --api <member>`, never a copied number), and the build script
+refuses, before it builds, a member whose level is above the device's. None of that has run in CI
+yet: it is held by `tools/test-build-android.py` against a fake adb, and the next release dispatch
+with the Android lane is its first run.
+
+What the emulator cannot show is the failure this floor exists for. A test runs there as the shell
+user (`tools/android-run.sh`), and the refusal is Android's rule for an APP, so torrentxt's API 21
+library passed every test on it. The run that has an app is OXT-Beyond's (its Android workflow
+drives each pinned library from inside one, on Android 13 and 16). What the suite holds itself is
+the consequence: `torrent_smoke_test`'s last row asks that a new session is not paused, listens,
+and checks a local file to seeding, and on Linux the ctest `torrent_smoke_netlink_refused` runs
+that row under a preloaded library that refuses the two netlink calls and requires it to fail on
+exactly those checks (`torrentxt/tests/netlink_refused_preload.c`).
 
 **The record, 2026-11-18** (run 44379162842 from 7364c0f, read from the two emulator rows'
 logs). The boot step passed, and `tools/android-emulator.sh` fails it unless the device reports
@@ -176,8 +209,39 @@ the package, the binding resolves and that call returns; no socket was opened, n
 started, no world stepped. And the device was x86_64: the
 `x86-android` and the ARM libraries rode in the package and were not loaded.
 
+**The torrent stall, 2026-11-21** (OXT-Beyond pull request 609, its `Android builder on
+linux-x86_64` job, run 44878092625). That pull request gives the app a functional test per member
+in place of one call. On the Android 13 x86_64 emulator seven of its eight tests passed, and
+torrentxt's did not: a torrent made of a file the app had just written, added to a session
+listening on the loopback, stayed in "checking files" at progress 0 for the test's 20 s, with no
+error, while the system log showed the app refused a netlink socket (`avc: denied { bind }` on
+`netlink_route_socket`). The step stops the job, so nothing ran on the Android 16 emulator.
+As read in libtorrent 2.0.11 (the pinned source): a library built for an Android below API 24
+takes the Linux path (`TORRENT_USE_NETLINK`); a session's start-up binds a NETLINK_ROUTE socket to
+watch for address changes; Android 11 and later refuse that bind, and the `RTM_GETLINK` request
+that lists the interfaces, to an app that targets API 30 or later; and a session answers an
+exception in its own start-up by pausing itself (`session_impl::wrap`). A paused session starts no
+torrent. The same day the consequence was reproduced on x86_64 Linux, on this suite's torrentxt
+build with libtorrent 2.0.11, under a preloaded library refusing those two calls: with the bind
+refused a new session answered paused and a torrent of a local file sat at state 1 (checking
+files), progress 0, no error, which is what the app showed; with `RTM_GETLINK` refused as well, a
+session told to listen on `0.0.0.0` reported no listen port. What is OBSERVED: the stall and the
+refused bind on the emulator, and both consequences on Linux under the preload. That the session
+in the app was paused was an inference until the pull request's next run asked (run 44887565428,
+head 5ce49b7, the same job): on the Android 13 emulator and on the Android 16 one with 16 KB pages
+the test read `btSessionIsPaused` true on a new session, resumed it, and the torrent was then
+checked and seeding, its answer ending `KNOWN LIMIT: the session started paused and the test had
+to resume it`; the Android 13 system log of that run shows the app refused both `bind` and
+`nlmsg_readpriv` on `netlink_route_socket`. So OBSERVED on both emulators: a session of the API 21
+library is born paused inside an app, and resuming it is enough for a torrent on a named address.
+Not exercised there: listening on the unspecified address (the test names the loopback). The fix
+chosen is the build level (above); a torrentxt built for API 24 was built locally for
+`x86_64-android` that day and imports `getifaddrs` where the API 21 one does not (read from both
+files), and has not run anywhere.
+
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app.
+selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app;
+a torrentxt built for API 24.
 
 ## What differs on Android, per member
 
@@ -185,7 +249,7 @@ selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libra
 |---|---|---|
 | curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | tests run on the emulator 2026-11-18 (both x86 ABIs): 157 certificates read from its store. Loaded by an engine in an app 2026-11-19 (x86_64, one call, the ABI 1 build): 149 certificates on Android 16. Rebuilt at ABI 2 on 2026-11-21 and tested on the emulator again; no Android engine has loaded that build. ARM: built, not run |
 | coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
-| torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
+| torrentxt | Built for API 24 (Android 7.0), not 21: libtorrent then learns the device's addresses with `getifaddrs()` and uses no netlink socket, which Android 11 and later refuse an app. On that path libtorrent watches for no address changes (a session does not notice the device moving between networks) and, with no route table to read, listens on the unspecified address itself, which its own source calls a best effort that does not follow BEP 32 and BEP 45 for the IPv6 DHT (read in libtorrent 2.0.11, not exercised). An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | THE COMMITTED LIBRARIES ARE STILL THE API 21 BUILDS: tests run on the emulator 2026-11-18 (both x86 ABIs), loaded by an engine in an app 2026-11-19 (x86_64, one call), and on 2026-11-21 a torrent stalled in that app on Android 13 ("The torrent stall"). In an app on Android 11 or later a session of those builds starts paused: until the rebuild, `btSessionResume` it and name the address to listen on. The API 24 build: built locally once, not run. ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
@@ -210,6 +274,9 @@ nostrxt alone still ticks Internet in the IDE's standalone settings.
 
 Steps 1 to 3 were done on 2026-11-18; they stay here as the procedure for a rebuild (a moved pin,
 a shim change), which repeats 1 and 2.
+
+A rebuild owed since 2026-11-21: torrentxt's four libraries at API 24 (work plan 1.2 #32). The
+installer refuses the API 21 ones, so a dispatch with the Android lane replaces them.
 
 1. Dispatch `release-binaries.yml` with `lanes: android` on the branch that holds this page's
    tooling. Every row must be green: the two emulator rows with every member's tests run. (Done
