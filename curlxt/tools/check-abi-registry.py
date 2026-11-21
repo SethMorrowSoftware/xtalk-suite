@@ -7,6 +7,7 @@ The header is the SINGLE SOURCE OF TRUTH. Every number the binding uses is a
     CUX_ABI_VERSION        -> kABIVersion
     CUX_STATE_<NAME>       -> kState<Name>
     CUX_RESULT_CANCELLED   -> kResultCancelled
+    CUX_WS_<NAME>          -> kWs<Name>
     CUO_<NAME>             -> kOpt<Name>
     CUI_<NAME>             -> kInfo<Name>
     CUT_<NAME>             -> kText<Name>
@@ -29,6 +30,7 @@ import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREFIXES = (("CUX_STATE_", "kState"), ("CUX_RESULT_", "kResult"),
+            ("CUX_WS_", "kWs"),
             ("CUO_", "kOpt"), ("CUI_", "kInfo"), ("CUT_", "kText"))
 TEST_HOOKS = {"cux_selftest_throw"}
 
@@ -65,7 +67,7 @@ def check(header_path, lcb_path):
         elif consts[lname] != value:
             errors.append("%s is %s in the .lcb but %s = %s in the header"
                           % (lname, consts[lname], cname, value))
-    mirrored = {k for k in consts if k.startswith(("kState", "kResult", "kOpt", "kInfo", "kText"))}
+    mirrored = {k for k in consts if k.startswith(("kState", "kResult", "kWs", "kOpt", "kInfo", "kText"))}
     for extra in sorted(mirrored - set(expected)):
         errors.append("constant %s mirrors nothing in the header" % extra)
 

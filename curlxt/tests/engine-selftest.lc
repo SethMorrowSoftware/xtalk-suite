@@ -1,0 +1,781 @@
+<?lc
+-- engine-selftest.lc - curlxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's.
+-- tools/run-engine-selftest.py starts the servers it talks to (HTTP, ws://
+-- and wss://, all on 127.0.0.1) and runs it:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY HELPERS TSNET HTTP WS WSS CERT
+--      MODULE   curl.lcm, compiled from src/curl.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../curlxt for .../curlxt.so)
+--      HELPERS  src/curl-helpers.livecodescript
+--      TSNET    src/tsnet.livecodescript
+--      HTTP     http://127.0.0.1:<port>, the driver's HTTP server
+--      WS       ws://127.0.0.1:<port>, its WebSocket server (an echo)
+--      WSS      wss://127.0.0.1:<port>, the same behind TLS
+--      CERT     the PEM file of the certificate WSS presents
+--
+-- tests/curl_smoke_test.cpp proves the C shim, and tools/check-script-vectors.py
+-- runs the two script libraries on the family's interpreter over the built
+-- library. This proves what neither can: that the binding as OXT-Beyond's
+-- lc-compile builds it binds every foreign handler by name in the built
+-- library, that every argument and result marshals on the engine (text in
+-- and out as UTF-8, Data with every byte value, numbers), and that the
+-- helpers' timer delivers a WebSocket's messages through the engine's own
+-- message queue. Five parts:
+--
+--   REQUESTS, the surface stacks used before WebSockets existed, on the
+--     library that added them: the binding, the helpers and the tsNet calls;
+--   SOCKETS through the binding, read with cuWsWait: every kind of message,
+--     every way a socket ends, and the limits;
+--   SOCKETS through the helpers: cuWsOpen's messages, sent by the timer;
+--   wss://, trusted through caFile, refused without it;
+--   the SWEEP: every public handler of the binding called once with zeros.
+--     Zeros are safe by the binding's contract (handle 0 is a no-op), so a
+--     call that throws here is a binding that does not match its C
+--     definition. The driver refuses to run when the sweep misses a public
+--     handler of src/curl.lcb, so a new one cannot be left out.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS or Android. It runs
+-- a Linux x86-64 library on the Linux x86-64 server engine, against servers
+-- on the same machine.
+
+local sPassed, sFailed
+local sEvtN, sEvtSocket, sEvtWhat, sEvtValue
+local sGotIt, sTestLog, sReopenURL, sSecond
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=curlxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   replace numToCodepoint(13) with " " in pText
+   return pText
+end oneLine
+
+-- Exact comparison. The caseSensitive is handler-local (it is false again in
+-- every handler), so it is set here, where the comparison is made.
+function same pA, pB
+   set the caseSensitive to true
+   return pA is pB
+end same
+
+-- Bytes compared as bytes, whatever the engine would make of them as text.
+function sameBytes pA, pB
+   set the caseSensitive to true
+   return base64Encode(pA) is base64Encode(pB)
+end sameBytes
+
+function allBytes
+   local tRaw
+   repeat with i = 0 to 255
+      put numToByte(i) after tRaw
+   end repeat
+   return tRaw
+end allBytes
+
+-- Text with a two-byte, a three-byte and two CJK characters in it, made
+-- from code points so that this file stays ASCII.
+function sampleText
+   return "h" & numToCodepoint(233) & "llo " & numToCodepoint(10003) & " " & \
+         numToCodepoint(26085) & numToCodepoint(26412)
+end sampleText
+
+-- ---------------------------------------------------------------------
+-- What the helpers send. Messages dispatched to "this card" (the card of
+-- this script's stack) arrive here.
+-- ---------------------------------------------------------------------
+on wsEvt pSocket, pWhat, pValue
+   add 1 to sEvtN
+   put pSocket into sEvtSocket[sEvtN]
+   put pWhat into sEvtWhat[sEvtN]
+   put pValue into sEvtValue[sEvtN]
+end wsEvt
+
+on gotIt pRequest
+   put pRequest & comma after sGotIt
+end gotIt
+
+-- A handler that frees its socket inside its first message.
+on freesInside pSocket, pWhat, pValue
+   put pWhat & ";" after sTestLog
+   if pWhat is "text" then
+      get cuFree(pSocket)
+   end if
+end freesInside
+
+-- A handler that opens a second socket from inside "closed".
+on reopens pSocket, pWhat, pValue
+   put pWhat & ":" & pValue & ";" after sTestLog
+   if pWhat is "closed" then
+      put cuWsOpen(sReopenURL, empty, empty, the long id of this card, "second") into sSecond
+   end if
+end reopens
+
+on second pSocket, pWhat, pValue
+   put "second-" & pWhat & ";" after sTestLog
+   if pWhat is "open" then
+      get cuWsClose(pSocket, 1000, empty)
+   else if pWhat is "closed" then
+      get cuFree(pSocket)
+   end if
+end second
+
+command resetEvents
+   put 0 into sEvtN
+   put empty into sEvtSocket
+   put empty into sEvtWhat
+   put empty into sEvtValue
+end resetEvents
+
+function kinds
+   local tOut
+   repeat with i = 1 to sEvtN
+      put sEvtWhat[i] & comma after tOut
+   end repeat
+   if tOut is not empty then
+      delete the last char of tOut
+   end if
+   return tOut
+end kinds
+
+function hasKind pKind
+   repeat with i = 1 to sEvtN
+      if sEvtWhat[i] is pKind then
+         return true
+      end if
+   end repeat
+   return false
+end hasKind
+
+-- Let the engine deliver messages (the helpers' timer runs only then) until
+-- pCount events have arrived, or pMs milliseconds have passed.
+command waitEvents pCount, pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while sEvtN < pCount and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+end waitEvents
+
+command waitKind pKind, pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while not hasKind(pKind) and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+end waitKind
+
+command waitLog pText, pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while not (sTestLog contains pText) and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+end waitLog
+
+-- True when the helpers' timer has no pass waiting.
+function timerIdle
+   return not (the pendingMessages contains "cuPollOnce")
+end timerIdle
+
+command waitTimerIdle pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while not timerIdle() and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+end waitTimerIdle
+
+-- A socket read by hand: wait for one message, or for the socket to close.
+function nextText pSocket
+   if cuInfo(pSocket, "wsMessages") < 1 then
+      get cuWsWait(pSocket, 10000)
+   end if
+   return cuWsReadText(pSocket)
+end nextText
+
+-- These two move the socket with cuWsPoll, not cuWsWait: cuWsWait returns
+-- at once while a message is waiting (that is its contract), WITHOUT moving
+-- anything, so a loop that waits for a later state with unread messages in
+-- the queue would spin in place. The first engine run of this file did
+-- exactly that.
+command waitClosed pSocket, pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while cuInfo(pSocket, "wsState") is not 4 and the milliseconds < tEnd
+      get cuWsPoll()
+      wait 10 milliseconds
+   end repeat
+end waitClosed
+
+command waitMessages pSocket, pCount, pMs
+   local tEnd
+   put the milliseconds + pMs into tEnd
+   repeat while cuInfo(pSocket, "wsMessages") < pCount and the milliseconds < tEnd
+      get cuWsPoll()
+      wait 10 milliseconds
+   end repeat
+end waitMessages
+
+-- ---------------------------------------------------------------------
+-- The library
+-- ---------------------------------------------------------------------
+command testLibrary
+   local tHolds
+   put cuInitialize() into tHolds
+   check "cuInitialize takes a hold (and its ABI check passed)", tHolds >= 1, tHolds && cuLastError()
+   check "the library is ABI 2 with libcurl 8.22.0", \
+         cuLibraryVersion() begins with "curlxt ABI 2; libcurl/8.22.0 ", cuLibraryVersion()
+   check "no request or socket is live", cuLiveCount() is 0, cuLiveCount()
+end testLibrary
+
+-- ---------------------------------------------------------------------
+-- Requests: what stacks did before there were sockets
+-- ---------------------------------------------------------------------
+command testRequests pBase
+   local tReq, tR, tList, tEnd, tRaw, tA
+   put allBytes() into tRaw
+   put cuRequestNew("GET", pBase & "/hello") into tReq
+   check "cuRequestNew", tReq > 0, tReq && cuLastError()
+   check "cuSetHeader", cuSetHeader(tReq, "X-Test: on the engine") is 0, cuLastError()
+   check "cuSetOption", cuSetOption(tReq, "timeout", 10000) is 0, cuLastError()
+   check "cuSetTextOption", cuSetTextOption(tReq, "userAgent", "curlxt engine self-test") is 0, cuLastError()
+   check "cuStart", cuStart(tReq) is 0, cuLastError()
+   put cuWait(tReq, 10000) into tR
+   check "cuWait: the request ended", tR is 1, tR
+   check "responseCode 200", cuInfo(tReq, "responseCode") is 200, cuInfo(tReq, "responseCode")
+   check "result 0", cuInfo(tReq, "result") is 0, cuText(tReq, "error")
+   check "the body comes back", same(cuBody(tReq), "hello world"), cuBody(tReq)
+   check "bodySize", cuInfo(tReq, "bodySize") is 11, cuInfo(tReq, "bodySize")
+   check "contentType", same(cuText(tReq, "contentType"), "text/plain"), cuText(tReq, "contentType")
+   check "the response headers", cuTextData(tReq, "headers") contains "X-Served: yes", oneLine(cuTextData(tReq, "headers"))
+   check "cuFree", cuFree(tReq) is 0, cuLastError()
+
+   -- every byte value out in a body and back in the answer
+   put cuRequestNew("POST", pBase & "/echo") into tReq
+   check "cuSetBody with every byte value", cuSetBody(tReq, tRaw) is 0, cuLastError()
+   get cuStart(tReq)
+   get cuWait(tReq, 10000)
+   check "and every byte value back", sameBytes(cuBody(tReq), "POST:" & tRaw), \
+         the number of bytes of cuBody(tReq) && "bytes"
+   get cuFree(tReq)
+
+   -- in the background: cuPoll lists it once it ends
+   put cuRequestNew("GET", pBase & "/hello") into tReq
+   get cuStart(tReq)
+   put empty into tList
+   put the milliseconds + 10000 into tEnd
+   repeat while tReq is not among the items of tList and the milliseconds < tEnd
+      put cuPoll() into tList
+      if tReq is not among the items of tList then
+         wait 10 milliseconds
+      end if
+   end repeat
+   check "cuPoll lists a background request when it ends", tReq is among the items of tList, tList
+   check "and it ended well", cuInfo(tReq, "responseCode") is 200, cuInfo(tReq, "responseCode")
+   get cuFree(tReq)
+
+   -- the helpers
+   put cuRequestSync("GET", pBase & "/binary", empty, empty, empty, 10000) into tReq
+   check "cuRequestSync", tReq > 0, cuHelpersError()
+   put cuResponse(tReq) into tA
+   check "cuResponse: ok and 200", tA["ok"] and tA["responseCode"] is 200, tA["responseCode"] && tA["error"]
+   check "cuResponse: every byte value in the body", sameBytes(tA["body"], tRaw), the number of bytes of tA["body"]
+   get cuFree(tReq)
+   put empty into sGotIt
+   put cuRequestAsync("GET", pBase & "/hello", empty, empty, empty, the long id of this card, "gotIt") into tReq
+   check "cuRequestAsync", tReq > 0, cuHelpersError()
+   put the milliseconds + 10000 into tEnd
+   repeat while sGotIt is empty and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+   check "its message arrives once, through the timer, with its handle", same(sGotIt, tReq & comma), sGotIt
+   get cuFree(tReq)
+end testRequests
+
+command testTsNet pTsNet, pBase
+   local tHeaders, tOutHeaders, tResult, tBytes, tData
+   start using stack pTsNet
+   check "the tsNet layer starts", "tsNetCompat" is among the lines of the stacksInUse, the stacksInUse
+   check "tsNetVersion", same(tsNetVersion(), "1.4.5"), tsNetVersion()
+   put tsNetGetSync(pBase & "/hello", tHeaders, tOutHeaders, tResult, tBytes) into tData
+   check "tsNetGetSync", same(tData, "hello world"), tData
+   check "with its result and byte count", tResult is 200 and tBytes is 11, tResult && tBytes
+   check "and the response headers", tOutHeaders contains "X-Served: yes", oneLine(tOutHeaders)
+end testTsNet
+
+-- ---------------------------------------------------------------------
+-- Sockets through the binding, read by hand
+-- ---------------------------------------------------------------------
+command testSocketBinding pWs
+   local tSock, tR, tRaw, tUni, tList, tOk, tStart
+   put allBytes() into tRaw
+   put sampleText() into tUni
+
+   put cuWsNew(pWs & "/echo") into tSock
+   check "cuWsNew", tSock > 0, cuLastError()
+   check "a header for the upgrade", cuSetHeader(tSock, "X-Test: carried") is 0, cuLastError()
+   check "and a subprotocol", cuSetHeader(tSock, "Sec-WebSocket-Protocol: chat.v1") is 0, cuLastError()
+   check "cuStart", cuStart(tSock) is 0, cuLastError()
+   check "connecting", cuInfo(tSock, "wsState") is 1, cuInfo(tSock, "wsState")
+   put cuWsWait(tSock, 10000) into tR
+   check "cuWsWait: it opened", tR is 1 and cuInfo(tSock, "wsState") is 2, tR && cuInfo(tSock, "wsState") && cuText(tSock, "error")
+   check "the upgrade answered 101", cuInfo(tSock, "responseCode") is 101, cuInfo(tSock, "responseCode")
+   put cuWait(tSock, 0) into tR
+   check "cuWait refuses a socket", tR < 0, "it returned" && tR
+
+   check "send text", cuWsSendText(tSock, "hello") is 0, cuLastError()
+   get cuWsWait(tSock, 10000)
+   check "one message waiting", cuInfo(tSock, "wsMessages") is 1, cuInfo(tSock, "wsMessages")
+   check "of type text", cuInfo(tSock, "wsNextType") is 1, cuInfo(tSock, "wsNextType")
+   check "of its size", cuInfo(tSock, "wsNextSize") is 5, cuInfo(tSock, "wsNextSize")
+   check "text back", same(cuWsReadText(tSock), "hello"), "something else"
+   check "nothing left", cuInfo(tSock, "wsMessages") is 0, cuInfo(tSock, "wsMessages")
+   check "cuWsRead with nothing waiting is empty", cuWsRead(tSock) is empty, "not empty"
+
+   get cuWsSendText(tSock, tUni)
+   get cuWsWait(tSock, 10000)
+   check "text goes out as UTF-8 (its bytes, read back as bytes)", \
+         sameBytes(cuWsRead(tSock), textEncode(tUni, "UTF-8")), "different bytes"
+   get cuWsSendText(tSock, tUni)
+   check "and comes back as the same text", same(nextText(tSock), tUni), "different text"
+
+   check "send data", cuWsSendData(tSock, tRaw) is 0, cuLastError()
+   get cuWsWait(tSock, 10000)
+   check "binary is type 2", cuInfo(tSock, "wsNextType") is 2, cuInfo(tSock, "wsNextType")
+   check "every byte value back, unchanged", sameBytes(cuWsRead(tSock), tRaw), "different bytes"
+
+   get cuWsSendText(tSock, "!binary")
+   get cuWsWait(tSock, 10000)
+   check "a binary message the server sends", sameBytes(cuWsRead(tSock), tRaw), "different bytes"
+   get cuWsSendText(tSock, "!header")
+   check "the header and the subprotocol reached the server", same(nextText(tSock), "carried|chat.v1"), "not carried"
+   get cuWsSendText(tSock, "!frag")
+   check "a fragmented message arrives whole", same(nextText(tSock), "abcdef"), "not whole"
+   get cuWsSendText(tSock, "!burst")
+   waitMessages tSock, 5, 10000
+   put true into tOk
+   repeat with i = 0 to 4
+      if not same(cuWsReadText(tSock), "m" & i) then
+         put false into tOk
+      end if
+   end repeat
+   check "a burst arrives in order", tOk, "out of order or missing"
+   get cuWsSendText(tSock, empty)
+   get cuWsWait(tSock, 10000)
+   check "an empty message is still a message", cuInfo(tSock, "wsMessages") is 1 and cuInfo(tSock, "wsNextSize") is 0, \
+         cuInfo(tSock, "wsMessages") && cuInfo(tSock, "wsNextSize")
+   check "and reads as empty", cuWsReadText(tSock) is empty and cuInfo(tSock, "wsMessages") is 0, cuInfo(tSock, "wsMessages")
+
+   check "ping", cuWsPing(tSock, "p") is 0, cuLastError()
+   put the milliseconds into tStart
+   repeat while cuInfo(tSock, "wsPongs") < 1 and the milliseconds - tStart < 10000
+      get cuWsPoll()
+      wait 10 milliseconds
+   end repeat
+   check "the pong is counted", cuInfo(tSock, "wsPongs") is 1, cuInfo(tSock, "wsPongs")
+   check "and is not a message", cuInfo(tSock, "wsMessages") is 0, cuInfo(tSock, "wsMessages")
+   check "cuWsPoll counts what is waiting", cuWsPoll() is 0, "not 0"
+   check "nothing queued to send", cuInfo(tSock, "wsQueuedBytes") is 0, cuInfo(tSock, "wsQueuedBytes")
+   put cuPoll() into tList
+   check "cuPoll never lists a socket", tSock is not among the items of tList, tList
+
+   check "cuWsClose", cuWsClose(tSock, 1000, "done") is 0, cuLastError()
+   check "closing", cuInfo(tSock, "wsState") is 3 or cuInfo(tSock, "wsState") is 4, cuInfo(tSock, "wsState")
+   waitClosed tSock, 10000
+   check "closed when the server answers", cuInfo(tSock, "wsState") is 4, cuInfo(tSock, "wsState")
+   check "with its code and reason", cuInfo(tSock, "wsCloseCode") is 1000 and same(cuText(tSock, "wsCloseReason"), "done"), \
+         cuInfo(tSock, "wsCloseCode") && cuText(tSock, "wsCloseReason")
+   check "a close is not a failure", cuInfo(tSock, "result") is 0, cuInfo(tSock, "result")
+   check "a closed socket refuses to send", cuWsSendText(tSock, "late") is -4, "not -4"
+   check "closing a closed socket does nothing", cuWsClose(tSock, 1000, empty) is 0, cuLastError()
+   check "cuFree", cuFree(tSock) is 0, cuLastError()
+   check "a freed socket is no socket", cuInfo(tSock, "wsState") < 1, cuInfo(tSock, "wsState")
+   check "nothing live", cuLiveCount() is 0, cuLiveCount()
+end testSocketBinding
+
+-- Every way a socket ends, and the limits.
+command testSocketEndings pWs
+   local tSock, tStart, tBig
+
+   -- the server closes after a last message
+   put cuWsNew(pWs & "/echo") into tSock
+   get cuStart(tSock)
+   get cuWsWait(tSock, 10000)
+   get cuWsSendText(tSock, "!close")
+   waitClosed tSock, 10000
+   check "what arrived before the server's close can still be read", same(cuWsReadText(tSock), "last words"), "lost"
+   check "the server's code and reason", cuInfo(tSock, "wsCloseCode") is 4001 and same(cuText(tSock, "wsCloseReason"), "bye"), \
+         cuInfo(tSock, "wsCloseCode") && cuText(tSock, "wsCloseReason")
+   check "the server's close is not a failure", cuInfo(tSock, "result") is 0, cuInfo(tSock, "result")
+   get cuFree(tSock)
+
+   -- the connection is lost
+   put cuWsNew(pWs & "/echo") into tSock
+   get cuStart(tSock)
+   get cuWsWait(tSock, 10000)
+   get cuWsSendText(tSock, "!drop")
+   waitClosed tSock, 10000
+   check "a lost connection is closed 1006", cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "wsCloseCode") is 1006, \
+         cuInfo(tSock, "wsState") && cuInfo(tSock, "wsCloseCode")
+   check "and the socket says why", cuText(tSock, "error") is not empty, "no error text"
+   get cuFree(tSock)
+
+   -- a peer that never answers a close: wsCloseTimeout
+   put cuWsNew(pWs & "/mute") into tSock
+   check "wsCloseTimeout", cuSetOption(tSock, "wsCloseTimeout", 200) is 0, cuLastError()
+   get cuStart(tSock)
+   get cuWsWait(tSock, 10000)
+   put the milliseconds into tStart
+   get cuWsClose(tSock, 1000, empty)
+   waitClosed tSock, 10000
+   check "an unanswered close ends as 1006", cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "wsCloseCode") is 1006, \
+         cuInfo(tSock, "wsState") && cuInfo(tSock, "wsCloseCode")
+   check "after the wsCloseTimeout, not the default five seconds", the milliseconds - tStart < 3000, the milliseconds - tStart && "ms"
+   get cuFree(tSock)
+
+   -- the message size limit
+   put cuWsNew(pWs & "/echo") into tSock
+   get cuSetOption(tSock, "maxBodyBytes", 1000)
+   get cuStart(tSock)
+   get cuWsWait(tSock, 10000)
+   get cuWsSendText(tSock, "small")
+   check "a message under maxBodyBytes passes", same(nextText(tSock), "small"), "it did not"
+   repeat 2000 times
+      put "z" after tBig
+   end repeat
+   get cuWsSendText(tSock, tBig)
+   waitClosed tSock, 10000
+   check "a message over maxBodyBytes ends the socket with 1009", \
+         cuInfo(tSock, "wsCloseCode") is 1009 and cuInfo(tSock, "result") is 23, \
+         cuInfo(tSock, "wsCloseCode") && cuInfo(tSock, "result")
+   check "and none of it reaches script", cuInfo(tSock, "wsMessages") is 0, cuInfo(tSock, "wsMessages")
+   get cuFree(tSock)
+
+   -- it never opens
+   put cuWsNew(pWs & "/refuse") into tSock
+   get cuStart(tSock)
+   waitClosed tSock, 10000
+   check "a refused upgrade ends it, with the server's status", \
+         cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "responseCode") is 404, \
+         cuInfo(tSock, "wsState") && cuInfo(tSock, "responseCode")
+   check "and no close code: it never opened", cuInfo(tSock, "wsCloseCode") is 0 and cuText(tSock, "error") is not empty, \
+         cuInfo(tSock, "wsCloseCode")
+   check "a socket that never opened refuses to send", cuWsSendText(tSock, "x") is -4, "not -4"
+   get cuFree(tSock)
+   put cuWsNew("ws://127.0.0.1:1/") into tSock
+   get cuStart(tSock)
+   waitClosed tSock, 10000
+   check "nobody listening is curl's could-not-connect", cuInfo(tSock, "result") is 7, cuInfo(tSock, "result")
+   get cuFree(tSock)
+   check "cuWsNew refuses an address that is not ws:// or wss://", cuWsNew("http://127.0.0.1/") is 0 and cuLastError() is not empty, \
+         cuLastError()
+   check "nothing live", cuLiveCount() is 0, cuLiveCount()
+end testSocketEndings
+
+-- ---------------------------------------------------------------------
+-- Sockets through the helpers: the timer sends the messages
+-- ---------------------------------------------------------------------
+command testSocketHelpers pWs, pBase
+   local tSock, tUni, tRaw, tOk, tReq, tOpts, tEnd
+
+   put sampleText() into tUni
+   put allBytes() into tRaw
+
+   -- the everyday path: open, talk, close
+   resetEvents
+   put cuWsOpen(pWs & "/echo", "X-Test: carried" & return & "Sec-WebSocket-Protocol: chat.v1", empty, \
+         the long id of this card, "wsEvt") into tSock
+   check "cuWsOpen", tSock > 0, cuHelpersError()
+   check "one socket watched", cuWsWatchedCount() is 1, cuWsWatchedCount()
+   check "a socket is not a waiting request", cuWaitingCount() is 0, cuWaitingCount()
+   waitKind "open", 10000
+   check "the first message is open, with the socket's handle", \
+         same(kinds(), "open") and sEvtSocket[1] is tSock and sEvtValue[1] is empty, kinds()
+   get cuWsSendText(tSock, "hello")
+   waitEvents 2, 10000
+   check "text arrives as a text message", same(sEvtWhat[2], "text") and same(sEvtValue[2], "hello"), kinds()
+   get cuWsSendText(tSock, tUni)
+   waitEvents 3, 10000
+   check "UTF-8 text arrives as the same text", same(sEvtWhat[3], "text") and same(sEvtValue[3], tUni), kinds()
+   get cuWsSendData(tSock, tRaw)
+   waitEvents 4, 10000
+   check "bytes arrive as a binary message, unchanged", same(sEvtWhat[4], "binary") and sameBytes(sEvtValue[4], tRaw), kinds()
+   get cuWsSendText(tSock, "!header")
+   waitEvents 5, 10000
+   check "pHeaders reached the server", same(sEvtValue[5], "carried|chat.v1"), sEvtValue[5]
+   get cuWsSendText(tSock, "!burst")
+   waitEvents 10, 10000
+   put true into tOk
+   repeat with i = 0 to 4
+      if not same(sEvtValue[6 + i], "m" & i) then
+         put false into tOk
+      end if
+   end repeat
+   check "a burst arrives in order", tOk, kinds()
+   get cuWsSendText(tSock, "!many")
+   waitEvents 160, 20000
+   put true into tOk
+   repeat with i = 0 to 149
+      if not same(sEvtValue[11 + i], "n" & i) then
+         put false into tOk
+      end if
+   end repeat
+   check "150 messages, more than one timer pass hands over: each once, in order", tOk and sEvtN is 160, sEvtN
+   get cuWsClose(tSock, 1000, "done")
+   waitKind "closed", 10000
+   check "closed is the last message, with the code", same(sEvtWhat[sEvtN], "closed") and sEvtValue[sEvtN] is 1000, kinds()
+   check "open and closed arrive once each", the number of items of kinds() is 161, the number of items of kinds()
+   check "nothing watched after closed", cuWsWatchedCount() is 0, cuWsWatchedCount()
+   waitTimerIdle 2000
+   check "the timer stops when no socket is watched", timerIdle(), the pendingMessages
+   check "the handler frees it", cuFree(tSock) is 0, cuLastError()
+
+   -- the server closes after a last message
+   resetEvents
+   put cuWsOpen(pWs & "/echo", empty, empty, the long id of this card, "wsEvt") into tSock
+   waitKind "open", 10000
+   get cuWsSendText(tSock, "!close")
+   waitKind "closed", 10000
+   check "what arrived before the server's close comes first", same(kinds(), "open,text,closed") and sEvtValue[3] is 4001, \
+         kinds() && sEvtValue[3]
+   get cuFree(tSock)
+
+   -- it never opens
+   resetEvents
+   put cuWsOpen("ws://127.0.0.1:1/", empty, empty, the long id of this card, "wsEvt") into tSock
+   waitKind "closed", 10000
+   check "a socket that never opened sends closed 0 and no open", same(kinds(), "closed") and sEvtValue[1] is 0, \
+         kinds() && sEvtValue[1]
+   get cuFree(tSock)
+   check "a URL that is not ws:// is refused", cuWsOpen("http://127.0.0.1/", empty, empty, the long id of this card, "wsEvt") is 0, "a handle"
+   check "and cuHelpersError says why", cuHelpersError() contains "ws://", cuHelpersError()
+   put "soon" into tOpts["wsCloseTimeout"]
+   check "an option the socket cannot take is refused", cuWsOpen(pWs & "/echo", empty, tOpts, the long id of this card, "wsEvt") is 0, \
+         "a handle"
+
+   -- a socket and a request share the timer
+   resetEvents
+   put empty into sGotIt
+   put cuWsOpen(pWs & "/echo", empty, empty, the long id of this card, "wsEvt") into tSock
+   waitKind "open", 10000
+   put cuRequestAsync("GET", pBase & "/hello", empty, empty, empty, the long id of this card, "gotIt") into tReq
+   get cuWsSendText(tSock, "beside")
+   waitEvents 2, 10000
+   put the milliseconds + 10000 into tEnd
+   repeat while sGotIt is empty and the milliseconds < tEnd
+      wait 10 milliseconds with messages
+   end repeat
+   check "the socket's message arrives beside a request", same(sEvtValue[2], "beside"), kinds()
+   check "and the request reports once", same(sGotIt, tReq & comma), sGotIt
+   get cuFree(tReq)
+   check "the timer keeps running while a socket is watched", not timerIdle(), "it stopped"
+   cuWsUnwatch tSock
+   waitTimerIdle 2000
+   check "and stops once it is unwatched", timerIdle(), the pendingMessages
+   get cuWsSendText(tSock, "unheard")
+   check "an unwatched socket moves under cuWsWait and is read by hand", same(nextText(tSock), "unheard"), "it did not"
+   check "with no message sent for it", sEvtN is 2, sEvtN
+   get cuFree(tSock)
+
+   -- cuWsOpenSync, then handed to the timer
+   put cuWsOpenSync(pWs & "/echo", empty, empty, 10000) into tSock
+   check "cuWsOpenSync returns an open socket", tSock > 0 and cuInfo(tSock, "wsState") is 2, cuHelpersError()
+   check "that nothing watches", cuWsWatchedCount() is 0, cuWsWatchedCount()
+   get cuWsSendText(tSock, "sync")
+   check "read by hand", same(nextText(tSock), "sync"), "it was not"
+   resetEvents
+   cuWsWatch tSock, the long id of this card, "wsEvt"
+   get cuWsSendText(tSock, "watched now")
+   waitEvents 2, 10000
+   check "watched after it opened, it still gets open first", same(kinds(), "open,text") and same(sEvtValue[2], "watched now"), kinds()
+   get cuWsClose(tSock, 3999, empty)
+   waitKind "closed", 10000
+   check "an application close code comes back", sEvtValue[sEvtN] is 3999, sEvtValue[sEvtN]
+   get cuFree(tSock)
+   check "cuWsOpenSync of a dead port is 0, with the reason", \
+         cuWsOpenSync("ws://127.0.0.1:1/", empty, empty, 10000) is 0 and cuHelpersError() is not empty, cuHelpersError()
+
+   -- a handler may free its socket inside a message
+   put empty into sTestLog
+   put cuWsOpen(pWs & "/echo", empty, empty, the long id of this card, "freesInside") into tSock
+   waitLog "open", 10000
+   get cuWsSendText(tSock, "!burst")
+   waitLog "text", 10000
+   waitTimerIdle 2000
+   check "freed inside its first message: no more messages, no closed", same(sTestLog, "open;text;"), sTestLog
+   check "it is unwatched", cuWsWatchedCount() is 0, cuWsWatchedCount()
+
+   -- and may open another inside "closed"
+   put empty into sTestLog
+   put pWs & "/echo" into sReopenURL
+   put cuWsOpen(pWs & "/echo", empty, empty, the long id of this card, "reopens") into tSock
+   waitLog "open", 10000
+   get cuWsClose(tSock, 1000, empty)
+   waitLog "second-closed", 10000
+   check "a socket opened inside closed lives its own whole life", \
+         same(sTestLog, "open:;closed:1000;second-open;second-closed;"), sTestLog
+   get cuFree(tSock)
+   check "no pump failure recorded", cuPollLastError() is empty, cuPollLastError()
+   check "nothing live", cuLiveCount() is 0, cuLiveCount()
+end testSocketHelpers
+
+-- ---------------------------------------------------------------------
+-- wss://, against a certificate made for this run
+-- ---------------------------------------------------------------------
+command testSecure pWss, pCert
+   local tSock, tOpts, tBig
+   resetEvents
+   put pCert into tOpts["caFile"]
+   put cuWsOpen(pWss & "/echo", empty, tOpts, the long id of this card, "wsEvt") into tSock
+   waitKind "open", 10000
+   check "wss opens when the certificate is trusted (caFile)", same(kinds(), "open"), kinds() && cuText(tSock, "error")
+   get cuWsSendText(tSock, "over tls")
+   waitEvents 2, 10000
+   check "and carries messages", same(sEvtValue[2], "over tls"), kinds()
+   repeat 100000 times
+      put "t" after tBig
+   end repeat
+   get cuWsSendText(tSock, tBig)
+   waitEvents 3, 20000
+   check "a large message over TLS", same(sEvtValue[3], tBig), the number of chars of sEvtValue[3]
+   get cuWsClose(tSock, 1000, empty)
+   waitKind "closed", 10000
+   check "and closes cleanly", sEvtValue[sEvtN] is 1000, sEvtValue[sEvtN]
+   get cuFree(tSock)
+
+   resetEvents
+   put cuWsOpen(pWss & "/echo", empty, empty, the long id of this card, "wsEvt") into tSock
+   waitKind "closed", 10000
+   check "wss refuses a certificate nobody vouches for", same(kinds(), "closed"), kinds()
+   check "with curl's certificate error", cuInfo(tSock, "result") is 60, cuInfo(tSock, "result")
+   get cuFree(tSock)
+
+   put cuWsOpenSync(pWss & "/echo", empty, empty, 10000) into tSock
+   check "cuWsOpenSync refuses it too", tSock is 0 and cuHelpersError() is not empty, cuHelpersError()
+end testSecure
+
+-- ---------------------------------------------------------------------
+-- The sweep: every public handler of src/curl.lcb, called once with zeros
+-- (tools/run-engine-selftest.py refuses to run when one is missing here).
+-- ---------------------------------------------------------------------
+-- >>> SWEEP >>>
+command sweepEveryHandler
+   local tName, tReq, tCount
+   put 0 into tCount
+   try
+      put "cuInitialize" into tName
+      get cuInitialize()
+      put "cuCleanup" into tName
+      get cuCleanup()
+      put "cuLibraryVersion" into tName
+      get cuLibraryVersion()
+      put "cuLastError" into tName
+      get cuLastError()
+      put "cuClearError" into tName
+      cuClearError
+      put "cuRequestNew" into tName
+      put cuRequestNew("GET", empty) into tReq
+      if tReq > 0 then
+         get cuFree(tReq)
+      end if
+      put "cuSetHeader" into tName
+      get cuSetHeader(0, empty)
+      put "cuSetOption" into tName
+      get cuSetOption(0, "timeout", 0)
+      put "cuSetTextOption" into tName
+      get cuSetTextOption(0, "userAgent", empty)
+      put "cuSetBody" into tName
+      get cuSetBody(0, empty)
+      put "cuStart" into tName
+      get cuStart(0)
+      put "cuCancel" into tName
+      get cuCancel(0)
+      put "cuFree" into tName
+      get cuFree(0)
+      put "cuPoll" into tName
+      get cuPoll()
+      put "cuWait" into tName
+      get cuWait(0, 0)
+      put "cuInfo" into tName
+      get cuInfo(0, "state")
+      put "cuText" into tName
+      get cuText(0, "error")
+      put "cuTextData" into tName
+      get cuTextData(0, "headers")
+      put "cuBody" into tName
+      get cuBody(0)
+      put "cuLiveCount" into tName
+      get cuLiveCount()
+      put "cuWsNew" into tName
+      get cuWsNew(empty)
+      put "cuWsSendText" into tName
+      get cuWsSendText(0, empty)
+      put "cuWsSendData" into tName
+      get cuWsSendData(0, empty)
+      put "cuWsPing" into tName
+      get cuWsPing(0, empty)
+      put "cuWsClose" into tName
+      get cuWsClose(0, 0, empty)
+      put "cuWsRead" into tName
+      get cuWsRead(0)
+      put "cuWsReadText" into tName
+      get cuWsReadText(0)
+      put "cuWsPoll" into tName
+      get cuWsPoll()
+      put "cuWsWait" into tName
+      get cuWsWait(0, 0)
+      put 29 into tCount
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all " & tCount & " public handlers called with zeros, none threw", true
+   check "and none of them left a request or socket behind", cuLiveCount() is 0, cuLiveCount()
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["curlxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.curl" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & cuLibraryVersion() & return
+      testLibrary
+      start using stack $2
+      check "the helpers start", "curlHelpers" is among the lines of the stacksInUse, the stacksInUse
+      testRequests $4
+      testSocketBinding $5
+      testSocketEndings $5
+      testSocketHelpers $5, $4
+      testSecure $6, $7
+      testTsNet $3, $4
+      sweepEveryHandler
+      tsNetClose
+      check "the helpers give their hold back", cuCleanup() is 0, "holds left after the self-test's own"
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>
