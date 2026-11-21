@@ -341,7 +341,7 @@ keeping the scaffold for its report.
 | 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
 | 8 | The suite board's first engine run (D-23), in item 1's launch. PARTLY RUN 2026-09-24 (Windows): the build at 1200x640 with every row, the boot self-check green (9/0/0) with its summary note, Run all with the rows accounting for every check, box2dxt at 1200 wide, Copy results unchanged; the board review's fixes that a report can show (the merged skips, the banner, the renamed pump) ran in the day's third run. The same half ran on Linux on 2026-09-25 (2672/0/10, both loopbacks completing, Copy results by the maintainer's account), and there a SECOND Run all in one launch, TorrentXT installed (the maintainer's account): riptide's session sections green, which closed 3.1 engine #10. Windows ran the report half again that day (2653/2/10; whether a launch's first or second Run all, and how the text was copied, not stated). RAN again 2026-09-26 on Linux with the batch's paste, a fresh stack (2876/0/10): the derived stamp's boot line (`suite-board-0961bb91e5ee`, 1.2 #17), the teardown's counted ENet release (3 counted `enInitialize` calls, one `enDeinitialize` each, 1.2 #16), and by the maintainer's account a second Run all in one launch, copied with Copy results; a second report that day (5:11 PM) read the same, line for line, on its launch's on-open Run all, the only one, by the maintainer's account (box2dxt's joint handles had INFERRED it; its copying not stated). RAN on Windows that evening too, the same batch paste on a fresh stack, twice in ONE launch by the maintainer's account (2857/2/10 each; runbook section 8): the on-open Run all and a second one, each to its summary with the rows adding up, the derived stamp's boot line, the counted ENet release, and on the second run riptide's session sections green, so the second-Run-all item has run on both platforms; Copy results not stated for either. What a text report cannot show is still owed, and so are the halves of those two changes that need another stack: the rebuild over an old-stamp board (the 4:23 PM Linux stack and the Windows one were fresh by the maintainer's account; the 5:11 PM one not stated, and no text report shows a rebuild) and the counted holds beside a live `enet-selftest` | S1 item 1 | 48 | the pills' look after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; each filter and a row's Show; whether a pressed Run stays hilited and whether the press arms the run; opening, running and closing the paste beside a live `enet-selftest` loopback leaves that loopback's hosts alone, and (since 2026-09-26) closing `enet-selftest` or pressing its Re-run beside a live paste run leaves the paste's loopback hosts alone; the first open of a window built under the old `suite-board-1` stamp rebuilds it once |
-| 9 | **Android, the engine loads still owed.** The seven members' `x86_64-android` libraries were loaded by an engine on 2026-11-19, one call each, in an app OXT-Beyond's CI built and ran on x86_64 emulators (the record is in [ANDROID.md](ANDROID.md), "The first engine load"; its Android workflow repeats that probe whenever its pins move). Still owed: the same app on an arm64 device or emulator (no ARM library has executed anywhere), and on a 32-bit x86 system for `x86-android`; each extension's ABI check; each member's selftest where it has one that fits a phone; box3dxt's, render3dxt's and xlsxt's libraries once OXT-Beyond pins them | an Android device or emulator, OXT-Beyond | - | all seven LOADED at their ABIs on arm64 (the first execution of any ARM library); curlxt fetches an https URL against the system store; the record names the device, Android version and library hashes |
+| 9 | **Android, the engine loads still owed.** The seven members' `x86_64-android` libraries were loaded by an engine on 2026-11-19, one call each, in an app OXT-Beyond's CI built and ran on x86_64 emulators (the record is in [ANDROID.md](ANDROID.md), "The first engine load"; its Android workflow repeats that probe whenever its pins move). Still owed: the same app on an arm64 device or emulator (no ARM library has executed anywhere), and on a 32-bit x86 system for `x86-android`; each extension's ABI check; each member's selftest where it has one that fits a phone; box3dxt's, render3dxt's, xlsxt's, webpxt's and barcodext's libraries once OXT-Beyond pins them | an Android device or emulator, OXT-Beyond | - | all seven LOADED at their ABIs on arm64 (the first execution of any ARM library); curlxt fetches an https URL against the system store; the record names the device, Android version and library hashes |
 
 ### 1.4 Owner calls this plan waits on
 
@@ -1046,7 +1046,70 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
 | 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
-| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the six members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the eight members with no harness (audioxt, barcodext, box3dxt, curlxt, nocloud, render3dxt, webpxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
+
+### 2.14 webpxt
+
+- Joined 2026-11-20: libwebp 1.6.0 (pinned to the commit of its tag) behind the `wpx_*` C
+  shim (ABI 1) and the `wp*` binding. Records: the shim's smoke test and random-input test,
+  clean under ASan/UBSan, also as a 32-bit build and as WebAssembly under node; and
+  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally
+  built library (2026-11-20), which its native lane repeats on every change. The engine
+  loads of 2026-11-21 are under Binaries; beyond those runs it is verified statically; needs
+  an OXT pass.
+- Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44846691681 from
+  527d109, commit 21f75b8: six desktop rows and four Android ids, ABI 1), beside the web
+  archive committed before it (527d109), built with emsdk 6.0.12 outside that workflow as the
+  other members' are. The `ships` row lists all eleven. On 2026-11-21
+  `tests/engine-selftest.lc` passed over the committed `x86_64-linux` library on the same
+  server engine (79 checks, none failed). The same day the IDE on the maintainer's Windows PC
+  (OXT-Beyond 0.2.8-dp.1, 64-bit) loaded the committed `x86_64-win32` library as an installed
+  extension: `wpLibraryVersion()` answered, and the community gallery's WebP Studio encoded a
+  picture and decoded it back (runbook section 8). OXT-Beyond's Android check app (its pull
+  request 614, run 44906425449) called `wpLibraryVersion()` on an Android 16 x86_64 emulator.
+  No engine has loaded the other committed libraries.
+- Publishing: `SethMorrowSoftware/webpxt` exists, empty; a publish-members run adopts it
+  (`--adopt webpxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | DONE 2026-11-21 (run 44846691681, commit 21f75b8, and the web archive): the first release-binaries dispatch with `members: webpxt`, then the `ships` row | - | - | `webpxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `wpLibraryVersion()`, a WebP file decoded into an image object and that image encoded back, an animation stepped, on Windows, Linux and a Mac. (Windows, 2026-11-21: installed, `wpLibraryVersion()`, and WebP Studio's first scene, which encodes a picture and decodes it back; no animation stepped there yet.) | S1, after #1 | - | each answers as `webpxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/webpxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `wpLibraryVersion()` answers in the web IDE |
+| 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's webpxt row has a pill and a Run |
+| 6 | A demo stack (open a WebP file, show it, save an image as WebP; the kit's look) | coding | - | a paste-and-run example in `webpxt/examples/` |
+| 7 | Adopt and publish `SethMorrowSoftware/webpxt` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+
+### 2.15 barcodext
+
+- Joined 2026-11-20: zxing-cpp 3.1.1 (pinned to the commit of its tag, with the Zint backend
+  its writer is built on) behind the `bcx_*` C++ shim (ABI 1) and the `bc*` binding.
+  Records: the shim's smoke test (every kind the library writes is created and read back)
+  and random-input test, clean under ASan/UBSan, also as a 32-bit build and as WebAssembly
+  under node; and `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine
+  over a locally built library (2026-11-20), which its native lane repeats on every change.
+  Every picture read so far was drawn by the library's own writer. The engine loads of
+  2026-11-21 are under Binaries; beyond those runs it is verified statically; needs an OXT
+  pass.
+- Binaries and publishing: as webpxt's (`SethMorrowSoftware/barcodext` exists, empty); its
+  engine self-test passed over the committed `x86_64-linux` library on 2026-11-21 too (80
+  checks, none failed). The same day its `x86_64-win32` library loaded in the Windows IDE as
+  webpxt's did (`bcLibraryVersion()` answered, and the gallery's Barcode Studio made a QR Code
+  and read it back; runbook section 8), and its `x86_64-android` one answered
+  `bcLibraryVersion()` in OXT-Beyond's Android check app. No engine has loaded the other
+  committed libraries.
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | DONE 2026-11-21 (run 44846691681, commit 21f75b8, and the web archive): the first release-binaries dispatch with `members: barcodext`, then the `ships` row | - | - | `barcodext/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `bcLibraryVersion()`, a QR Code created into an image object and read back from its `imageData`, on Windows, Linux and a Mac. (Windows, 2026-11-21: installed, `bcLibraryVersion()`, and Barcode Studio's first scene, a QR Code made and read back.) | S1, after #1 | - | each answers as `barcodext/docs/api-reference.md` says |
+| 3 | A read of real photographs: a phone picture of a printed QR Code, an EAN-13 on a product, a turned and a poorly lit one | S1, after #1 | - | each is read, or the limit is written into `barcodext/docs/getting-started.md` |
+| 4 | The web archive (`wasm32-emscripten/barcodext.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `bcLibraryVersion()` answers in the web IDE |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's barcodext row has a pill and a Run |
+| 7 | A demo stack (type text, see its QR Code; drop a picture, see what it holds; the kit's look) | coding | - | a paste-and-run example in `barcodext/examples/` |
+| 8 | Adopt and publish `SethMorrowSoftware/barcodext` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
 
 ---
 

@@ -1,0 +1,391 @@
+<?lc
+-- engine-selftest.lc - webpxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   webpxt.lcm, compiled from src/webpxt.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../webpxt for .../webpxt.so)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that bytes cross both ways whole (a script's binary string in, an
+-- engine value out, zero bytes included), that a picture array carries what
+-- an image object's imageData and alphaData properties take, and that a
+-- refused call comes back as empty, never as a script error.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web. It runs the Linux x86-64 library on the Linux x86-64 server engine.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=webpxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- A test picture in the engine's layout: imageData (unused byte, red, green,
+-- blue) and alphaData, as binary strings. pKind "blocks" has hard edges and
+-- every byte value; "smooth" is a gradient.
+function makePixels pWidth, pHeight, pKind
+   local tOut, tX, tY
+   repeat with tY = 0 to pHeight - 1
+      repeat with tX = 0 to pWidth - 1
+         if pKind is "smooth" then
+            put numToByte(0) & numToByte(tX * 255 div (pWidth - 1)) & numToByte(tY * 255 div (pHeight - 1)) \
+                  & numToByte((tX + tY) * 255 div (pWidth + pHeight)) after tOut
+         else
+            put numToByte(0) & numToByte((tX * 37 + tY * 11) mod 256) & numToByte((tX div 4 + tY div 4) mod 2 * 255) \
+                  & numToByte((tX * tY) mod 256) after tOut
+         end if
+      end repeat
+   end repeat
+   return tOut
+end makePixels
+
+function makeAlpha pWidth, pHeight
+   local tOut, tX, tY
+   repeat with tY = 0 to pHeight - 1
+      repeat with tX = 0 to pWidth - 1
+         if tX is 0 then
+            put numToByte(0) after tOut
+         else
+            put numToByte((tX * 255) div (pWidth - 1)) after tOut
+         end if
+      end repeat
+   end repeat
+   return tOut
+end makeAlpha
+
+-- The colour of two imageData strings compared: bytes 2 to 4 of every pixel.
+-- Byte 1 is the engine's unused byte, which each side fills as it likes.
+function sameColour pA, pB
+   local tI, tCount
+   if the number of bytes of pA is not the number of bytes of pB then return false
+   put the number of bytes of pA div 4 into tCount
+   repeat with tI = 0 to tCount - 1
+      if byte (tI * 4 + 2) to (tI * 4 + 4) of pA is not byte (tI * 4 + 2) to (tI * 4 + 4) of pB then return false
+   end repeat
+   return true
+end sameColour
+
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", wpABIVersion() is 1, wpABIVersion()
+   check "version text", wpLibraryVersion() begins with "webpxt ABI 1; libwebp 1.6.", wpLibraryVersion()
+   check "no error before any call", wpLastError() is empty, wpLastError()
+   check "nothing open", wpAnimOpenCount() is 0 and wpAnimEncoderOpenCount() is 0, wpAnimOpenCount() && wpAnimEncoderOpenCount()
+end testLibrary
+
+command testLossless
+   local tPixels, tAlpha, tFile, tInfo, tPicture
+   put makePixels(31, 17, "blocks") into tPixels
+   put makeAlpha(31, 17) into tAlpha
+   put wpEncodeLossless(tPixels, tAlpha, 31, 17) into tFile
+   check "a lossless file is written", the number of bytes of tFile > 20 and byte 1 to 4 of tFile is "RIFF" and byte 9 to 12 of tFile is "WEBP", \
+         the number of bytes of tFile && wpLastError()
+   check "a good call leaves no error", wpLastError() is empty, wpLastError()
+
+   put wpInfo(tFile) into tInfo
+   check "info is an array of seven keys", tInfo is an array and the number of lines of the keys of tInfo is 7, the keys of tInfo
+   check "info: size", tInfo["width"] is 31 and tInfo["height"] is 17, tInfo["width"] && tInfo["height"]
+   check "info: Booleans come back as Booleans", tInfo["alpha"] is true and tInfo["animated"] is false, tInfo["alpha"] && tInfo["animated"]
+   check "info: frames, loops, compression", tInfo["frames"] is 1 and tInfo["loops"] is 0 and tInfo["compression"] is "lossless", \
+         tInfo["frames"] && tInfo["loops"] && tInfo["compression"]
+
+   put wpDecode(tFile) into tPicture
+   check "decode gives a picture array", tPicture is an array and tPicture["width"] is 31 and tPicture["height"] is 17, \
+         tPicture["width"] && tPicture["height"] && wpLastError()
+   check "imageData is 4 bytes a pixel, alphaData 1", the number of bytes of tPicture["imageData"] is 31 * 17 * 4 \
+         and the number of bytes of tPicture["alphaData"] is 31 * 17, \
+         the number of bytes of tPicture["imageData"] && the number of bytes of tPicture["alphaData"]
+   check "lossless: every colour byte comes back (zero bytes included)", sameColour(tPicture["imageData"], tPixels), "the colour differs"
+   check "lossless: the alpha comes back byte for byte", tPicture["alphaData"] is tAlpha, "the alpha differs"
+   check "translucent is a Boolean", tPicture["translucent"] is true, tPicture["translucent"]
+
+   -- no alpha: empty crosses the typed boundary as an empty Data
+   put wpEncodeLossless(tPixels, empty, 31, 17) into tFile
+   check "empty alphaData is a solid picture", the number of bytes of tFile > 20 and wpLastError() is empty, wpLastError()
+   put wpInfo(tFile) into tInfo
+   check "the file says it has no alpha", tInfo["alpha"] is false, tInfo["alpha"]
+   put wpDecode(tFile) into tPicture
+   check "a solid picture: colour kept, alpha all 255, not translucent", sameColour(tPicture["imageData"], tPixels) \
+         and tPicture["translucent"] is false and byteToNum(byte 1 of tPicture["alphaData"]) is 255 \
+         and byteToNum(byte -1 of tPicture["alphaData"]) is 255, tPicture["translucent"]
+end testLossless
+
+command testLossy
+   local tPixels, tSmall, tGood, tPicture, tInfo, tThumb
+   put makePixels(96, 64, "smooth") into tPixels
+   put wpEncode(tPixels, empty, 96, 64, 15) into tSmall
+   put wpEncode(tPixels, empty, 96, 64, 95) into tGood
+   check "lossy files are written", the number of bytes of tSmall > 20 and the number of bytes of tGood > 20, wpLastError()
+   check "a lower quality is a smaller file", the number of bytes of tSmall < the number of bytes of tGood, \
+         the number of bytes of tSmall && the number of bytes of tGood
+   put wpInfo(tGood) into tInfo
+   check "info says lossy", tInfo["compression"] is "lossy" and tInfo["width"] is 96, tInfo["compression"]
+   put wpDecode(tGood) into tPicture
+   check "a lossy file decodes to its size", tPicture["width"] is 96 and tPicture["height"] is 64, wpLastError()
+   -- the middle pixel of a smooth gradient survives quality 95 within a few levels
+   check "a lossy pixel is close to what went in", \
+         abs(byteToNum(byte ((32 * 96 + 48) * 4 + 2) of tPicture["imageData"]) - byteToNum(byte ((32 * 96 + 48) * 4 + 2) of tPixels)) < 12, \
+         byteToNum(byte ((32 * 96 + 48) * 4 + 2) of tPicture["imageData"])
+   -- numbers may arrive as text: a script's "80" is a number to the typed boundary
+   check "numbers given as text are numbers", the number of bytes of wpEncode(tPixels, empty, "96", "64", "80") > 20, wpLastError()
+   check "every setting: lossless at effort 0", the number of bytes of wpEncodeAdvanced(tPixels, empty, 96, 64, 50, true, 0) > 20, wpLastError()
+   check "every setting: lossy at effort 6", the number of bytes of wpEncodeAdvanced(tPixels, empty, 96, 64, 50, false, 6) > 20, wpLastError()
+
+   put wpDecodeScaled(tGood, 48, 32) into tThumb
+   check "scaled to 48 x 32", tThumb["width"] is 48 and tThumb["height"] is 32 and the number of bytes of tThumb["imageData"] is 48 * 32 * 4, \
+         tThumb["width"] && tThumb["height"] && wpLastError()
+   put wpDecodeScaled(tGood, 24, 0) into tThumb
+   check "a width alone keeps the shape", tThumb["width"] is 24 and tThumb["height"] is 16, tThumb["width"] && tThumb["height"]
+   put wpDecodeScaled(tGood, 0, 8) into tThumb
+   check "a height alone keeps the shape", tThumb["width"] is 12 and tThumb["height"] is 8, tThumb["width"] && tThumb["height"]
+end testLossy
+
+-- A refused call is empty and an explanation, never a script error.
+command testRefusals
+   local tPixels, tFile, tResult
+   put makePixels(8, 8, "blocks") into tPixels
+   put wpEncodeLossless(tPixels, empty, 8, 8) into tFile
+
+   put wpDecode(empty) into tResult
+   check "decode of empty is empty, with a reason", tResult is empty and wpLastError() is not empty, wpLastError()
+   put wpDecode("this is not a picture at all") into tResult
+   check "decode of text is empty, and says it is not WebP", tResult is empty and wpLastError() contains "not a WebP", wpLastError()
+   put wpDecode(byte 1 to 20 of tFile) into tResult
+   check "decode of a cut file is empty, with a reason", tResult is empty and wpLastError() is not empty, wpLastError()
+   put wpInfo(empty) into tResult
+   check "info of empty is empty", tResult is empty and wpLastError() is not empty, wpLastError()
+   put wpInfo("RIFF") into tResult
+   check "info of four bytes is empty", tResult is empty, tResult
+   put wpDecodeScaled(tFile, 0, 0) into tResult
+   check "a scaled size of 0 x 0 is refused", tResult is empty and wpLastError() is not empty, wpLastError()
+   put wpDecodeScaled(tFile, -3, 5) into tResult
+   check "a negative size is refused", tResult is empty, tResult
+
+   put wpEncode(empty, empty, 8, 8, 80) into tResult
+   check "encode of no pixels is empty, with a reason", tResult is empty and wpLastError() contains "imageData", wpLastError()
+   put wpEncode(byte 1 to -2 of tPixels, empty, 8, 8, 80) into tResult
+   check "imageData one byte short is refused", tResult is empty and wpLastError() contains "imageData", wpLastError()
+   put wpEncode(tPixels, "abc", 8, 8, 80) into tResult
+   check "alphaData of the wrong length is refused", tResult is empty and wpLastError() contains "alphaData", wpLastError()
+   put wpEncode(tPixels, empty, 8, 9, 80) into tResult
+   check "a size the bytes do not match is refused", tResult is empty, tResult
+   put wpEncode(tPixels, empty, 0, 0, 80) into tResult
+   check "a 0 x 0 picture is refused", tResult is empty, tResult
+   put wpEncode(tPixels, empty, 8, 8, 101) into tResult
+   check "quality over 100 is refused", tResult is empty and wpLastError() contains "quality", wpLastError()
+   put wpEncodeAdvanced(tPixels, empty, 8, 8, 80, false, 7) into tResult
+   check "effort over 6 is refused", tResult is empty and wpLastError() contains "effort", wpLastError()
+   put wpEncode(tPixels, empty, 8, 8, 80) into tResult
+   check "and the next good call clears the error", tResult is not empty and wpLastError() is empty, wpLastError()
+end testRefusals
+
+command testAnimation
+   local tWriter, tFrames, tAlpha, tFile, tInfo, tAnim, tFrame, tI, tDurations, tOk
+   put "120,40,250" into tDurations
+   put makeAlpha(20, 12) into tAlpha
+   put wpAnimEncoderCreate(20, 12, 2, 75, true) into tWriter
+   check "an animation writer", tWriter > 0 and wpAnimEncoderIsValid(tWriter) is true and wpAnimEncoderOpenCount() is 1, tWriter && wpLastError()
+   repeat with tI = 1 to 3
+      put makePixels(20, 12, item (tI mod 2 + 1) of "blocks,smooth") into tFrames[tI]
+      put wpAnimEncoderAddFrame(tWriter, tFrames[tI], tAlpha, item tI of tDurations) into tOk
+      check "frame" && tI && "added (a Boolean)", tOk is true, tOk && wpLastError()
+   end repeat
+   check "three frames counted", wpAnimEncoderFrameCount(tWriter) is 3, wpAnimEncoderFrameCount(tWriter)
+   check "a frame of the wrong size is refused (false), the writer lives", \
+         wpAnimEncoderAddFrame(tWriter, "abcd", empty, 100) is false and wpLastError() is not empty and wpAnimEncoderIsValid(tWriter) is true, wpLastError()
+   check "a frame shown for 0 ms is refused", wpAnimEncoderAddFrame(tWriter, tFrames[1], empty, 0) is false, wpLastError()
+   put wpAnimEncoderFinish(tWriter) into tFile
+   check "the animation is written", the number of bytes of tFile > 40 and byte 9 to 12 of tFile is "WEBP", the number of bytes of tFile && wpLastError()
+   check "finish closes the writer", wpAnimEncoderIsValid(tWriter) is false and wpAnimEncoderOpenCount() is 0, wpAnimEncoderOpenCount()
+   check "a finished writer gives empty", wpAnimEncoderFinish(tWriter) is empty and wpAnimEncoderFrameCount(tWriter) is 0, wpLastError()
+
+   put wpInfo(tFile) into tInfo
+   check "info of the animation", tInfo["animated"] is true and tInfo["frames"] is 3 and tInfo["loops"] is 2 and tInfo["width"] is 20 and tInfo["height"] is 12, \
+         tInfo["animated"] && tInfo["frames"] && tInfo["loops"]
+
+   put wpAnimOpen(tFile) into tAnim
+   check "the animation opens", tAnim > 0 and wpAnimIsValid(tAnim) is true and wpAnimOpenCount() is 1, tAnim && wpLastError()
+   check "its size, frames and loops", wpAnimWidth(tAnim) is 20 and wpAnimHeight(tAnim) is 12 and wpAnimFrameCount(tAnim) is 3 and wpAnimLoopCount(tAnim) is 2, \
+         wpAnimWidth(tAnim) && wpAnimHeight(tAnim) && wpAnimFrameCount(tAnim) && wpAnimLoopCount(tAnim)
+   repeat with tI = 1 to 3
+      put wpAnimNextFrame(tAnim) into tFrame
+      check "frame" && tI && "index and duration", tFrame["index"] is tI and tFrame["duration"] is item tI of tDurations, \
+            tFrame["index"] && tFrame["duration"] && wpLastError()
+      check "frame" && tI && "alpha is what went in", tFrame["alphaData"] is tAlpha, "the alpha differs"
+   end repeat
+   put wpAnimNextFrame(tAnim) into tFrame
+   check "after the last frame: empty, and no error", tFrame is empty and wpLastError() is empty, wpLastError()
+   wpAnimRewind tAnim
+   put wpAnimNextFrame(tAnim) into tFrame
+   check "rewound: frame 1 again", tFrame["index"] is 1 and tFrame["width"] is 20, tFrame["index"]
+   wpAnimClose tAnim
+   check "closed", wpAnimIsValid(tAnim) is false and wpAnimOpenCount() is 0, wpAnimOpenCount()
+   wpAnimClose tAnim
+   wpAnimRewind tAnim
+   put wpAnimNextFrame(tAnim) into tFrame
+   check "a closed handle is harmless", tFrame is empty and wpAnimWidth(tAnim) is 0 and wpAnimFrameCount(tAnim) is 0, wpAnimWidth(tAnim)
+
+   put wpDecode(tFile) into tFrame
+   check "a plain decode of an animation is its first frame", tFrame["width"] is 20 and tFrame["alphaData"] is tAlpha, wpLastError()
+   check "opening junk gives 0", wpAnimOpen("junk") is 0 and wpLastError() is not empty, wpLastError()
+
+   put wpAnimEncoderCreate(20, 12, 0, 75, false) into tWriter
+   wpAnimEncoderDiscard tWriter
+   check "a discarded writer is gone", wpAnimEncoderIsValid(tWriter) is false and wpAnimEncoderOpenCount() is 0, wpAnimEncoderOpenCount()
+   wpAnimEncoderDiscard tWriter
+   check "a writer of no size is refused", wpAnimEncoderCreate(0, 0, 0, 75, false) is 0 and wpLastError() is not empty, wpLastError()
+end testAnimation
+
+-- The reason the picture is in the engine's layout: an image object takes
+-- it, and gives it back, with no conversion. (The server engine has no
+-- window, but it has image objects.)
+command testImageObject
+   local tPixels, tAlpha, tPicture, tAgain
+   put makePixels(24, 10, "blocks") into tPixels
+   put makeAlpha(24, 10) into tAlpha
+   put wpDecode(wpEncodeLossless(tPixels, tAlpha, 24, 10)) into tPicture
+   try
+      create stack "webpxtSelftest"
+      set the defaultStack to "webpxtSelftest"
+      create image "picture"
+      set the width of image "picture" to tPicture["width"]
+      set the height of image "picture" to tPicture["height"]
+      set the imageData of image "picture" to tPicture["imageData"]
+      set the alphaData of image "picture" to tPicture["alphaData"]
+   catch tError
+      put "INFO this engine builds no image object here (" & oneLine(line 1 of tError) & "): the image checks are skipped" & return
+      exit testImageObject
+   end try
+   check "an image object takes the decoded imageData", sameColour(the imageData of image "picture", tPixels), "the colour differs"
+   check "and the decoded alphaData", the alphaData of image "picture" is tAlpha, "the alpha differs"
+   put wpDecode(wpEncodeLossless(the imageData of image "picture", the alphaData of image "picture", \
+         the width of image "picture", the height of image "picture")) into tAgain
+   check "an image object's own properties encode and come back", sameColour(tAgain["imageData"], tPixels) and tAgain["alphaData"] is tAlpha, \
+         wpLastError()
+   delete stack "webpxtSelftest"
+end testImageObject
+
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get wpAnimWidth(empty)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty handle is a catchable script error (pass 0, not empty)", tThrew, "wpAnimWidth(empty) did not throw on this engine"
+   check "0 is the safe no-handle", wpAnimWidth(0) is 0 and wpAnimIsValid(0) is false, wpAnimWidth(0)
+end testTypedBoundary
+
+-- Every public handler, called once with zeros and empties: none may throw.
+-- tools/check-shim-coverage.py holds this list to the binding's public
+-- handlers, so a new one cannot be left out.
+command sweepEveryHandler
+   local tName
+   try
+      put "wpABIVersion" into tName
+      get wpABIVersion()
+      put "wpLibraryVersion" into tName
+      get wpLibraryVersion()
+      put "wpLastError" into tName
+      get wpLastError()
+      put "wpInfo" into tName
+      get wpInfo(empty)
+      put "wpDecode" into tName
+      get wpDecode(empty)
+      put "wpDecodeScaled" into tName
+      get wpDecodeScaled(empty, 0, 0)
+      put "wpEncode" into tName
+      get wpEncode(empty, empty, 0, 0, 0)
+      put "wpEncodeLossless" into tName
+      get wpEncodeLossless(empty, empty, 0, 0)
+      put "wpEncodeAdvanced" into tName
+      get wpEncodeAdvanced(empty, empty, 0, 0, 0, false, 0)
+      put "wpAnimOpen" into tName
+      get wpAnimOpen(empty)
+      put "wpAnimClose" into tName
+      wpAnimClose 0
+      put "wpAnimIsValid" into tName
+      get wpAnimIsValid(0)
+      put "wpAnimWidth" into tName
+      get wpAnimWidth(0)
+      put "wpAnimHeight" into tName
+      get wpAnimHeight(0)
+      put "wpAnimFrameCount" into tName
+      get wpAnimFrameCount(0)
+      put "wpAnimLoopCount" into tName
+      get wpAnimLoopCount(0)
+      put "wpAnimNextFrame" into tName
+      get wpAnimNextFrame(0)
+      put "wpAnimRewind" into tName
+      wpAnimRewind 0
+      put "wpAnimOpenCount" into tName
+      get wpAnimOpenCount()
+      put "wpAnimEncoderCreate" into tName
+      get wpAnimEncoderCreate(0, 0, 0, 0, false)
+      put "wpAnimEncoderAddFrame" into tName
+      get wpAnimEncoderAddFrame(0, empty, empty, 0)
+      put "wpAnimEncoderIsValid" into tName
+      get wpAnimEncoderIsValid(0)
+      put "wpAnimEncoderFrameCount" into tName
+      get wpAnimEncoderFrameCount(0)
+      put "wpAnimEncoderFinish" into tName
+      get wpAnimEncoderFinish(0)
+      put "wpAnimEncoderDiscard" into tName
+      wpAnimEncoderDiscard 0
+      put "wpAnimEncoderOpenCount" into tName
+      get wpAnimEncoderOpenCount()
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: every public handler called with zeros and empties, none threw", true
+end sweepEveryHandler
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["webpxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.webpxt" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & wpLibraryVersion() & return
+      testLibrary
+      testLossless
+      testLossy
+      testRefusals
+      testAnimation
+      testImageObject
+      testTypedBoundary
+      sweepEveryHandler
+      check "nothing is left open", wpAnimOpenCount() is 0 and wpAnimEncoderOpenCount() is 0, wpAnimOpenCount() && wpAnimEncoderOpenCount()
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

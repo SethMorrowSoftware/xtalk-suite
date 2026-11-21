@@ -111,6 +111,10 @@ LCB_LIBS = {
     "curlxt/src/curl.lcb": ("cu",),
     # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
     "xlsxt/src/xlsxt.lcb": ("xl",),
+    # barcodext and webpxt joined 2026-11-20. No other prefix begins with
+    # "bc" or "wp", and neither begins another.
+    "barcodext/src/barcodext.lcb": ("bc",),
+    "webpxt/src/webpxt.lcb": ("wp",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")

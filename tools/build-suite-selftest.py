@@ -211,6 +211,14 @@ NO_HARNESS = {
                   "and its two engine tests on the headless server engine "
                   "run in its native lane "
                   "(render3dxt/tests/engine-selftest.lc, engine-interop.lc)",
+    "barcodext": "joined 2026-11-20 with no in-engine harness in the paste "
+                 "yet; its native smoke and fuzz tests (ASan/UBSan) and its "
+                 "own engine self-test on the headless server engine run in "
+                 "its native lane (barcodext/tests/engine-selftest.lc)",
+    "webpxt": "joined 2026-11-20 with no in-engine harness in the paste yet; "
+              "its native smoke and fuzz tests (ASan/UBSan) and its own "
+              "engine self-test on the headless server engine run in its "
+              "native lane (webpxt/tests/engine-selftest.lc)",
     "xlsxt": "joined 2026-11-20 with no in-engine harness in the paste yet; "
              "its native smoke and fuzz tests (ASan/UBSan) and its own engine "
              "self-test on the headless server engine run in its native lane "
