@@ -383,10 +383,14 @@ worse than no gate, because it answers the question nobody asks twice.
   status. The job first ran on 2026-11-18 (run 44379162842 from 7364c0f, `commit_mode: none`):
   all four rows green, every member's tests run on the emulator for both x86 ABIs. The same day
   run 44391791349 from 17b1f93 (green again) committed the twenty-eight libraries, commit
-  5aa3ad4, and every member's `ships` row names the four ids since. No ARM library and no engine
-  on Android has run any of them. The four members that open sockets declare
+  5aa3ad4, and every member's `ships` row names the four ids since. An engine first loaded them
+  on 2026-11-19: OXT-Beyond pinned the twenty-eight (its pull request 572) and its CI ran an app
+  with the seven extensions on x86_64 emulators, each library answering ONE call; no member's
+  selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
+  one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238);
+  the engine load was of its ABI 1 files. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
-  builder writes into an app's manifest (verified statically).
+  builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **Companions (2026-11-20).** pdfxt does not build or link PDFium: each platform folder holds
   `pdfxt.<ext>` and a prebuilt `pdfium.<ext>` the shim loads at run time, from one release of
   bblanchon/pdfium-binaries pinned by SHA-256 in `pdfxt/src/pdfium.pin`. A companion cannot be
