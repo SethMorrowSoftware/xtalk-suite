@@ -43,6 +43,9 @@ and picture files inside them, so they run from the folder the emulator is hande
 ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`) on every
 change. Its four libraries were committed on 2026-11-21 by its own release run (run 44838679488,
 commit 0be6db1; the x86 ones tested on the emulator, the ARM ones built and checked, not run).
+**gamepadxt (joined the same day too) is not built for Android**, and `tools/build-android.sh` does not
+name it: SDL reaches controllers on Android through its own Java activity, which an OXT app does
+not have. Its packager names no Android id, so the all-four-or-none rule has nothing to hold.
 **torrentxt alone is built for API 24 (Android 7.0) since 2026-11-21.** Its API 21 libraries did
 not work inside an app on Android 11 or later (found that day; the record is below, "The torrent
 stall"): built for API 21, libtorrent reads the network over a socket those Androids refuse an
@@ -52,7 +55,7 @@ d47060f) and ran the member's tests on an Android 7.0 emulator for the two x86 A
 libraries built for API 24 to run on an Android. Those tests run as the shell user, whom Android
 does not refuse the socket, so they show the library working on its floor and NOT the fix: no
 engine has loaded the rebuilt four, and no app on Android 11 or later has started a session of
-them (work plan 1.2 #32).
+them (work plan 1.2 #33).
 So five of the seven members' `x86_64-android` libraries are: native tests run on an Android
 emulator, and loaded by an engine in an app for one call each (curlxt's and torrentxt's were
 rebuilt after that load, above, and the files committed now have not been loaded); a member's own
@@ -267,7 +270,7 @@ refusal that paused a session is Android's rule for apps; and the emulator is An
 than the Androids that refuse. It shows that a torrentxt built for API 24 loads and runs on the
 oldest Android it now supports, and that a session there starts unpaused, listens and seeds. The
 proof is an app on Android 11 or later, which OXT-Beyond's Android workflow runs once it pins
-these four (work plan 1.2 #32).
+these four (work plan 1.2 #33).
 
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
 selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app;
@@ -284,6 +287,7 @@ a torrentxt built for API 24 on an engine, or in an app at all.
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
+| gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
