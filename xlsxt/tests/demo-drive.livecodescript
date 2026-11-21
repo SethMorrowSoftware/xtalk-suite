@@ -7,22 +7,27 @@ script "xlsxtDemoDrive"
 --       <OXT-Beyond>/LiveCode-Community -ui tests/demo-drive.livecodescript
 --
 -- It puts the demo's script on a new stack (as the demo's header tells a
--- person to), builds the window, and then does what a person would: opens
--- each tab by clicking its button, makes each tab's workbook and the one
--- with everything, clicks a tick box, shows the workbook in the Read tab,
--- clicks a cell, and runs every check from the About tab. The native lane
+-- person to), builds the window, and then does what a person would: plays
+-- each of the Showcase's four scenes by clicking its button (each writes a
+-- file and reads it back) and leaves one half way, opens each tab by
+-- clicking its button, makes each tab's workbook and the one with
+-- everything, clicks a tick box, shows the workbook in the Read tab, clicks
+-- a cell, and runs every check from the About tab. The native lane
 -- runs it (the suite's .github/workflows/native-xlsxt.yml, job `engine`)
 -- and wants BOTH an exit of 0 and a last line "DRIVE <passed> 0": an
 -- engine that printed nothing must not read as a pass.
 --
 -- XLSXT_SHOT (optional) names a PNG to write of the tab XLSXT_TAB, which
--- needs a display (xvfb-run), for a picture of the window.
+-- needs a display (xvfb-run), for a picture of the window. For the tab
+-- "show" it first plays scene XLSXT_SCENE (1 to 4, default 1) at its real
+-- speed for XLSXT_WAIT milliseconds (default 4000).
 --
 -- WHAT THIS IS EVIDENCE OF: the demo's logic and its window on OXT-Beyond's
 -- Linux engine without a display. It is not a person using the window, and
 -- not a file opened in Excel.
 
 constant kStack = "xlsxtDemoRun"
+constant kScenes = "sheet,formulas,charts,many"
 
 local sPassed, sFailed, sOut
 
@@ -42,8 +47,23 @@ command drClick pControl
    dispatch "mouseUp" to pControl with 1
 end drClick
 
+-- Lets the engine run the demo's timer for up to pMs milliseconds, until
+-- the stack's uXdShowDone begins with pScene (the scene has said what it
+-- found). Answers what it says, or empty if it never did.
+function drUntilDone pScene, pMs
+   local tStart
+   put the milliseconds into tStart
+   repeat until the milliseconds - tStart > pMs
+      if word 1 of the uXdShowDone of stack kStack is pScene then
+         return the uXdShowDone of stack kStack
+      end if
+      wait 5 milliseconds with messages
+   end repeat
+   return empty
+end drUntilDone
+
 on startup
-   local tError, tKey, tResult, tReport, tWas, tI, tBlank
+   local tError, tKey, tResult, tReport, tWas, tI, tBlank, tScene, tDone, tWait
    put 0 into sPassed
    put 0 into sFailed
    try
@@ -55,9 +75,14 @@ on startup
       go stack kStack
       set the defaultStack to kStack
       send "preOpenStack" to stack kStack
-      drCheck the width of stack kStack is 960 and the height of stack kStack is 620, "the window is 960 x 620", the rect of stack kStack
+      drCheck the width of stack kStack is 960 and the height of stack kStack is 640, "the window is 960 x 640", the rect of stack kStack
       drCheck field "uiStatus" begins with "Ready (xlsxt ABI", "the status line names the library", field "uiStatus"
-      drCheck the visible of field "tbl:data" and not the visible of field "about:log", "it opens on the Table tab", the visible of field "tbl:data"
+      drCheck the visible of field "show:grid" and not the visible of field "tbl:data" and not the visible of button "act:make", \
+            "it opens on the Showcase", the visible of field "show:grid"
+      drCheck field "show:h" contains "A sheet fills itself" and "xdShowFrame" is in the pendingMessages, \
+            "and its tour is already playing", field "show:h"
+      drCheck field "hd:by" is "by Seth Morrow" and field "hd:brand" is "OXT-BEYOND" and field "uiTitle" is "Spreadsheet Studio", \
+            "the header names OXT-Beyond, the demo and who made it", field "uiTitle"
 
       -- Every field and tick box names its own text colour. One left to
       -- the system theme takes a dark theme's white, on the white the kit
@@ -81,6 +106,43 @@ on startup
       put the number of controls of card 1 of stack kStack into tWas
       send "preOpenStack" to stack kStack
       drCheck the number of controls of card 1 of stack kStack is tWas, "reopening adds no control", the number of controls of card 1 of stack kStack
+
+      -- The Showcase: each scene, from its button, as fast as the engine
+      -- goes (uXdFast), to its end. Each writes a file and reads it back,
+      -- and leaves no workbook or reader open.
+      set the uXdFast of stack kStack to true
+      repeat with tI = 1 to 4
+         put item tI of kScenes into tScene
+         set the uXdShowDone of stack kStack to empty
+         drClick the long id of button ("show:s" & tI)
+         put drUntilDone(tScene, 60000) into tDone
+         drCheck word 2 of tDone is "ok", "scene " & tI & " (" & tScene & ") plays to its end and reads back what it wrote", \
+               tDone && field "show:count"
+         put "      " & field "show:count" & return after sOut
+         wait 20 milliseconds with messages
+         drCheck xlWorkbookCount() is 0 and xlReadCount() is 0, "and leaves nothing open", xlWorkbookCount() && xlReadCount()
+      end repeat
+      drCheck field "show:count" contains "10,000 cells written in", "the last scene says how long the library took", field "show:count"
+      -- Play all four: the tour, from the first scene to the last
+      set the uXdShowDone of stack kStack to empty
+      drClick the long id of button "show:all"
+      put drUntilDone("many", 120000) into tDone
+      drCheck word 2 of tDone is "ok", "Play all four plays the four in turn", tDone
+      wait 50 milliseconds with messages
+      drCheck field "show:h" is "That was the tour", "and the heading says the tour is over", field "show:h"
+      -- a scene left half way: leaving the tab stops it and closes its file
+      drClick the long id of button "show:s4"
+      repeat 400 times
+         if field "show:count" begins with "Reading:" then
+            exit repeat
+         end if
+         wait 2 milliseconds with messages
+      end repeat
+      drCheck xlReadCount() is 1, "the ten thousand cells are being read", field "show:count"
+      drClick the long id of button "ui:tbl"
+      drCheck xlWorkbookCount() is 0 and xlReadCount() is 0 and "xdShowFrame" is not in the pendingMessages, \
+            "leaving the tab mid-scene stops it and closes its reader", xlWorkbookCount() && xlReadCount()
+      set the uXdFast of stack kStack to false
 
       repeat for each item tKey in "tbl,sty,fx,ch,pg"
          drClick the long id of button ("ui:" & tKey)
@@ -134,6 +196,18 @@ on startup
 
       if $XLSXT_SHOT is not empty then
          drClick the long id of button ("ui:" & $XLSXT_TAB)
+         if $XLSXT_TAB is "show" then
+            put $XLSXT_WAIT into tWait
+            if tWait is not an integer then
+               put 4000 into tWait
+            end if
+            put $XLSXT_SCENE into tI
+            if tI is not an integer then
+               put 1 into tI
+            end if
+            drClick the long id of button ("show:s" & tI)
+            wait tWait milliseconds with messages
+         end if
          export snapshot from rect (the rect of card 1 of stack kStack) of card 1 of stack kStack to file $XLSXT_SHOT as PNG
       end if
    catch tError

@@ -1,13 +1,22 @@
 script "xlsxtDemo"
 
--- xlsxt-demo.livecodescript - the xlsxt showcase stack.
+-- xlsxt-demo.livecodescript - Spreadsheet Studio, the xlsxt showcase stack.
 --
--- One window that makes real Excel files and reads them back, a tab for
--- each thing the library does: a whole table in one call; fonts, colours,
--- borders and number formats; formulas, dates, links, notes and drop-down
--- lists; charts of every kind; page setup, protection and a picture; and
--- the reader, which opens any .xlsx and shows its sheets and cells. The
--- last tab runs every check in one click.
+-- It opens playing. A tour of four short scenes writes real Excel files and
+-- reads them back while you watch: a sheet fills itself cell by cell and is
+-- given its colours, money format, frozen heading and a chart; formulas,
+-- today's date and a true-or-false cell are written with their answers; all
+-- fifteen kinds of chart the library makes are drawn and written into one
+-- file; and ten thousand cells are written and read back a few rows at a
+-- time, timed. Each scene ends by reading the file it wrote and saying
+-- whether every cell came back the same. A button plays any one scene
+-- again, and one plays all four.
+--
+-- The other tabs are the workbench: a whole table in one call; fonts,
+-- colours, borders and number formats; formulas, dates, links, notes and
+-- drop-down lists; charts of every kind; page setup, protection and a
+-- picture; the reader, which opens any .xlsx and shows its sheets and
+-- cells; and About, which runs every check in one click.
 --
 -- Every "Make" button does the same three things, so the window is honest
 -- about what happened: it WRITES a workbook to a temporary file, READS that
@@ -20,7 +29,8 @@ script "xlsxtDemo"
 -- paste this into a stack's script, then close and reopen that stack (or
 -- `send "preOpenStack" to <that stack>` without closing). Opening this file
 -- itself loads the script and builds no window - that is the engine, not
--- this demo: docs/OXT-ENGINE-NOTES.md 5.5.
+-- this demo: docs/OXT-ENGINE-NOTES.md 5.5. Without the extension the window
+-- still opens and the scenes still play; each says that nothing was written.
 --
 -- Conventions: rows, columns and sheets count from 1. A call that is given
 -- something it cannot use does nothing and returns 0 or empty; it never
@@ -30,31 +40,95 @@ script "xlsxtDemo"
 -- HONESTY (the suite convention): see the footer line this stack paints,
 -- which is kept true to what has run.
 --
--- THE LOOK is the suite UI kit, carried verbatim between the marker lines
+-- THE LOOK. The suite UI kit, carried verbatim between the marker lines
 -- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
--- byte-identical). Change the look in the master, never here.
+-- byte-identical), builds the controls; xdDress then gives them
+-- OXT-Beyond's dark look. Every field, label and tick box is given its own
+-- text colour, and every entry field and list its own background, so no
+-- system theme, light or dark, can leave words white on white (engine note
+-- 5.16). Push buttons are drawn by this stack (a rounded shape behind a
+-- transparent button), so they look the same under every theme.
+--
+-- SMOOTH. The scenes run on a timer, one frame at a time, each frame under
+-- `lock screen`. Nothing waits: long work is done a few rows a frame, with
+-- a bar that shows how far it has got, and the window answers clicks all
+-- the while. Leaving the Showcase tab stops the scene and closes its files.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kXdUiVersion = "xlsxt-kit2-2"
+constant kXdUiVersion = "xlsxt-beyond-1"
 constant kXdWidth = 960
-constant kXdHeight = 620
+constant kXdHeight = 640
+-- The header band: OXT-Beyond's name, the demo's, what it does, who made it.
+constant kXdBandH = 50
 -- The tabs, in order: key, then the label on its button.
-constant kXdTabs = "tbl,sty,fx,ch,pg,rd,about"
-constant kXdTabLabels = "Table,Formats,Formulas,Charts,Page,Read,About"
+constant kXdTabs = "show,tbl,sty,fx,ch,pg,rd,about"
+constant kXdTabLabels = "Showcase,Table,Formats,Formulas,Charts,Page,Read,About"
+-- The tabs whose workbook the action row makes.
+constant kXdMakers = "tbl,sty,fx,ch,pg"
+-- The tabs are laid out for a header 16 points shorter than this one, then
+-- moved down by that much in one pass (xdShiftDown).
+constant kXdDown = 16
 -- The chart kinds xlWorkbookAddChart takes, as the Charts tab lists them.
 constant kXdChartKinds = "column,column stacked,column percent,bar,bar stacked,line,area,area stacked,pie,doughnut,scatter,scatter lines,scatter smooth,radar,radar markers"
 -- A 40 x 40 PNG (a small green grid), for the picture the Page tab places:
 -- carried as text so the demo stays one paste-and-run file.
 constant kXdPicture = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAIAAAADnC86AAAAS0lEQVR42u3UMQ0AIAxFQaxgBkP4wAducAQY6NiQkCOfqcNtr9TenqzcP9eIlnQFg8HfwM/KteOXdAWDwd/AygUGg5VLucBgAcndAfsIXhyXnhvJAAAAAElFTkSuQmCC"
 
+-- OXT-Beyond's dark look. Each colour is named where it is used, so a
+-- system theme never chooses one.
+constant kXdStage = "15,17,23"         -- the window
+constant kXdBand = "22,26,35"          -- the header band
+constant kXdPanel = "25,29,39"         -- the card behind a tab
+constant kXdWell = "17,20,28"          -- entry fields, lists, logs, the chart
+constant kXdLine = "52,60,76"          -- hairlines and borders
+constant kXdInk = "232,236,242"        -- words
+constant kXdSoft = "168,176,190"       -- explanations
+constant kXdMuted = "122,131,146"      -- small print
+constant kXdSelect = "176,104,48"      -- the chosen line of a list (light or dark words read on it)
+constant kXdHeadRow = "62,44,30"       -- a sheet's heading row, in the showcase
+constant kXdAccent = "255,140,60"      -- OXT-Beyond orange
+constant kXdAccentOver = "255,162,96"
+constant kXdAccentDown = "226,116,38"
+constant kXdAccentInk = "26,20,14"     -- words on the orange
+constant kXdButton = "38,44,58"
+constant kXdButtonOver = "52,60,78"
+constant kXdButtonDown = "30,35,47"
+constant kXdButtonEdge = "76,86,106"
+constant kXdOk = "102,212,140"
+constant kXdBad = "242,118,108"
+constant kXdWarn = "236,192,96"
+constant kXdSecond = "86,180,233"      -- a chart's second series
+-- The slices of a pie, in turn ("|" between colours).
+constant kXdSlices = "255,140,60|86,180,233|102,212,140|236,192,96|190,128,232|242,118,108"
+
+-- The showcase: its scenes, in the order the tour plays them.
+constant kXdScenes = "sheet,formulas,charts,many"
+constant kXdSceneLabels = "A sheet fills itself,Formulas and dates,Every kind of chart,Ten thousand cells"
+-- One frame of a scene, in milliseconds: 20 a second, which makes each
+-- scene five to ten seconds long.
+constant kXdFrameMs = 50
+-- The pause between two scenes of the tour.
+constant kXdRestMs = 2200
+-- The lines the showcase's sheet shows: the column letters, then 13 rows.
+constant kXdGridLines = 14
+-- Graphics kept for the chart the showcase draws. They are made with the
+-- window and reused, so a frame creates and deletes nothing.
+constant kXdPool = 12
+
 local sTab          -- active tab key, one of kXdTabs
-local sLastPath     -- the workbook the last Make wrote (a temporary file)
-local sLastWhat     -- which builder made it: a tab key, or "all"
+local sLastPath     -- the workbook the last Make or scene wrote (a temporary file)
+local sLastWhat     -- which builder made it: a tab key, "all" or a scene
 local sReadPath     -- the file the Read tab is showing
 local sReadSheet    -- the sheet of it that is shown, from 1
 local sCkPass       -- About: passing checks
 local sCkFail       -- About: failing checks
 local sCkLog        -- About: the running transcript
+local sPressed      -- the painted button the mouse went down on
+local sShowGen      -- counts the showcase's starts and stops: a frame of an older run ends itself
+local sShowScene    -- the scene playing, an item of kXdScenes, or empty
+local sShowStep     -- the frame of the scene playing, from 1
+local sShowTour     -- true while the scenes play one after another
+local sShowState    -- the scene's working values: its cells, workbook, reader, timings
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -502,55 +576,66 @@ end uiMenuSource
 
 on preOpenStack
    xdBuildUI
-   xdShowTab "tbl"
+   xdShowTab "show"
+   -- straight into motion: the tour starts with the window
+   xdShowPlay item 1 of kXdScenes, true
 end preOpenStack
 
 on closeStack
-   -- A workbook or reader left open holds memory in the library until it
-   -- is closed. Every builder here closes what it opens on the same click,
-   -- error paths included; the Read tab opens its reader per repaint. So
-   -- there is nothing to release, and nothing persists between handlers.
+   -- The showcase is the one thing that keeps a workbook or a reader open
+   -- between handlers, for the length of a scene; stopping it closes both
+   -- and cancels its next frame. Every builder closes what it opens on the
+   -- same click, error paths included, and the Read tab opens its reader
+   -- per repaint.
+   xdShowStop
 end closeStack
 
 -- ==========================================================================
 -- UI construction. Every generated control is named "prefix:role"; the
--- prefix is its tab (or "ui" for the tab bar, "act" for the action row),
+-- prefix is its tab, or "ui" for the tab bar, "hd" for the header, "act"
+-- for the action row and "pool" for the graphics the showcase draws with,
 -- so one loop shows a tab and one handler routes a click.
 -- ==========================================================================
 
 on xdBuildUI
-   local tIndex, tKey, tLeft, tError
+   local tIndex, tKey, tLeft
    -- Version-guarded rebuild: a saved stack keeps its controls, so only a
    -- kit or layout bump (kXdUiVersion) rebuilds them.
-   if the uXdUiVersion of this stack is kXdUiVersion and there is a button "ui:tbl" then
+   if the uXdUiVersion of this stack is kXdUiVersion and there is a button "ui:show" then
       exit xdBuildUI
    end if
+   xdShowStop
    xdClearUI
    lock screen
-   -- 960 x 620 is held by tools/check-stack-size.py (every window fits 720p).
-   uiChrome "xlsxt - Excel files written and read", kXdWidth, kXdHeight
-   try
-      uiStatus "Ready (" & xlLibraryVersion() & ").", "ok"
-   catch tError
-      uiStatus "xlsxt is NOT loaded: install org.openxtalk.library.xlsxt and reopen.", "bad"
-   end try
+   -- 960 x 640 is held by tools/check-stack-size.py (every window fits 720p).
+   uiChrome "Spreadsheet Studio - xlsxt", kXdWidth, kXdHeight, kXdBandH
+   xdHeader
+   if xdLoaded() then
+      xdStatus "Ready (" & xlLibraryVersion() & ").", "ok"
+   else
+      xdStatus "xlsxt is NOT loaded: install org.openxtalk.library.xlsxt and reopen. The scenes still play;" \
+            & " nothing is written.", "bad"
+   end if
 
    put 0 into tIndex
    repeat for each item tKey in kXdTabs
       add 1 to tIndex
-      put 16 + (tIndex - 1) * 110 into tLeft
-      uiButton "ui:" & tKey, item tIndex of kXdTabLabels, tLeft & ",60," & (tLeft + 104) & ",88"
+      put 16 + (tIndex - 1) * 116 into tLeft
+      xdButton "ui:" & tKey, item tIndex of kXdTabLabels, tLeft & ",78," & (tLeft + 110) & ",104", "tab"
    end repeat
 
    -- The card is created BEFORE the tab content so it sits behind it.
-   uiPanel "ui:panel", "16,96,944,558"
+   uiPanel "ui:panel", "16,112,944,574"
    uiFooter \
-         "Backed by libxlsxwriter, zlib and Expat through the xlsxt C shim. Every Make writes a real" \
-         & " .xlsx and reads it back. The library and this window have run on OXT-Beyond on Windows and on" \
-         & " Linux (there with no display); elsewhere this window is verified statically; needs an OXT pass." \
-         & " No file it wrote has been opened in Excel on the record.", \
-         "16,564,944,616"
+         "Backed by libxlsxwriter, zlib and Expat through the xlsxt C shim; every scene and every Make writes a" \
+         & " real .xlsx and reads it back. This window has run on OXT-Beyond's Linux engine; on Windows, macOS" \
+         & " and in a browser it is verified statically; needs an OXT pass. No file it wrote has been opened" \
+         & " in Excel on the record.", \
+         "16,582,944,636"
+   set the foregroundColor of field "uiFooter" to kXdMuted
 
+   -- The tabs, laid out for the shorter header and moved down below.
+   xdBuildShow
    xdBuildTable
    xdBuildFormats
    xdBuildFormulas
@@ -560,13 +645,14 @@ on xdBuildUI
    xdBuildAbout
 
    -- The action row, shared by the five tabs that make a workbook.
-   uiButton "act:make", "Make this workbook", "32,506,196,532"
-   uiButton "act:all", "Make one with everything", "204,506,400,532"
-   uiButton "act:save", "Save the .xlsx...", "408,506,552,532"
+   xdButton "act:make", "Make this workbook", "32,506,196,532", "fill"
+   xdButton "act:all", "Make one with everything", "204,506,400,532", "plain"
+   xdButton "act:save", "Save the .xlsx...", "408,506,552,532", "plain"
    uiLabel "act:result", "Nothing made yet. Pick a tab and click Make this workbook.", "32,535,928,554", 11
-   set the foregroundColor of field "act:result" to kUiInkSoft
+   set the foregroundColor of field "act:result" to kXdSoft
 
-   xdSayInk
+   xdShiftDown
+   xdDress
    set the uXdUiVersion of this stack to kXdUiVersion
    unlock screen
 end xdBuildUI
@@ -595,43 +681,204 @@ private command xdClearUI
    unlock screen
 end xdClearUI
 
--- SAY THE TEXT COLOUR. The kit's inputs, areas, tables and tick boxes
--- leave theirs to the system theme, and a dark theme's is white: white
--- words on the white the kit paints. On Windows (2026-11-21) the Table
--- tab's grid and every tick box's words could not be seen. So every field
--- and tick box this window made that names no colour of its own takes the
--- kit's ink. Push buttons are left alone: the theme draws them, dark under
--- a dark theme, and its own words are the ones that read on them. (The
--- kit master gains the same in its own builders; once this copy carries
--- that, this finds nothing to do.)
-private command xdSayInk
-   local tI
+-- The header: OXT-Beyond's name over the demo's on the left, what the demo
+-- does and who made it on the right, and an orange rule under the band.
+private command xdHeader
+   set the backgroundColor of this card to kXdStage
+   set the backgroundColor of graphic "uiBand" to kXdBand
+   xdHeaderLabel "hd:brand", "OXT-BEYOND", "10,3,410,37", 10, kXdAccent, "bold", "left"
+   -- the demo's name goes in the field the kit made for the window's title
+   put "Spreadsheet Studio" into field "uiTitle"
+   set the textSize of field "uiTitle" to 20
+   set the textStyle of field "uiTitle" to "bold"
+   set the foregroundColor of field "uiTitle" to kXdInk
+   set the rect of field "uiTitle" to "10,14,610,56"
+   xdHeaderLabel "hd:what", "Real Excel workbooks, written and read back by the xlsxt extension.", \
+         "380,5,950,45", 12, kXdSoft, "plain", "right"
+   xdHeaderLabel "hd:by", "by Seth Morrow", "380,24,950,60", 11, kXdSoft, "italic", "right"
+   uiGfx "hd:rule", "0," & kXdBandH & "," & kXdWidth & "," & (kXdBandH + 2)
+   set the style of graphic "hd:rule" to "rectangle"
+   set the filled of graphic "hd:rule" to true
+   set the lineSize of graphic "hd:rule" to 0
+   set the backgroundColor of graphic "hd:rule" to kXdAccent
+end xdHeader
+
+-- One line of the header, at a rect that puts its letters where they go.
+-- The field keeps the engine's own margins: with margins of 0, a small
+-- size draws its letters above the field's top, and the window cut the
+-- tops off them (the Linux engine, 2026-11-21). With them, the letters of
+-- 10 to 20 point start 3 to 7 points below the top and 6 in from the side.
+private command xdHeaderLabel pName, pText, pRect, pSize, pColor, pStyle, pAlign
+   uiLabel pName, pText, pRect, pSize
+   set the textStyle of field pName to pStyle
+   set the textAlign of field pName to pAlign
+   set the foregroundColor of field pName to pColor
+end xdHeaderLabel
+
+-- A push button this stack draws: a rounded shape, then a transparent
+-- button on it that carries the words and takes the clicks. pKind is
+-- "fill" (the orange of the main action), "plain" or "tab"; a tab or a
+-- scene that is on (its uXdOn) is orange too, so on and off never look
+-- alike.
+command xdButton pName, pLabel, pRect, pKind
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to 8
+   set the filled of graphic (pName & "Bg") to true
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "transparent"
+   set the opaque of button pName to false
+   set the showBorder of button pName to false
+   set the threeD of button pName to false
+   set the shadow of button pName to false
+   set the hiliteBorder of button pName to false
+   set the autoHilite of button pName to false
+   set the traversalOn of button pName to false
+   set the textSize of button pName to 12
+   set the textStyle of button pName to "bold"
+   set the uXdKind of button pName to pKind
+   xdPaint pName, "rest"
+end xdButton
+
+-- Paints a drawn button for a state: "rest", "over" (the pointer is on
+-- it) or "down" (pressed).
+command xdPaint pName, pState
+   local tBack, tInk, tEdge
+   set the defaultStack to the short name of this stack
+   if there is no button pName or there is no graphic (pName & "Bg") then
+      exit xdPaint
+   end if
+   if the uXdKind of button pName is "fill" or the uXdOn of button pName is true then
+      put kXdAccentInk into tInk
+      put empty into tEdge
+      if pState is "over" then
+         put kXdAccentOver into tBack
+      else if pState is "down" then
+         put kXdAccentDown into tBack
+      else
+         put kXdAccent into tBack
+      end if
+   else
+      put kXdInk into tInk
+      put kXdButtonEdge into tEdge
+      if pState is "over" then
+         put kXdButtonOver into tBack
+      else if pState is "down" then
+         put kXdButtonDown into tBack
+      else
+         put kXdButton into tBack
+      end if
+   end if
+   set the backgroundColor of graphic (pName & "Bg") to tBack
+   if tEdge is empty then
+      set the lineSize of graphic (pName & "Bg") to 0
+   else
+      set the lineSize of graphic (pName & "Bg") to 1
+      set the foregroundColor of graphic (pName & "Bg") to tEdge
+   end if
+   set the foregroundColor of button pName to tInk
+end xdPaint
+
+-- Moves each tab's controls, and the action row, down by kXdDown: the tabs
+-- were laid out for a header that much shorter.
+private command xdShiftDown
+   local tI, tName, tPrefix
+   repeat with tI = 1 to the number of controls of this card
+      put the short name of control tI of this card into tName
+      if tName contains ":" then
+         put char 1 to (offset(":", tName) - 1) of tName into tPrefix
+         if tPrefix is "act" or tPrefix is among the items of kXdTabs then
+            set the top of control tI of this card to (the top of control tI of this card) + kXdDown
+         end if
+      end if
+   end repeat
+end xdShiftDown
+
+-- SAY EVERY COLOUR. The kit paints a light card and leaves the text colour
+-- of its entry fields, lists and tick boxes to the system theme; a dark
+-- theme's is white (engine note 5.16). Here each field this window made
+-- gets OXT-Beyond's colours: an entry field, list or log a dark well with
+-- light words and an orange-brown chosen line, a caption the light, soft
+-- or muted ink that matches the kit colour it was given. Each tick box
+-- names its ink too. The drive (tests/demo-drive.livecodescript) fails a
+-- window that leaves one to the theme.
+private command xdDress
+   local tI, tColor, tError
+   set the backgroundColor of this card to kXdStage
    repeat with tI = 1 to the number of fields of this card
-      if the short name of field tI of this card contains ":" \
-            and the foregroundColor of field tI of this card is empty then
-         set the foregroundColor of field tI of this card to kUiInk
+      if the opaque of field tI of this card then
+         set the backgroundColor of field tI of this card to kXdWell
+         set the borderColor of field tI of this card to kXdLine
+         set the foregroundColor of field tI of this card to kXdInk
+         set the hiliteColor of field tI of this card to kXdSelect
+      else
+         put the foregroundColor of field tI of this card into tColor
+         if tColor is kUiInkSoft then
+            set the foregroundColor of field tI of this card to kXdSoft
+         else if tColor is kUiMuted then
+            set the foregroundColor of field tI of this card to kXdMuted
+         else if tColor is empty or tColor is kUiInk then
+            set the foregroundColor of field tI of this card to kXdInk
+         end if
       end if
    end repeat
    repeat with tI = 1 to the number of buttons of this card
-      if the short name of button tI of this card contains ":" \
-            and the style of button tI of this card is "checkbox" \
-            and the foregroundColor of button tI of this card is empty then
-         set the foregroundColor of button tI of this card to kUiInk
+      if the style of button tI of this card is "checkbox" then
+         set the foregroundColor of button tI of this card to kXdInk
       end if
    end repeat
-end xdSayInk
+   -- the card behind the tabs: dark, a hairline, and no shadow
+   set the backgroundColor of graphic "ui:panel" to kXdPanel
+   set the foregroundColor of graphic "ui:panel" to kXdLine
+   set the borderColor of graphic "ui:panel" to kXdLine
+   try
+      set the dropShadow of graphic "ui:panel" to empty
+   catch tError
+   end try
+end xdDress
+
+-- The status line, in the dark look's colours (the kit's are for a light
+-- page).
+command xdStatus pText, pKind
+   set the defaultStack to the short name of this stack
+   if there is no field "uiStatus" then
+      exit xdStatus
+   end if
+   uiStatus pText, pKind
+   if pKind is "ok" then
+      set the foregroundColor of field "uiStatus" to kXdOk
+   else if pKind is "bad" then
+      set the foregroundColor of field "uiStatus" to kXdBad
+   else if pKind is "warn" then
+      set the foregroundColor of field "uiStatus" to kXdWarn
+   else
+      set the foregroundColor of field "uiStatus" to kXdSoft
+   end if
+end xdStatus
+
+-- Whether the xlsxt library answers. Everything that writes or reads asks
+-- this first; the rest of the window works without it.
+function xdLoaded
+   local tError
+   try
+      get xlLibraryVersion()
+   catch tError
+      return false
+   end try
+   return true
+end xdLoaded
 
 -- A tab's heading and its paragraph of explanation, at the same place on
 -- every tab.
 private command xdHeading pTab, pTitle, pWords
    uiWrap pTab & ":h", pTitle, "32,106,928,130", 15
    set the textStyle of field (pTab & ":h") to "bold"
+   set the foregroundColor of field (pTab & ":h") to kXdInk
    uiWrap pTab & ":exp", pWords, "32,132,928,176", 11
-   set the foregroundColor of field (pTab & ":exp") to kUiInkSoft
+   set the foregroundColor of field (pTab & ":exp") to kXdSoft
 end xdHeading
 
 -- A checkbox that starts ticked or not. The kit's checkboxes are driven
--- from script (autoHilite off), so xdToggle flips them on a click.
+-- from script (autoHilite off), so a click flips them in mouseUp.
 private command xdCheck pName, pLabel, pRect, pOn
    uiCheckbox pName, pLabel, pRect
    -- a tick box is its tick and its words: no button frame around them
@@ -640,8 +887,69 @@ private command xdCheck pName, pLabel, pRect, pOn
    set the opaque of button pName to false
    set the hiliteBorder of button pName to false
    set the threeD of button pName to false
+   set the foregroundColor of button pName to kXdInk
    set the hilite of button pName to pOn
 end xdCheck
+
+-- The Showcase: the sheet a scene writes, drawn as text on the left; the
+-- chart it adds, drawn with graphics on the right, and under it the calls
+-- the scene just made; a bar for how far it has got; a line for what it
+-- found; and a button for each scene.
+on xdBuildShow
+   local tI, tLeft
+   xdHeading "show", "Scene 1 of 4: " & item 1 of kXdSceneLabels, xdSceneWords(item 1 of kXdScenes)
+   uiArea "show:grid", "32,184,560,448"
+   set the vScrollbar of field "show:grid" to false
+   set the dontWrap of field "show:grid" to true
+   set the textSize of field "show:grid" to 12
+   set the fixedLineHeight of field "show:grid" to true
+   set the textHeight of field "show:grid" to 18
+   set the hGrid of field "show:grid" to true
+   set the vGrid of field "show:grid" to true
+   uiGfx "show:chart", "576,184,928,392"
+   set the roundRadius of graphic "show:chart" to 10
+   set the filled of graphic "show:chart" to true
+   set the backgroundColor of graphic "show:chart" to kXdWell
+   set the lineSize of graphic "show:chart" to 1
+   set the foregroundColor of graphic "show:chart" to kXdLine
+   uiLabel "show:ctitle", empty, "586,190,918,208", 11
+   set the textStyle of field "show:ctitle" to "bold"
+   set the foregroundColor of field "show:ctitle" to kXdInk
+   -- the pool, on the well: bars, slices and dots, then two lines, then
+   -- the axis and a doughnut's hole on top of them
+   repeat with tI = 1 to kXdPool
+      xdPoolMake "pool:g" & tI
+   end repeat
+   xdPoolMake "pool:p1"
+   xdPoolMake "pool:p2"
+   xdPoolMake "pool:axis"
+   xdPoolMake "pool:hole"
+   uiLabel "show:story", empty, "576,398,928,448", 10
+   set the textFont of field "show:story" to uiMonoFont()
+   set the dontWrap of field "show:story" to true
+   set the foregroundColor of field "show:story" to kXdSoft
+   uiGfx "show:track", "32,456,928,462"
+   set the style of graphic "show:track" to "rectangle"
+   set the filled of graphic "show:track" to true
+   set the lineSize of graphic "show:track" to 0
+   set the backgroundColor of graphic "show:track" to kXdLine
+   xdPoolMake "pool:bar"
+   uiLabel "show:count", "Starting...", "32,466,928,486", 12
+   set the foregroundColor of field "show:count" to kXdInk
+   xdButton "show:all", "Play all four", "32,498,152,530", "plain"
+   repeat with tI = 1 to the number of items of kXdSceneLabels
+      put 160 + (tI - 1) * 194 into tLeft
+      xdButton "show:s" & tI, item tI of kXdSceneLabels, tLeft & ",498," & (tLeft + 186) & ",530", "plain"
+   end repeat
+end xdBuildShow
+
+-- One graphic of the pool: made hidden, somewhere inside the window; each
+-- drawing gives it a shape, a place and colours.
+private command xdPoolMake pName
+   uiGfx pName, "40,40,41,41"
+   set the visible of graphic pName to false
+   set the uXdLit of graphic pName to false
+end xdPoolMake
 
 on xdBuildTable
    xdHeading "tbl", "A whole table in one call", \
@@ -746,10 +1054,10 @@ on xdBuildRead
          "xlReadOpen opens a workbook written by Excel, LibreOffice, Numbers or this library and returns" \
          & " what is in its cells: text, numbers, dates as dates, formulas with their stored results." \
          & " Pick a sheet, then click a cell to see its kind, formula and number format."
-   uiButton "rd:open", "Open an .xlsx file...", "32,184,200,212"
-   uiButton "rd:last", "Show the last one made", "208,184,388,212"
+   xdButton "rd:open", "Open an .xlsx file...", "32,184,200,212", "plain"
+   xdButton "rd:last", "Show the last one made", "208,184,388,212", "plain"
    uiWrap "rd:file", "No file open.", "400,188,928,208", 11
-   set the foregroundColor of field "rd:file" to kUiInkSoft
+   set the foregroundColor of field "rd:file" to kXdSoft
    uiLabel "rd:ls", "Sheets", "32,222,200,240", 11
    uiTable "rd:sheets", "32,242,200,420", empty
    uiLabel "rd:lg", "Cells (the first 200 rows and 26 columns)", "212,222,928,240", 11
@@ -765,7 +1073,7 @@ on xdBuildAbout
          "xlsxt writes Excel workbooks with libxlsxwriter and reads them with a reader of its own over zlib" \
          & " and Expat, all inside one library with nothing else to install. Run every check makes the" \
          & " complete workbook, reads it back cell by cell, and tries the things that must be refused."
-   uiButton "about:run", "Run every check", "32,184,200,212"
+   xdButton "about:run", "Run every check", "32,184,200,212", "fill"
    uiWrap "about:sum", "Not run yet.", "212,188,928,208", 11
    uiArea "about:log", "32,222,928,548"
 end xdBuildAbout
@@ -775,32 +1083,38 @@ end xdBuildAbout
 -- ==========================================================================
 
 on xdShowTab pKey
-   local tI, tName, tShown, tKey
+   local tI, tName, tShown, tKey, tPrefix
+   if pKey is not among the items of kXdTabs then
+      exit xdShowTab
+   end if
+   -- leaving the Showcase stops its scene and closes what the scene had open
+   if pKey is not "show" and sShowScene is not empty then
+      xdShowStop
+      xdShowSay "Stopped when you left this tab. Click a scene to play it again.", "run"
+   end if
    put pKey into sTab
    lock screen
    repeat with tI = 1 to the number of controls of this card
       put the short name of control tI of this card into tName
       if tName contains ":" then
-         set the itemDelimiter to ":"
-         put item 1 of tName into tKey
-         set the itemDelimiter to comma
-         if tKey is "ui" then
+         put char 1 to (offset(":", tName) - 1) of tName into tPrefix
+         if tPrefix is "ui" or tPrefix is "hd" then
             put true into tShown
-         else if tKey is "act" then
+         else if tPrefix is "act" then
             -- the action row belongs to the tabs that make a workbook
-            put (pKey is not "rd" and pKey is not "about") into tShown
+            put (pKey is among the items of kXdMakers) into tShown
+         else if tPrefix is "pool" then
+            -- a graphic of the showcase's chart shows only while it is drawn
+            put (pKey is "show" and the uXdLit of control tI of this card is true) into tShown
          else
-            put (tKey is pKey) into tShown
+            put (tPrefix is pKey) into tShown
          end if
          set the visible of control tI of this card to tShown
       end if
    end repeat
    repeat for each item tKey in kXdTabs
-      if tKey is pKey then
-         set the textStyle of button ("ui:" & tKey) to "bold"
-      else
-         set the textStyle of button ("ui:" & tKey) to "plain"
-      end if
+      set the uXdOn of button ("ui:" & tKey) to (tKey is pKey)
+      xdPaint "ui:" & tKey, "rest"
    end repeat
    unlock screen
    if pKey is "rd" and sReadPath is empty and sLastPath is not empty then
@@ -809,17 +1123,15 @@ on xdShowTab pKey
 end xdShowTab
 
 -- ==========================================================================
--- Click routing: a control's short name is "prefix:role".
+-- Clicks and the pointer: a control's short name is "prefix:role".
 -- ==========================================================================
 
 on mouseUp
    local tName, tPrefix, tRole
    put the short name of the target into tName
    if tName contains ":" then
-      set the itemDelimiter to ":"
-      put item 1 of tName into tPrefix
-      put item 2 of tName into tRole
-      set the itemDelimiter to comma
+      put char 1 to (offset(":", tName) - 1) of tName into tPrefix
+      put char (offset(":", tName) + 1) to -1 of tName into tRole
       if tPrefix is "ui" then
          if tRole is among the items of kXdTabs then
             xdShowTab tRole
@@ -828,15 +1140,64 @@ on mouseUp
          set the hilite of the target to not the hilite of the target
       else if tPrefix is "act" then
          xdAction tRole
+      else if tPrefix is "show" then
+         xdShowClick tRole
       else if tPrefix is "rd" then
          xdReadClick tRole
       else if tName is "about:run" then
          xdRunChecks
       end if
+      xdPressEnd
    else
+      xdPressEnd
       pass mouseUp
    end if
 end mouseUp
+
+-- The pointer over a drawn button lightens it and a press darkens it: the
+-- feedback a system button gives, which these paint themselves.
+on mouseEnter
+   if word 1 of the target is "button" and the style of the target is "transparent" then
+      xdPaint the short name of the target, "over"
+   end if
+   pass mouseEnter
+end mouseEnter
+
+on mouseLeave
+   if word 1 of the target is "button" and the style of the target is "transparent" then
+      xdPaint the short name of the target, "rest"
+   end if
+   pass mouseLeave
+end mouseLeave
+
+on mouseDown
+   if word 1 of the target is "button" and the style of the target is "transparent" then
+      put the short name of the target into sPressed
+      xdPaint sPressed, "down"
+   end if
+   pass mouseDown
+end mouseDown
+
+-- The button came up somewhere else: the press ends, and nothing is done.
+on mouseRelease
+   xdPressEnd
+   pass mouseRelease
+end mouseRelease
+
+command xdPressEnd
+   local tWas
+   put sPressed into tWas
+   put empty into sPressed
+   if tWas is empty then
+      exit xdPressEnd
+   end if
+   set the defaultStack to the short name of this stack
+   if there is a button tWas and the mouseLoc is within the rect of button tWas then
+      xdPaint tWas, "over"
+   else
+      xdPaint tWas, "rest"
+   end if
+end xdPressEnd
 
 on xdAction pRole
    if pRole is "make" then
@@ -869,11 +1230,11 @@ command xdResult pWords, pKind
    if there is a field "act:result" then
       put pWords into field "act:result"
       if pKind is "bad" then
-         set the foregroundColor of field "act:result" to kUiBad
+         set the foregroundColor of field "act:result" to kXdBad
       else if pKind is "ok" then
-         set the foregroundColor of field "act:result" to kUiOk
+         set the foregroundColor of field "act:result" to kXdOk
       else
-         set the foregroundColor of field "act:result" to kUiInkSoft
+         set the foregroundColor of field "act:result" to kXdSoft
       end if
    end if
 end xdResult
@@ -932,7 +1293,7 @@ on xdMake pWhich
    put xdBuildBook(pWhich) into tProblem
    if tProblem is not empty and not (tProblem begins with "Written, but") then
       xdResult tProblem, "bad"
-      uiStatus "Not made.", "bad"
+      xdStatus "Not made.", "bad"
       exit xdMake
    end if
    put xdSummary(sLastPath) into tSummary
@@ -941,7 +1302,7 @@ on xdMake pWhich
    else
       xdResult "Made and read back: " & tSummary, "ok"
    end if
-   uiStatus "Workbook written to " & sLastPath, "ok"
+   xdStatus "Workbook written to " & sLastPath, "ok"
    -- the Read tab shows the newest file the next time it is opened
    put empty into sReadPath
 end xdMake
@@ -1453,7 +1814,7 @@ on xdReadClick pRole
       end if
    else if pRole is "last" then
       if sLastPath is empty then
-         put "Nothing has been made yet: use Make this workbook on another tab." into field "rd:file"
+         put "Nothing has been made yet: play a scene, or use Make this workbook on another tab." into field "rd:file"
       else
          xdReadShow sLastPath, 1
       end if
@@ -1479,7 +1840,7 @@ command xdReadShow pPath, pSheet
    end try
    if tReader is 0 then
       put "Not opened: " & xlLastError() into field "rd:file"
-      set the foregroundColor of field "rd:file" to kUiBad
+      set the foregroundColor of field "rd:file" to kXdBad
       exit xdReadShow
    end if
    put pPath into sReadPath
@@ -1518,7 +1879,7 @@ command xdReadShow pPath, pSheet
    put xdFileName(pPath) & ": sheet " & sReadSheet & " of " & tCount & ", " & tRows & " rows x " & tColumns \
          & " columns. Merged: " & xdOrNone(xlReadMerged(tReader, sReadSheet)) & ". Dates count from " \
          & xdEpoch(xlReadUses1904(tReader)) & "." into field "rd:file"
-   set the foregroundColor of field "rd:file" to kUiInkSoft
+   set the foregroundColor of field "rd:file" to kXdSoft
    put "Click a row of the cells above, on the cell you want." into field "rd:cell"
    xlReadClose tReader
 end xdReadShow
@@ -1602,12 +1963,12 @@ on xdRunChecks
    put tReport into field "about:log"
    if sCkFail is 0 then
       put sCkPass && "checks passed, none failed." into field "about:sum"
-      set the foregroundColor of field "about:sum" to kUiOk
-      uiStatus "Every check passed.", "ok"
+      set the foregroundColor of field "about:sum" to kXdOk
+      xdStatus "Every check passed.", "ok"
    else
       put sCkPass && "passed," && sCkFail && "FAILED. The failing lines begin with FAIL." into field "about:sum"
-      set the foregroundColor of field "about:sum" to kUiBad
-      uiStatus sCkFail && "check(s) failed.", "bad"
+      set the foregroundColor of field "about:sum" to kXdBad
+      xdStatus sCkFail && "check(s) failed.", "bad"
    end if
 end xdRunChecks
 
@@ -1733,3 +2094,1545 @@ function xdFirstCell pTable
    set the itemDelimiter to tab
    return item 1 of line 1 of pTable
 end xdFirstCell
+
+-- ==========================================================================
+-- The Showcase: four scenes of a few seconds each, played one frame at a
+-- time on a timer. A scene is a function of its frame number that answers
+-- true while it has more to show. Every frame is drawn under lock screen;
+-- nothing waits, so the window answers clicks throughout. A scene that
+-- writes a file reads it back at the end and says what it found.
+-- ==========================================================================
+
+function xdSceneWords pScene
+   switch pScene
+      case "sheet"
+         return "Twelve months of sales are typed into a sheet, one cell at a time. Then the library writes" \
+               & " them in three calls, colours the heading row, gives the money its format, freezes the" \
+               & " heading, puts a chart beside the figures and closes the file. Last, the reader opens the" \
+               & " file and every row is checked against what was typed."
+      case "formulas"
+         return "A formula is written as text, and Excel works it out when the file opens;" \
+               & " xlSheetWriteFormulaValue also stores the answer, so a program that does not calculate" \
+               & " still sees it. Today's date is a number with a date format, and true and false are cells" \
+               & " of their own kind. The reader checks every formula, answer and kind."
+      case "charts"
+         return "xlWorkbookAddChart makes fifteen kinds of chart. Each is drawn here as it is added to one" \
+               & " workbook, from the same six months of figures; Excel draws the real ones when it opens the" \
+               & " file. At the end the file is checked for all fifteen charts, and its figures are read back."
+      case "many"
+         return "Ten thousand numbers, a hundred rows of a hundred, written two rows at a time with" \
+               & " xlSheetWriteGrid and read back two rows at a time with xlReadGrid, so the window keeps" \
+               & " moving while it works. The times are the time spent inside the library."
+   end switch
+   return empty
+end xdSceneWords
+
+private command xdShowClick pRole
+   if pRole is "all" then
+      xdShowPlay item 1 of kXdScenes, true
+   else if pRole begins with "s" and char 2 to -1 of pRole is an integer then
+      xdShowPlay item (char 2 to -1 of pRole) of kXdScenes, false
+   end if
+end xdShowClick
+
+-- Starts a scene; pTour true plays the ones after it too.
+command xdShowPlay pScene, pTour
+   xdShowStop
+   if pScene is not among the items of kXdScenes then
+      exit xdShowPlay
+   end if
+   put pScene into sShowScene
+   put 0 into sShowStep
+   put (pTour is true) into sShowTour
+   put empty into sShowState
+   xdShowLight pScene
+   send ("xdShowFrame" && sShowGen) to me in 20 milliseconds
+end xdShowPlay
+
+-- Stops whatever plays: a frame still on its way finds the count moved on
+-- and ends itself, and the scene's workbook and reader are closed.
+command xdShowStop
+   local tLine
+   add 1 to sShowGen
+   put empty into sShowScene
+   put false into sShowTour
+   xdShowRelease
+   repeat for each line tLine in the pendingMessages
+      if word 1 of item 3 of tLine is among the words of "xdShowFrame xdShowNext xdShowTourEnd" then
+         cancel item 1 of tLine
+      end if
+   end repeat
+   xdShowLight empty
+end xdShowStop
+
+-- Closes what a scene has open. A workbook a scene did not finish is
+-- discarded, so no half-written file is left behind.
+command xdShowRelease
+   local tError
+   if sShowState["book"] is an integer and sShowState["book"] > 0 then
+      try
+         xlWorkbookDiscard sShowState["book"]
+      catch tError
+      end try
+   end if
+   if sShowState["reader"] is an integer and sShowState["reader"] > 0 then
+      try
+         xlReadClose sShowState["reader"]
+      catch tError
+      end try
+   end if
+   put empty into sShowState["book"]
+   put empty into sShowState["reader"]
+end xdShowRelease
+
+-- The button of the scene playing is orange, and Play all four while the
+-- tour plays; the others are not.
+private command xdShowLight pScene
+   local tI
+   set the defaultStack to the short name of this stack
+   if there is a button "show:all" then
+      set the uXdOn of button "show:all" to (pScene is not empty and sShowTour is true)
+      xdPaint "show:all", "rest"
+   end if
+   repeat with tI = 1 to the number of items of kXdScenes
+      if there is a button ("show:s" & tI) then
+         set the uXdOn of button ("show:s" & tI) to (item tI of kXdScenes is pScene)
+         xdPaint "show:s" & tI, "rest"
+      end if
+   end repeat
+end xdShowLight
+
+-- One frame. It arrives by `send ... in`, so it pins the stack first: an
+-- unqualified control resolves against the defaultStack (engine note 5.3).
+on xdShowFrame pGen
+   local tMore, tError
+   if pGen is not sShowGen or sShowScene is empty then
+      exit xdShowFrame
+   end if
+   set the defaultStack to the short name of this stack
+   if there is no field "show:count" then
+      exit xdShowFrame
+   end if
+   add 1 to sShowStep
+   put false into tMore
+   lock screen
+   try
+      switch sShowScene
+         case "sheet"
+            put xdSceneSheet(sShowStep) into tMore
+            break
+         case "formulas"
+            put xdSceneFormulas(sShowStep) into tMore
+            break
+         case "charts"
+            put xdSceneCharts(sShowStep) into tMore
+            break
+         case "many"
+            put xdSceneMany(sShowStep) into tMore
+            break
+      end switch
+   catch tError
+      put false into tMore
+      xdShowFail "The scene stopped: " & line 1 of tError
+   end try
+   unlock screen
+   if pGen is not sShowGen then
+      exit xdShowFrame
+   end if
+   if tMore is true then
+      send ("xdShowFrame" && pGen) to me in xdFrameMs() milliseconds
+   else
+      xdShowEnded pGen
+   end if
+end xdShowFrame
+
+-- A scene has ended: on the tour the next one follows after a pause, and
+-- after the last the heading says the tour is over.
+private command xdShowEnded pGen
+   local tAt
+   put xdSceneNumber(sShowScene) into tAt
+   put empty into sShowScene
+   xdShowRelease
+   xdShowLight empty
+   if sShowTour is not true then
+      exit xdShowEnded
+   end if
+   if tAt > 0 and tAt < the number of items of kXdScenes then
+      send ("xdShowNext" && pGen & comma & (tAt + 1)) to me in xdRestMs() milliseconds
+   else
+      send ("xdShowTourEnd" && pGen) to me in xdRestMs() milliseconds
+   end if
+end xdShowEnded
+
+on xdShowNext pGen, pAt
+   if pGen is not sShowGen or sShowTour is not true then
+      exit xdShowNext
+   end if
+   set the defaultStack to the short name of this stack
+   if there is no field "show:count" then
+      exit xdShowNext
+   end if
+   xdShowPlay item pAt of kXdScenes, true
+end xdShowNext
+
+on xdShowTourEnd pGen
+   if pGen is not sShowGen then
+      exit xdShowTourEnd
+   end if
+   set the defaultStack to the short name of this stack
+   put false into sShowTour
+   if there is no field "show:h" then
+      exit xdShowTourEnd
+   end if
+   put "That was the tour" into field "show:h"
+   xdShowWords "Play any scene again with its button, or all four. The tabs above are the workbench: each" \
+         & " makes a workbook of its own and reads it back, the Read tab opens any .xlsx (the last file a" \
+         & " scene wrote is waiting there), and About runs every check in one click."
+end xdShowTourEnd
+
+private function xdSceneNumber pScene
+   local tI
+   repeat with tI = 1 to the number of items of kXdScenes
+      if item tI of kXdScenes is pScene then
+         return tI
+      end if
+   end repeat
+   return 0
+end xdSceneNumber
+
+-- The frame time and the pause between scenes. A drive sets the stack's
+-- uXdFast to play the scenes as fast as the engine goes.
+function xdFrameMs
+   if the uXdFast of this stack is true then
+      return 1
+   end if
+   return kXdFrameMs
+end xdFrameMs
+
+function xdRestMs
+   if the uXdFast of this stack is true then
+      return 1
+   end if
+   return kXdRestMs
+end xdRestMs
+
+-- ---- what every scene shares ---------------------------------------------
+
+-- The start of a scene: its sheet's size, column stops and letters, and a
+-- clean slate.
+private command xdShowBegin pRows, pColumns, pStops, pLetters
+   local tAt
+   put xdLoaded() into sShowState["live"]
+   put pRows into sShowState["rows"]
+   put pColumns into sShowState["cols"]
+   put pStops into sShowState["stops"]
+   put pLetters into sShowState["letters"]
+   put 1 into sShowState["top"]
+   put 0 into sShowState["same"]
+   put 0 into sShowState["differ"]
+   set the uXdShowDone of this stack to empty
+   put xdSceneNumber(sShowScene) into tAt
+   put "Scene " & tAt & " of " & (the number of items of kXdScenes) & ": " & (item tAt of kXdSceneLabels) \
+         into field "show:h"
+   xdShowWords xdSceneWords(sShowScene)
+   put empty into field "show:story"
+   put empty into field "show:ctitle"
+   xdShowChart "none", empty, empty, 0
+   xdShowBar 0
+   xdShowGrid
+   if sShowState["live"] then
+      xlSetTempFolder the temporary folder
+   end if
+end xdShowBegin
+
+-- The heading's paragraph, fitted to its height with its top kept.
+private command xdShowWords pWords
+   local tTop, tFH
+   put the top of field "show:exp" into tTop
+   put pWords into field "show:exp"
+   put the formattedHeight of field "show:exp" into tFH
+   if tFH > 0 then
+      set the height of field "show:exp" to tFH
+      set the top of field "show:exp" to tTop
+   end if
+end xdShowWords
+
+-- The line under the bar: what the scene is doing, then what it found.
+private command xdShowSay pText, pKind
+   put pText into field "show:count"
+   if pKind is "ok" then
+      set the foregroundColor of field "show:count" to kXdOk
+   else if pKind is "bad" then
+      set the foregroundColor of field "show:count" to kXdBad
+   else
+      set the foregroundColor of field "show:count" to kXdInk
+   end if
+end xdShowSay
+
+-- The calls a scene just made, the last three of them.
+private command xdShowStory pLine
+   local tText
+   put field "show:story" into tText
+   if tText is empty then
+      put pLine into tText
+   else
+      put return & pLine after tText
+   end if
+   repeat while the number of lines of tText > 3
+      delete line 1 of tText
+   end repeat
+   put tText into field "show:story"
+end xdShowStory
+
+private command xdShowBar pFraction
+   local tTrack, tLeft, tRight
+   put the rect of graphic "show:track" into tTrack
+   put item 1 of tTrack into tLeft
+   put tLeft + round(((item 3 of tTrack) - tLeft) * max(0, min(1, pFraction))) into tRight
+   if tRight <= tLeft then
+      xdPoolShow "pool:bar", false
+      exit xdShowBar
+   end if
+   set the style of graphic "pool:bar" to "rectangle"
+   set the filled of graphic "pool:bar" to true
+   set the lineSize of graphic "pool:bar" to 0
+   set the blendLevel of graphic "pool:bar" to 0
+   set the backgroundColor of graphic "pool:bar" to kXdAccent
+   set the rect of graphic "pool:bar" to tLeft & comma & (item 2 of tTrack) & comma & tRight & comma & (item 4 of tTrack)
+   xdPoolShow "pool:bar", true
+end xdShowBar
+
+private command xdPoolShow pName, pOn
+   set the uXdLit of graphic pName to (pOn is true)
+   set the visible of graphic pName to (pOn is true and sTab is "show")
+end xdPoolShow
+
+-- How a scene ends: the line under the bar in green or red, and the
+-- stack's uXdShowDone ("<scene> ok" or "<scene> bad") for a drive to read.
+private command xdShowDone pOk, pWords
+   if pOk is true then
+      xdShowSay pWords, "ok"
+      set the uXdShowDone of this stack to sShowScene && "ok"
+   else
+      xdShowSay pWords, "bad"
+      set the uXdShowDone of this stack to sShowScene && "bad"
+   end if
+   xdShowBar 1
+end xdShowDone
+
+private command xdShowFail pWords
+   xdShowRelease
+   xdShowDone false, pWords
+end xdShowFail
+
+function xdShowPath pName
+   return xdTempFile("xlsxt-show-" & pName & ".xlsx")
+end xdShowPath
+
+-- Closes the scene's workbook, which writes the file, and makes it the
+-- last file made (the Read tab and Save then use it).
+private function xdShowClose pPath
+   local tBook, tRefused, tFirst
+   put sShowState["book"] into tBook
+   put xlWorkbookErrorCount(tBook) into tRefused
+   put xlWorkbookFirstError(tBook) into tFirst
+   put empty into sShowState["book"]
+   if not xlWorkbookClose(tBook) then
+      xdShowFail "The file could not be written: " & xlLastError()
+      return false
+   end if
+   put pPath into sShowState["path"]
+   put pPath into sLastPath
+   put sShowScene into sLastWhat
+   put empty into sReadPath
+   if tRefused > 0 then
+      xdShowFail "Written, but " & tRefused & " call(s) were refused. The first: " & tFirst
+      return false
+   end if
+   xdShowStory "xlWorkbookClose(book): " & xdThousands(the number of bytes of URL ("binfile:" & pPath)) & " bytes"
+   return true
+end xdShowClose
+
+-- The end of a scene that wrote and read: every row compared, or the plain
+-- truth that the library was not there.
+private command xdShowVerdict pCount, pWhat, pMore
+   local tFile
+   if sShowState["reader"] is an integer and sShowState["reader"] > 0 then
+      xlReadClose sShowState["reader"]
+   end if
+   put empty into sShowState["reader"]
+   if sShowState["live"] is not true then
+      xdShowDone false, "xlsxt is not loaded, so nothing was written or read. Install the extension" \
+            & " (org.openxtalk.library.xlsxt) and open this stack again."
+      exit xdShowVerdict
+   end if
+   put xdFileName(sShowState["path"]) & ", " & xdThousands(the number of bytes of URL ("binfile:" & sShowState["path"])) \
+         & " bytes" into tFile
+   if sShowState["differ"] is 0 and sShowState["same"] is pCount then
+      xdShowDone true, "Read back from " & tFile & ": all " & pCount && pWhat & " match" & pMore & "."
+   else
+      xdShowDone false, "Read back from " & tFile & ": " & (pCount - sShowState["same"]) & " of " & pCount \
+            && pWhat & " are not what was written."
+   end if
+end xdShowVerdict
+
+-- A row read back: its number turns green, or red.
+private command xdShowMark pRow, pSame
+   if pSame is true then
+      put kXdOk into sShowState["mark"][pRow]
+      add 1 to sShowState["same"]
+   else
+      put kXdBad into sShowState["mark"][pRow]
+      add 1 to sShowState["differ"]
+   end if
+end xdShowMark
+
+-- A cell typed: it shows in orange until the next one is typed.
+private command xdShowType pRow, pColumn, pText
+   xdShowUntype
+   put pText into sShowState["c"][pRow][pColumn]
+   put kXdAccent into sShowState["ink"][pRow][pColumn]
+   put pRow & comma & pColumn into sShowState["typed"]
+end xdShowType
+
+private command xdShowUntype
+   local tWas
+   put sShowState["typed"] into tWas
+   if tWas is not empty then
+      put empty into sShowState["ink"][item 1 of tWas][item 2 of tWas]
+   end if
+   put empty into sShowState["typed"]
+end xdShowUntype
+
+-- The scene's sheet, drawn as text: the column letters, then each row
+-- with its number in front. A row read back has its number in green (or
+-- red); the heading row, once the scene has given it its format, is bold
+-- and orange.
+private command xdShowGrid
+   local tText, tRow, tColumn, tTop, tLast, tLine, tMark, tInk
+   put max(1, sShowState["top"]) into tTop
+   put min(sShowState["rows"], tTop + kXdGridLines - 2) into tLast
+   if sShowState["letters"] is not empty then
+      put sShowState["letters"] into tText
+   else
+      repeat with tColumn = 1 to sShowState["cols"]
+         put tab & numToChar(64 + tColumn) after tText
+      end repeat
+   end if
+   repeat with tRow = tTop to tLast
+      put return & tRow after tText
+      repeat with tColumn = 1 to sShowState["cols"]
+         put tab & sShowState["c"][tRow][tColumn] after tText
+      end repeat
+   end repeat
+   set the tabStops of field "show:grid" to sShowState["stops"]
+   put tText into field "show:grid"
+   set the itemDelimiter to tab
+   set the textColor of line 1 of field "show:grid" to kXdMuted
+   put 1 into tLine
+   repeat with tRow = tTop to tLast
+      add 1 to tLine
+      put sShowState["mark"][tRow] into tMark
+      if tMark is empty then
+         put kXdMuted into tMark
+      end if
+      set the textColor of item 1 of line tLine of field "show:grid" to tMark
+      if tRow is sShowState["head"] then
+         set the textStyle of line tLine of field "show:grid" to "bold"
+         set the textColor of item 2 to -1 of line tLine of field "show:grid" to kXdAccent
+      end if
+      repeat with tColumn = 1 to sShowState["cols"]
+         put sShowState["ink"][tRow][tColumn] into tInk
+         if tInk is not empty then
+            set the textColor of item (tColumn + 1) of line tLine of field "show:grid" to tInk
+         end if
+      end repeat
+   end repeat
+end xdShowGrid
+
+-- ---- the chart, drawn with the pool ----------------------------------------
+
+-- Draws a chart of kind pKind (a name xlWorkbookAddChart takes) in the
+-- well, from the series pFirst and pSecond (comma lists; pSecond may be
+-- empty), grown to pGrow of 100. "none" clears it. A graphic of the pool
+-- that the kind does not use is hidden.
+private command xdShowChart pKind, pFirst, pSecond, pGrow
+   local tWell, tL, tT, tR, tB, tGrow, tI, tName
+   put empty into sShowState["used"]
+   put the rect of graphic "show:chart" into tWell
+   put (item 1 of tWell) + 22 into tL
+   put (item 2 of tWell) + 34 into tT
+   put (item 3 of tWell) - 16 into tR
+   put (item 4 of tWell) - 14 into tB
+   put max(0, min(100, pGrow)) / 100 into tGrow
+   if pKind is "pie" or pKind is "doughnut" then
+      xdChartPie pKind, pFirst, tGrow, tL, tT, tR, tB
+   else if pKind begins with "radar" then
+      xdChartRadar pKind, pFirst, pSecond, tGrow, tL, tT, tR, tB
+   else if pKind begins with "scatter" then
+      xdChartAxis tL, tT, tR, tB
+      xdChartScatter pKind, pFirst, pSecond, tGrow, tL, tT, tR, tB
+   else if pKind begins with "bar" then
+      xdChartAxis tL, tT, tR, tB
+      xdChartBars pKind, pFirst, pSecond, tGrow, tL, tT, tR, tB
+   else if pKind begins with "column" then
+      xdChartAxis tL, tT, tR, tB
+      xdChartColumns pKind, pFirst, pSecond, tGrow, tL, tT, tR, tB
+   else if pKind is "line" or pKind begins with "area" then
+      xdChartAxis tL, tT, tR, tB
+      xdChartLines pKind, pFirst, pSecond, tGrow, tL, tT, tR, tB
+   end if
+   repeat with tI = 1 to kXdPool
+      xdPoolShow "pool:g" & tI, (sShowState["used"]["pool:g" & tI] is true)
+   end repeat
+   repeat for each item tName in "pool:p1,pool:p2,pool:axis,pool:hole"
+      xdPoolShow tName, (sShowState["used"][tName] is true)
+   end repeat
+end xdShowChart
+
+private command xdChartAxis pL, pT, pR, pB
+   xdPoolLine "pool:axis", xdPt(pL, pT) & return & xdPt(pL, pB) & return & xdPt(pR, pB), kXdLine, empty, 0
+   set the lineSize of graphic "pool:axis" to 1
+end xdChartAxis
+
+-- Columns side by side ("column"), one on the other ("column stacked"), or
+-- one on the other as shares of the whole ("column percent").
+private command xdChartColumns pKind, pFirst, pSecond, pGrow, pL, pT, pR, pB
+   local tN, tBand, tMax, tI, tA, tOther, tX, tHigh, tHigh2, tSum, tWide
+   put the number of items of pFirst into tN
+   put (pR - pL) / tN into tBand
+   if pKind is "column" then
+      put max(xdMaxOf(pFirst), xdMaxOf(pSecond)) into tMax
+   else
+      put xdMaxOfSums(pFirst, pSecond) into tMax
+   end if
+   repeat with tI = 1 to tN
+      put item tI of pFirst into tA
+      put item tI of pSecond into tOther
+      if tOther is empty then
+         put 0 into tOther
+      end if
+      put pL + (tI - 1) * tBand into tX
+      if pKind is "column percent" then
+         put tA + tOther into tSum
+         if tSum <= 0 then
+            put 1 into tSum
+         end if
+         put (pB - pT) * tA / tSum * pGrow into tHigh
+         put (pB - pT) * tOther / tSum * pGrow into tHigh2
+      else
+         put (pB - pT) * tA / tMax * pGrow into tHigh
+         put (pB - pT) * tOther / tMax * pGrow into tHigh2
+      end if
+      if pKind is "column" and pSecond is not empty then
+         put tBand * 0.34 into tWide
+         xdPoolBox "pool:g" & (2 * tI - 1), tX + tBand * 0.14, pB - tHigh, tX + tBand * 0.14 + tWide, pB, kXdAccent
+         xdPoolBox "pool:g" & (2 * tI), tX + tBand * 0.52, pB - tHigh2, tX + tBand * 0.52 + tWide, pB, kXdSecond
+      else if pKind is "column" then
+         xdPoolBox "pool:g" & tI, tX + tBand * 0.18, pB - tHigh, tX + tBand * 0.82, pB, kXdAccent
+      else
+         xdPoolBox "pool:g" & (2 * tI - 1), tX + tBand * 0.2, pB - tHigh, tX + tBand * 0.8, pB, kXdAccent
+         xdPoolBox "pool:g" & (2 * tI), tX + tBand * 0.2, pB - tHigh - tHigh2, tX + tBand * 0.8, pB - tHigh, kXdSecond
+      end if
+   end repeat
+end xdChartColumns
+
+-- Bars across, side by side ("bar") or end to end ("bar stacked").
+private command xdChartBars pKind, pFirst, pSecond, pGrow, pL, pT, pR, pB
+   local tN, tBand, tMax, tI, tA, tOther, tY, tLong, tLong2, tThick
+   put the number of items of pFirst into tN
+   put (pB - pT) / tN into tBand
+   if pKind is "bar" then
+      put max(xdMaxOf(pFirst), xdMaxOf(pSecond)) into tMax
+   else
+      put xdMaxOfSums(pFirst, pSecond) into tMax
+   end if
+   repeat with tI = 1 to tN
+      put item tI of pFirst into tA
+      put item tI of pSecond into tOther
+      if tOther is empty then
+         put 0 into tOther
+      end if
+      put pT + (tI - 1) * tBand into tY
+      put (pR - pL) * tA / tMax * pGrow into tLong
+      put (pR - pL) * tOther / tMax * pGrow into tLong2
+      if pKind is "bar" and pSecond is not empty then
+         put tBand * 0.34 into tThick
+         xdPoolBox "pool:g" & (2 * tI - 1), pL, tY + tBand * 0.14, pL + tLong, tY + tBand * 0.14 + tThick, kXdAccent
+         xdPoolBox "pool:g" & (2 * tI), pL, tY + tBand * 0.52, pL + tLong2, tY + tBand * 0.52 + tThick, kXdSecond
+      else if pKind is "bar" then
+         xdPoolBox "pool:g" & tI, pL, tY + tBand * 0.2, pL + tLong, tY + tBand * 0.8, kXdAccent
+      else
+         xdPoolBox "pool:g" & (2 * tI - 1), pL, tY + tBand * 0.2, pL + tLong, tY + tBand * 0.8, kXdAccent
+         xdPoolBox "pool:g" & (2 * tI), pL + tLong, tY + tBand * 0.2, pL + tLong + tLong2, tY + tBand * 0.8, kXdSecond
+      end if
+   end repeat
+end xdChartBars
+
+-- Lines ("line"), shaded areas over each other ("area"), or the second
+-- area on top of the first ("area stacked").
+private command xdChartLines pKind, pFirst, pSecond, pGrow, pL, pT, pR, pB
+   local tN, tBand, tMax, tI, tA, tOther, tX, tFirstLine, tSecondLine, tBack, tStart, tEnd
+   put the number of items of pFirst into tN
+   put (pR - pL) / tN into tBand
+   if pKind is "area stacked" then
+      put xdMaxOfSums(pFirst, pSecond) into tMax
+   else
+      put max(xdMaxOf(pFirst), xdMaxOf(pSecond)) into tMax
+   end if
+   repeat with tI = 1 to tN
+      put item tI of pFirst into tA
+      put item tI of pSecond into tOther
+      if tOther is empty then
+         put 0 into tOther
+      end if
+      if pKind is "area stacked" then
+         put tA + tOther into tOther
+      end if
+      put pL + (tI - 0.5) * tBand into tX
+      put xdPt(tX, pB - (pB - pT) * tA / tMax * pGrow) & return after tFirstLine
+      put xdPt(tX, pB - (pB - pT) * tOther / tMax * pGrow) & return after tSecondLine
+      put xdPt(tX, pB - (pB - pT) * tA / tMax * pGrow) & return before tBack
+   end repeat
+   delete the last char of tFirstLine
+   delete the last char of tSecondLine
+   put xdPt(pL + 0.5 * tBand, pB) into tStart
+   put xdPt(pL + (tN - 0.5) * tBand, pB) into tEnd
+   if pKind is "line" then
+      xdPoolLine "pool:p1", tFirstLine, kXdAccent, empty, 0
+      if pSecond is not empty then
+         xdPoolLine "pool:p2", tSecondLine, kXdSecond, empty, 0
+      end if
+   else if pKind is "area" then
+      xdPoolLine "pool:p1", tStart & return & tFirstLine & return & tEnd & return & tStart, kXdAccent, kXdAccent, 30
+      if pSecond is not empty then
+         xdPoolLine "pool:p2", tStart & return & tSecondLine & return & tEnd & return & tStart, kXdSecond, kXdSecond, 45
+      end if
+   else
+      xdPoolLine "pool:p1", tStart & return & tFirstLine & return & tEnd & return & tStart, kXdAccent, kXdAccent, 15
+      xdPoolLine "pool:p2", tSecondLine & return & tBack & line 1 of tSecondLine, kXdSecond, kXdSecond, 15
+   end if
+end xdChartLines
+
+-- Points of the second series against the first ("scatter"), joined in
+-- order across ("scatter lines"), or by a smooth curve ("scatter smooth").
+private command xdChartScatter pKind, pFirst, pSecond, pGrow, pL, pT, pR, pB
+   local tN, tLowX, tHighX, tLowY, tHighY, tI, tX, tY, tShown, tPoints
+   put the number of items of pFirst into tN
+   put xdMinOf(pFirst) into tLowX
+   put max(xdMaxOf(pFirst), tLowX + 1) into tHighX
+   put xdMinOf(pSecond) into tLowY
+   put max(xdMaxOf(pSecond), tLowY + 1) into tHighY
+   put round(tN * pGrow) into tShown
+   repeat with tI = 1 to tShown
+      put pL + 12 + (pR - pL - 24) * ((item tI of pFirst) - tLowX) / (tHighX - tLowX) into tX
+      put pB - 12 - (pB - pT - 24) * ((item tI of pSecond) - tLowY) / (tHighY - tLowY) into tY
+      xdPoolDot "pool:g" & tI, tX, tY, 5, kXdAccent
+      put xdPt(tX, tY) & return after tPoints
+   end repeat
+   if pKind is "scatter" or tShown < 2 then
+      exit xdChartScatter
+   end if
+   delete the last char of tPoints
+   sort lines of tPoints numeric by item 1 of each
+   if pKind is "scatter smooth" then
+      put xdSmooth(tPoints) into tPoints
+   end if
+   xdPoolLine "pool:p1", tPoints, kXdSecond, empty, 0
+end xdChartScatter
+
+-- A web of the categories, and each series as a shape on it; "radar
+-- markers" marks the first series' points.
+private command xdChartRadar pKind, pFirst, pSecond, pGrow, pL, pT, pR, pB
+   local tN, tCx, tCy, tRadius, tMax, tI, tAngle, tOuter, tInner, tFirstLine, tSecondLine, tReach, tX, tY
+   put the number of items of pFirst into tN
+   put (pL + pR) / 2 into tCx
+   put (pT + pB) / 2 into tCy
+   put min(pR - pL, pB - pT) / 2 - 4 into tRadius
+   put max(xdMaxOf(pFirst), xdMaxOf(pSecond)) into tMax
+   repeat with tI = 1 to tN
+      put (-90 + (tI - 1) * 360 / tN) * pi / 180 into tAngle
+      put xdPt(tCx + tRadius * cos(tAngle), tCy + tRadius * sin(tAngle)) & return after tOuter
+      put xdPt(tCx + tRadius / 2 * cos(tAngle), tCy + tRadius / 2 * sin(tAngle)) & return after tInner
+      put tRadius * (item tI of pFirst) / tMax * pGrow into tReach
+      put tCx + tReach * cos(tAngle) into tX
+      put tCy + tReach * sin(tAngle) into tY
+      put xdPt(tX, tY) & return after tFirstLine
+      if pKind is "radar markers" then
+         xdPoolDot "pool:g" & (tI + 2), tX, tY, 4, kXdAccent
+      end if
+      if pSecond is not empty then
+         put tRadius * (item tI of pSecond) / tMax * pGrow into tReach
+         put xdPt(tCx + tReach * cos(tAngle), tCy + tReach * sin(tAngle)) & return after tSecondLine
+      end if
+   end repeat
+   -- each shape closes on its first point
+   put line 1 of tOuter after tOuter
+   put line 1 of tInner after tInner
+   put line 1 of tFirstLine after tFirstLine
+   xdPoolLine "pool:g1", tOuter, kXdLine, empty, 0
+   xdPoolLine "pool:g2", tInner, kXdLine, empty, 0
+   set the lineSize of graphic "pool:g1" to 1
+   set the lineSize of graphic "pool:g2" to 1
+   xdPoolLine "pool:p1", tFirstLine, kXdAccent, kXdAccent, 55
+   if tSecondLine is not empty then
+      put line 1 of tSecondLine after tSecondLine
+      xdPoolLine "pool:p2", tSecondLine, kXdSecond, kXdSecond, 55
+   end if
+end xdChartRadar
+
+-- Slices from twelve o'clock, clockwise, as far as pGrow has got; a
+-- doughnut has a hole in the middle.
+private command xdChartPie pKind, pFirst, pGrow, pL, pT, pR, pB
+   local tCx, tCy, tRadius, tSum, tValue, tI, tFrom, tSweep, tArc
+   put (pL + pR) / 2 into tCx
+   put (pT + pB) / 2 into tCy
+   put min(pR - pL, pB - pT) / 2 - 2 into tRadius
+   put 0 into tSum
+   repeat for each item tValue in pFirst
+      add tValue to tSum
+   end repeat
+   if tSum <= 0 then
+      put 1 into tSum
+   end if
+   put 360 * pGrow into tSweep
+   put 0 into tFrom
+   repeat with tI = 1 to the number of items of pFirst
+      put 360 * (item tI of pFirst) / tSum into tArc
+      if tFrom + tArc > tSweep then
+         put tSweep - tFrom into tArc
+      end if
+      if tArc >= 1 then
+         xdPoolArc "pool:g" & tI, tCx - tRadius, tCy - tRadius, tCx + tRadius, tCy + tRadius, \
+               xdSliceColor(tI), 90 - tFrom - tArc, tArc
+      end if
+      add 360 * (item tI of pFirst) / tSum to tFrom
+   end repeat
+   if pKind is "doughnut" then
+      xdPoolDot "pool:hole", tCx, tCy, tRadius * 0.55, kXdWell
+   end if
+end xdChartPie
+
+private command xdPoolBox pName, pL, pT, pR, pB, pColor
+   if abs(pR - pL) < 1 or abs(pB - pT) < 1 then
+      exit xdPoolBox
+   end if
+   set the style of graphic pName to "rectangle"
+   set the filled of graphic pName to true
+   set the lineSize of graphic pName to 0
+   set the blendLevel of graphic pName to 0
+   set the backgroundColor of graphic pName to pColor
+   set the rect of graphic pName to xdRect(pL, pT, pR, pB)
+   put true into sShowState["used"][pName]
+end xdPoolBox
+
+private command xdPoolArc pName, pL, pT, pR, pB, pColor, pStart, pArc
+   set the style of graphic pName to "oval"
+   set the filled of graphic pName to true
+   set the lineSize of graphic pName to 2
+   set the foregroundColor of graphic pName to kXdWell
+   set the blendLevel of graphic pName to 0
+   set the backgroundColor of graphic pName to pColor
+   set the rect of graphic pName to xdRect(pL, pT, pR, pB)
+   set the startAngle of graphic pName to (round(pStart) + 720) mod 360
+   set the arcAngle of graphic pName to max(1, min(360, round(pArc)))
+   put true into sShowState["used"][pName]
+end xdPoolArc
+
+private command xdPoolDot pName, pX, pY, pRadius, pColor
+   set the style of graphic pName to "oval"
+   set the filled of graphic pName to true
+   set the lineSize of graphic pName to 0
+   set the blendLevel of graphic pName to 0
+   set the backgroundColor of graphic pName to pColor
+   set the startAngle of graphic pName to 0
+   set the arcAngle of graphic pName to 360
+   set the rect of graphic pName to xdRect(pX - pRadius, pY - pRadius, pX + pRadius, pY + pRadius)
+   put true into sShowState["used"][pName]
+end xdPoolDot
+
+-- A line through points (one "x,y" a line), and filled under it when pFill
+-- names a colour; pBlend makes it see-through, 0 to 100.
+private command xdPoolLine pName, pPoints, pColor, pFill, pBlend
+   set the style of graphic pName to "polygon"
+   set the lineSize of graphic pName to 2
+   set the foregroundColor of graphic pName to pColor
+   if pFill is empty then
+      set the filled of graphic pName to false
+   else
+      set the filled of graphic pName to true
+      set the backgroundColor of graphic pName to pFill
+   end if
+   set the blendLevel of graphic pName to pBlend
+   set the points of graphic pName to pPoints
+   put true into sShowState["used"][pName]
+end xdPoolLine
+
+private function xdRect pL, pT, pR, pB
+   local tLeft, tTop, tRight, tBottom
+   put round(min(pL, pR)) into tLeft
+   put round(min(pT, pB)) into tTop
+   put max(round(max(pL, pR)), tLeft + 1) into tRight
+   put max(round(max(pT, pB)), tTop + 1) into tBottom
+   return tLeft & comma & tTop & comma & tRight & comma & tBottom
+end xdRect
+
+private function xdPt pX, pY
+   return round(pX) & comma & round(pY)
+end xdPt
+
+private function xdSliceColor pIndex
+   set the itemDelimiter to "|"
+   return item (((pIndex - 1) mod (the number of items of kXdSlices)) + 1) of kXdSlices
+end xdSliceColor
+
+private function xdMaxOf pList
+   local tMax, tValue
+   put 0 into tMax
+   repeat for each item tValue in pList
+      put max(tMax, tValue) into tMax
+   end repeat
+   if tMax <= 0 then
+      return 1
+   end if
+   return tMax
+end xdMaxOf
+
+private function xdMinOf pList
+   local tMin, tValue
+   put item 1 of pList into tMin
+   repeat for each item tValue in pList
+      put min(tMin, tValue) into tMin
+   end repeat
+   if tMin is empty then
+      return 0
+   end if
+   return tMin
+end xdMinOf
+
+private function xdMaxOfSums pFirst, pSecond
+   local tMax, tI, tOther
+   put 0 into tMax
+   repeat with tI = 1 to the number of items of pFirst
+      put item tI of pSecond into tOther
+      if tOther is empty then
+         put 0 into tOther
+      end if
+      put max(tMax, (item tI of pFirst) + tOther) into tMax
+   end repeat
+   if tMax <= 0 then
+      return 1
+   end if
+   return tMax
+end xdMaxOfSums
+
+-- More points along a smooth curve (Catmull-Rom) through the given ones.
+private function xdSmooth pPoints
+   local tN, tI, tStep, tOut, tBefore, tFrom, tTo, tAfter, tT
+   put the number of lines of pPoints into tN
+   if tN < 3 then
+      return pPoints
+   end if
+   repeat with tI = 1 to tN - 1
+      put line max(1, tI - 1) of pPoints into tBefore
+      put line tI of pPoints into tFrom
+      put line tI + 1 of pPoints into tTo
+      put line min(tN, tI + 2) of pPoints into tAfter
+      repeat with tStep = 0 to 5
+         put tStep / 6 into tT
+         put xdPt(xdCatmull(item 1 of tBefore, item 1 of tFrom, item 1 of tTo, item 1 of tAfter, tT), \
+               xdCatmull(item 2 of tBefore, item 2 of tFrom, item 2 of tTo, item 2 of tAfter, tT)) & return after tOut
+      end repeat
+   end repeat
+   put line tN of pPoints after tOut
+   return tOut
+end xdSmooth
+
+private function xdCatmull pBefore, pFrom, pTo, pAfter, pT
+   return 0.5 * ((2 * pFrom) + (pTo - pBefore) * pT + (2 * pBefore - 5 * pFrom + 4 * pTo - pAfter) * pT * pT \
+         + (3 * pFrom - pBefore - 3 * pTo + pAfter) * pT * pT * pT)
+end xdCatmull
+
+-- ---- numbers as people write them -------------------------------------------
+
+function xdThousands pNumber
+   local tWhole, tOut
+   put round(pNumber) into tWhole
+   repeat while the number of chars of tWhole > 3
+      put "," & char -3 to -1 of tWhole before tOut
+      delete char -3 to -1 of tWhole
+   end repeat
+   return tWhole & tOut
+end xdThousands
+
+function xdMoney pNumber
+   local tFixed
+   put format("%.2f", pNumber) into tFixed
+   return "$" & xdThousands(char 1 to -4 of tFixed) & char -3 to -1 of tFixed
+end xdMoney
+
+-- A time the way a person reads it: milliseconds under a second.
+function xdSeconds pMilliseconds
+   if pMilliseconds < 1000 then
+      return round(pMilliseconds) && "ms"
+   end if
+   return format("%.2f", pMilliseconds / 1000) && "s"
+end xdSeconds
+
+-- Today, as "yyyy-mm-dd", and as its three numbers.
+function xdTodayItems
+   local tNow
+   put the seconds into tNow
+   convert tNow to dateItems
+   return item 1 of tNow & comma & item 2 of tNow & comma & item 3 of tNow
+end xdTodayItems
+
+function xdToday
+   local tYMD
+   put xdTodayItems() into tYMD
+   return format("%04d-%02d-%02d", item 1 of tYMD, item 2 of tYMD, item 3 of tYMD)
+end xdToday
+
+-- The cell at pRow, pColumn of a table of tabs and returns.
+function xdCellOf pTable, pRow, pColumn
+   set the itemDelimiter to tab
+   return item pColumn of line pRow of pTable
+end xdCellOf
+
+-- ---- scene 1: a sheet fills itself ------------------------------------------
+--
+-- Frames 2-53 type the 52 cells, 62 writes the file, 63-82 grow its chart,
+-- 83 opens it with the reader, 84-109 check a row every second frame, and
+-- 110 says what was found.
+
+function xdSceneSheet pStep
+   local tRow, tAt, tTable, tRevenue, tPath, tBook, tSheet, tHead, tMoney, tChart, tLeft, tRight, tGot, tSame
+   local tColumn, tReader, tKept
+   if pStep is 1 then
+      xdShowBegin 13, 4, "40,150,230,330,440", empty
+      put "January,February,March,April,May,June,July,August,September,October,November,December" \
+            into sShowState["months"]
+      put "12,7,15,9,14,11,16,13,10,18,17,21" into sShowState["units"]
+      put "9.5,10.25,8.75,11,9.75,10.5,9.25,10,11.5,9,10.75,9.5" into sShowState["prices"]
+      put "Month" & tab & "Units" & tab & "Price" & tab & "Revenue" into tTable
+      repeat with tRow = 1 to 12
+         put (item tRow of sShowState["units"]) * (item tRow of sShowState["prices"]) into tRevenue
+         put tRevenue & comma after tLeft
+         put return & item tRow of sShowState["months"] & tab & item tRow of sShowState["units"] & tab \
+               & item tRow of sShowState["prices"] & tab & tRevenue after tTable
+      end repeat
+      delete the last char of tLeft
+      put tLeft into sShowState["revenue"]
+      put tTable into sShowState["table"]
+      xdShowSay "Typing twelve months of sales...", "run"
+      return true
+   end if
+   if pStep <= 53 then
+      put pStep - 1 into tAt
+      put ((tAt - 1) div 4) + 1 into tRow
+      put ((tAt - 1) mod 4) + 1 into tColumn
+      xdShowType tRow, tColumn, xdCellOf(sShowState["table"], tRow, tColumn)
+      xdShowGrid
+      xdShowBar tAt / 52 * 0.4
+      return true
+   end if
+   if pStep is 54 then
+      xdShowUntype
+      xdShowGrid
+      xdShowSay "Writing them takes three calls, then the look and a chart.", "run"
+      return true
+   end if
+   if pStep < 62 then
+      return true
+   end if
+   if pStep is 62 then
+      -- the look the file gets, shown on the sheet here as well
+      put 1 into sShowState["head"]
+      repeat with tRow = 2 to 13
+         put xdMoney(xdCellOf(sShowState["table"], tRow, 3)) into sShowState["c"][tRow][3]
+         put xdMoney(xdCellOf(sShowState["table"], tRow, 4)) into sShowState["c"][tRow][4]
+      end repeat
+      xdShowGrid
+      xdShowBar 0.5
+      if sShowState["live"] is not true then
+         xdShowStory "-- xlsxt is not loaded: nothing is written"
+         return true
+      end if
+      put xdShowPath("sheet") into tPath
+      put xlWorkbookNew(tPath) into tBook
+      if tBook is 0 then
+         xdShowFail "The workbook could not be started: " & xlLastError()
+         return false
+      end if
+      put tBook into sShowState["book"]
+      put xlWorkbookAddSheet(tBook, "Sales") into tSheet
+      put xlWorkbookAddFormat(tBook) into tHead
+      xlFormatSetBold tHead, true
+      xlFormatSetFontColor tHead, "white"
+      xlFormatSetBackgroundColor tHead, "#E8732C"
+      xlFormatSetAlign tHead, "center"
+      put xlWorkbookAddFormat(tBook) into tMoney
+      xlFormatSetNumberFormat tMoney, "$#,##0.00"
+      put empty into tLeft
+      repeat with tRow = 1 to 12
+         put item tRow of sShowState["months"] & tab & item tRow of sShowState["units"] & return after tLeft
+         put item tRow of sShowState["prices"] & tab & item tRow of sShowState["revenue"] & return after tRight
+      end repeat
+      delete the last char of tLeft
+      delete the last char of tRight
+      put xlSheetWriteGrid(tSheet, 1, 1, line 1 of sShowState["table"], "text", tHead) into tGot
+      put xlSheetWriteGrid(tSheet, 2, 1, tLeft, "numbers", 0) into tGot
+      xdShowStory "xlSheetWriteGrid(sheet, 2, 1, months, ..) = " & tGot
+      put xlSheetWriteGrid(tSheet, 2, 3, tRight, "numbers", tMoney) into tGot
+      xdShowStory "xlSheetWriteGrid(sheet, 2, 3, money, ..) = " & tGot
+      xlSheetFreeze tSheet, 1, 0
+      xlSheetAutofilter tSheet, 1, 1, 13, 4
+      xlSheetSetColumns tSheet, 1, 1, 13, 0
+      xlSheetSetColumns tSheet, 2, 4, 11, 0
+      put xlWorkbookAddChart(tBook, "column") into tChart
+      get xlChartAddSeries(tChart, xlRangeFormula("Sales", 2, 1, 13, 1), xlRangeFormula("Sales", 2, 4, 13, 4))
+      xlChartSeriesSetName tChart, 1, "Revenue"
+      xlChartSeriesSetColor tChart, 1, "#E8732C"
+      xlChartSetTitle tChart, "Revenue by month"
+      xlChartSetLegend tChart, "none"
+      xlSheetInsertChart tSheet, 2, 6, tChart, 1.2, 1.2
+      return xdShowClose(tPath)
+   end if
+   if pStep <= 82 then
+      if pStep is 63 then
+         put "Revenue by month: a column chart at F2" into field "show:ctitle"
+      end if
+      xdShowChart "column", sShowState["revenue"], empty, (pStep - 62) * 5
+      xdShowBar 0.5 + (pStep - 62) / 20 * 0.2
+      return true
+   end if
+   if pStep is 83 then
+      if sShowState["live"] is true then
+         put xlReadOpen(sShowState["path"]) into tReader
+         if tReader is 0 then
+            xdShowFail "The reader refused the file: " & xlLastError()
+            return false
+         end if
+         put tReader into sShowState["reader"]
+         get xlReadLoad(tReader, 1)
+         xdShowStory "xlReadOpen(file), then xlReadCell for each cell"
+      end if
+      xdShowSay "Reading the file back, row by row...", "run"
+      return true
+   end if
+   if pStep <= 109 then
+      if (pStep - 84) mod 2 is 0 and sShowState["live"] is true then
+         put ((pStep - 84) div 2) + 1 into tRow
+         put true into tSame
+         repeat with tColumn = 1 to 4
+            if xlReadCell(sShowState["reader"], 1, tRow, tColumn) is not xdCellOf(sShowState["table"], tRow, tColumn) then
+               put false into tSame
+            end if
+         end repeat
+         xdShowMark tRow, tSame
+         xdShowGrid
+      end if
+      xdShowBar 0.7 + (pStep - 83) / 26 * 0.3
+      return true
+   end if
+   put false into tKept
+   if sShowState["live"] is true then
+      put (xlReadCellFormat(sShowState["reader"], 1, 2, 3) is "$#,##0.00") into tKept
+   end if
+   if tKept then
+      xdShowVerdict 13, "rows", ", and the money kept its format, $#,##0.00"
+   else
+      xdShowVerdict 13, "rows", empty
+   end if
+   return false
+end xdSceneSheet
+
+-- ---- scene 2: formulas and dates ---------------------------------------------
+--
+-- Frames 2-17 type the budget and the labels, 18-57 work out the four
+-- formulas (ten frames each), 58-69 the date and the true-or-false cell,
+-- 70 writes the file, 71-86 grow its pie, 87 opens it and checks the
+-- table, 88-99 check the rest a row every second frame, 100 the verdict.
+
+function xdSceneFormulas pStep
+   local tAt, tRow, tFrame, tSpec, tLine, tPath, tBook, tSheet, tHead, tMoney, tDate, tGot, tChart
+   local tReader, tSame, tYMD, tI
+   if pStep is 1 then
+      xdShowBegin 12, 3, "36,190,330", empty
+      put "Item" & tab & "Amount" & return & "Rent" & tab & "1200" & return & "Food" & tab & "452.5" \
+            & return & "Transport" & tab & "121.5" & return & "Fun" & tab & "80" into sShowState["table"]
+      -- each formula row: its label, the formula, and the answer stored with it
+      put "Total|=SUM(B2:B5)|1854" & return & "Average|=AVERAGE(B2:B5)|463.5" & return \
+            & "Largest|=MAX(B2:B5)|1200" & return & "Left of 2,500|=2500-B7|646" into sShowState["formulas"]
+      put xdToday() into sShowState["today"]
+      -- what is typed, in order: the table, then the labels of rows 7 to 12
+      repeat with tRow = 1 to 5
+         repeat with tI = 1 to 2
+            put tRow & tab & tI & tab & xdCellOf(sShowState["table"], tRow, tI) & return after tLine
+         end repeat
+      end repeat
+      set the itemDelimiter to "|"
+      repeat with tRow = 1 to 4
+         put (6 + tRow) & tab & 1 & tab & item 1 of line tRow of sShowState["formulas"] & return after tLine
+      end repeat
+      set the itemDelimiter to comma
+      put "11" & tab & "1" & tab & "Today" & return & "12" & tab & "1" & tab & "Paid" after tLine
+      put tLine into sShowState["queue"]
+      xdShowSay "Typing a month's budget...", "run"
+      return true
+   end if
+   if pStep <= 17 then
+      put line (pStep - 1) of sShowState["queue"] into tLine
+      xdShowType xdCellOf(tLine, 1, 1), xdCellOf(tLine, 1, 2), xdCellOf(tLine, 1, 3)
+      xdShowGrid
+      xdShowBar (pStep - 1) / 16 * 0.2
+      return true
+   end if
+   if pStep <= 57 then
+      put ((pStep - 18) div 10) + 1 into tAt
+      put (pStep - 18) mod 10 into tFrame
+      put 6 + tAt into tRow
+      put line tAt of sShowState["formulas"] into tSpec
+      set the itemDelimiter to "|"
+      if tFrame is 0 then
+         xdShowUntype
+         put item 2 of tSpec into sShowState["c"][tRow][2]
+         put kXdAccent into sShowState["ink"][tRow][2]
+         xdShowSay "Working out " & item 2 of tSpec & "...", "run"
+      else if tFrame is 6 then
+         put xdMoney(item 3 of tSpec) into sShowState["c"][tRow][2]
+         put empty into sShowState["ink"][tRow][2]
+         put item 2 of tSpec into sShowState["c"][tRow][3]
+         put kXdMuted into sShowState["ink"][tRow][3]
+      end if
+      set the itemDelimiter to comma
+      xdShowGrid
+      xdShowBar 0.2 + (pStep - 17) / 40 * 0.25
+      return true
+   end if
+   if pStep <= 69 then
+      if pStep <= 63 then
+         put 11 into tRow
+      else
+         put 12 into tRow
+      end if
+      put (pStep - 58) mod 6 into tFrame
+      if tFrame is 0 and tRow is 11 then
+         put sShowState["today"] into sShowState["c"][11][2]
+         put kXdAccent into sShowState["ink"][11][2]
+         xdShowSay "Today, as a date...", "run"
+      else if tFrame is 0 then
+         put "TRUE" into sShowState["c"][12][2]
+         put kXdAccent into sShowState["ink"][12][2]
+         xdShowSay "And a cell that is true or false...", "run"
+      else if tFrame is 3 then
+         put empty into sShowState["ink"][tRow][2]
+         put kXdMuted into sShowState["ink"][tRow][3]
+         if tRow is 11 then
+            put "a date: yyyy-mm-dd" into sShowState["c"][11][3]
+         else
+            put "true or false" into sShowState["c"][12][3]
+         end if
+      end if
+      xdShowGrid
+      xdShowBar 0.45 + (pStep - 57) / 12 * 0.05
+      return true
+   end if
+   if pStep is 70 then
+      put 1 into sShowState["head"]
+      repeat with tRow = 2 to 5
+         put xdMoney(xdCellOf(sShowState["table"], tRow, 2)) into sShowState["c"][tRow][2]
+      end repeat
+      xdShowGrid
+      xdShowBar 0.5
+      if sShowState["live"] is not true then
+         xdShowStory "-- xlsxt is not loaded: nothing is written"
+         return true
+      end if
+      put xdShowPath("formulas") into tPath
+      put xlWorkbookNew(tPath) into tBook
+      if tBook is 0 then
+         xdShowFail "The workbook could not be started: " & xlLastError()
+         return false
+      end if
+      put tBook into sShowState["book"]
+      put xlWorkbookAddSheet(tBook, "Budget") into tSheet
+      put xlWorkbookAddFormat(tBook) into tHead
+      xlFormatSetBold tHead, true
+      xlFormatSetFontColor tHead, "white"
+      xlFormatSetBackgroundColor tHead, "#E8732C"
+      put xlWorkbookAddFormat(tBook) into tMoney
+      xlFormatSetNumberFormat tMoney, "$#,##0.00"
+      put xlWorkbookAddFormat(tBook) into tDate
+      xlFormatSetNumberFormat tDate, "yyyy-mm-dd"
+      get xlSheetWriteGrid(tSheet, 1, 1, line 1 of sShowState["table"], "text", tHead)
+      repeat with tRow = 2 to 5
+         xlSheetWriteText tSheet, tRow, 1, xdCellOf(sShowState["table"], tRow, 1), 0
+         xlSheetWriteNumber tSheet, tRow, 2, xdCellOf(sShowState["table"], tRow, 2), tMoney
+      end repeat
+      set the itemDelimiter to "|"
+      repeat with tAt = 1 to 4
+         put line tAt of sShowState["formulas"] into tSpec
+         xlSheetWriteText tSheet, 6 + tAt, 1, item 1 of tSpec, 0
+         xlSheetWriteFormulaValue tSheet, 6 + tAt, 2, item 2 of tSpec, item 3 of tSpec, tMoney
+      end repeat
+      set the itemDelimiter to comma
+      xdShowStory "xlSheetWriteFormulaValue(.., " & quote & "=2500-B7" & quote & ", 646, ..)"
+      put xdTodayItems() into tYMD
+      xlSheetWriteText tSheet, 11, 1, "Today", 0
+      xlSheetWriteDate tSheet, 11, 2, xlDateToSerial(item 1 of tYMD, item 2 of tYMD, item 3 of tYMD, 0, 0, 0), tDate
+      xdShowStory "xlSheetWriteDate(sheet, 11, 2, today, date)"
+      xlSheetWriteText tSheet, 12, 1, "Paid", 0
+      xlSheetWriteBoolean tSheet, 12, 2, true, 0
+      xlSheetSetColumns tSheet, 1, 1, 16, 0
+      xlSheetSetColumns tSheet, 2, 2, 14, 0
+      put xlWorkbookAddChart(tBook, "pie") into tChart
+      get xlChartAddSeries(tChart, xlRangeFormula("Budget", 2, 1, 5, 1), xlRangeFormula("Budget", 2, 2, 5, 2))
+      xlChartSetTitle tChart, "Where the money goes"
+      xlSheetInsertChart tSheet, 2, 4, tChart, 1, 1
+      return xdShowClose(tPath)
+   end if
+   if pStep <= 86 then
+      if pStep is 71 then
+         put "Where the money goes: a pie chart at D2" into field "show:ctitle"
+      end if
+      xdShowChart "pie", "1200,452.5,121.5,80", empty, (pStep - 70) * 6.25
+      xdShowBar 0.5 + (pStep - 70) / 16 * 0.2
+      return true
+   end if
+   if pStep is 87 then
+      if sShowState["live"] is true then
+         put xlReadOpen(sShowState["path"]) into tReader
+         if tReader is 0 then
+            xdShowFail "The reader refused the file: " & xlLastError()
+            return false
+         end if
+         put tReader into sShowState["reader"]
+         get xlReadLoad(tReader, 1)
+         -- the table: its words and its numbers
+         repeat with tRow = 1 to 5
+            xdShowMark tRow, (xlReadCell(tReader, 1, tRow, 1) is xdCellOf(sShowState["table"], tRow, 1) \
+                  and xlReadCell(tReader, 1, tRow, 2) is xdCellOf(sShowState["table"], tRow, 2))
+         end repeat
+         xdShowStory "xlReadCellFormula, xlReadCellNumber, xlReadCellKind"
+      end if
+      xdShowGrid
+      xdShowSay "Reading the file back: each formula, its answer and each kind...", "run"
+      return true
+   end if
+   if pStep <= 99 then
+      if (pStep - 88) mod 2 is 0 and sShowState["live"] is true then
+         put sShowState["reader"] into tReader
+         put 7 + ((pStep - 88) div 2) into tRow
+         if tRow <= 10 then
+            put line (tRow - 6) of sShowState["formulas"] into tSpec
+            set the itemDelimiter to "|"
+            put (xlReadCellFormula(tReader, 1, tRow, 2) is item 2 of tSpec \
+                  and xlReadCellNumber(tReader, 1, tRow, 2) is item 3 of tSpec) into tSame
+            set the itemDelimiter to comma
+         else if tRow is 11 then
+            put (xlReadCellKind(tReader, 1, 11, 2) is "date" and xlReadCell(tReader, 1, 11, 2) is sShowState["today"]) into tSame
+         else
+            put (xlReadCellKind(tReader, 1, 12, 2) is "boolean" and xlReadCell(tReader, 1, 12, 2) is "true") into tSame
+         end if
+         xdShowMark tRow, tSame
+         xdShowGrid
+      end if
+      xdShowBar 0.7 + (pStep - 87) / 12 * 0.3
+      return true
+   end if
+   xdShowVerdict 11, "rows", ": the formulas with their answers, the date and the true-or-false cell"
+   return false
+end xdSceneFormulas
+
+-- ---- scene 3: every kind of chart ---------------------------------------------
+--
+-- Frame 1 writes the figures; then each of the fifteen kinds has twelve
+-- frames (2-181): it is added to the workbook on its first, and drawn
+-- growing, then held. 182 closes the file, 183 checks it.
+
+function xdSceneCharts pStep
+   local tRow, tTable, tPath, tBook, tSheet, tHead, tGot, tWhich, tFrame, tKind, tData, tFound, tI, tReader
+   local tSame, tMonths
+   if pStep is 1 then
+      xdShowBegin 7, 3, "36,130,224", empty
+      put "Jan,Feb,Mar,Apr,May,Jun" into tMonths
+      put "12,7,15,9,14,11" into sShowState["north"]
+      put "8,10,6,12,9,13" into sShowState["south"]
+      put "Month" & tab & "North" & tab & "South" into tTable
+      repeat with tRow = 1 to 6
+         put return & item tRow of tMonths & tab & item tRow of sShowState["north"] & tab \
+               & item tRow of sShowState["south"] after tTable
+      end repeat
+      put tTable into sShowState["table"]
+      repeat with tRow = 1 to 7
+         repeat with tI = 1 to 3
+            put xdCellOf(tTable, tRow, tI) into sShowState["c"][tRow][tI]
+         end repeat
+      end repeat
+      put 1 into sShowState["head"]
+      xdShowGrid
+      if sShowState["live"] is true then
+         put xdShowPath("charts") into tPath
+         put tPath into sShowState["path"]
+         put xlWorkbookNew(tPath) into tBook
+         if tBook is 0 then
+            xdShowFail "The workbook could not be started: " & xlLastError()
+            return false
+         end if
+         put tBook into sShowState["book"]
+         put xlWorkbookAddSheet(tBook, "Charts") into tSheet
+         put tSheet into sShowState["sheet"]
+         put xlWorkbookAddFormat(tBook) into tHead
+         xlFormatSetBold tHead, true
+         get xlSheetWriteGrid(tSheet, 1, 1, line 1 of tTable, "text", tHead)
+         put xlSheetWriteGrid(tSheet, 2, 1, line 2 to -1 of tTable, "numbers", 0) into tGot
+         xdShowStory "xlSheetWriteGrid(sheet, 2, 1, figures, ..) = " & tGot
+      else
+         xdShowStory "-- xlsxt is not loaded: nothing is written"
+      end if
+      xdShowSay "Fifteen kinds of chart, all in one workbook...", "run"
+      return true
+   end if
+   if pStep <= 181 then
+      put ((pStep - 2) div 12) + 1 into tWhich
+      put (pStep - 2) mod 12 into tFrame
+      put item tWhich of kXdChartKinds into tKind
+      if tFrame is 0 then
+         put tKind & "   (" & tWhich & " of 15)" into field "show:ctitle"
+         if sShowState["live"] is true then
+            xdShowAddChart tKind, tWhich
+         end if
+      end if
+      if tKind is "pie" or tKind is "doughnut" then
+         xdShowChart tKind, sShowState["north"], empty, min(100, (tFrame + 1) * 12.5)
+      else
+         xdShowChart tKind, sShowState["north"], sShowState["south"], min(100, (tFrame + 1) * 12.5)
+      end if
+      xdShowBar (pStep - 1) / 180 * 0.85
+      if pStep is 181 then
+         xdShowSay "Closing the workbook: fifteen charts go into the file...", "run"
+      end if
+      return true
+   end if
+   if pStep is 182 then
+      if sShowState["live"] is true then
+         return xdShowClose(sShowState["path"])
+      end if
+      return true
+   end if
+   -- 183: the file holds every chart, and its figures read back the same
+   if sShowState["live"] is true then
+      put URL ("binfile:" & sShowState["path"]) into tData
+      put 0 into tFound
+      repeat with tI = 1 to 15
+         if offset("xl/charts/chart" & tI & ".xml", tData) > 0 then
+            add 1 to tFound
+         end if
+      end repeat
+      put xlReadOpen(sShowState["path"]) into tReader
+      if tReader is 0 then
+         xdShowFail "The reader refused the file: " & xlLastError()
+         return false
+      end if
+      put tReader into sShowState["reader"]
+      get xlReadLoad(tReader, 1)
+      put xlReadGrid(tReader, 1, 1, 1, 7, 3) into tGot
+      repeat with tRow = 1 to 7
+         put (line tRow of tGot is line tRow of sShowState["table"]) into tSame
+         xdShowMark tRow, tSame
+      end repeat
+      xdShowGrid
+      if tFound is 15 then
+         xdShowVerdict 7, "rows", ", and all fifteen charts are in it (xl/charts/chart1.xml to chart15.xml)"
+      else
+         xdShowVerdict 7, "rows", empty
+         xdShowDone false, "The file holds " & tFound & " of the fifteen charts."
+      end if
+   else
+      xdShowVerdict 7, "rows", empty
+   end if
+   return false
+end xdSceneCharts
+
+-- One chart of the scene, made, given its series and placed on the sheet,
+-- three to a row.
+private command xdShowAddChart pKind, pWhich
+   local tChart, tCats, tNorth, tSouth
+   put xlRangeFormula("Charts", 2, 1, 7, 1) into tCats
+   put xlRangeFormula("Charts", 2, 2, 7, 2) into tNorth
+   put xlRangeFormula("Charts", 2, 3, 7, 3) into tSouth
+   put xlWorkbookAddChart(sShowState["book"], pKind) into tChart
+   if pKind begins with "scatter" then
+      get xlChartAddSeries(tChart, tNorth, tSouth)
+      xlChartSeriesSetName tChart, 1, "South against North"
+      xlChartSeriesSetColor tChart, 1, kXdAccent
+   else if pKind is "pie" or pKind is "doughnut" then
+      get xlChartAddSeries(tChart, tCats, tNorth)
+      xlChartSeriesSetName tChart, 1, "North"
+   else
+      get xlChartAddSeries(tChart, tCats, tNorth)
+      xlChartSeriesSetName tChart, 1, "North"
+      xlChartSeriesSetColor tChart, 1, kXdAccent
+      get xlChartAddSeries(tChart, tCats, tSouth)
+      xlChartSeriesSetName tChart, 2, "South"
+      xlChartSeriesSetColor tChart, 2, kXdSecond
+   end if
+   xlChartSetTitle tChart, pKind
+   xlSheetInsertChart sShowState["sheet"], 1 + ((pWhich - 1) div 3) * 16, 5 + ((pWhich - 1) mod 3) * 8, tChart, 1, 1
+   xdShowStory "xlWorkbookAddChart(book, " & quote & pKind & quote & ")"
+end xdShowAddChart
+
+-- ---- scene 4: ten thousand cells ---------------------------------------------
+--
+-- Frame 1 makes the numbers; 2-51 write two rows of a hundred each; 52
+-- closes the file; 53 opens it; 54-103 read two rows each and compare;
+-- 104 says how long the library took and what it found.
+
+function xdSceneMany pStep
+   local tRow, tColumn, tLine, tPath, tBook, tGot, tStart, tReader, tSame, tFile
+   if pStep is 1 then
+      xdShowBegin 100, 7, "44,116,188,260,332,404,440", \
+            tab & "A" & tab & "B" & tab & "C" & tab & "D" & tab & "E" & tab & "..." & tab & "CV"
+      repeat with tRow = 1 to 100
+         put empty into tLine
+         repeat with tColumn = 1 to 100
+            put tab & ((tRow * 7919 + tColumn * 104729) mod 100000) after tLine
+         end repeat
+         delete char 1 of tLine
+         put tLine into sShowState["src"][tRow]
+      end repeat
+      put 0 into sShowState["writeMs"]
+      put 0 into sShowState["readMs"]
+      put 0 into sShowState["written"]
+      if sShowState["live"] is true then
+         put xdShowPath("many") into tPath
+         put tPath into sShowState["path"]
+         put xlWorkbookNew(tPath) into tBook
+         if tBook is 0 then
+            xdShowFail "The workbook could not be started: " & xlLastError()
+            return false
+         end if
+         put tBook into sShowState["book"]
+         put xlWorkbookAddSheet(tBook, "Ten thousand") into sShowState["sheet"]
+      else
+         xdShowStory "-- xlsxt is not loaded: nothing is written"
+      end if
+      xdShowSay "Writing ten thousand cells, two rows a frame...", "run"
+      return true
+   end if
+   if pStep <= 51 then
+      put (pStep - 2) * 2 + 1 into tRow
+      if sShowState["live"] is true then
+         put the milliseconds into tStart
+         put xlSheetWriteGrid(sShowState["sheet"], tRow, 1, sShowState["src"][tRow] & return & sShowState["src"][tRow + 1], \
+               "numbers", 0) into tGot
+         add the milliseconds - tStart to sShowState["writeMs"]
+         add tGot to sShowState["written"]
+      end if
+      xdShowManyRows tRow
+      xdShowManyRows tRow + 1
+      put max(1, tRow + 1 - (kXdGridLines - 2)) into sShowState["top"]
+      xdShowGrid
+      xdShowManyChart
+      xdShowBar (tRow + 1) / 100 * 0.45
+      xdShowSay "Writing: " & xdThousands((tRow + 1) * 100) & " of 10,000 cells", "run"
+      if pStep is 51 then
+         xdShowStory "xlSheetWriteGrid x 50 = " & xdThousands(sShowState["written"]) & " cells"
+         xdShowSay "Closing: the library writes the sheet and zips the file...", "run"
+      end if
+      return true
+   end if
+   if pStep is 52 then
+      if sShowState["live"] is true then
+         put the milliseconds into tStart
+         if not xdShowClose(sShowState["path"]) then
+            return false
+         end if
+         add the milliseconds - tStart to sShowState["writeMs"]
+      end if
+      xdShowBar 0.5
+      return true
+   end if
+   if pStep is 53 then
+      if sShowState["live"] is true then
+         put the milliseconds into tStart
+         put xlReadOpen(sShowState["path"]) into tReader
+         if tReader is 0 then
+            xdShowFail "The reader refused the file: " & xlLastError()
+            return false
+         end if
+         put tReader into sShowState["reader"]
+         get xlReadLoad(tReader, 1)
+         add the milliseconds - tStart to sShowState["readMs"]
+         xdShowStory "xlReadOpen, xlReadLoad, then xlReadGrid x 50"
+      end if
+      xdShowSay "Reading them back, two rows a frame...", "run"
+      return true
+   end if
+   if pStep <= 103 then
+      put (pStep - 54) * 2 + 1 into tRow
+      if sShowState["live"] is true then
+         put the milliseconds into tStart
+         put xlReadGrid(sShowState["reader"], 1, tRow, 1, tRow + 1, 100) into tGot
+         add the milliseconds - tStart to sShowState["readMs"]
+         put (line 1 of tGot is sShowState["src"][tRow]) into tSame
+         xdShowMark tRow, tSame
+         put (line 2 of tGot is sShowState["src"][tRow + 1]) into tSame
+         xdShowMark tRow + 1, tSame
+      end if
+      put max(1, tRow + 1 - (kXdGridLines - 2)) into sShowState["top"]
+      xdShowGrid
+      xdShowManyChart
+      xdShowBar 0.5 + (tRow + 1) / 100 * 0.5
+      xdShowSay "Reading: " & xdThousands((tRow + 1) * 100) & " of 10,000 cells", "run"
+      return true
+   end if
+   if sShowState["reader"] is an integer and sShowState["reader"] > 0 then
+      xlReadClose sShowState["reader"]
+   end if
+   put empty into sShowState["reader"]
+   if sShowState["live"] is not true then
+      xdShowVerdict 100, "rows", empty
+   else if sShowState["same"] is 100 and sShowState["written"] is 10000 then
+      put xdFileName(sShowState["path"]) & ", " & xdThousands(the number of bytes of URL ("binfile:" & sShowState["path"])) \
+            & " bytes" into tFile
+      xdShowDone true, "10,000 cells written in " & xdSeconds(sShowState["writeMs"]) & " and read back in " \
+            & xdSeconds(sShowState["readMs"]) & " (time inside the library), every one the same. " & tFile & "."
+   else
+      xdShowDone false, "Of 100 rows, " & sShowState["differ"] & " came back different; " \
+            & xdThousands(sShowState["written"]) & " cells were written."
+   end if
+   return false
+end xdSceneMany
+
+-- Column A of the rows on the scene's sheet, drawn as an area that moves
+-- as the rows go by.
+private command xdShowManyChart
+   local tRow, tValues, tLast
+   put min(100, sShowState["top"] + kXdGridLines - 2) into tLast
+   repeat with tRow = sShowState["top"] to tLast
+      if sShowState["c"][tRow][1] is not empty then
+         put sShowState["c"][tRow][1] & comma after tValues
+      end if
+   end repeat
+   delete the last char of tValues
+   if the number of items of tValues < 2 then
+      exit xdShowManyChart
+   end if
+   put "Column A of rows " & sShowState["top"] & " to " & (sShowState["top"] + (the number of items of tValues) - 1) \
+         into field "show:ctitle"
+   xdShowChart "area", tValues, empty, 100
+end xdShowManyChart
+
+-- A row of the ten thousand on the scene's sheet: its first five cells,
+-- then the hundredth (column CV).
+private command xdShowManyRows pRow
+   local tColumn
+   repeat with tColumn = 1 to 5
+      put xdCellOf(sShowState["src"][pRow], 1, tColumn) into sShowState["c"][pRow][tColumn]
+   end repeat
+   put "..." into sShowState["c"][pRow][6]
+   put xdCellOf(sShowState["src"][pRow], 1, 100) into sShowState["c"][pRow][7]
+end xdShowManyRows
+

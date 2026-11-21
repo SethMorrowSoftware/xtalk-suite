@@ -9,7 +9,7 @@ script "xlsxtBuildDemoStack"
 -- The stack it saves holds the demo's script and NO controls: the demo
 -- builds its window when the stack opens, on the engine that opens it, so
 -- the status line tells the truth about that engine's library. Only the
--- size is set here (the demo's own 960 x 620), so a player can lay the
+-- size is set here (the demo's own 960 x 640), so a player can lay the
 -- page out before the stack has run.
 on startup
    local tError, tName
@@ -21,8 +21,8 @@ on startup
       set the lockMessages to true
       create invisible stack tName
       set the width of stack tName to 960
-      set the height of stack tName to 620
-      set the title of stack tName to "xlsxt - Excel files written and read"
+      set the height of stack tName to 640
+      set the title of stack tName to "Spreadsheet Studio - xlsxt"
       set the script of stack tName to textDecode(URL ("binfile:" & $XLSXT_DEMO), "UTF-8")
       set the visible of stack tName to true
       save stack tName as $XLSXT_OUT
