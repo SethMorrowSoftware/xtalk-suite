@@ -38,6 +38,7 @@ it is developed here, and each member is also published into its own repository
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
 | [box3dxt](box3dxt/) | `b3*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling |
 | [audioxt](audioxt/) | `au*` | miniaudio 0.11.26 | Sound beside the engine's own `play`: any number of sounds mixed at once with low delay, music streamed from WAV, FLAC and MP3, sample-exact start times, fades and loops, groups, 3D placement, tones and noise, microphone capture to samples or straight to a WAV file, decoding and offline rendering |
+| [render3dxt](render3dxt/) | `r3*` | its own C renderer, with stb_image and fast_obj compiled in | A textured 3D picture for an ordinary image control: OBJ models with their materials and pictures, boxes to capsules made to measure, PNG / JPEG / BMP / TGA textures, sun and lamp lights, fog, smooth edges, a camera that projects and casts rays, clicking on things; drawn on the processor across its cores, and made to draw what box3dxt simulates |
 | [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
@@ -69,6 +70,11 @@ Design facts that decide how you use them (each member's own docs have the rest)
   player object are untouched. It never sends a message; a stack asks which sounds ended
   (`auPollEnded`) on a timer, and calls `auShutDown` when it closes
   (`audioxt/docs/getting-started.md`).
+- **render3dxt** draws and nothing else: a scene in, `imageData` out, no window and no
+  graphics card. It shares box3dxt's world (y up, metres, quaternions) and reads its texts
+  as they stand, so a physics step reaches the picture in one call
+  (`r3SceneApplyMoves(scene, b3MovesText())`); neither extension needs the other. Models and
+  pictures are files from anywhere, so every index and size in one is checked before use.
 - **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
   number formats), not its looks. It does not edit a file in place or calculate formulas, and the
   reader treats every file as a stranger's: every size in one is bounded
@@ -136,6 +142,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | curlxt | 6 platforms, ABI 1 | Windows x86-64 only, on the 2026-11-14 DLL: the three extensions loaded and probed in OXT-Beyond's Windows CI, 2026-11-14; `tsNetGetSync`, an async `tsNetGet`, a refused expired certificate and five concurrent `cuRequestAsync` calls on the maintainer's PC through the MCP bridge, 2026-11-15 | the 2026-11-15 rebuild; SFTP, SCP, SMTP, FTP and uploads on an engine; Linux and mac on an engine |
 | box3dxt | 6 platforms, 4 Android ABIs and a web archive, ABI 2 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | the committed release libraries on any engine (the runs so far loaded locally built ones); Windows, macOS, Android and the web; a row in the suite paste |
 | audioxt | the web archive only (the first release dispatch lands the rest), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library and through miniaudio's silent device: the module loaded, the ABI check passed, binary data crossed both ways, a tone was rendered and measured, and every public handler was called; the web archive played and recorded in headless Chromium the same day | everything else: no machine with a sound card, no desktop IDE and no engine on Windows, macOS, Android or the web has run it, and nobody has heard it; needs an OXT pass |
+| render3dxt | the web archive only (the first release dispatch lands the rest), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second. On Windows (OXT-Beyond 0.2.8-dp.1, dark system appearance) the rebuilt demo was readable, 2026-11-21 | macOS, Android and the web; a pointer on Windows; the desktop and Android libraries committed; a row in the suite paste |
 | xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
@@ -178,8 +185,8 @@ member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: ne
 on Android.
 box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
-xlsxt joined the same day, the same way.
-audioxt joined the same day and is in the recipe; none of its Android libraries is committed yet.
+audioxt, render3dxt and xlsxt joined the same day and are in the recipe; none of their
+Android libraries is committed yet.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -254,6 +261,7 @@ put cxKeccak256Len()     -- coinxt: prints 32
 put cuLibraryVersion()   -- curlxt
 put b3LibraryVersion()   -- box3dxt
 put auLibraryVersion()   -- audioxt
+put r3LibraryVersion()   -- render3dxt
 put xlLibraryVersion()   -- xlsxt
 put oxVersion()          -- onionxt (its library in use)
 put nxVersion()          -- nostrxt (after start using stack "nostrxt")

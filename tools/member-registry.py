@@ -128,6 +128,13 @@ MEMBERS = [
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository was "
                        "created empty for the suite to publish into"),
+    Member("render3dxt", "render3dxt", "extension", OWNER + "/render3dxt",
+           # Its gates read its own files only: no sibling beside it. (Its
+           # native lane runs one engine test over box3dxt too, where box3dxt
+           # is beside it; that is a lane step, not a gate.)
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
+                       "created empty for the suite to publish into"),
     Member("coinxt", "CoinXT", "extension", OWNER + "/CoinXT",
            native=True,
            # tools/check-wallet-boot.py REUSES riptide's boot runner rather

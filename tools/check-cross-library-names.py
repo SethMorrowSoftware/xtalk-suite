@@ -105,6 +105,9 @@ LCB_LIBS = {
     "box3dxt/src/box3dxt.lcb": ("b3",),
     # audioxt joined 2026-11-20. "au" is nobody else's prefix.
     "audioxt/src/audioxt.lcb": ("au",),
+    # render3dxt joined 2026-11-20: the renderer beside the two physics
+    # bindings, and no other prefix begins with "r3".
+    "render3dxt/src/render3dxt.lcb": ("r3",),
     "curlxt/src/curl.lcb": ("cu",),
     # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
     "xlsxt/src/xlsxt.lcb": ("xl",),
