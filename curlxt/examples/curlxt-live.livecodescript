@@ -1895,9 +1895,12 @@ end tsnxStatusTick
 
 -- ---- the demo's own constants and state ----------------------------------
 -- Bump when the built window changes, so a saved stack rebuilds its controls.
-constant kCdUiVersion = "curlxt-live-2"
+constant kCdUiVersion = "curlxt-live-3"
 constant kCdWinW = 1180
 constant kCdWinH = 640
+-- Room left above the window for its title bar when it is placed (the
+-- stack's rect is its card, not its frame).
+constant kCdTitleRoom = 32
 -- OXT-Beyond's palette (the Render3D Tour's), plus the three status colours.
 constant kCdPage = "#12151F"
 constant kCdPanel = "#1C2130"
@@ -1964,6 +1967,10 @@ constant kCdPortSpan = 30000
 constant kCdSrvMaxBody = 1048576
 constant kCdSrvMaxMessage = 65535
 constant kCdSrvMaxWait = 3000
+-- How long a connection that has had its last bytes waits for its client to
+-- close it before the server closes it (cdSrvReap). Every client this stack
+-- makes closes at once, so this is for strangers.
+constant kCdSrvLingerMs = 3000
 constant kCdWsGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 -- ---- script-local state (declared at top) ------------------------------------
@@ -2020,10 +2027,12 @@ local sCdBackAt       -- when the socket opened again after that
 local sCdSrvPort      -- the port it listens on, else empty
 local sCdLastPort     -- the last port it listened on (scene 5 comes back to it)
 local sCdConn         -- array: an accepted socket -> what the server knows of it
+local sCdSrvSerial    -- the serial the last accepted connection was given
 
 -- ---- lifecycle ---------------------------------------------------------------
 on openStack
    cdBuild
+   cdPlaceWindow
    cdStart
    -- the boot self-check runs before anything is hosted or connected, and
    -- after the build and start it reads (LAST in this handler's own work)
@@ -2121,8 +2130,16 @@ command cdQuiet pName
    set the autoHilite of field pName to false
 end cdQuiet
 
--- One line of text at a fixed rect.
+-- One line of text at a fixed rect. The line's height is the stack's, not
+-- the font's: a fixed line height puts the baseline a descent above the
+-- line's bottom (MCField::do_recompute), so the words sit in the field
+-- whatever the platform says its font's ascent is. With the font's own
+-- height, Windows (OXT-Beyond 0.2.8-dp.1, 2026-11-21) drew every label a few
+-- pixels too high and its field cut the tops off; the wrapping fields, which
+-- always had a fixed height, were whole. The boot self-check holds every
+-- label to it (cdLabelFits).
 command cdLabel pName, pText, pRect, pSize, pColor, pStyle
+   local tHeight
    if there is no field pName then
       create field
       set the name of the last field to pName
@@ -2132,9 +2149,24 @@ command cdLabel pName, pText, pRect, pSize, pColor, pStyle
    set the dontWrap of field pName to true
    set the textSize of field pName to pSize
    set the textStyle of field pName to pStyle
+   -- the field's height less its two margins, and never more than one and a
+   -- half times the size (the wrapping fields' line)
+   put min(the height of field pName - 4, round(pSize * 1.5)) into tHeight
+   set the fixedLineHeight of field pName to true
+   set the textHeight of field pName to tHeight
+   set the uCdLabel of field pName to true
    set the foregroundColor of field pName to pColor
    put pText into field pName
 end cdLabel
+
+-- True when a label keeps its one line inside it: a fixed line height that
+-- its field's height holds with both margins.
+function cdLabelFits pName
+   if the fixedLineHeight of field pName is not true then
+      return false
+   end if
+   return the textHeight of field pName + 4 <= the height of field pName
+end cdLabelFits
 
 -- Text that wraps, with roomy lines (the tour's makeText).
 command cdText pName, pText, pRect, pSize, pColor
@@ -2230,10 +2262,19 @@ end uiStatus
 
 -- ---- the window (built once; rebuilt on a version bump) -------------------------
 command cdBuild
-   local tI, tLeft, tTop, tY
+   local tI, tLeft, tTop, tY, tWasLocked
    if the uCdUiVersion of this stack is kCdUiVersion and there is a field "cdLog" then
       exit cdBuild
    end if
+   -- Messages locked for the build: every control made or deleted sends a
+   -- message the IDE answers (newField, deleteButton, ...), and an open
+   -- project browser redraws for each (so say the IDE's own sources, and
+   -- box2dxt's platformer locks them for the same reason). On Windows the
+   -- first build held the IDE for 22.7 s (2026-11-21). Nothing here listens
+   -- for those messages, and the build calls its own handlers, which a lock
+   -- does not stop.
+   put the lockMessages into tWasLocked
+   lock messages
    cdClearGeneratedUI
    lock screen
    set the width of this stack to kCdWinW
@@ -2335,7 +2376,60 @@ command cdBuild
    cdShowStage 0
    set the uCdUiVersion of this stack to kCdUiVersion
    unlock screen
+   set the lockMessages to tWasLocked
 end cdBuild
+
+-- A script-only stack opens in a small window near the screen's top left,
+-- and a width set afterwards keeps the window's centre: 1180 wide, its left
+-- edge lands 430 pixels off the screen (Windows, 2026-11-21:
+-- -430,-13,750,627; the headless engine makes the same -430). So the window
+-- goes to the middle of the screen, unless it is wholly on one already (a
+-- stack reopened where its user left it). With no screen at all (the
+-- headless engine) it stays put.
+command cdPlaceWindow
+   local tScreens, tR, tLeft, tTop
+   put the working screenRects into tScreens
+   if tScreens is empty then
+      exit cdPlaceWindow
+   end if
+   if cdWindowOnScreen(tScreens) then
+      exit cdPlaceWindow
+   end if
+   put line 1 of tScreens into tR
+   -- centred in the main screen's working area, never above or left of it
+   put max(item 1 of tR, (item 1 of tR + item 3 of tR - the width of this stack) div 2) into tLeft
+   put max(item 2 of tR + kCdTitleRoom, (item 2 of tR + item 4 of tR - the height of this stack) div 2) into tTop
+   set the topLeft of this stack to tLeft & "," & tTop
+end cdPlaceWindow
+
+-- True when the window's top left corner, title bar included, is on one of
+-- pScreens (rects, one a line): what cdPlaceWindow promises even on a
+-- screen too small for the whole window. The boot self-check holds it.
+function cdTitleBarOnScreen pScreens
+   local tR, tX, tY
+   put item 1 of the rect of this stack into tX
+   put item 2 of the rect of this stack - kCdTitleRoom into tY
+   repeat for each line tR in pScreens
+      if tX >= item 1 of tR and tY >= item 2 of tR and tX < item 3 of tR and tY < item 4 of tR then
+         return true
+      end if
+   end repeat
+   return false
+end cdTitleBarOnScreen
+
+-- True when the window, its title bar included, is wholly inside one of
+-- pScreens (rects, one a line).
+function cdWindowOnScreen pScreens
+   local tR, tWin
+   put the rect of this stack into tWin
+   repeat for each line tR in pScreens
+      if item 1 of tWin >= item 1 of tR and item 2 of tWin - kCdTitleRoom >= item 2 of tR \
+            and item 3 of tWin <= item 3 of tR and item 4 of tWin <= item 4 of tR then
+         return true
+      end if
+   end repeat
+   return false
+end cdWindowOnScreen
 
 command cdClearGeneratedUI
    local tI
@@ -3228,6 +3322,8 @@ command cdTilesGo
       put "http://127.0.0.1:" & sCdSrvPort & "/tile/" & tI & "?wait=" & tWait into tUrl
       put the milliseconds into sCdTile[tI]["started"]
       put "running" into sCdTile[tI]["state"]
+      -- the tile says so at once (it said "queued" until its answer came)
+      cdTilePaint tI
       if tI is 15 then
          -- the tsNet spelling: a connection ID, and a callback with tsNet's
          -- own four parameters
@@ -3260,6 +3356,7 @@ command cdTilesGo
    put kCdNetTimeoutMs into tOpts["connectTimeout"]
    put the milliseconds into sCdTile[16]["started"]
    put "running" into sCdTile[16]["state"]
+   cdTilePaint 16
    put cuRequestAsync("GET", kCdNetUrl, empty, empty, tOpts, the long id of me, "cdTileEnded") into tReq
    if tReq is 0 then
       cdTileEnd 16, false, cuHelpersError()
@@ -3335,6 +3432,10 @@ command cdTileEnd pTile, pOk, pWords
          put "the internet was not reached (" & pWords & ")" into sCdNetWords
       end if
       cdLog "scene 4: " & kCdNetUrl & ": " & pWords
+   else if not pOk then
+      -- a local request should never fail: say which, and why, where it can
+      -- be copied from (the tile has room for one word)
+      cdLog "scene 4: " & cdTileName(pTile) & " failed after " & sCdTile[pTile]["ms"] & " ms: " & pWords
    end if
    cdTilePaint pTile
 end cdTileEnd
@@ -3768,8 +3869,18 @@ end cdCloseWords
 -- It starts with the first scene that needs it and listens until the stack
 -- closes (scene 5 stops it on purpose, and starts it again on the same
 -- port). Nothing it does waits: every read and every write is the engine's
--- background kind, and a connection closes only once the engine says its
--- last bytes are written (cdSrvWrote).
+-- background kind.
+--
+-- Once a connection's last bytes are written (cdSrvWrote) it is the CLIENT
+-- that ends it: the answer says "Connection: close", or the close frame says
+-- goodbye, and the client's socketClosed ends it here. The server does not
+-- close a connection by its id once the client may have closed it, because
+-- the id may already name the next connection: on Windows the engine names
+-- an accepted socket after its handle, and Windows hands a closed one's
+-- handle to the next connection at once (engine note 6.20). Closing by the
+-- id then closed the NEW connection, which its client saw as "Empty reply
+-- from server" (one request in four on Windows, 2026-11-21). A connection
+-- that outstays kCdSrvLingerMs is closed by its serial (cdSrvReap).
 command cdSrvEnsure
    if sCdSrvPort is empty then
       cdSrvStart
@@ -3821,7 +3932,7 @@ command cdSrvStop pNow
    put the keys of sCdConn into tSocks
    repeat for each line tSock in tSocks
       if pNow is not true and sCdConn[tSock]["kind"] is "ws" \
-            and sCdConn[tSock]["stage"] is not "closing" then
+            and sCdConn[tSock]["done"] is not true then
          cdSrvSend tSock, 8, numToByte(3) & numToByte(233), true
       else
          cdSrvForget tSock
@@ -3854,10 +3965,42 @@ function cdSrvKnows pSock
    return pSock is among the keys of sCdConn
 end cdSrvKnows
 
+-- Forget a connection and close it: only for one the engine still holds
+-- open as THIS connection (refused at its accept, a request that never came,
+-- the server stopping, cdSrvReap).
 command cdSrvForget pSock
    delete variable sCdConn[pSock]
    cdSrvCloseSocket pSock
 end cdSrvForget
+
+-- Forget a connection the engine has closed already (its socketClosed or
+-- socketError came, or a read came back short because it closed), and do
+-- NOT close by its id, which may be the next connection's now (engine note
+-- 6.20).
+command cdSrvDrop pSock
+   delete variable sCdConn[pSock]
+end cdSrvDrop
+
+-- A connection had its last bytes kCdSrvLingerMs ago and its client has not
+-- closed it. pSerial says which connection the timer was set for: an id the
+-- engine has since given to another connection has another serial, and is
+-- left alone. The serial knows only the accepts that have come: a client
+-- that closed and a new connection on its id, both still queued when this
+-- timer runs, would need the engine held for kCdSrvLingerMs across the two,
+-- and every client this stack makes closes long before.
+on cdSrvReap pSock, pSerial
+   set the defaultStack to the short name of this stack
+   if not cdSrvKnows(pSock) then
+      exit cdSrvReap
+   end if
+   if sCdConn[pSock]["serial"] is not pSerial then
+      exit cdSrvReap
+   end if
+   if pSock is among the lines of the openSockets then
+      cdLog "server: " & pSock & " was still open " & cdSeconds(kCdSrvLingerMs) & " after its last bytes; closed it"
+   end if
+   cdSrvForget pSock
+end cdSrvReap
 
 -- The HOST of an accepted socket id, by shape (engine note 6.2): drop a
 -- "|name" suffix; a bracketed group is the host; otherwise everything up to
@@ -3891,20 +4034,35 @@ end cdSrvIsLoopback
 
 on cdSrvAccept pSock
    set the defaultStack to the short name of this stack
+   cdSrvTakeId pSock
    if sCdSrvPort is empty then
-      cdSrvCloseSocket pSock
+      cdSrvForget pSock
       exit cdSrvAccept
    end if
    if not cdSrvIsLoopback(cdSrvHostOf(pSock)) then
       cdLog "server: refused " & pSock & " (only this machine may connect)"
-      cdSrvCloseSocket pSock
+      cdSrvForget pSock
       exit cdSrvAccept
    end if
+   cdSrvReadHead pSock
+end cdSrvAccept
+
+-- A connection's first moment: a serial of its own and a fresh entry. An id
+-- the server still holds is a connection that has ended without the server
+-- hearing it (engine note 6.20: on Windows the id is the socket's handle,
+-- which the next connection gets at once). Its entry goes, unclosed: the id
+-- is the new connection's now. The boot self-check holds it to that.
+command cdSrvTakeId pSock
+   if cdSrvKnows(pSock) then
+      cdSrvDrop pSock
+   end if
+   add 1 to sCdSrvSerial
+   put sCdSrvSerial into sCdConn[pSock]["serial"]
    put "head" into sCdConn[pSock]["stage"]
    put "http" into sCdConn[pSock]["kind"]
    put 0 into sCdConn[pSock]["out"]
-   cdSrvReadHead pSock
-end cdSrvAccept
+   put false into sCdConn[pSock]["done"]
+end cdSrvTakeId
 
 command cdSrvReadHead pSock
    local tEnd
@@ -3918,6 +4076,11 @@ on cdSrvHead pSock, pData
    local tHead, tLine, tName, tValue, tColon, tLines, tLen, tKey, tUpgrade, tExpect
    set the defaultStack to the short name of this stack
    if not cdSrvKnows(pSock) then
+      exit cdSrvHead
+   end if
+   if pData is empty then
+      -- the read ended because the client closed before it sent anything
+      cdSrvDrop pSock
       exit cdSrvHead
    end if
    put pData into tHead
@@ -4011,18 +4174,22 @@ command cdSrvAnswer pSock, pBody
    put sCdConn[pSock]["wait"] into tWait
    if tWait > 0 then
       put "waiting" into sCdConn[pSock]["stage"]
-      send ("cdSrvLater" && quote & pSock & quote) to me in tWait milliseconds
+      -- the serial goes with it: a client that gave up while it waited
+      -- leaves its id free for the next connection (engine note 6.20),
+      -- which is not to be answered early
+      send ("cdSrvLater" && quote & pSock & quote & comma & sCdConn[pSock]["serial"]) \
+            to me in tWait milliseconds
       exit cdSrvAnswer
    end if
    cdSrvAnswerNow pSock
 end cdSrvAnswer
 
-on cdSrvLater pSock
+on cdSrvLater pSock, pSerial
    set the defaultStack to the short name of this stack
    if not cdSrvKnows(pSock) then
       exit cdSrvLater
    end if
-   if sCdConn[pSock]["stage"] is not "waiting" then
+   if sCdConn[pSock]["serial"] is not pSerial or sCdConn[pSock]["stage"] is not "waiting" then
       exit cdSrvLater
    end if
    cdSrvAnswerNow pSock
@@ -4044,8 +4211,8 @@ command cdSrvAnswerNow pSock
    cdSrvReply pSock, "200 OK", tBody, (tMethod is "HEAD")
 end cdSrvAnswerNow
 
--- One answer, then the connection ends ("Connection: close"): the socket
--- closes once the engine says the bytes are written.
+-- One answer, then the connection ends ("Connection: close"): its client
+-- closes it once it has read the answer (cdSrvWrote).
 command cdSrvReply pSock, pStatus, pBody, pHeadOnly
    local tHead, tAll
    put "HTTP/1.1 " & pStatus & crlf & "Content-Type: text/plain; charset=utf-8" & crlf \
@@ -4056,25 +4223,32 @@ command cdSrvReply pSock, pStatus, pBody, pHeadOnly
    if pHeadOnly is not true then
       put pBody after tAll
    end if
-   put "closing" into sCdConn[pSock]["stage"]
+   put true into sCdConn[pSock]["done"]
    cdSrvWrite pSock, tAll
 end cdSrvReply
 
--- Every write is the background kind, counted, so a connection that is
--- closing closes only after its last write.
+-- Every write is the background kind, and counted, so the server knows when
+-- a connection's last bytes are out.
 command cdSrvWrite pSock, pData
    add 1 to sCdConn[pSock]["out"]
    write pData to socket pSock with message "cdSrvWrote"
 end cdSrvWrite
 
+-- When the last bytes of a connection that is done are out, its client
+-- closes it (see the top of the server), and cdSrvReap closes it from here
+-- only if that has not happened in kCdSrvLingerMs. The serial goes with the
+-- timer, so a connection that has been given the id by then is left alone.
 on cdSrvWrote pSock
    set the defaultStack to the short name of this stack
    if not cdSrvKnows(pSock) then
       exit cdSrvWrote
    end if
    subtract 1 from sCdConn[pSock]["out"]
-   if sCdConn[pSock]["stage"] is "closing" and sCdConn[pSock]["out"] < 1 then
-      cdSrvForget pSock
+   if sCdConn[pSock]["done"] is true and sCdConn[pSock]["out"] < 1 \
+         and sCdConn[pSock]["stage"] is not "ended" then
+      put "ended" into sCdConn[pSock]["stage"]
+      send ("cdSrvReap" && quote & pSock & quote & comma & sCdConn[pSock]["serial"]) \
+            to me in kCdSrvLingerMs milliseconds
    end if
 end cdSrvWrote
 
@@ -4112,8 +4286,9 @@ on cdSrvFrameHead pSock, pData
    if not cdSrvKnows(pSock) then
       exit cdSrvFrameHead
    end if
+   -- a short read is a socket the engine has closed (cdSrvDrop)
    if the number of bytes of pData < 2 then
-      cdSrvForget pSock
+      cdSrvDrop pSock
       exit cdSrvFrameHead
    end if
    put byteToNum(byte 1 of pData) into tB1
@@ -4154,7 +4329,7 @@ on cdSrvFrameMask pSock, pData
       put 4 into tNeed
    end if
    if the number of bytes of pData < tNeed then
-      cdSrvForget pSock
+      cdSrvDrop pSock
       exit cdSrvFrameMask
    end if
    if tNeed is 6 then
@@ -4184,7 +4359,7 @@ on cdSrvFramePayload pSock, pData
       exit cdSrvFramePayload
    end if
    if the number of bytes of pData < sCdConn[pSock]["len"] then
-      cdSrvForget pSock
+      cdSrvDrop pSock
       exit cdSrvFramePayload
    end if
    -- a chunk of an array element is taken from a local copy (holde-em H6)
@@ -4270,11 +4445,16 @@ function cdSrvFrameBytes pOpcode, pPayload
    return tFrame
 end cdSrvFrameBytes
 
--- Send one frame. pThenClose ends the connection once the engine has
--- written it.
+-- Send one frame. pThenClose makes it the connection's last (a close
+-- frame): nothing is sent after it (RFC 6455, section 5.5.1), so the
+-- client's own close frame in reply is not answered again, and the client
+-- ends the connection once it has read it (cdSrvWrote).
 command cdSrvSend pSock, pOpcode, pPayload, pThenClose
+   if sCdConn[pSock]["done"] is true then
+      exit cdSrvSend
+   end if
    if pThenClose is true then
-      put "closing" into sCdConn[pSock]["stage"]
+      put true into sCdConn[pSock]["done"]
    end if
    cdSrvWrite pSock, cdSrvFrameBytes(pOpcode, pPayload)
 end cdSrvSend
@@ -4306,11 +4486,13 @@ on socketTimeout pSock
    end if
 end socketTimeout
 
+-- The engine has closed these sockets itself: forget them, never close by
+-- the id (cdSrvDrop, engine note 6.20).
 function cdSrvSocketClosed pSock
    if not cdSrvKnows(pSock) then
       return false
    end if
-   cdSrvForget pSock
+   cdSrvDrop pSock
    return true
 end cdSrvSocketClosed
 
@@ -4325,10 +4507,10 @@ function cdSrvSocketError pSock, pErr
       return false
    end if
    set the defaultStack to the short name of this stack
-   if sCdConn[pSock]["stage"] is not "closing" then
+   if sCdConn[pSock]["done"] is not true then
       cdLog "server: connection " & pSock & " failed: " & pErr
    end if
-   cdSrvForget pSock
+   cdSrvDrop pSock
    return true
 end cdSrvSocketError
 
@@ -4592,7 +4774,7 @@ constant kCdScControls = "cdAbout,cdBarBg,cdBarFill,cdBig1,cdBig2,cdBig3,cdBig4,
 -- server speaks (against RFC 6455's own examples), the peer check, and the
 -- curlxt surface it carries.
 command cdScRun
-   local tMissing, tVer, tV, tI
+   local tMissing, tVer, tV, tI, tN, tSock
    scBegin "cdLog"
    put scMissing(kCdScControls) into tMissing
    scAssert "all 29 controls this script names exist (missing: " \
@@ -4625,6 +4807,44 @@ command cdScRun
    scAssert "192.168.1.20:54321 is refused", not cdSrvIsLoopback(cdSrvHostOf("192.168.1.20:54321"))
    scAssert "a bare 54321 is refused", not cdSrvIsLoopback(cdSrvHostOf("54321"))
    scAssert "a wait of 99999 ms is held to " & kCdSrvMaxWait, (cdSrvWaitOf("/tile/1?wait=99999") is kCdSrvMaxWait)
+   -- An id the engine gives again is a new connection, and a timer set for
+   -- the old one leaves it alone (engine note 6.20). The id is one no socket
+   -- has: 7 is neither a Windows socket handle (a multiple of four) nor a
+   -- client's port.
+   put "127.0.0.1:7" into tSock
+   put 41 into sCdConn[tSock]["serial"]
+   put "ended" into sCdConn[tSock]["stage"]
+   put true into sCdConn[tSock]["done"]
+   cdSrvTakeId tSock
+   put sCdConn[tSock]["serial"] into tV
+   scAssert "an id the engine gives again is a new connection (engine note 6.20)", \
+         (sCdConn[tSock]["stage"] is "head" and sCdConn[tSock]["done"] is false and tV is not 41)
+   cdSrvReap tSock, 41
+   scAssert "a late timer for the old connection leaves the new one alone", \
+         (cdSrvKnows(tSock) and sCdConn[tSock]["serial"] is tV)
+   cdSrvReap tSock, tV
+   scAssert "a connection that outstays its last bytes is let go by its own timer", not cdSrvKnows(tSock)
+   -- every label holds its line (cdLabel: Windows cut the tops off)
+   put 0 into tN
+   put empty into tV
+   repeat with tI = 1 to the number of fields of this card
+      if the uCdLabel of field tI of this card is true then
+         add 1 to tN
+         if not cdLabelFits(the short name of field tI of this card) then
+            put the short name of field tI of this card & " " after tV
+         end if
+      end if
+   end repeat
+   scAssert "all " & tN & " labels hold their line: a fixed line height inside the field (too tall: " \
+         & scShow(word 1 to -1 of tV) & ")", (tN > 0 and tV is empty)
+   -- the window's title bar is on a screen (cdPlaceWindow)
+   put the working screenRects into tV
+   if tV is empty then
+      scSkip "the window's place on the screen", "this engine has no screen"
+   else
+      scAssert "the window's title bar is on a screen (the window is at " & the rect of this stack & ")", \
+            cdTitleBarOnScreen(tV)
+   end if
    if sCdHaveCurl is not "true" then
       scSkip "curlxt and the two layers this stack carries", scShow(sCdInitError)
    else

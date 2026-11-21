@@ -212,9 +212,19 @@ started by itself and kept going; every scene reached its own verdict (all 8 mes
 identical, over 11,000 echoes in 8.1 s every one in order, 15 of 15 local requests answered, the server's
 1001 heard and the reconnect made); closing left no request, socket or listener behind; and the
 demo opened and ran again. It ran again the same day over the committed `x86_64-linux` library:
-26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn:
-the demo's look, and the demo in the IDE and on Windows, mac and Android, are verified
-statically; needs an OXT pass.
+26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn.
+
+**The demo on Windows (2026-11-21).** OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 opened it over
+its built-in curlxt 0.1.0 (ABI 1, so scene 4 was the one that could run): the boot self-check was
+green and scene 4 ran, but the window opened 430 px off the screen, every one-line label had its
+top cut off, building the window held the IDE for 22.7 s, and the HEAD tile failed. That tile was
+the demo's own server closing a new connection under an id Windows had just given it (the suite's
+engine note 6.20), which cost one request in four on that machine the same day, GETs too. The
+fixes (the server lets the client close and closes a straggler only by its serial, the window is
+centred, every label has a fixed line height, messages are locked while the window is built, a
+running tile says so and a failed one's reason goes to the log) ran on Linux the same day, 26
+checks, none failed. On Windows they, the demo's look on Linux, mac and Android, and the demo in
+those IDEs are verified statically; needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

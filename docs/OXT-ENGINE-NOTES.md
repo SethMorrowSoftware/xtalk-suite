@@ -1674,6 +1674,45 @@ no display server. **Gate:** curlxt's native lane
 taken, but nothing here has compared one with a screen, so a stack's look
 still needs a pass on one.
 
+### 6.20 On Windows an accepted socket is named after its HANDLE, and the next connection gets that handle at once
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE engine (Windows x86-64,
+the maintainer's PC); the mechanism is read in the engine source. curlxt
+Live's server (`accept connections`, then `write ... to socket ... with
+message`, then `close socket` once that write was done) answered requests
+that curlxt made from the same engine, one after another: one request in
+four came back as libcurl's "Empty reply from server" (error 52) in under
+90 ms, GETs and HEADs alike, with nothing in the server's log. `the
+openSockets` named the accepted sockets `127.0.0.1:2912`, `127.0.0.1:4492`
+and `127.0.0.1:4508`: socket handles, multiples of four, where a client's
+port would be. It cost the demo's first Windows picture its HEAD tile.
+In the source (`engine/src/opensslsocket.cpp`): on Windows `acceptone()`
+names the socket `"%s:%d"` from the address and `newfd`, the HANDLE; on the
+other platforms the name carries the client's port. On Windows every socket
+also asks for FD_CLOSE (`setselect`), and on it the engine closes the handle
+itself (`w32dcw32.cpp`: `readsome()`, then `doclose()`, whose
+`deletewrites()` calls `closesocket`) and queues `socketClosed`. So: the
+client reads its answer and closes; the engine frees the handle; the next
+connection is accepted on that handle, under the same id; then the server's
+queued "written" message runs `close socket` on the id, and `close socket`
+finds the NEW connection (`IO_findsocket` takes the first socket of that
+name, after `IO_cleansockets` has swept the old, closed one from the list).
+**Rule:** a server never closes a connection by its id at a moment its
+client may already have closed it. Let the client close ("Connection:
+close", a WebSocket close frame); on `socketClosed` or `socketError` forget
+the connection without `close socket`; close a client that never closes only
+by a serial the server gave that connection when it was accepted (the id
+alone cannot say which connection it is), and only after it has had seconds
+to close (a serial knows only the accepts the script has been sent, so a
+close and a new connection both still queued would fool it); and treat an
+accepted id the server still holds as a new connection. **Gate:** curlxt Live's boot
+self-check holds its own server to this (`cdSrvTakeId`, `cdSrvReap`).
+Nothing checks the suite's other script servers yet (work plan 1.2 #34).
+**Does NOT mean:** that ids repeat on Linux or a Mac. There the id is the
+client's address and port (the same source), and curlxt Live's Linux runs,
+hundreds of connections a run, never lost one; a Mac was not tried. Nor
+that a server may never close first: the hazard is only a close by id that
+can run after the client has closed.
+
 ## 7. How to add to this file
 
 Add an entry with the next free number in its section (never reuse or

@@ -131,7 +131,14 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   (`check-demo-control-lists.py --write`). It wears OXT-Beyond's dark look at the owner's
   request (2026-11-21), so the suite's UI-kit gate lists it in `EXEMPT`. Its server answers
   127.0.0.1 only and every write is the background kind; every scene uses curlxt's background
-  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it.
+  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it. After a
+  connection's last bytes the CLIENT closes it: on Windows an accepted socket's id is its
+  handle, which the next connection gets at once, so a `close socket` by id after the client
+  closed closed the next connection (the suite's engine note 6.20; one request in four on
+  Windows, 2026-11-21). The server forgets on `socketClosed` without closing, closes a
+  straggler only by its serial (`cdSrvReap`), and takes an id it still holds as a new
+  connection (`cdSrvTakeId`); the boot self-check holds both. Its labels have a fixed line
+  height (Windows cut the tops off the font's own) and the window is centred on open.
 
 ## Gotchas
 
