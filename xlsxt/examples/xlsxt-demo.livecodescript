@@ -35,7 +35,7 @@ script "xlsxtDemo"
 -- byte-identical). Change the look in the master, never here.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kXdUiVersion = "xlsxt-kit2-1"
+constant kXdUiVersion = "xlsxt-kit2-2"
 constant kXdWidth = 960
 constant kXdHeight = 620
 -- The tabs, in order: key, then the label on its button.
@@ -546,8 +546,9 @@ on xdBuildUI
    uiPanel "ui:panel", "16,96,944,558"
    uiFooter \
          "Backed by libxlsxwriter, zlib and Expat through the xlsxt C shim. Every Make writes a real" \
-         & " .xlsx and reads it back. The library has run on OXT-Beyond's Linux engine; this window" \
-         & " is verified statically; needs an OXT pass. No file it wrote has been opened in Excel on the record.", \
+         & " .xlsx and reads it back. The library and this window have run on OXT-Beyond on Windows and on" \
+         & " Linux (there with no display); elsewhere this window is verified statically; needs an OXT pass." \
+         & " No file it wrote has been opened in Excel on the record.", \
          "16,564,944,616"
 
    xdBuildTable
@@ -565,6 +566,7 @@ on xdBuildUI
    uiLabel "act:result", "Nothing made yet. Pick a tab and click Make this workbook.", "32,535,928,554", 11
    set the foregroundColor of field "act:result" to kUiInkSoft
 
+   xdSayInk
    set the uXdUiVersion of this stack to kXdUiVersion
    unlock screen
 end xdBuildUI
@@ -592,6 +594,32 @@ private command xdClearUI
    end repeat
    unlock screen
 end xdClearUI
+
+-- SAY THE TEXT COLOUR. The kit's inputs, areas, tables and tick boxes
+-- leave theirs to the system theme, and a dark theme's is white: white
+-- words on the white the kit paints. On Windows (2026-11-21) the Table
+-- tab's grid and every tick box's words could not be seen. So every field
+-- and tick box this window made that names no colour of its own takes the
+-- kit's ink. Push buttons are left alone: the theme draws them, dark under
+-- a dark theme, and its own words are the ones that read on them. (The
+-- kit master gains the same in its own builders; once this copy carries
+-- that, this finds nothing to do.)
+private command xdSayInk
+   local tI
+   repeat with tI = 1 to the number of fields of this card
+      if the short name of field tI of this card contains ":" \
+            and the foregroundColor of field tI of this card is empty then
+         set the foregroundColor of field tI of this card to kUiInk
+      end if
+   end repeat
+   repeat with tI = 1 to the number of buttons of this card
+      if the short name of button tI of this card contains ":" \
+            and the style of button tI of this card is "checkbox" \
+            and the foregroundColor of button tI of this card is empty then
+         set the foregroundColor of button tI of this card to kUiInk
+      end if
+   end repeat
+end xdSayInk
 
 -- A tab's heading and its paragraph of explanation, at the same place on
 -- every tab.

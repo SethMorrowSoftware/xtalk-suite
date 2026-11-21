@@ -43,7 +43,7 @@ command drClick pControl
 end drClick
 
 on startup
-   local tError, tKey, tResult, tReport, tWas
+   local tError, tKey, tResult, tReport, tWas, tI, tBlank
    put 0 into sPassed
    put 0 into sFailed
    try
@@ -58,6 +58,24 @@ on startup
       drCheck the width of stack kStack is 960 and the height of stack kStack is 620, "the window is 960 x 620", the rect of stack kStack
       drCheck field "uiStatus" begins with "Ready (xlsxt ABI", "the status line names the library", field "uiStatus"
       drCheck the visible of field "tbl:data" and not the visible of field "about:log", "it opens on the Table tab", the visible of field "tbl:data"
+
+      -- Every field and tick box names its own text colour. One left to
+      -- the system theme takes a dark theme's white, on the white the kit
+      -- paints: on Windows (2026-11-21) the Table tab's grid and every
+      -- tick box's words could not be seen. A property, so this engine
+      -- needs no theme and no display to hold it.
+      repeat with tI = 1 to the number of fields of card 1 of stack kStack
+         if the foregroundColor of field tI of card 1 of stack kStack is empty then
+            put the short name of field tI of card 1 of stack kStack & space after tBlank
+         end if
+      end repeat
+      repeat with tI = 1 to the number of buttons of card 1 of stack kStack
+         if the style of button tI of card 1 of stack kStack is "checkbox" \
+               and the foregroundColor of button tI of card 1 of stack kStack is empty then
+            put the short name of button tI of card 1 of stack kStack & space after tBlank
+         end if
+      end repeat
+      drCheck tBlank is empty, "every field and tick box names its text colour", tBlank
 
       -- a second preOpenStack rebuilds nothing (the version guard)
       put the number of controls of card 1 of stack kStack into tWas
