@@ -67,14 +67,22 @@ Joined the suite on 2026-11-20. What has run, and where:
   passed the ABI check, made and read barcodes of fourteen kinds, carried text beyond ASCII
   and binary data through a QR code, set a created barcode on an image object and read the
   image back, and called every public handler once.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. No photograph from a
-  real camera has been read by it here: every picture the tests read was drawn by the
-  library's own writer. The libraries committed under `src/code/` on 2026-11-21 (six
-  desktop platforms, four Android ABIs, a web archive) were tested where they were built;
-  the same day the engine self-test ran again on that server engine over the committed
-  `x86_64-linux` library (80 checks, none failed). No engine has loaded the other committed
-  libraries yet.
+- **The committed libraries** under `src/code/` (2026-11-21: six desktop platforms, four
+  Android ABIs, a web archive) were tested where they were built. The same day the engine
+  self-test ran again on that server engine over the committed `x86_64-linux` library (80
+  checks, none failed), and two more engines loaded committed ones:
+  - **In the IDE on Windows**: OXT-Beyond 0.2.8-dp.1 (64-bit) on the maintainer's PC loaded
+    the `x86_64-win32` library as an installed extension, and `bcLibraryVersion()` answered
+    `barcodext ABI 1; zxing-cpp 3.1.1`. Barcode Studio, the community gallery's demo, then
+    played its first scene there: a QR Code typed a letter at a time, each made in under a
+    millisecond (`bcCreateMatrix`, `bcCreateAdvanced`) and read back.
+  - **On Android**: OXT-Beyond's Android check built the extension into an app (its pull
+    request 614), and on an Android 16 x86_64 emulator `bcLibraryVersion()` answered the same.
+- **Not yet:** no IDE on Linux or a Mac has loaded it; no engine on macOS or the web, and no
+  ARM or 32-bit library on any engine, has run it; and on Windows and Android only what is
+  listed above ran. Beyond these records it is verified statically; needs an OXT pass. No
+  photograph from a real camera has been read by it here: every picture the tests and the
+  demo read was drawn by the library's own writer.
 
 ## Building and testing
 

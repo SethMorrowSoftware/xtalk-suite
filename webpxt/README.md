@@ -66,12 +66,20 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, wrote and read pictures and animations, set a decoded picture on an
   image object and read it back, and called every public handler once.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. The libraries
-  committed under `src/code/` on 2026-11-21 (six desktop platforms, four Android ABIs, a web
-  archive) were tested where they were built; the same day the engine self-test ran again on
-  that server engine over the committed `x86_64-linux` library (79 checks, none failed). No
-  engine has loaded the other committed libraries yet.
+- **The committed libraries** under `src/code/` (2026-11-21: six desktop platforms, four
+  Android ABIs, a web archive) were tested where they were built. The same day the engine
+  self-test ran again on that server engine over the committed `x86_64-linux` library (79
+  checks, none failed), and two more engines loaded committed ones:
+  - **In the IDE on Windows**: OXT-Beyond 0.2.8-dp.1 (64-bit) on the maintainer's PC loaded
+    the `x86_64-win32` library as an installed extension, and `wpLibraryVersion()` answered
+    `webpxt ABI 1; libwebp 1.6.0`. WebP Studio, the community gallery's demo, then played its
+    first scene there: `wpEncode` at quality 70 wrote its picture (277,708 bytes as a PNG) as
+    7,222 bytes in 40 ms, and `wpDecode` read it back in 4 ms.
+  - **On Android**: OXT-Beyond's Android check built the extension into an app (its pull
+    request 614), and on an Android 16 x86_64 emulator `wpLibraryVersion()` answered the same.
+- **Not yet:** no IDE on Linux or a Mac has loaded it; no engine on macOS or the web, and no
+  ARM or 32-bit library on any engine, has run it; and on Windows and Android only what is
+  listed above ran. Beyond these records it is verified statically; needs an OXT pass.
 
 ## Building and testing
 

@@ -98,10 +98,14 @@ any of those missing.
 
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built library).
-Every picture read so far was drawn by the library's own writer: no camera photograph. No
-desktop IDE and no other platform's engine has loaded it: verified statically; needs an OXT
-pass. Release libraries were committed on 2026-11-21 (six desktop platforms, four Android ABIs,
-run 44846691681), beside the web archive (`src/code/wasm32-emscripten/`, built by hand with
-Emscripten 6.0.12 the same day); the engine self-test passed over the committed `x86_64-linux`
-library that day too (80 checks, none failed), and no engine has loaded the other committed
-libraries yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+Every picture read so far was drawn by the library's own writer: no camera photograph. Release
+libraries were committed on 2026-11-21 (six desktop platforms, four Android ABIs, run
+44846691681), beside the web archive (`src/code/wasm32-emscripten/`, built by hand with
+Emscripten 6.0.12 the same day). That day three engines loaded committed ones: the engine
+self-test passed over the `x86_64-linux` library on that server engine (80 checks, none
+failed); the IDE on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit) loaded the
+`x86_64-win32` library as an installed extension, `bcLibraryVersion()` answered and the
+gallery's Barcode Studio made a QR Code and read it back; and OXT-Beyond's Android check app
+(its pull request 614) called `bcLibraryVersion()` on an Android 16 x86_64 emulator. No IDE on
+Linux or a Mac, no engine on macOS or the web, and no ARM or 32-bit library has run it:
+verified statically; needs an OXT pass. Open work is in the suite's `docs/WORK-PLAN.md`.

@@ -44,11 +44,14 @@ and picture files inside them, so they run from the folder the emulator is hande
 by their own lanes (`native-xlsxt.yml`, `native-webpxt.yml`, `native-barcodext.yml`) on every
 change. Their four libraries each were committed on 2026-11-21 by their release runs (xlsxt's
 run 44838679488, commit 0be6db1; webpxt's and barcodext's run 44846691681, commit 21f75b8; the
-x86 ones tested on the emulator, the ARM ones built and checked, not run).
-So the seven members' `x86_64-android` libraries are: native tests run on an Android emulator,
-and loaded by an engine in an app for one call each; a member's own selftest on an Android engine
-is still owed. Every other `x86_64-android` and every `x86-android` library: native tests run on
-an Android emulator; needs an OXT pass on Android. The ARM libraries are: built and verified
+x86 ones tested on the emulator, the ARM ones built and checked, not run). webpxt's and
+barcodext's `x86_64-android` ones then answered one call each in OXT-Beyond's Android check app
+on 2026-11-21 (the record is below).
+So the seven members' `x86_64-android` libraries, and webpxt's and barcodext's, are: native
+tests run on an Android emulator, and loaded by an engine in an app for one call each; a
+member's own selftest on an Android engine is still owed. Every other `x86_64-android` and
+every `x86-android` library: native tests run on an Android emulator; needs an OXT pass on
+Android. The ARM libraries are: built and verified
 statically; needs an OXT pass on Android.
 
 ## The four platform ids
@@ -183,9 +186,18 @@ the package, the binding resolves and that call returns; no socket was opened, n
 started, no world stepped. And the device was x86_64: the
 `x86-android` and the ARM libraries rode in the package and were not loaded.
 
+**webpxt and barcodext in an app, 2026-11-21** (OXT-Beyond pull request 614, head 03ac97d, not
+yet merged when this was written; its `Android builder on linux-x86_64` job, run 44906425449).
+That change pins both members at 4daa6da, whose Android libraries are the ones 21f75b8
+committed, and makes them the check app's ninth and tenth extensions. On the Android 16 x86_64
+emulator with 16 KB pages the probe printed (read back from the job's log)
+`webpxt ABI 1; libwebp 1.6.0` for `wpLibraryVersion()` and `barcodext ABI 1; zxing-cpp 3.1.1`
+for `bcLibraryVersion()`, beside the other members' answers. Neither binding asks for a
+permission. The Android 13 step's lines were not read back, as above, and the limits above
+hold: one call each, on x86_64 only.
+
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's, render3dxt's, xlsxt's, webpxt's and barcodext's
-libraries in an app.
+selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app.
 
 ## What differs on Android, per member
 
