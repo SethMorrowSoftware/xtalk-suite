@@ -1424,13 +1424,24 @@ CUX_API int CUX_CALL cux_ws_poll(void) {
  * closed, or it has left the state it was in when the wait began (so a wait
  * on a connecting socket returns when it opens). Returns 1 then, 0 on
  * timeout, or a negative error. timeout_ms < 0 waits without limit. Other
- * requests and sockets move meanwhile, as under cux_wait. */
+ * requests and sockets move meanwhile, as under cux_wait.
+ *
+ * A message already waiting answers 1 at once, but after ONE pass of the
+ * pump (no sleep): before 2026-11-21 it answered without moving anything,
+ * so a loop that waited for a LATER state (the close, a count of messages)
+ * with messages unread spun in place and the socket never moved (curlxt
+ * gotcha 6). A closed socket cannot move, so it still answers untouched. */
 CUX_API int CUX_CALL cux_ws_wait(int h, int timeout_ms) {
     CUX_GUARD_INT(CUX_ERR_THROWN,
         Request *r = lookup(h);
         if (!r) return CUX_ERR_STALE;
         if (!r->ws) { set_error("not a WebSocket"); return CUX_ERR_STATE; }
         if (r->state == CUX_STATE_NEW) { set_error("request not started"); return CUX_ERR_STATE; }
+        if (!r->ws_in.empty() && r->ws_state != CUX_WS_CLOSED) {
+            pump();
+            if (!lookup(h)) return CUX_ERR_STALE;
+            return 1;
+        }
         int entered = r->ws_state;
         auto start = std::chrono::steady_clock::now();
         for (;;) {

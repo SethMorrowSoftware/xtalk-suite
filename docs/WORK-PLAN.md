@@ -843,7 +843,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   had no bound (a peer that pinged without reading grew the pong queue without limit, and
   a flood of control frames held one pump); at most one automatic pong now waits behind
   the frame in flight, and a pass handles at most 1024 control frames, both pinned by the
-  smoke test (`curlxt/README.md`, Status).
+  smoke test (`curlxt/README.md`, Status). The same day, by the owner's choice, `cuWsWait`
+  with a message already waiting moves the socket once before it answers, so a loop that
+  waits for the close with a message unread ends (curlxt gotcha 6; the former row 5, pinned
+  by the smoke test and the engine test).
 - The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
   scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
   the engine's own sockets, launched from `start-here`. It ran start to finish the same day
@@ -859,7 +862,6 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
 | 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
 | 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
-| 5 | `cux_ws_wait` pumps once before it answers 1 for a message already waiting, so a loop that waits for a later state with messages unread still moves the socket (curlxt gotcha 6, found by the engine test's first run); today's contract, documented in `cuWsWait`'s block, is to read first or loop on `cuWsPoll`. A shim change: it rides the next curlxt rebuild, and the smoke test and engine test pin both orders | coding, with the next rebuild | - | a `cuWsWait` loop waiting for "closed" with messages unread ends, in the smoke test and on the engine |
 | 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 
 ### 2.10 box3dxt

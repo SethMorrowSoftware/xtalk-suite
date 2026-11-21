@@ -1179,10 +1179,12 @@ error.
 Description:
 The script pauses while it waits. Other sockets and requests move too.
 
-It answers 1 at once, and moves nothing, while a message is already
-waiting to be read. To wait for something that comes after those
-messages, such as the socket closing, read them first with <cuWsRead> or
-<cuWsReadText>, or call <cuWsPoll> in a loop instead.
+While a message is already waiting to be read, it moves everything once,
+without waiting, and answers 1 at once. So a loop that waits for
+something that comes after those messages, such as the socket closing,
+still moves the socket on, but it never pauses: read the messages first
+with <cuWsRead> or <cuWsReadText>, or call <cuWsPoll> in a loop with a
+short wait, to let the script rest between passes.
 
 References: cuWsPoll (handler), cuWsRead (handler), cuWsReadText (handler)
 */

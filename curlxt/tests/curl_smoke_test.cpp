@@ -27,10 +27,12 @@
  *     close handshake with code and reason, a dropped connection, a peer
  *     that never answers a close, a peer that never reads, the message
  *     size limit, a refused upgrade, cancel, the read high-water mark, and
- *     that cux_poll never lists a socket; and the bounds control frames
- *     have of their own: a peer that pings without reading cannot grow the
- *     send queue, and one that sends control frames without pause cannot
- *     hold one pump.
+ *     that cux_poll never lists a socket; the bounds control frames have of
+ *     their own: a peer that pings without reading cannot grow the send
+ *     queue, and one that sends control frames without pause cannot hold
+ *     one pump; and that cux_ws_wait, with a message already waiting, moves
+ *     the socket once before it answers, so a loop waiting for the close
+ *     with the message unread ends.
  */
 
 #include "cux_abi.h"
@@ -358,6 +360,21 @@ static void serve_ws(sock_t c, const std::string &path, const std::string &head,
             } else if (p == "!ping") ws_frame(c, 0x89, "hi");
             else if (p == "!close") { ws_frame(c, 0x81, "last words"); ws_frame(c, 0x88, close_payload(4001, "bye")); return; }
             else if (p == "!close-empty") { ws_frame(c, 0x88, ""); return; }
+            else if (p == "!close-later") {
+                /* a message, then the close once the client says "!go": the
+                 * client sees the message waiting with the socket still open
+                 * however slowly it runs, and the "!go" leaves it only if
+                 * something pumps */
+                ws_frame(c, 0x81, "last words");
+                for (;;) {
+                    int f2 = 0;
+                    std::string q;
+                    if (!ws_read_frame(c, pending, f2, q)) return;
+                    if ((f2 & 0x0F) == 0x1 && q == "!go") break;
+                }
+                ws_frame(c, 0x88, close_payload(4001, "bye"));
+                return;
+            }
             else if (p == "!drop") return;
             else if (p == "!big") ws_frame(c, 0x82, big_payload(200000));
             else if (p == "!empty") ws_frame(c, 0x81, "");
@@ -956,6 +973,26 @@ static void test_ws_endings() {
     h = ws_open("/ws/echo");
     ws_text(h, "!close-empty");
     CHECK(ws_until_closed(h) && cux_info(h, CUI_WS_CLOSE_CODE) == CUX_WS_CODE_NO_STATUS, "a close with no code is 1005");
+    cux_free(h);
+
+    /* A cux_ws_wait loop that waits for the close with a message unread still
+     * ends: the wait moves the socket once before it answers for a waiting
+     * message. Before 2026-11-21 it answered without moving anything, and
+     * this loop spun until its deadline. The server closes only after the
+     * "!go" sent here, so the first check never races the close. */
+    h = ws_open("/ws/echo");
+    ws_text(h, "!close-later");
+    CHECK(cux_ws_wait(h, 10000) == 1 && cux_info(h, CUI_WS_MESSAGES) == 1 &&
+              cux_info(h, CUI_WS_STATE) == CUX_WS_OPEN,
+          "a message waits, unread, the socket still open");
+    ws_text(h, "!go");
+    auto tw = std::chrono::steady_clock::now();
+    while (cux_info(h, CUI_WS_STATE) != CUX_WS_CLOSED &&
+           std::chrono::steady_clock::now() - tw < std::chrono::seconds(5))
+        cux_ws_wait(h, 100);
+    CHECK(cux_info(h, CUI_WS_STATE) == CUX_WS_CLOSED && cux_info(h, CUI_WS_MESSAGES) == 1,
+          "a cux_ws_wait loop waiting for the close ends, the message still unread");
+    CHECK(ws_next(h) == "last words" && cux_info(h, CUI_WS_CLOSE_CODE) == 4001, "and the message and the close are both there");
     cux_free(h);
 
     /* the server just hangs up */

@@ -144,10 +144,13 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    block does; the README can show it in full.
 5. **The WebSocket test servers answer ANY request with an upgrade.** Point an ordinary request
    at the HTTP server (`base`), never at the WebSocket one.
-6. **`cuWsWait` answers 1 at once while a message waits, and moves nothing then** (by contract:
-   `cux_ws_wait` looks before it pumps). A loop that waits for a LATER state (closed, a count of
-   messages) with messages unread spins in place: the engine test's first run lost eight checks
-   to it (2026-11-21). Read the messages first, or loop on `cuWsPoll` with a short `wait`.
+6. **`cuWsWait` answers 1 at once while a message waits, after ONE pass of the pump.** Until
+   2026-11-21 it moved nothing then, and a loop that waited for a LATER state (closed, a count
+   of messages) with messages unread spun in place: the engine test's first run lost eight
+   checks to it. Such a loop now ends, but it still never pauses (every call answers at once):
+   read the messages first, or loop on `cuWsPoll` with a short `wait`. The smoke test and the
+   engine test pin it ("!close-later" / "!closelater": a message, then the close only once the
+   client sends "!go", so the test never races the close).
 7. **The engine's parser is the judge of a `.lc` test**, which `tools/check-livecodescript.py`
    does not read (it reads `.lcb` and `.livecodescript`): `does not contain` is not xTalk (the
    checker's check 7 refuses it in a script; the engine stops the whole file at it), and

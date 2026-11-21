@@ -154,6 +154,17 @@ checks failed on the earlier shim and pass now, clean under ASan/UBSan. A script
 difference only under such a flood: `wsQueuedBytes` stays small, and a burst of pongs is counted
 in `wsPongs` over several pumps instead of one.
 
+**`cuWsWait` with a message waiting (2026-11-21, the owner's choice).** `cuWsWait` answers 1 at
+once while a message is waiting to be read. It used to answer without moving anything, so a loop
+that waited for something later, such as the close, with a message unread spun in place: the
+engine test's first run lost eight checks to it. Now it moves every socket and request once, without
+waiting, before it answers, so such a loop ends. Its answers are the same for every call; only the
+socket moves on meanwhile. The loop still never pauses, so reading the messages first, or looping
+on `cuWsPoll` with a short `wait`, stays the better way. The smoke test and the engine test each
+pin it with a server that sends a message and closes only when the client then says so: on the
+earlier shim two of the smoke test's three new checks failed, and one of the engine test's three
+(the loop ran out its five seconds with the socket still open), and all six pass now.
+
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
