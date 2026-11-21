@@ -48,7 +48,9 @@ its ancestor; read that member's CLAUDE.md for the reasons behind the shared sha
    included; libxlsxwriter's are 0-based and the shim converts at the call.
 9. **Done means:** a shim change is green in `smoke` AND `fuzz` under
    `-DXLSXT_SANITIZE=address -DCMAKE_BUILD_TYPE=Debug`; a binding change passes
-   `lc-compile -Werror` and `tests/engine-selftest.lc` on the server engine; both pass
+   `lc-compile -Werror` and `tests/engine-selftest.lc` on the server engine; a change to
+   `examples/xlsxt-demo.livecodescript` passes `tests/demo-drive.livecodescript` on the
+   desktop engine with `-ui` (its header has the command); all pass
    `bash tools/run-gates.sh`. An ABI change bumps `XLX_ABI_VERSION` and the two literals in
    `checkABI()` together. Native-library changes refresh the committed binaries through the
    suite's `release-binaries.yml`; `native-xlsxt.yml` never commits.
@@ -106,5 +108,11 @@ its ancestor; read that member's CLAUDE.md for the reasons behind the shared sha
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library). No desktop IDE and no other platform's engine has loaded it: verified statically;
-needs an OXT pass. No file it wrote has been opened in Excel on the record. No binaries are
-committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+needs an OXT pass. The demo stack (`examples/xlsxt-demo.livecodescript`, the suite UI kit)
+is driven on the Linux desktop engine without a display by `tests/demo-drive.livecodescript`
+(2026-11-21); no person has used its window. Its builders read the window's fields through
+`xdTyped` and `xdTicked`, which fall back to defaults, so `xdCheckAll` is the same code with
+or without a window. No file it wrote has been opened in Excel on the record (openpyxl read
+the demo's complete workbook on 2026-11-21: its chart, picture, drop-down list, protection,
+frozen row, filter, defined name, link and note were all there). The web archive is
+committed; the desktop and Android libraries come from the release-binaries dispatch. Open work is in the suite's `docs/WORK-PLAN.md`.
