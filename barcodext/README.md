@@ -70,8 +70,8 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
   web has run it: on those it is verified statically; needs an OXT pass. No photograph from a
   real camera has been read by it here: every picture the tests read was drawn by the
-  library's own writer. No library is committed under `src/code/` yet; the suite's
-  release-binaries dispatch lands them.
+  library's own writer. Only the web archive is committed under `src/code/`; the
+  suite's release-binaries dispatch lands the desktop and Android libraries.
 
 ## Building and testing
 

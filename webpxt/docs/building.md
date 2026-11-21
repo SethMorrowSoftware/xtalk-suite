@@ -76,8 +76,10 @@ and read the diff: the file's bytes may change, the pixels must not.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine.
+The desktop and Android libraries come from the suite's `release-binaries.yml` dispatch, never
+from a developer's machine. The web archive is the exception every member shares: it is built
+by hand with the Emscripten version OXT-Beyond's web engine is built with (6.0.12), placed in
+`src/code/wasm32-emscripten/` by the build, and committed with its `MANIFEST.sha256` line.
 
 On macOS, `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` builds each architecture on its own
 (libwebp picks its SIMD files per architecture when it is configured) and joins them with

@@ -83,5 +83,7 @@ run `python3 tools/build-api-reference.py`.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine.
+The desktop and Android libraries come from the suite's `release-binaries.yml` dispatch, never
+from a developer's machine. The web archive is the exception every member shares: it is built
+by hand with the Emscripten version OXT-Beyond's web engine is built with (6.0.12), placed in
+`src/code/wasm32-emscripten/` by the build, and committed with its `MANIFEST.sha256` line.

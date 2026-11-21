@@ -401,9 +401,11 @@ MEMBERS = [
         "name": "barcodext",
         "lib": "barcodext",
         "lcb": ["barcodext/src/barcodext.lcb"],
-        # EMPTY until the first release-binaries dispatch lands its libraries
-        # (joined 2026-11-20 with none committed), as box3dxt's row says.
-        "ships": [],
+        # The web archive alone (built by hand with the pinned Emscripten and
+        # committed 2026-11-21, as every member's is); the desktop and Android
+        # libraries wait for the first release-binaries dispatch, as
+        # box3dxt's row says.
+        "ships": ["wasm32-emscripten"],
         "shim": "barcodext/src/barcode_shim.cpp",
         "prefix": "bcx_",
         "abi_header": "barcodext/src/barcode_shim.cpp",
@@ -412,14 +414,15 @@ MEMBERS = [
         # src/barcodext.map (GNU ld) and the same pattern for ld64 export
         # bcx_* and nothing else, the statically linked C++ runtime included
         # (measured on the x86_64-linux build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "webpxt",
         "lib": "webpxt",
         "lcb": ["webpxt/src/webpxt.lcb"],
-        # EMPTY until the first release-binaries dispatch, as above.
-        "ships": [],
+        # The web archive alone, as above.
+        "ships": ["wasm32-emscripten"],
         "shim": "webpxt/src/webp_shim.c",
         "prefix": "wpx_",
         "abi_header": "webpxt/src/webp_shim.c",
@@ -428,7 +431,8 @@ MEMBERS = [
         # src/webpxt.map and the ld64 pattern export wpx_* and nothing else:
         # libwebp declares its API with default visibility, and the script
         # is what keeps WebP* out (measured on x86_64-linux, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "box2dxt",
