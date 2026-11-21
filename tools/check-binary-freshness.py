@@ -382,8 +382,10 @@ MEMBERS = [
         "lcb": ["gamepadxt/src/gamepadxt.lcb"],
         # EMPTY until the first release-binaries dispatch lands gamepadxt's
         # libraries (joined 2026-11-20 with none committed), as box3dxt's row
-        # above was: the change after that run lists them here.
-        "ships": [],
+        # above was: the change after that run lists them here. The web
+        # archive is not that workflow's: it was built with Emscripten 6.0.12
+        # and committed on 2026-11-21, for OXT-Beyond's web engine to link.
+        "ships": ["wasm32-emscripten"],
         "shim": "gamepadxt/src/gamepad_shim.c",
         "prefix": "gpx_",
         # The ABI define lives in the shim itself.
@@ -394,7 +396,8 @@ MEMBERS = [
         # (ld64) export gpx_* and nothing else; SDL is linked in static
         # (measured on the x86_64-linux build, 2026-11-20: 55 exports, all
         # gpx_*).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "xlsxt",

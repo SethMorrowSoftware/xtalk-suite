@@ -89,8 +89,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   lights back through the binding, and called every public handler once.
 - **Not yet:** no real controller has been read through it on any platform, no desktop IDE
   has loaded it, and no engine on Windows, macOS or the web has run it: on those it is
-  verified statically; needs an OXT pass (with a controller plugged in). No library is
-  committed under `src/code/` yet; the suite's release-binaries dispatch lands them.
+  verified statically; needs an OXT pass (with a controller plugged in). Only the web
+  archive is committed under `src/code/` (2026-11-21); the suite's release-binaries
+  dispatch lands the desktop libraries.
 - **Not built for Android or iOS.** SDL reaches controllers there through its own Java or
   Objective-C application layer, which an OXT app does not have.
 
