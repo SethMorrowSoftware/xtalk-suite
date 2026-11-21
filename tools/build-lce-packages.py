@@ -157,10 +157,14 @@ WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win3
 # DLLs every supported Windows has (Beyond's builder's SYSTEM_DLLS):
 # api-ms-win-crt-* is the Universal CRT, part of Windows 10 and later;
 # msvcrt.dll is the system C runtime MinGW builds (coinxt) use;
-# secur32.dll is SSPI, through which curlxt's Schannel TLS works
+# secur32.dll is SSPI, through which curlxt's Schannel TLS works;
+# setupapi.dll, ole32.dll and shell32.dll are what SDL, inside gamepadxt,
+# imports besides those (SetupAPI lists the controllers plugged in, ole32 is
+# COM), all three in every Windows since 2000. Beyond's list gained the same
+# three for gamepadxt (its pull requests 612 and 620)
 SYSTEM_DLLS = frozenset(('kernel32.dll', 'user32.dll', 'advapi32.dll', 'ws2_32.dll', 'winmm.dll',
                          'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll',
-                         'secur32.dll'))
+                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll'))
 SYSTEM_DLL_PREFIXES = ('api-ms-win-crt-',)
 
 # The runtime DLLs copied next to the libraries that import them, as
@@ -208,6 +212,7 @@ VERSION_FROM = {
     'audioxt': ('src/audioxt.lcb', LCB_VERSION),
     'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
+    'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -241,6 +246,9 @@ LICENCES = {
     # libxlsxwriter (and the FreeBSD, tmpfileplus and MD5 code it carries),
     # zlib with its minizip, and Expat: each one's terms are in this file
     'xlsxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    # SDL 3's zlib terms, and the BSD terms of the HIDAPI copy SDL carries,
+    # are in the member's LICENSE, below its own
+    'gamepadxt': [('LICENSE', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -338,6 +346,15 @@ PACKAGES = [
     # xlLibraryVersion() checks the ABI first.
     P('lcb', 'xlsxt', 'org.openxtalk.library.xlsxt', 'src/xlsxt.lcb', 'xlsxt',
       'xlLibraryVersion()', '^xlsxt ABI [0-9]+; libxlsxwriter [0-9]'),
+    # gamepadxt (2026-11-21, landed with its libraries, #185): game
+    # controllers through SDL 3's gamepad subsystem. Desktop only: it has no
+    # Android libraries on purpose (SDL reaches controllers there through its
+    # own Java layer, which an OXT app has not got; tools/test-build-android.py,
+    # NO_ANDROID), and Android is all four or none here. gpLibraryVersion()
+    # checks the ABI first and asks SDL only its version, so the probe opens
+    # no device and needs no controller.
+    P('lcb', 'gamepadxt', 'org.openxtalk.library.gamepadxt', 'src/gamepadxt.lcb', 'gamepadxt',
+      'gpLibraryVersion()', '^SDL 3\\.[0-9]+\\.[0-9]+$'),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),

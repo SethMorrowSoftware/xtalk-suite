@@ -79,6 +79,7 @@ on:
       - 'audioxt/src/**'
       - 'render3dxt/src/**'
       - 'xlsxt/src/**'
+      - 'gamepadxt/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'
       - '*/examples/*-helpers.livecodescript'

@@ -155,6 +155,13 @@ def test_table():
     # secur32.dll is Schannel's SSPI (curlxt's TLS on Windows), on every
     # Windows since NT; Beyond's builder must list it too
     expect('secur32.dll counts as a system DLL', lce.is_system_dll('SECUR32.dll'))
+    # SDL inside gamepadxt imports SetupAPI, COM (ole32) and shell32, all in
+    # every Windows since 2000; Beyond's builder lists the same three
+    for dll in ('SETUPAPI.dll', 'ole32.dll', 'SHELL32.dll'):
+        expect('%s counts as a system DLL' % dll, lce.is_system_dll(dll))
+    # ...but SDL itself, linked as a DLL instead of statically, ships with
+    # nothing, so a library importing it is refused
+    expect('SDL3.dll is not a system DLL', not lce.is_system_dll('SDL3.dll'))
     expect('a pinned runtime DLL is not a system DLL', not lce.is_system_dll('vcruntime140.dll'))
     pins = copy.deepcopy(lce.VC_RUNTIME_PINS)
     try:
