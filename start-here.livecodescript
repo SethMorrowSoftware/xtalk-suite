@@ -100,8 +100,8 @@ script "SuiteStartHere"
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
 -- The directory list is filled only at a build, so a registry row added
 -- without a bump stays invisible in a saved launcher: "start-here-4" is
--- render3dxt's demo (2026-11-20) and the three ShowControl showcases
--- (2026-11-21).
+-- render3dxt's demo (2026-11-20), curlxt Live and the three ShowControl
+-- showcases (2026-11-21).
 constant kSlUiVersion = "start-here-4"
 
 -- ---- script-local state (declared at top) ------------------------------------
@@ -726,6 +726,7 @@ function slRegistry
    put "riptide/examples/riptide-social.livecodescript||sodiumxt AND torrentxt; coinxt for the Nostr rail, and for the onion spelling with a sodiumxt below ABI 7|Two machines to see propagation. SESSION: uses the one torrent session. Self-contained: carries riptide, nostrxt (core + relay), onionxt and onion-httpd.|The capstone: one sealed identity, signed public feeds over the real DHT, private DMs, a LAN device mesh, an onion-only persona, and a Nostr bridge for reach (phases 1-8)." & return after tR
    put "nocloud/src/nocloudquickshare.livecodescript||torrentxt; sodiumxt and onionxt optional (each feature fails closed without its piece)|SESSION: one torrent stack per OXT launch.|The SHIPPED app: No Cloud Quick Share - send any file to anyone, no server, no account, no size limit." & return after tR
    put "nostrxt/examples/nostrxt-demo.livecodescript||the coinxt extension for signing; sodiumxt for key generation; a relay you choose for the live legs|Self-contained: carries nostrxt, its relay layer and its self-test. ws:// mirrors the proven socket idioms; wss:// is engine-unproven.|Nostr from xTalk: generate an identity, sign and verify notes, decode NIP-19 entities, talk to a relay - inbound events verified before display." & return after tR
+   put "curlxt/examples/curlxt-live.livecodescript||the curlxt extension (org.openxtalk.library.curl; OXT-Beyond carries it built in), ABI 2 for the WebSocket scenes|Self-contained: carries curl-helpers and the tsNet layer, and runs its own echo server on this machine, so it needs no network.|Web requests and WebSockets through libcurl, in five scenes that run themselves: round trips, text and bytes, eight seconds at full speed, sixteen requests at once (one through tsNetGet), and close and reconnect." & return after tR
    put "render3dxt/examples/render3d-physics-demo.livecodescript||the render3dxt extension (org.openxtalk.library.renderthreed) AND the box3dxt extension (org.openxtalk.library.boxthreed)|Without either extension the window still opens and says which is missing.|A 3D picture in an ordinary image: box3dxt simulates crates, balls and a gem falling, render3dxt draws them textured and lit. Drag to walk round the scene, click a thing to kick it." & return after tR
    put "box2dxt/examples/box2dxt-demo.livecodescript||the box2dxt extension (org.openxtalk.box2dxt)||The physics showcase: scenes for shapes, joints, forces, queries and the Kit's control-backed bodies." & return after tR
    put "box2dxt/examples/box2dxt-platformer.livecodescript||the box2dxt extension||A complete platformer on the b2k game Kit: sprites, input, camera, one-way platforms, hazards - a game, not a widget." & return after tR

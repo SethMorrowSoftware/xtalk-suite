@@ -35,7 +35,7 @@ public handler TestUniverseRoundTrip()
 end handler
 
 -- A fractional universe is cut toward zero where it becomes a byte (the
--- suite's engine note 6.15): the same universe on both bytes, never a mix.
+-- suite's engine note 6.17): the same universe on both bytes, never a mix.
 public handler TestFractionalUniverseTruncates()
    variable tP as Array
    put artnetParseDmx(artnetBuildDmx(258.9, HexToData("0102"))) into tP

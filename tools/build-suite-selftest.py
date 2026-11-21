@@ -228,10 +228,12 @@ NO_HARNESS = {
              "its native smoke and fuzz tests (ASan/UBSan) and its own engine "
              "self-test on the headless server engine run in its native lane "
              "(xlsxt/tests/engine-selftest.lc)",
-    "curlxt": "joined 2026-11-14 with no in-engine harness yet; its native "
-              "smoke test (90 checks, ASan/UBSan) and a headless run of both "
-              "script layers over the built library against loopback HTTP "
-              "and SMTP servers run in the gates (curlxt/tools/run-gates.sh)",
+    "curlxt": "joined 2026-11-14 with no in-engine harness in the paste yet; "
+              "its native smoke test (ASan/UBSan), a headless run of both "
+              "script layers over the built library against loopback HTTP, "
+              "SMTP and WebSocket servers (curlxt/tools/run-gates.sh) and its "
+              "own engine self-test on the headless server engine run in its "
+              "native lane (curlxt/tests/engine-selftest.lc)",
 }
 
 # Handlers a member harness defines that belong to ITS OWN standalone UI. The

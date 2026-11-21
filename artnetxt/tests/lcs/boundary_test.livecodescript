@@ -33,7 +33,7 @@ on TestUniverseAsTextOrNumber
 end TestUniverseAsTextOrNumber
 
 -- A FRACTIONAL universe is not refused (LCB's Integer is Number) and is cut
--- toward zero where it becomes a byte (the suite's engine note 6.15).
+-- toward zero where it becomes a byte (the suite's engine note 6.17).
 on TestFractionalUniverseTruncates
    local tP
    put artnetParseDmx(artnetBuildDmx(258.9, numToByte(1))) into tP

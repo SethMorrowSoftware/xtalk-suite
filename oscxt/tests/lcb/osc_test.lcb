@@ -358,7 +358,7 @@ end handler
 -- asked, but the engine binds a foreign handler on its FIRST call, through
 -- dlsym, and that consumed the pending error: the first answer after a failed
 -- load was empty, and asking again read text glibc had already freed (engine
--- note 6.17). Each Test* runs in a fresh lc-run, so the first failure here is
+-- note 6.19). Each Test* runs in a fresh lc-run, so the first failure here is
 -- the process's first call of every handler on the error path, the case that
 -- broke. POSIX only: Windows has no dlopen for the binding to call.
 public handler TestLoadNativeLibErrorIsKept()

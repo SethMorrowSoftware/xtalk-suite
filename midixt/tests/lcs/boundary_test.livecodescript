@@ -80,7 +80,7 @@ end TestNumbersAsTextOrNumbers
 
 -- A FRACTIONAL number into an LCB Integer parameter is not refused (LCB's
 -- Integer is Number) and is TRUNCATED where it becomes a byte (the suite's
--- engine note 6.15, first observed by this test): 60.6 plays note 60, not 61,
+-- engine note 6.17, first observed by this test): 60.6 plays note 60, not 61,
 -- and nothing says so. The docs ask for whole numbers.
 on TestFractionalIntoIntegerTruncates
    local tOut, tError

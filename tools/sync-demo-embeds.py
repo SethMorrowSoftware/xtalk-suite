@@ -170,6 +170,14 @@ REGISTRY = {
     # back out (strip_spans on the holdem row, the coin-selftest precedent).
     "holde-em/src/holdem.livecodescript": [
         "onionxt/src/onionxt.livecodescript"],
+    # curlxt Live (2026-11-21). The binding is an extension; both of its
+    # script layers ride along, the helpers first because the tsNet layer
+    # calls them. Neither defines an engine socket message (curlxt's sockets
+    # are libcurl's), so the demo's own socket handlers, which serve its
+    # echo server, are the only ones and no DROP_HANDLERS entry is needed.
+    "curlxt/examples/curlxt-live.livecodescript": [
+        "curlxt/src/curl-helpers.livecodescript",
+        "curlxt/src/tsnet.livecodescript"],
     # ShowControl's three showcases (2026-11-21), each carrying its member's
     # helper layer, so each is one paste with nothing to `start using`. The
     # helpers' handler names are held disjoint by check-cross-library-names

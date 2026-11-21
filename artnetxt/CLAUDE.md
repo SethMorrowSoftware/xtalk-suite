@@ -54,7 +54,7 @@ keep working.
   specification asks: fewer than 2 or an odd number are padded with 0, past 512 cut.
 - **The universe** is the 15-bit Port-Address (Net 7 bits, Sub-Net 4, Universe 4), 0 to
   32767; outside that `artnetBuildDmx` builds nothing ("universe out of range 0..32767"). A
-  fraction is cut toward zero: LCB's `Integer` is `Number` (engine note 6.15), and
+  fraction is cut toward zero: LCB's `Integer` is `Number` (engine note 6.17), and
   `the byte with code` truncates. `artnetParseDmx` answers `net * 256 + subuni`, unmasked,
   as ShowControl's did.
 - **ArtPollReply** is read at the Art-Net 4 offsets (239 bytes; anything from 26 is read as

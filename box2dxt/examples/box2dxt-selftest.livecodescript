@@ -426,8 +426,8 @@ end stTestLoaderMapping
 -- 2026-11-21). b2LoadNativeLibError used to read dlerror() when asked, as a
 -- string the engine frees: under lc-run its FIRST answer after a failed load
 -- was empty (the engine binds a foreign handler on its first call, through
--- dlsym, which consumes the pending error; engine note 6.17) and a later one
--- aborted the process with a double free (6.16). The loader is Linux only,
+-- dlsym, which consumes the pending error; engine note 6.19) and a later one
+-- aborted the process with a double free (6.18). The loader is Linux only,
 -- so elsewhere this section prints why it did not run; on an engine that
 -- cannot bind dlopen at all it prints that, since then there is no reason to
 -- keep. Nothing here loads a second copy of box2dxt: the one library that

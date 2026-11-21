@@ -150,7 +150,7 @@ end stopChord
 `midiControlChange`, `midiProgramChange`, `midiChannelPressure` and `midiPitchBend` work the
 same way, and `midiSend` sends any bytes (a SysEx message, say). Pass whole numbers, and
 `round` a computed one: 60.6 is not refused, it plays note 60, because the engine cuts a
-fraction toward zero where it becomes a byte (the suite's engine note 6.15). An empty value
+fraction toward zero where it becomes a byte (the suite's engine note 6.17). An empty value
 is an error at the call (engine note 6.4).
 
 Nothing here throws for a mistake in what you pass. A send that cannot go out does nothing,

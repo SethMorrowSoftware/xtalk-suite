@@ -85,7 +85,7 @@ extension upgrades in place and its stacks keep working. Only the library's file
 - **`midiLoadNativeLibError` keeps its reason**, read from `dlerror()` when
   `midiLoadNativeLib` fails. ShowControl's read it when asked, and the engine binds a
   foreign handler on its first call, which ate the pending error: the first answer was
-  always empty (engine note 6.17; `TestLoadNativeLibErrorIsKept`).
+  always empty (engine note 6.19; `TestLoadNativeLibErrorIsKept`).
 - **Virtual ports without a name** get "ShowControl In" / "ShowControl Out", the RtMidi
   clients "RtMidi Input Client" / "RtMidi Output Client": the names ShowControl's ports have
   always shown, so a DAW's saved routing still finds them.
@@ -111,7 +111,7 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
 1. **A `Data` does not bridge to a foreign `Pointer`.** Sends pass `MCDataGetBytePtr`; the
    drain fills a raw `MCMemoryAllocate` block copied back with `MCDataCreateWithBytes`.
 2. **Never return a `ZString` from a foreign handler**: the engine frees it (engine note
-   6.16; no gate refuses the form yet). Names and the last error come back
+   6.18; no gate refuses the form yet). Names and the last error come back
    through caller buffers (bytes written, or `-needed`); `dlerror()`'s text as a
    `Pointer`, copied at once.
 3. **A NUL cannot cross as a `ZString`**: the engine throws "cannot export char U+0000". The
@@ -120,7 +120,7 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
    (`_close`, `i`): every name here has an inner capital or underscore.
 5. **Empty into an `Integer` parameter throws at the call; a fraction is not refused**: LCB's
    `Integer` is `Number`, and the engine cuts 60.6 to 60 where it becomes a byte (engine
-   notes 6.4 and 6.15). The helper never passes either.
+   notes 6.4 and 6.17). The helper never passes either.
 6. **The mock has ONE queue for every input**: a test that needs to know which input drained
    a message polls by hand (`helpers_test` does).
 

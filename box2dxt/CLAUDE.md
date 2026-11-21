@@ -46,8 +46,8 @@ Box2D v3.1.0 (CMake FetchContent, GIT_TAG v3.1.0)
   that `b2LoadNativeLib` and `b2LoadNativeLibHere` use to preload the library
   by exact path on Linux, and two `<builtin>` engine calls that copy
   `dlerror()`'s text. Until 2026-11-21 `_dlerror` returned a `ZString`, which
-  the engine frees (engine note 6.16): `b2LoadNativeLibError` answered empty
-  the first time after a failed load (6.17) and aborted lc-run with a double
+  the engine frees (engine note 6.18): `b2LoadNativeLibError` answered empty
+  the first time after a failed load (6.19) and aborted lc-run with a double
   free after that. The reason is now read at the failure and kept.
 - **The Kit.** 316 public `b2k*` handlers incl. the game modules.
 - **Packaging.** `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare

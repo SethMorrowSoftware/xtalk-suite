@@ -73,7 +73,7 @@ Only the library's file name moved (`osc` -> `oscxt`), with the binding that nam
 - **`oscLoadNativeLibError` keeps its reason**, read from `dlerror()` when
   `oscLoadNativeLib` fails. ShowControl's read it when asked, and the engine binds a
   foreign handler on its first call, which ate the pending error: the first answer was
-  always empty (engine note 6.17; `TestLoadNativeLibErrorIsKept`).
+  always empty (engine note 6.19; `TestLoadNativeLibErrorIsKept`).
 
 ## The helpers (examples/osc-helpers.livecodescript)
 
@@ -90,7 +90,7 @@ not open"), so `scOscSend` opens it first.
    outputs fill a reusable `MCMemoryAllocate` block copied back with `MCDataCreateWithBytes`.
    Only `dataPtr`, `ensureScratch` and `scratchToData` touch raw pointers.
 2. **Never return a `ZString` from a foreign handler**: the engine frees it
-   (`oscLastError()` crashed the VM on ShowControl's first lc-run; engine note 6.16; no
+   (`oscLastError()` crashed the VM on ShowControl's first lc-run; engine note 6.18; no
    gate refuses the form yet). Strings come back through caller buffers
    (bytes written, or `-needed`); `dlerror()`'s text as a `Pointer`, copied at once.
 3. **A NUL cannot cross as a `ZString`**: the engine throws "cannot export char U+0000".

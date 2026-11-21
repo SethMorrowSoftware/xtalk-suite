@@ -195,7 +195,7 @@ variable sBindingError as String
 -- moment of the failure and kept. Read there, not later: glibc frees the text
 -- dlerror() returned at the NEXT dl* call in the process, and the engine makes
 -- such calls itself, binding each foreign handler on its first call through
--- dlsym (engine note 6.17). ShowControl's oscLoadNativeLibError read dlerror()
+-- dlsym (engine note 6.19). ShowControl's oscLoadNativeLibError read dlerror()
 -- when it was called: its first answer after a failure was empty, and its
 -- second the freed text (OBSERVED under lc-run, 2026-11-21).
 variable sLoadError as String
@@ -1019,7 +1019,7 @@ end handler
 
 -- The engine binds a foreign handler on its FIRST call, through dlsym, and
 -- that call consumes or frees the error text of a dlopen that just failed
--- (engine note 6.17). So the two handlers the error path needs are called
+-- (engine note 6.19). So the two handlers the error path needs are called
 -- once BEFORE the dlopen whose error they read: the string copy (on a
 -- one-byte empty C string) and dlerror itself, which also clears an older
 -- error first, the POSIX idiom.
@@ -1038,7 +1038,7 @@ private handler bindLoaderErrorPath()
 end handler
 
 -- dlerror()'s text, COPIED at once: it is libc's, so it comes back as a raw
--- Pointer and never as a ZString the engine would free (engine note 6.16).
+-- Pointer and never as a ZString the engine would free (engine note 6.18).
 private handler loaderErrorNow() returns String
    variable tPtr as optional Pointer
    variable tErr as String

@@ -482,7 +482,7 @@ private foreign handler _query_fraction(in pIdx as CInt) returns CDouble binds t
 private foreign handler _dlopen(in pPath as ZStringNative, in pFlags as CInt) returns optional Pointer binds to "c:>dlopen!cdecl"
 -- dlerror()'s text is libc's, so it comes back as a raw Pointer and is copied
 -- at once: a ZString return is free()d by the engine when the value dies
--- (engine note 6.16), and glibc frees the same text on the next dlerror(),
+-- (engine note 6.18), and glibc frees the same text on the next dlerror(),
 -- which aborted lc-run with "free(): double free" (2026-11-21).
 private foreign handler _dlerror() returns optional Pointer binds to "c:>dlerror!cdecl"
 -- realpath("/proc/self/exe", nil) -> the running engine's own executable path
@@ -490,7 +490,7 @@ private foreign handler _dlerror() returns optional Pointer binds to "c:>dlerror
 -- folder. Returns nothing off Linux (no /proc). Only ever called on Linux.
 -- Its ZString return is safe where dlerror's is not: given no buffer,
 -- realpath() returns malloc'd text that the caller owns and frees, which is
--- exactly what the engine does with it (engine note 6.16).
+-- exactly what the engine does with it (engine note 6.18).
 private foreign handler _realpath(in pPath as ZStringNative, in pResolved as optional Pointer) returns optional ZStringNative binds to "c:>realpath!cdecl"
 -- The engine's own calls that copy dlerror()'s text into a String.
 private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
@@ -499,7 +499,7 @@ private foreign handler MCStringCreateWithCString(in pCString as Pointer, out rS
 -- The reason the last b2LoadNativeLib or b2LoadNativeLibHere failed, read
 -- from dlerror() at the failure and kept: read later, as it once was, the
 -- first answer was empty (the engine binds a foreign handler on its first
--- call, through dlsym, which consumes the pending error: engine note 6.17)
+-- call, through dlsym, which consumes the pending error: engine note 6.19)
 -- and the second aborted the engine (above).
 variable sLoadError as String
 
@@ -710,7 +710,7 @@ end handler
 
 -- The engine binds a foreign handler on its FIRST call, through dlsym, and
 -- that call consumes the error text of a dlopen that just failed (engine
--- note 6.17). So the two handlers the error path needs are called once
+-- note 6.19). So the two handlers the error path needs are called once
 -- BEFORE the dlopen whose error they read: the string copy (on a one-byte
 -- empty C string) and dlerror itself, which also clears an older error
 -- first, the POSIX idiom.
@@ -728,7 +728,7 @@ private handler bindLoaderErrorPath()
    end unsafe
 end handler
 
--- dlerror()'s text, COPIED at once (it is libc's, engine note 6.16).
+-- dlerror()'s text, COPIED at once (it is libc's, engine note 6.18).
 private handler loaderErrorNow() returns String
    variable tPtr as optional Pointer
    variable tErr as String
