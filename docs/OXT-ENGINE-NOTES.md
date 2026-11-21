@@ -1383,6 +1383,9 @@ stack named white and every field and tick box that named nothing drew white wor
 each that named a colour drew its own.
 **Rule:** give every control whose words sit on a fill you paint a `foregroundColor` of
 its own; a window that paints its own backgrounds cannot leave its text to the theme.
+OBSERVED to hold on that PC the same day: xlsxt's rebuilt demo, which names the colour of
+every field, label and tick box and the background of every entry field and list, and
+draws its own push buttons, read right throughout under the dark theme.
 **Gate:** for xlsxt's demo only, `xlsxt/tests/demo-drive.livecodescript` (2026-11-21),
 which fails a window where a field or tick box names no colour; no suite-wide gate.
 **Does NOT mean:** that a push button needs one. The theme draws a push button, and no run

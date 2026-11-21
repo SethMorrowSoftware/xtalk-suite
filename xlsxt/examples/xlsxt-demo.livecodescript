@@ -55,7 +55,7 @@ script "xlsxtDemo"
 -- the while. Leaving the Showcase tab stops the scene and closes its files.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kXdUiVersion = "xlsxt-beyond-1"
+constant kXdUiVersion = "xlsxt-beyond-2"
 constant kXdWidth = 960
 constant kXdHeight = 640
 -- The header band: OXT-Beyond's name, the demo's, what it does, who made it.
@@ -628,7 +628,7 @@ on xdBuildUI
    uiPanel "ui:panel", "16,112,944,574"
    uiFooter \
          "Backed by libxlsxwriter, zlib and Expat through the xlsxt C shim; every scene and every Make writes a" \
-         & " real .xlsx and reads it back. This window has run on OXT-Beyond's Linux engine; on Windows, macOS" \
+         & " real .xlsx and reads it back. This window has run on OXT-Beyond on Linux and on Windows; on macOS" \
          & " and in a browser it is verified statically; needs an OXT pass. No file it wrote has been opened" \
          & " in Excel on the record.", \
          "16,582,944,636"
@@ -3492,7 +3492,10 @@ end xdShowAddChart
 function xdSceneMany pStep
    local tRow, tColumn, tLine, tPath, tBook, tGot, tStart, tReader, tSame, tFile
    if pStep is 1 then
-      xdShowBegin 100, 7, "44,116,188,260,332,404,440", \
+      -- CV, the last column, has a stop of its own: past the last stop the
+      -- engine repeats the last gap, and the 36 pixels that gave "..." cut
+      -- a five-digit number to four (seen on Windows, 2026-11-21).
+      xdShowBegin 100, 7, "44,116,188,260,332,404,440,512", \
             tab & "A" & tab & "B" & tab & "C" & tab & "D" & tab & "E" & tab & "..." & tab & "CV"
       repeat with tRow = 1 to 100
          put empty into tLine

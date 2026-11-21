@@ -62,8 +62,51 @@ function drUntilDone pScene, pMs
    return empty
 end drUntilDone
 
+-- The first cell of field pField whose words run past the right edge of
+-- its column, as "line L, column K: <words> end at X, the column at Y",
+-- or empty when every cell fits. The engine clips a cell of a field with
+-- a vertical grid at its column's edge, so a number one digit too wide
+-- for its column shows one digit short (the Showcase's last column did,
+-- 2026-11-21: 69772 read 6977). A column ends at its tab stop; past the
+-- last stop the last gap repeats, as the engine lays the field out.
+-- Measured from the field's own words (formattedLeft and formattedWidth
+-- of each cell), so the font this engine draws with is the one judged.
+function drClippedCell pField
+   local tStops, tStop, tCount, tLine, tItem, tRight, tEnd, tOrigin
+   -- A chunk of a variable is a chunk of its text, never of the field it
+   -- names, so every chunk below names the field itself.
+   put the tabStops of field pField into tStops
+   put the number of items of tStops into tCount
+   repeat with tItem = 1 to tCount
+      put item tItem of tStops into tStop[tItem]
+   end repeat
+   put (the left of field pField) + (the leftMargin of field pField) into tOrigin
+   set the itemDelimiter to tab
+   repeat with tLine = 1 to the number of lines of field pField
+      repeat with tItem = 1 to the number of items of line tLine of field pField
+         if item tItem of line tLine of field pField is empty then
+            next repeat
+         end if
+         if tItem <= tCount then
+            put tStop[tItem] into tRight
+         else if tCount > 1 then
+            put tStop[tCount] + ((tItem - tCount) * (tStop[tCount] - tStop[tCount - 1])) into tRight
+         else
+            put tItem * tStop[1] into tRight
+         end if
+         put (the formattedLeft of item tItem of line tLine of field pField) \
+               + (the formattedWidth of item tItem of line tLine of field pField) - tOrigin into tEnd
+         if tEnd > tRight then
+            return "line" && tLine & ", column" && tItem & ":" && (item tItem of line tLine of field pField) \
+                  && "ends at" && tEnd & ", the column at" && tRight
+         end if
+      end repeat
+   end repeat
+   return empty
+end drClippedCell
+
 on startup
-   local tError, tKey, tResult, tReport, tWas, tI, tBlank, tScene, tDone, tWait
+   local tError, tKey, tResult, tReport, tWas, tI, tBlank, tScene, tDone, tWait, tClipped
    put 0 into sPassed
    put 0 into sFailed
    try
@@ -118,6 +161,8 @@ on startup
          put drUntilDone(tScene, 60000) into tDone
          drCheck word 2 of tDone is "ok", "scene " & tI & " (" & tScene & ") plays to its end and reads back what it wrote", \
                tDone && field "show:count"
+         put drClippedCell("show:grid") into tClipped
+         drCheck tClipped is empty, "and every cell it shows fits its column", tClipped
          put "      " & field "show:count" & return after sOut
          wait 20 milliseconds with messages
          drCheck xlWorkbookCount() is 0 and xlReadCount() is 0, "and leaves nothing open", xlWorkbookCount() && xlReadCount()
