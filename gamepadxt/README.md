@@ -119,12 +119,17 @@ Joined the suite on 2026-11-20. What has run, and where:
   453 ms reading "SDL 3.4.20, gamepadxt ABI 1: reading controllers" and played its first
   showcase on the software pad: every button pressed in turn and each press read back from
   `gpEvents()`, SDL's assertions at 0. No physical controller was listed.
+- **The committed Linux library**, 2026-11-21: `src/code/x86_64-linux/gamepadxt.so`
+  itself (its hash the MANIFEST's) under OXT-Beyond 0.2.8-dp.1's Linux desktop engine
+  (9.7.1, build 25923) with no display, the binding compiled by that release's
+  `lc-compile -Werror`: `tests/demo-drive.livecodescript` passed all 162 checks over it,
+  run locally.
 - **Not yet:** no real controller has been read through it on any platform, no IDE on
   Linux or macOS has loaded it, and no engine on macOS has run it: on those it is verified
   statically; needs an OXT pass (with a controller plugged in). The six desktop libraries
-  are committed under `src/code/` (2026-11-21); of them only the 64-bit Windows DLL has
-  met an engine (the IDE run above, by its size), and the Linux runs above used a locally
-  built library.
+  are committed under `src/code/` (2026-11-21); of them the 64-bit Windows DLL (the IDE
+  run above, by its size) and the 64-bit Linux library (above) have met an engine, and
+  the 32-bit Windows, 32-bit and arm64 Linux and Mac ones have not.
 - **Linux floors:** the 64-bit libraries need glibc 2.27 or newer; the 32-bit one 2.38 or
   newer (SDL's C23 `__isoc23_*` calls; measured with `objdump -T`, 2026-11-21).
 - **Not built for Android or iOS.** SDL reaches controllers there through its own Java or

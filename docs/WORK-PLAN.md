@@ -1094,11 +1094,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   gamepad step in Chromium, Firefox and WebKit: a virtual pad attached, a button pressed
   and read back as an event, a stick, rumble and the light, the pad unplugged, and SDL's
   assertions at 0 (Chromium's log read; the other two passed the same check). No real pad
-  has been read in a browser. Of the desktop libraries only the `x86_64-win32` DLL has met
-  an engine: the Windows IDE run above loaded a DLL of its size (1,936,384 bytes, not
-  hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC). The Linux runs used a
-  locally built library, and no engine has loaded the committed Linux, 32-bit Windows or
-  Mac ones.
+  has been read in a browser. Of the desktop libraries two have met an engine: the
+  `x86_64-win32` DLL, as the Windows IDE run above loaded a DLL of its size (1,936,384
+  bytes, not hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC); and the
+  `x86_64-linux` library, the committed file itself (by its hash), under OXT-Beyond
+  0.2.8-dp.1's Linux desktop engine with no display, where the drive passed all 162
+  checks over it (run locally, 2026-11-21). The other Linux runs used a locally built
+  library, and no engine has loaded the committed 32-bit Windows, 32-bit or arm64 Linux
+  or Mac ones.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
   2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
 

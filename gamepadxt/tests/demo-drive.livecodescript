@@ -248,6 +248,32 @@ function drBallTop
    return "the ball" && the rect of graphic "ball" of card 1 of stack kStack & ", the caption" && the rect of field "arenaCaption" of card 1 of stack kStack
 end drBallTop
 
+-- Whether the game's ball has run into the arena's top left corner: at
+-- the arena's left wall, and as high as the game lets it go (its top no
+-- more than 6 pixels under the caption's foot, or over it, which the
+-- check after the wait refuses)
+function drBallCornered
+   local tBall
+   put the rect of graphic "ball" of card 1 of stack kStack into tBall
+   return item 1 of tBall <= item 1 of the rect of graphic "arena" of card 1 of stack kStack + 4 and \
+         item 2 of tBall <= item 4 of the rect of field "arenaCaption" of card 1 of stack kStack + 6
+end drBallCornered
+
+-- Waits, with the window running, until the ball held towards the top
+-- left corner is there, at most pMs. A held stick moves it a few pixels
+-- a FRAME, so how long it takes is the machine's frame rate: a fixed
+-- 2.5 s failed on a slow CI runner (2026-11-21) with the ball at the top
+-- but 10 pixels short of the left wall
+function drBallCornerWait pMs
+   local tUntil
+   put the milliseconds + pMs into tUntil
+   repeat while the milliseconds < tUntil
+      if drBallCornered() then return true
+      wait 10 milliseconds with messages
+   end repeat
+   return drBallCornered()
+end drBallCornerWait
+
 -- A picture of the window, when GL_SHOTS names a folder
 command drShot pName
    if sShots is empty then exit drShot
@@ -581,7 +607,7 @@ command drShowcase5
 end drShowcase5
 
 command drHandsOn
-   local tBall, tShook, tGrip, tI, tR, tLine, tSwapped, tUnder, tBiggest
+   local tBall, tShook, tGrip, tI, tR, tLine, tSwapped, tUnder, tBiggest, tCornered
    -- a key takes the touch pad from the tour
    drKey 122, true
    drWait 120
@@ -610,8 +636,8 @@ command drHandsOn
    -- there grows it downwards, never over the caption's words
    drKey 65362, true
    drKey 65361, true
-   drWait 2500
-   drCheck drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
+   put drBallCornerWait(15000) into tCornered
+   drCheck tCornered and drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
          "held into the top left corner, the ball stops below the game's caption", drBallTop()
    drKey 122, true
    put true into tUnder
@@ -1031,7 +1057,7 @@ end drClosing
 -- With no gamepadxt: the recording
 
 command drRecordingRun
-   local tSeen, tRing, tUntil, tLit, tBars, tShook, tGrip, tI, tEast, tMinX, tMaxX, tBig, tColours, tAim, tLoc, tStart
+   local tSeen, tRing, tUntil, tLit, tBars, tShook, tGrip, tI, tEast, tMinX, tMaxX, tBig, tColours, tAim, tLoc, tStart, tCornered
    if "org.openxtalk.library.gamepadxt" is among the lines of the loadedExtensions then
       unload extension "org.openxtalk.library.gamepadxt"
    end if
@@ -1121,8 +1147,8 @@ command drRecordingRun
    -- its ball stops below the caption too
    drKey 65362, true
    drKey 65361, true
-   drWait 2500
-   drCheck drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
+   put drBallCornerWait(15000) into tCornered
+   drCheck tCornered and drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
          "the arrows roll the recording's ball into the top left corner, below the game's caption", drBallTop()
    drKey 65362, false
    drKey 65361, false
