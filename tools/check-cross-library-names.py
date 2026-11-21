@@ -106,6 +106,8 @@ LCB_LIBS = {
     # audioxt joined 2026-11-20. "au" is nobody else's prefix.
     "audioxt/src/audioxt.lcb": ("au",),
     "curlxt/src/curl.lcb": ("cu",),
+    # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
+    "xlsxt/src/xlsxt.lcb": ("xl",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")
