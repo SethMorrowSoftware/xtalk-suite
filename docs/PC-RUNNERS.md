@@ -95,4 +95,6 @@ Verified statically (the routing test and its fixtures, the stand-in `sudo` run 
 lane's install lines); no job has run on either PC yet. Both runners were registered on 2026-11-21.
 On Windows the first design (a service, capped afterwards by a SYSTEM task) was refused by Windows
 on every process, so the runner ran uncapped and jobs stayed switched off; the cap-starts-the-runner
-design replaced it the same day and needs a run on that PC.
+design replaced it the same day. Observed on that PC (2026-11-21): the cap's log says it joined the
+job, and its state file lists Runner.Listener inside it at 25% and 8 GB. No job has run under it yet,
+so the cap has not been seen holding a build.
