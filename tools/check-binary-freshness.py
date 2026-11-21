@@ -380,11 +380,13 @@ MEMBERS = [
         "name": "render3dxt",
         "lib": "render3dxt",
         "lcb": ["render3dxt/src/render3dxt.lcb"],
-        # EMPTY until the first release-binaries dispatch lands render3dxt's
-        # libraries (joined 2026-11-20 with none committed), as box3dxt's row
-        # above was: that run's --installing tolerates each gained platform,
+        # Only the web archive, committed by hand on 2026-11-20 (built with
+        # emsdk 6.0.12 as native-render3dxt.yml's wasm lane builds it) so
+        # OXT-Beyond's web engine can pin it. The desktop and Android rows
+        # wait for the first release-binaries dispatch that lands render3dxt's
+        # libraries: that run's --installing tolerates each gained platform,
         # and the change after it lists them here.
-        "ships": [],
+        "ships": ["wasm32-emscripten"],
         "shim": "render3dxt/src/render3d_shim.c",
         "prefix": "r3x_",
         # Like box2dxt and box3dxt, the ABI define lives in the shim itself.
@@ -395,7 +397,8 @@ MEMBERS = [
         # (ld64) export r3x_* and nothing else; stb_image and fast_obj are
         # compiled in with hidden visibility (measured on the x86_64-linux
         # build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "xlsxt",

@@ -137,4 +137,4 @@ installed as extensions): the demo's window was built, its boot self-check read 
 the picture was seen and recorded, and a real pointer dragged, kicked and pressed every
 button; 57 pictures a second with nine things, 50 to 52 with about fifty. No engine on
 Windows, macOS, Android or the web has loaded it: there it is verified statically; needs
-an OXT pass. No binaries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+an OXT pass. The web archive (`src/code/wasm32-emscripten/render3dxt.a`, built with emsdk 6.0.12) is the one committed binary; the desktop and Android libraries wait for the first release dispatch. Open work is in the suite's `docs/WORK-PLAN.md`.

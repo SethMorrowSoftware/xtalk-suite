@@ -879,8 +879,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
   test, so a box3dxt change to one of those texts shows red in render3dxt's lane only when
   render3dxt next changes (#7).
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
+- Binaries: none committed when it joined. The web archive
+  (`src/code/wasm32-emscripten/render3dxt.a`) was committed by hand on 2026-11-20, built with
+  emsdk 6.0.12 as the native lane's wasm job builds it, so OXT-Beyond's web engine can pin
+  it (#4), and the `ships` row lists that one platform. The first release-binaries dispatch
+  lands the rest (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`),
   and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
 - Publishing: `SethMorrowSoftware/render3dxt` was created empty by the owner on 2026-11-20;
   a publish-members run adopts it (`--adopt render3dxt`).
