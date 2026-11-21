@@ -9,10 +9,13 @@
 # drift from what the release holds; tools/test-build-extensions-site.py is
 # its fixture test, run by build-all.sh --gates in suite-gates.yml.
 #
-# WHEN IT RUNS: when a release is published (lce-packages.yml makes a DRAFT;
-# pressing Publish on it is the human decision, and that press is what fires
-# this), and by hand. A release created or published with the workflow token
-# fires no workflow, which is why the draft-then-publish path is the trigger.
+# WHEN IT RUNS: when a person publishes a release (a dispatch of
+# lce-packages.yml with a release_tag makes a DRAFT, and pressing Publish on
+# it fires this); when lce-packages.yml's publish job publishes one itself
+# on a push to main (since 2026-11-21: every extension the suite makes is on
+# this page, so it follows main), which starts this by a dispatch naming the
+# tag, because a release created or published with the workflow token fires
+# no workflow; and by hand.
 #
 # WHY IT IS SAFE: it checks out main's tools, reads only release assets of
 # this repository (every package checked against SHA256SUMS and GitHub's own

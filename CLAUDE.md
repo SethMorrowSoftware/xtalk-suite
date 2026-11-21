@@ -44,7 +44,8 @@ tests/                     suite-selftest.core.livecodescript (hand-written), th
                            cross-member-test.py (native invariants over the built shims)
 tools/                     suite gates, their fixture tests, generators, carried-block masters,
                            member-registry.py, publish-members.py
-.github/workflows/         suite-gates, native-<member>, release-binaries, publish-members
+.github/workflows/         suite-gates, native-<member>, release-binaries, publish-members,
+                           lce-packages, pages (the extensions site)
 <member>/                  each self-contained: CMakeLists.txt or build.sh, src/, tests/, docs/,
                            tools/run-gates.sh (its gate list), src/code/<arch>-<platform>/ + MANIFEST
 ```
@@ -348,6 +349,15 @@ worse than no gate, because it answers the question nobody asks twice.
   thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
   manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
   stage waits on the WHOLE matrix: one red lane discards every artifact.
+- **The extensions site (the owner's rule, 2026-11-21): every extension the suite makes is on it**,
+  for HyperXTalk and LiveCode Community 9 as well as OXT-Beyond. `lce-packages.yml` builds one
+  `.lce` per extension (`tools/build-lce-packages.py`) and loads and probes each on OXT-Beyond's
+  Linux server engine; on a push to main that adds a package, or changes one's version or
+  platforms, its `publish` job publishes a dated pre-release (crediting Seth Morrow) and starts
+  `pages.yml`, which writes the site from it. `build-lce-packages.py table` (a gate) refuses an
+  extension member of the registry with no package and no `NOT_PACKAGED` reason, and package
+  files the workflow's `paths:` would not notice; a member with no committed library yet WAITs.
+  A new extension member is not done until its package row is in.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
