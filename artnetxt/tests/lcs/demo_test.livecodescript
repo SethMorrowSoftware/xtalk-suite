@@ -19,7 +19,10 @@ script "ArtnetDemoTest"
 --   * closing the window stops the show and closes its port, and so does a
 --     close made with messages locked, which sends no closeStack: the loop
 --     stops itself at its next frame (after each close in that IDE a frame was
---     still queued, 2026-11-21);
+--     still queued, 2026-11-21); and no socket of the show's is left listed,
+--     the name the engine lists for each sender it heard included (the
+--     suite's engine notes, 6.20: one was left after each close, there and
+--     here);
 --   * every scene plays with nothing going wrong, and each does what its
 --     words say: the rig's lamps are drawn from the levels that ARRIVED, the
 --     chase lights the PAR it is at, the heads aim where pan and tilt say,
@@ -499,8 +502,8 @@ end TestPausedADeskDrivesTheRig
 -- kAlbAlsoTo: empty, nothing leaves this computer; a node's address, every
 -- frame goes there too; a broadcast, nothing does, and the footer says why
 on TestAlsoToSendsOnlyWhenItNamesANode
-   global gAlsoGot
-   local tPort, tState
+   global gAlsoGot, gAlsoFrom
+   local tPort, tState, tFrom
    put $SC_PORT_BASE + 7 into tPort
    accept datagram connections on port tPort with message "alsoReceived"
    if the result is not empty then
@@ -508,6 +511,7 @@ on TestAlsoToSendsOnlyWhenItNamesANode
       exit TestAlsoToSendsOnlyWhenItNamesANode
    end if
    put 0 into gAlsoGot
+   put empty into gAlsoFrom
    demoOpen "constant kAlbAlsoTo = " & quote & quote & "|constant kAlbAlsoTo = " & quote & "127.0.0.1:" & tPort & quote
    TestPump 800
    put demoState() into tState
@@ -523,12 +527,21 @@ on TestAlsoToSendsOnlyWhenItNamesANode
    TestAssertEqual "a broadcast address is not taken", tState["also"], empty
    TestAssertEqual "so nothing goes there", tState["alsoSent"], 0
    TestAssert "and the footer says why (" & the text of field "albStatus" of stack sDemo & ")", the text of field "albStatus" of stack sDemo contains "never broadcasts"
+   -- This listener's senders first: the engine lists one socket for each, on
+   -- the listener's descriptor, and one left listed after the listener closes
+   -- keeps the engine's socket thread spinning (the suite's engine notes, 6.20)
+   repeat for each key tFrom in gAlsoFrom
+      if tFrom is among the lines of the openSockets then
+         close socket tFrom
+      end if
+   end repeat
    close socket tPort
 end TestAlsoToSendsOnlyWhenItNamesANode
 
 on alsoReceived pSender, pData, pSocket
-   global gAlsoGot
+   global gAlsoGot, gAlsoFrom
    local tFrame
+   put true into gAlsoFrom[pSender]
    put artnetParseDmx(pData) into tFrame
    if tFrame["opcode"] is "ArtDmx" then
       add 1 to gAlsoGot
@@ -657,17 +670,23 @@ end TestTheWindowOpensCentredOnTheScreen
 -- with messages locked, which sends no closeStack, stops it at the loop's
 -- next frame: the IDE keeps a closed stack in memory, where a loop that ran
 -- on would run unseen with its sockets open (after each close in OXT-Beyond
--- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21)
+-- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21). And
+-- none of its sockets is left listed: the engine lists one more for each
+-- sender a datagram listener hears and keeps it after the listener closes
+-- (the suite's engine notes, 6.20), so the show closes those names too
 on TestAClosedWindowStopsItsShow
-   local tState, tPort
+   local tState, tPort, tBefore
+   put demoSocketList() into tBefore
    demoOpen
    TestPump 300
    TestAssert "the loop runs while the window is open", demoFramesQueued() > 0
+   TestAssert "with sockets open (" & demoSocketList() & ")", demoSocketList() is not tBefore
    close stack sDemo
    TestPump 200
    TestAssertEqual "a close stops it", demoFramesQueued(), 0
    put demoState() into tState
    TestAssertEqual "and the show says so", tState["running"], false
+   TestAssertEqual "and leaves none of its sockets open", demoSocketList(), tBefore
    go invisible stack sDemo
    TestPump 300
    TestAssert "a reopen starts it again", demoFramesQueued() > 0
@@ -682,7 +701,16 @@ on TestAClosedWindowStopsItsShow
    put demoState() into tState
    TestAssertEqual "the show stopped itself", tState["running"], false
    TestAssert "and closed its port (" & tPort & ")", tPort is not among the lines of the openSockets
+   TestAssertEqual "and every other socket it had", demoSocketList(), tBefore
 end TestAClosedWindowStopsItsShow
+
+-- The openSockets on one line, for a label or a comparison
+function demoSocketList
+   local tList
+   put the openSockets into tList
+   replace return with comma in tList
+   return tList
+end demoSocketList
 
 -- The frame messages queued for the demo's loop
 function demoFramesQueued

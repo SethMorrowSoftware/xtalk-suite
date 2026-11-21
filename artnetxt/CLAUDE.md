@@ -24,7 +24,11 @@ opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQui
 5.0 s, running, wholly on the screen (the same day). Its loop stops itself at its next frame
 once its stack is closed, so a close made with messages locked, which sends no closeStack,
 cannot leave it running unseen in the IDE's memory with its sockets open (after each close there
-a frame was still queued; `TestAClosedWindowStopsItsShow`).
+a frame was still queued; `TestAClosedWindowStopsItsShow`). A Windows pass of that fix found
+nothing queued after either kind of close, and one socket still listed, named by the address
+the board sent from: the engine lists one per sender a datagram listener hears, and closing
+the listener leaves it (the suite's engine note 6.20). Its stop now closes each sender's name
+first (the same test, strengthened, failed first on Linux too).
 
 It is the Art-Net third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -89,6 +93,17 @@ plus `scArtnetEnsureSocket`, `scArtnetSetChannel`, `scArtnetChannel`, `scArtnetP
 - **The engine calls a datagram message with (sender, data, socket)**, in that order
   (engine `opensslsocket.cpp`); `write ... to socket "h:p"` sends NOTHING unless `h:p` was
   opened, so every send opens first. An accepted socket is named by its port alone.
+- **Each sender a listener hears becomes a socket name** (`ip:port`, sharing the listener's
+  descriptor; the suite's engine note 6.20), and closing the listener leaves it listed, with
+  an engine thread spinning a whole core on Linux: close those names first, as the
+  showcase's `albStop` and the self-test's `artnetStopSelfTest` do (held by
+  `TestAClosedWindowStopsItsShow` and `TestShippedSelfTestTier2`). At quit the engine frees
+  its sockets while that thread may still be reading them: the also-to test, which left one,
+  never exited in 5 of 355 runs, and in none of 350 once the names were closed first
+  (2026-11-21; the suite's work plan, artnetxt row 8). The test runner now closes whatever a
+  test left listed before its engine quits (`scCloseLeftSockets`). While one is listed,
+  `scArtnetEnsureSocket` finds it and opens nothing, so a send to a node that answered from
+  6454 goes out through the listener (INFERRED from the engine's source, not run).
 - **Nodes answer an ArtPoll to port 6454 of the computer that asked**, so discovery listens
   there; a broadcast needs `the allowDatagramBroadcasts` (`scArtnetPoll` sets it for a
   `.255` host). A failed `accept` shows only in `the result` (engine note 6.12): the socket

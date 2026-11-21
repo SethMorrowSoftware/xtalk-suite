@@ -270,6 +270,7 @@ local sNextAt, sStep      -- a scene's own schedule
 local sTour, sPaused
 local sHaveOsc, sWhyNot   -- oscxt answers; why not, when it does not
 local sPort, sDest        -- the rig's UDP port; "127.0.0.1:<port>"
+local sPeers              -- each sender the rig heard, a key (engine note 6.20)
 local sNoNet              -- why the rig cannot listen, when it cannot
 local sTrouble            -- an error the loop caught
 -- the surface: what the script moves
@@ -341,8 +342,20 @@ command osdStart
 end osdStart
 
 command osdStop
+   local tOpen, tPeer
    put false into sRunning
    add 1 to sGen
+   -- the senders the rig heard first, while the descriptor they share is open
+   put the openSockets into tOpen
+   repeat for each key tPeer in sPeers
+      if tPeer is empty or tPeer is sDest then
+         next repeat
+      end if
+      if tPeer is among the lines of tOpen then
+         close socket tPeer
+      end if
+   end repeat
+   put empty into sPeers
    if sPort is not empty then
       close socket sPort
    end if
@@ -787,6 +800,12 @@ on osdReceived pSender, pData, pSocket
    if sMyStack is not empty then
       set the defaultStack to sMyStack
    end if
+   -- A datagram from a sender the rig has not heard makes the engine list
+   -- one more socket, named by that sender ("127.0.0.1:41273") and sharing
+   -- the listener's descriptor, so that a reply can be written to it. Closing
+   -- the listener leaves that name listed (the suite's engine notes, 6.20), so
+   -- the rig remembers each sender, and the show closes them when it stops.
+   put true into sPeers[pSender]
    add 1 to sArrived
    if sHaveOsc is not true then
       exit osdReceived

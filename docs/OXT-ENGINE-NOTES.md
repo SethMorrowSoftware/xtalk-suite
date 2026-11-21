@@ -1899,6 +1899,105 @@ every handler it uses has been called: the loss is only the error text pending
 across a first bind. Windows has no `dlerror`, and none of these loaders is
 called there.
 
+### 6.20 A datagram listener lists ONE MORE socket per sender it hears, and closing the listener leaves them listed, with a thread spinning
+**OBSERVED 2026-11-21** on Windows (OXT-Beyond 0.2.8-dp.1's IDE on the
+maintainer's PC, runbook section 8) and the same day on Linux x86_64
+(OXT-Beyond's headless engine 9.7.1-OXT build 25923, `-ui`). The Art-Net and
+OSC showcases listen with `accept datagram connections on port N with message
+...` and send to themselves through `open datagram socket to
+"127.0.0.1:N"`. On Windows, while the Light Board ran, `the openSockets`
+listed a third name beside `6454` and `127.0.0.1:6454`: `127.0.0.1:55205`,
+the address its board sent from. A second after its window closed, by either
+kind of close, the other two were gone and that one was still listed; it
+went only when the stack was deleted. On Linux both showcases did the same,
+one name more for each open and close: `got:
+"127.0.0.1:49242,127.0.0.1:32910"`, `want: ""` (oscxt's and artnetxt's
+`TestAClosedWindowStopsItsShow`, strengthened, against the showcases at
+8359560). A show the IDE keeps in memory after its window closes keeps the
+names as long. And a name left listed is not idle: on Linux, a script that
+heard one sender and then closed its listener left one engine thread using a
+whole core, 298 of 300 ticks of CPU over the next three seconds, against 2
+when it closed the sender's name first (a probe run in the same engine,
+2026-11-21). The shipped OSC and Art-Net self-tests' stops left such a name
+too (`TestShippedSelfTestTier2`, strengthened: `got: "127.0.0.1:54396"`).
+**Why:** DOCUMENTED, engine source `engine/src/opensslsocket.cpp`,
+`MCSocket::readsome`: a datagram arriving on an accepting socket from a
+sender that no listed socket is named after makes a socket named
+`host:port` for that sender, with no message, sharing the listener's
+descriptor, so that a script can `write ... to socket "host:port"` to
+answer from the listener's port (`MCS_write_socket` `sendto`s through it).
+`deletewrites` closes a descriptor only when the socket is not shared, so
+closing the listener leaves the sender's name listed, and closing the
+name leaves the listener open; `IO_freeobject` closes both when the object
+that accepted is deleted, which is why deleting the stack cleared it. The
+spin: off Windows, a socket thread (`MCSocketsPoll`) puts every listed
+descriptor into one `select`, and a closed one fails it at once, so the
+thread loops without waiting (INFERRED from the source; Windows polls its
+sockets in its main loop, `dskw32.cpp`, not examined). And at quit `X_close`
+deletes every socket without the socket list's lock, and only later stops
+that thread (`MCSocketsFinalize`), so a thread spinning then can write into a
+socket already freed (INFERRED from the source). artnetxt's work plan row 8
+is the likeliest case: an Art-Net engine test that closed its listener after
+hearing the show, and so left such a name, never exited in 5 of 355 runs (in
+the two that gdb examined, glibc found the heap corrupt as the engine freed
+its objects at quit); once the test and the show closed their senders' names
+first, none of 350 runs failed (2026-11-21, Linux).
+**Rule:** a script that listens remembers each sender its message hears
+(the handler's first parameter) and, when it stops, closes those names
+that are still in `the openSockets`, first, while the listener is open, and
+then the listener: `osdStop` in `oscxt/examples/osc-show-surface.livecodescript`,
+`albStop` in `artnetxt/examples/artnet-light-board.livecodescript`, and the
+self-tests' `oscStopSelfTest` and `artnetStopSelfTest`. A test runner that
+starts an engine per test closes whatever a test left listed before that
+engine quits, as the three ShowControl members' runner does
+(`scCloseLeftSockets` in each one's `tests/lcs/_runner.livecodescript`).
+Never write to a sender's name after its listener has closed: the name keeps
+the closed descriptor's number, so the write goes to whatever holds that
+number by then (INFERRED from the source, not run). A helper that opens a
+socket only when its name is not listed, as `scArtnetEnsureSocket` and
+`scEnsureDatagramSocket` do, writes through a sender's name when one is
+listed: an Art-Net node that answered on 6454 is then sent to from the
+listener's port, which works while the listener is open (INFERRED, not
+run).
+**Gate:** oscxt's and artnetxt's `TestAClosedWindowStopsItsShow` (each
+showcase's engine suite) and `TestShippedSelfTestTier2` (their UDP suites),
+in `native-oscxt.yml` and `native-artnetxt.yml`: no name is left in `the
+openSockets` after either kind of close, or after the self-test's stop. Each
+failed against the code before the fix. `TestTheRunnerClosesWhatARunLeftListed`
+in the same UDP suites leaves a sender's name on purpose and asserts that it
+is listed after its listener closed, then that the runner's handler closes it.
+**Does NOT mean:** a socket opened with `open datagram socket to` makes one:
+only an ACCEPTING datagram socket does, for a sender it has not seen, and one
+sender makes one name, however many datagrams it sends (each showcase sent
+hundreds and left one per open).
+
+### 6.21 Two engines can both accept datagrams on one port, and neither hears that the other has it
+**OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond's headless engine 9.7.1-OXT
+build 25923, `-ui`): two engine processes each ran `accept datagram
+connections on port 47555`, and `the result` was empty for both; a third sent
+100 datagrams from one socket, and all 100 reached the first, none the second.
+It cost a false alarm: the Art-Net showcase's engine suite, run while another
+copy of the same suite ran, failed `every packet sent arrived` and `the rig
+holds all 512 levels the board sent` in three tests and passed alone: by the
+mechanism below, each show's packets could reach the other's rig.
+**Why:** DOCUMENTED, engine source `engine/src/opensslsocket.cpp`,
+`MCS_accept`: it sets `SO_REUSEADDR` and, where it exists, `SO_REUSEPORT` on
+the socket before `bind`, so a second listener that sets them too is not
+refused, and Linux gives each sender's datagrams to one of the listeners.
+Windows and macOS: not examined.
+**Rule:** an empty `the result` after `accept datagram connections` does not
+mean the port is yours alone. A stack that falls back to the next port when
+one is taken (the Art-Net showcase's 6454 to 6464, the OSC showcase's 9000 to
+9009) moves on only for a holder that did not set those options; two OXT
+engines on one machine are given different ports by whoever starts them. Two
+copies of a showcase's engine suite are never run at once on one machine:
+the showcases listen on their own fixed ports, whatever `--port-base` says
+(the collision above came with a different `--port-base`).
+**Gate:** none.
+**Does NOT mean:** a port held by a program that does not set
+`SO_REUSEPORT` is shared: there, by Linux's rule for the option, the second
+`bind` fails and `the result` says so (6.12; not run here).
+
 ## 7. How to add to this file
 
 Add an entry with the next free number in its section (never reuse or

@@ -27,6 +27,7 @@
 -- ---------------------------------------------------------------------------
 
 local sArtnetStPass, sArtnetStFail, sArtnetStLog, sArtnetStLoopPort
+local sArtnetStLoopFrom   -- each sender the loopback listener heard, a key
 
 -- ===== entry point =========================================================
 
@@ -183,6 +184,7 @@ on artnetStLoopbackArrived pSender, pData
    -- The engine calls this later, with whatever stack is in front: pin the
    -- stack the results field belongs to (the suite's engine note 5.3).
    set the defaultStack to the short name of this stack
+   put true into sArtnetStLoopFrom[pSender]
    put artnetParseDmx(pData) into tFrame
    if tFrame["opcode"] is "ArtDmx" and tFrame["universe"] is 7 \
          and byteToNum(byte 1 of tFrame["channels"]) is 200 \
@@ -199,6 +201,19 @@ end artnetStLoopbackArrived
 
 -- Stop the Tier 2 listener (the harness calls this so the engine quits cleanly).
 command artnetStopSelfTest
+   local tFrom
+   -- The senders the listener heard first: the engine lists one socket for
+   -- each, on the listener's descriptor, and one left listed after the
+   -- listener closes kept the engine's socket thread spinning, a whole core
+   -- on Linux (the suite's engine notes, 6.20).
+   repeat for each key tFrom in sArtnetStLoopFrom
+      if tFrom is among the lines of the openSockets then
+         try
+            close socket tFrom
+         end try
+      end if
+   end repeat
+   put empty into sArtnetStLoopFrom
    try
       close socket sArtnetStLoopPort
    end try

@@ -25,7 +25,8 @@ opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQui
 3.0 s, without midixt, wholly on the screen (the same day). Its loop stops itself at its next
 frame once its stack is closed, so a close made with messages locked, which sends no closeStack,
 cannot leave it running unseen in the IDE's memory with its ports open (after each close there a
-frame was still queued; `TestAClosedWindowStopsItsShow`).
+frame was still queued; `TestAClosedWindowStopsItsShow`), and a Windows pass of that fix found
+nothing queued after either kind of close (the same day).
 
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library

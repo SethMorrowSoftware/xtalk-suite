@@ -25,6 +25,7 @@
 -- ---------------------------------------------------------------------------
 
 local sOscStPass, sOscStFail, sOscStLog, sOscStLoopPort
+local sOscStLoopFrom   -- each sender the loopback listener heard, a key
 
 -- ===== entry point =========================================================
 
@@ -191,6 +192,7 @@ on oscStLoopbackArrived pSender, pData
    -- The engine calls this later, with whatever stack is in front: pin the
    -- stack the results field belongs to (the suite's engine note 5.3).
    set the defaultStack to the short name of this stack
+   put true into sOscStLoopFrom[pSender]
    if char 1 of pSender is "/" then
       put pSender into pData
    end if
@@ -207,6 +209,19 @@ end oscStLoopbackArrived
 
 -- Stop the Tier 2 listener (the harness calls this so the engine quits cleanly).
 command oscStopSelfTest
+   local tFrom
+   -- The senders the listener heard first: the engine lists one socket for
+   -- each, on the listener's descriptor, and one left listed after the
+   -- listener closes kept the engine's socket thread spinning, a whole core
+   -- on Linux (the suite's engine notes, 6.20).
+   repeat for each key tFrom in sOscStLoopFrom
+      if tFrom is among the lines of the openSockets then
+         try
+            close socket tFrom
+         end try
+      end if
+   end repeat
+   put empty into sOscStLoopFrom
    try
       close socket sOscStLoopPort
    end try

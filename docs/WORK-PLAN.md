@@ -1087,8 +1087,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   so, it opened there that afternoon in 1.7 s, wholly on the screen (runbook section 8).
   That run found a third fault: after each close a frame of the show's loop was still
   queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
-  itself once its stack is closed, held by an engine test that failed first; that fix needs
-  a Windows pass (row 7).
+  itself once its stack is closed, held by an engine test that failed first, and a Windows
+  pass of that fix found nothing queued after either kind of close (runbook section 8).
+  That pass found the Light Board's closed show still listing a socket named by the
+  address its board sent from (engine note 6.20); this one, with oscxt loaded, does the
+  same on the headless engine. Fixed the same day: the show closes every sender's name with
+  its listener, held by the same test, strengthened first; that fix needs a Windows pass
+  with oscxt loaded (row 7).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
@@ -1100,7 +1105,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, and the footer says what it found |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 
 ### 2.15 midixt
 
@@ -1131,7 +1136,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   asks, and what the rest is has not been measured. That run found a third fault: after each
   close a frame of the show's loop was still queued, and the IDE keeps a closed stack in
   memory. Fixed the same day: the loop stops itself once its stack is closed, held by an
-  engine test that failed first; that fix needs a Windows pass (row 6).
+  engine test that failed first, and a Windows pass of that fix found nothing queued after
+  either kind of close (runbook section 8). It opens no socket.
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
@@ -1142,7 +1148,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
-| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, and the keyboard's notes show in blue |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
 
 ### 2.16 artnetxt
 
@@ -1170,8 +1176,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   section 8): over the two seconds row 7 asks, and what the rest is has not been measured.
   That run found a third fault: after each close a frame of the show's loop was still
   queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
-  itself once its stack is closed, held by an engine test that failed first; that fix needs
-  a Windows pass (row 7).
+  itself once its stack is closed, held by an engine test that failed first, and a Windows
+  pass of that fix found nothing queued after either kind of close (runbook section 8).
+  That pass found a fourth: a second after each close one socket was still listed, named
+  by the address the board sent from (engine note 6.20), and it went only when the stack
+  was deleted. Fixed the same day: the show closes every sender's name with its listener,
+  held by the same test, strengthened first, which failed on the headless engine too; that
+  fix needs a Windows pass (row 7).
 - Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
 
@@ -1183,8 +1194,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, and the desk drives the rig |
-| 8 | The headless engine's rare abort at quit: 5 of 355 runs of `demo_test::TestAlsoToSendsOnlyWhenItNamesANode` on 2026-11-21 (OXT-Beyond's `9.7.1-OXT` build 25923, Linux x86_64; 1 of 211 with the showcase before that day's closed-window fix, 4 of 144 after) never exited. In one run of each, gdb found glibc reporting a corrupt heap (`free(): corrupted unsorted chunks`) as the engine freed its objects at quit, from the same engine frames, and the engine's abort handler then waiting in `exit()` on malloc's lock until the runner killed it, the run's TAP output lost with it. What wrote past its block is not found: one run under valgrind's memcheck reported no invalid read or write (only mismatched free and delete pairs, from 7 sites), and other suites were not counted. Until it is, a run of this suite on Linux that times out having printed nothing ("0 ok") is most likely this | S1 (Linux, valgrind) | - | the bad write is found and reported to OXT-Beyond, or the test passes 1000 runs in a row |
+| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, the desk drives the rig, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
+| 8 | The headless engine's rare abort at quit: 5 of 355 runs of `demo_test::TestAlsoToSendsOnlyWhenItNamesANode` on 2026-11-21 (OXT-Beyond's `9.7.1-OXT` build 25923, Linux x86_64; 1 of 211 with the showcase before that day's closed-window fix, 4 of 144 after) never exited. In one run of each, gdb found glibc reporting a corrupt heap (`free(): corrupted unsorted chunks`) as the engine freed its objects at quit, from the same engine frames, and the engine's abort handler then waiting in `exit()` on malloc's lock until the runner killed it, the run's TAP output lost with it. One run under valgrind's memcheck reported no invalid read or write (only mismatched free and delete pairs, from 7 sites). The likeliest cause, found the same day (engine note 6.20; INFERRED from the engine's source): the test closed its own listener after it had heard the show, which leaves the show's address listed as a socket on a closed descriptor and the engine's socket thread spinning over it, and at quit `X_close` frees every socket, and the list, without that thread's lock, and only later stops the thread. Since the same day the test closes the names its listener heard first, the show and the self-test do the same, and the members' test runner closes whatever a run left listed before it quits (`scCloseLeftSockets`). 350 runs of the test with its fix (the show's too, the runner's not), the same day: none failed; under the earlier rate about five would have. Other suites were not counted | S1 (Linux) | - | reported to OXT-Beyond (the lock in `X_close`, or a listener's closing taking its senders' names with it), and the test passes 1000 runs in a row |
 
 ---
 

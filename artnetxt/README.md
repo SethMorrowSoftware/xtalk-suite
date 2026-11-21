@@ -69,9 +69,11 @@ and the IDE held for 112 seconds as it opened; both were fixed the same day: it 
 its window with messages locked and centres it. Built so, it opened there that afternoon
 in 5 seconds and ran, wholly on the screen. Closing its window stops the show, by a close
 made with messages locked too: after each close in that IDE a frame of its loop was still
-queued, and it now stops itself once its stack is closed (that fix needs a Windows pass).
-Its look and feel on a Mac and on Linux, and a real node or desk, are verified statically;
-need an OXT pass.
+queued, and it now stops itself once its stack is closed, which a second Windows pass saw
+the same day. That pass found one socket still listed after each close, named by the
+address the board sent from (the suite's engine note 6.20); the show now closes it too
+(that fix needs a Windows pass). Its look and feel on a Mac and on Linux, and a real node
+or desk, are verified statically; need an OXT pass.
 
 ## Status
 

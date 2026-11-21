@@ -159,9 +159,14 @@ on TestDiscoveryThroughHelpersOverUdp
 end TestDiscoveryThroughHelpersOverUdp
 
 -- The shipped self-test's Tier 2 (async loopback) -- the part selftest_test
--- cannot check without sockets.
+-- cannot check without sockets. Its stop leaves no socket listed: the engine
+-- lists one more for each sender a datagram listener hears, on the listener's
+-- descriptor, and one left listed after the listener closes kept the engine's
+-- socket thread spinning, a whole core on Linux (the suite's engine notes,
+-- 6.20; a self-test left open in an IDE would have kept it so)
 on TestShippedSelfTestTier2
-   local tPath, tLog
+   local tPath, tLog, tBefore
+   put udpSocketList() into tBefore
    put $SC_HELPERS into tPath
    set the itemDelimiter to "/"
    put "artnet-selftest.livecodescript" into the last item of tPath
@@ -173,4 +178,47 @@ on TestShippedSelfTestTier2
    TestDiagnostic tLog
    TestAssert "Tier 2 Art-Net loopback reported PASS", tLog contains "[PASS] Tier 2 Art-Net loopback"
    artnetStopSelfTest
+   TestPump 100
+   TestAssertEqual "its stop leaves no socket listed", udpSocketList(), tBefore
 end TestShippedSelfTestTier2
+
+-- The runner closes what a run left listed before it quits (scCloseLeftSockets,
+-- tests/lcs/_runner.livecodescript): a sender's name left listed after its
+-- listener closed keeps the engine's socket thread spinning, and at quit the
+-- engine frees its sockets without that thread's lock (the suite's engine
+-- notes, 6.20). This leaves one on purpose, as a test that closes only its
+-- listener does, and has the runner's handler close it.
+on TestTheRunnerClosesWhatARunLeftListed
+   global gLeftFrom
+   local tPort, tDeadline
+   put TestPortBase() + 15 into tPort
+   put empty into gLeftFrom
+   accept datagram connections on port tPort with message "leftArrived"
+   TestAssertEqual "accept succeeded", the result, empty
+   open datagram socket to ("127.0.0.1:" & tPort)
+   write "left" to socket ("127.0.0.1:" & tPort)
+   put the milliseconds + 3000 into tDeadline
+   repeat until gLeftFrom is not empty or the milliseconds > tDeadline
+      wait 10 milliseconds with messages
+   end repeat
+   TestAssert "the listener heard the datagram", gLeftFrom is not empty
+   close socket ("127.0.0.1:" & tPort)
+   close socket tPort
+   TestAssert "its sender's name is still listed after the listener closed (" & udpSocketList() & ")", \
+         gLeftFrom is among the lines of the openSockets
+   scCloseLeftSockets
+   TestAssertEqual "the runner's handler closed it", udpSocketList(), empty
+end TestTheRunnerClosesWhatARunLeftListed
+
+on leftArrived pSender, pData
+   global gLeftFrom
+   put pSender into gLeftFrom
+end leftArrived
+
+-- The openSockets on one line, for a label or a comparison
+function udpSocketList
+   local tList
+   put the openSockets into tList
+   replace return with comma in tList
+   return tList
+end udpSocketList

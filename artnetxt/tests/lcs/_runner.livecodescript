@@ -51,6 +51,7 @@ on startup
       TestAssert "runner: " & scErrorLine(tErr), false
       TestDiagnostic tErr
    end try
+   scCloseLeftSockets
    if sFail > 99 then
       quit 99
    end if
@@ -441,6 +442,44 @@ end scProbeSockets
 on scProbeArrived pA, pB
    put pA & pB into sProbeGot
 end scProbeArrived
+
+-- ===== what a run left listed ==================================================
+-- A test, or the probe above, can leave names in the openSockets: the engine
+-- lists one more socket for each sender a datagram listener hears, on the
+-- listener's descriptor, and keeps it after the listener closes. Left listed,
+-- it keeps the engine's socket thread spinning over a closed descriptor, and at
+-- quit the engine frees its sockets without that thread's lock (the suite's
+-- engine notes, 6.20): artnetxt's also-to test, which left one, never exited in
+-- about one run in seventy, its output lost with it. So before it quits the
+-- runner closes every name still listed, the ones with a host first, and names
+-- them in a diagnostic. This is the runner's hygiene, not a check: a test that
+-- must leave nothing asserts so itself (TestAClosedWindowStopsItsShow,
+-- TestShippedSelfTestTier2).
+on scCloseLeftSockets
+   local tLeft, tName
+   put the openSockets into tLeft
+   if tLeft is empty then
+      exit scCloseLeftSockets
+   end if
+   TestDiagnostic "runner: closing what the run left listed: " & scOneLine(tLeft)
+   repeat for each line tName in tLeft
+      if ":" is in tName then
+         try
+            close socket tName
+         end try
+      end if
+   end repeat
+   repeat for each line tName in the openSockets
+      try
+         close socket tName
+      end try
+   end repeat
+end scCloseLeftSockets
+
+function scOneLine pLines
+   replace return with comma in pLines
+   return pLines
+end scOneLine
 
 -- ===== output =================================================================
 

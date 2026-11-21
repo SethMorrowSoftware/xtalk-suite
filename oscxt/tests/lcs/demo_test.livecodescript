@@ -17,7 +17,10 @@ script "OscDemoTest"
 --   * closing the window stops the show and closes its port, and so does a
 --     close made with messages locked, which sends no closeStack: the loop
 --     stops itself at its next frame (after each close in that IDE a frame was
---     still queued, 2026-11-21);
+--     still queued, 2026-11-21); and no socket of the show's is left listed,
+--     the name the engine lists for each sender it heard included (the
+--     suite's engine notes, 6.20: one was left after each close, there and
+--     here);
 --   * every scene plays with nothing going wrong, and each does what its
 --     words say: the meters follow the faders, the spot follows the pad, each
 --     address pattern lights exactly the lamps OSC 1.0 says it names (an
@@ -462,17 +465,23 @@ end TestTheWindowOpensCentredOnTheScreen
 -- with messages locked, which sends no closeStack, stops it at the loop's
 -- next frame: the IDE keeps a closed stack in memory, where a loop that ran
 -- on would run unseen with its port open (after each close in OXT-Beyond
--- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21)
+-- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21). And
+-- none of its sockets is left listed: the engine lists one more for each
+-- sender a datagram listener hears and keeps it after the listener closes
+-- (the suite's engine notes, 6.20), so the show closes those names too
 on TestAClosedWindowStopsItsShow
-   local tState, tPort
+   local tState, tPort, tBefore
+   put demoSocketList() into tBefore
    demoOpen
    TestPump 300
    TestAssert "the loop runs while the window is open", demoFramesQueued() > 0
+   TestAssert "with sockets open (" & demoSocketList() & ")", demoSocketList() is not tBefore
    close stack sDemo
    TestPump 200
    TestAssertEqual "a close stops it", demoFramesQueued(), 0
    put demoState() into tState
    TestAssertEqual "and the show says so", tState["running"], false
+   TestAssertEqual "and leaves none of its sockets open", demoSocketList(), tBefore
    go invisible stack sDemo
    TestPump 300
    TestAssert "a reopen starts it again", demoFramesQueued() > 0
@@ -487,7 +496,16 @@ on TestAClosedWindowStopsItsShow
    put demoState() into tState
    TestAssertEqual "the show stopped itself", tState["running"], false
    TestAssert "and closed its port (" & tPort & ")", tPort is not among the lines of the openSockets
+   TestAssertEqual "and every other socket it had", demoSocketList(), tBefore
 end TestAClosedWindowStopsItsShow
+
+-- The openSockets on one line, for a label or a comparison
+function demoSocketList
+   local tList
+   put the openSockets into tList
+   replace return with comma in tList
+   return tList
+end demoSocketList
 
 -- The frame messages queued for the demo's loop
 function demoFramesQueued

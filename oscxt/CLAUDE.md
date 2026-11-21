@@ -25,7 +25,11 @@ opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQui
 1.7 s, without oscxt, wholly on the screen (the same day). Its loop stops itself at its next
 frame once its stack is closed, so a close made with messages locked, which sends no closeStack,
 cannot leave it running unseen in the IDE's memory with its port open (after each close there a
-frame was still queued; `TestAClosedWindowStopsItsShow`).
+frame was still queued; `TestAClosedWindowStopsItsShow`), and a Windows pass of that fix found
+nothing queued after either kind of close. Its stop also closes the name the engine lists for
+each sender the rig heard, which closing the listener leaves listed (the suite's engine note
+6.20: one more name per open, here on Linux and in the Art-Net showcase on Windows; the same
+test, strengthened, failed first).
 
 It is the OSC third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -109,6 +113,14 @@ not open"), so `scOscSend` opens it first.
 5. **An all-lowercase LCB name warns, and the Extension Builder compiles with `-Werror`.**
 6. **An accepted datagram socket is named by its port alone** (`close socket "9000"`), and
    delivers each datagram as its own message: nothing needs a `read`.
+7. **It also lists one socket per sender it hears** (`127.0.0.1:41273`, on the listener's
+   descriptor), and closing the listener leaves that name listed, with an engine thread
+   spinning a whole core on Linux (the suite's engine note 6.20). The showcase's
+   `osdStop` and the self-test's `oscStopSelfTest` close each sender's name first, held by
+   `TestAClosedWindowStopsItsShow` and `TestShippedSelfTestTier2`; the test runner closes
+   whatever a test left listed before its engine quits (`scCloseLeftSockets`, held by
+   `TestTheRunnerClosesWhatARunLeftListed`), because at quit the engine frees its sockets
+   while that thread may still be reading them.
 
 ## Status
 
