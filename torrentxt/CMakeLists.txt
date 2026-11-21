@@ -558,10 +558,17 @@ if(TORRENTXT_BUILD_TESTS)
             # EXPRESSION set ctest ignores the exit status, so the count of
             # failures is pinned in the text ("4 failures"), and a run in
             # which the row passed, or failed on anything else, does not match.
+            # The torrent's state is NOT pinned, only that it has made no
+            # progress under a paused session: the row stops at its first
+            # sight of the paused session, and by then the torrent is either
+            # still reading resume data (state 7, the first CI run of this
+            # fixture, a fast runner) or already at "checking files" (state 1,
+            # the machine it was written on, and what the Android app showed
+            # after 20 s). Pinning "state 1" pinned a race.
             set_tests_properties(torrent_smoke_netlink_refused PROPERTIES
                 TIMEOUT 120
                 ENVIRONMENT "LD_PRELOAD=$<TARGET_FILE:netlink_refused_preload>"
-                PASS_REGULAR_EXPRESSION "FAIL [^\n]*  btx_session_is_paused\\(s\\) == 0\nFAIL [^\n]*  seeding\n[^\n]*not seeding: state 1, progress 0[^\n]*session paused 1[^\n]*\nFAIL [^\n]*  port > 0\nFAIL [^\n]*  btx_session_is_paused\\(s\\) == 0\n[0-9]+ checks, 4 failures")
+                PASS_REGULAR_EXPRESSION "FAIL [^\n]*  btx_session_is_paused\\(s\\) == 0\nFAIL [^\n]*  seeding\n[^\n]*not seeding: state [17], progress 0[^\n]*session paused 1[^\n]*\nFAIL [^\n]*  port > 0\nFAIL [^\n]*  btx_session_is_paused\\(s\\) == 0\n[0-9]+ checks, 4 failures")
         endif()
     elseif(EXISTS "${_smoke_src}")
         message(STATUS "TorrentXT: tests/torrent_smoke_test.cpp present but the shim library "
