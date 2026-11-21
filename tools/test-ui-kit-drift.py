@@ -197,6 +197,13 @@ def case_core_unregistered():
     return patched("ADOPTERS", [a for a in GATE.ADOPTERS if a != CORE])
 
 
+def case_checkbox_ink_gone():
+    # in the MASTER: the adopters then differ from it too, and the sentence
+    # asked for is the one about the colour
+    return edited(GATE.MASTER,
+                  "   set the foregroundColor of button pName to kUiInk\n", "")
+
+
 # (label, context factory, gate must fail, sentences it must print,
 #  sentences it must NOT print). Sentences are regexes over the gate's output.
 CASES = [
@@ -224,11 +231,16 @@ CASES = [
      "carrier",
      case_core_unregistered, True,
      [re.escape(CORE) + r" carries the kit but is not in ADOPTERS"], []),
+    ("(g) the master's uiCheckbox no longer says its text colour: named "
+     "(a dark theme's label is white on the kit's white)",
+     case_checkbox_ink_gone, True,
+     [r"the master's uiCheckbox sets no foregroundColor"],
+     [r"the master's uiArea sets no", r"the master's uiInput sets no"]),
 ]
 
 
 def main():
-    before = {rel: _bytes(rel) for rel in (CORE, PASTE)}
+    before = {rel: _bytes(rel) for rel in (CORE, PASTE, GATE.MASTER)}
     if os.path.exists(os.path.join(ROOT, PLANT)):
         print("test-ui-kit-drift: %s exists before the run - remove it" % PLANT)
         return 1

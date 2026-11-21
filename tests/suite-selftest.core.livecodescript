@@ -280,15 +280,15 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-c9efbccf7efd"
+constant kSuUiVersion = "suite-board-e78fed232473"
 -- One entry per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,coinxt,xlsxt,curlxt,barcodext,webpxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,CoinXT,xlsxt,curlxt,barcodext,webpxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,render3dxt,coinxt,xlsxt,curlxt,barcodext,webpxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,render3dxt,CoinXT,xlsxt,curlxt,barcodext,webpxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a name in the band under the rows, and no pill or Run.
-constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,webpxt,xlsxt"
+constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,render3dxt,webpxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
@@ -297,9 +297,12 @@ constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,webpxt,xlsxt"
 -- row's controls still clear the next row's (+34), and the last row ends at
 -- 543. Verified statically; the board at this pitch needs an OXT pass.
 --
--- THE BAND (2026-11-20, with barcodext and webpxt). xlsxt had landed that
--- day as a fifteenth row at a pitch of 27; the band put the pitch back to 29. Shrinking the pitch for
--- every new member had a floor, and five members were being added in one day.
+-- THE BAND (2026-11-20, with barcodext and webpxt). xlsxt and render3dxt had
+-- landed that day as a fifteenth and a sixteenth row, at a pitch of 27 and
+-- then of 25, where a row's controls end exactly where the next row's begin,
+-- and a seventeenth row fit at no pitch (render3dxt's work plan #10). The band
+-- put the pitch back to 29. Shrinking the pitch for every new member had a
+-- floor, and five members were being added in one day.
 -- A member with no in-engine harness has nothing to press, so it no longer
 -- takes a row: the rows are the members that have a Run (and the cross row),
 -- at the pitch above, and the others are names in a band under the last row,
@@ -871,6 +874,10 @@ command uiInput pName, pRect
    set the borderWidth of field pName to 1
    set the borderColor of field pName to kUiFieldLine
    set the opaque of field pName to true
+   -- SAY THE TEXT COLOUR. Left unset it is the system theme's, and a dark
+   -- theme's is white: white words on the white this builder paints (seen on
+   -- Windows, 2026-11-20, in a log and under two checkboxes).
+   set the foregroundColor of field pName to kUiInk
    set the backgroundColor of field pName to kUiCard
    -- 4-item margins form ONLY: OXT ignored the single-number form on a
    -- real engine pass
@@ -893,6 +900,8 @@ command uiArea pName, pRect
    set the borderColor of field pName to kUiCardLine
    set the opaque of field pName to true
    set the backgroundColor of field pName to kUiCard
+   -- and its words, for uiInput's reason: never the theme's
+   set the foregroundColor of field pName to kUiInk
    set the margins of field pName to "6,6,6,6"
    set the vScrollbar of field pName to true
    set the textSize of field pName to 10
@@ -927,6 +936,9 @@ command uiCheckbox pName, pLabel, pRect
    uiButton pName, pLabel, pRect
    set the style of button pName to "checkbox"
    set the autoHilite of button pName to false
+   -- its label sits on the adopter's card, which the kit paints white: the
+   -- theme's text colour (white, under a dark theme) must not reach it
+   set the foregroundColor of button pName to kUiInk
 end uiCheckbox
 
 -- Create-or-reuse a named graphic: the chrome layer (cards, pills,
