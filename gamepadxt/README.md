@@ -108,11 +108,23 @@ Joined the suite on 2026-11-20. What has run, and where:
   put the library back as it found it. Then again with no gamepadxt, where it plays a recording. The native lane runs
   both on every change. No person has used it at a screen and no real controller has driven
   it.
-- **Not yet:** no real controller has been read through it on any platform, no desktop IDE
-  has loaded it, and no engine on Windows, macOS or the web has run it: on those it is
-  verified statically; needs an OXT pass (with a controller plugged in). The six desktop
-  libraries and the web archive are committed under `src/code/` (2026-11-21), and no
-  engine has loaded a committed one yet: the runs above used a locally built library.
+- **In a browser**, 2026-11-21: OXT-Beyond's pull request 612 links the committed web
+  archive into its web engine, and that pull request's web IDE check ran a gamepad step in
+  Chromium, Firefox and WebKit over a virtual pad: attached, a button pressed and read back
+  as an event, a stick inside and outside the dead zone, rumble, the light, unplugged, and
+  SDL's assertions at 0. The browsers showed no pads of their own, so no real controller.
+- **In the IDE on Windows**, 2026-11-21: on the maintainer's PC, OXT-Beyond 0.2.8-dp.1
+  (64-bit) loaded the extension from the user's Extensions folder, over a DLL the size of
+  the committed `x86_64-win32` one (1,936,384 bytes; not hashed). Gamepad Lab opened in
+  453 ms reading "SDL 3.4.20, gamepadxt ABI 1: reading controllers" and played its first
+  showcase on the software pad: every button pressed in turn and each press read back from
+  `gpEvents()`, SDL's assertions at 0. No physical controller was listed.
+- **Not yet:** no real controller has been read through it on any platform, no IDE on
+  Linux or macOS has loaded it, and no engine on macOS has run it: on those it is verified
+  statically; needs an OXT pass (with a controller plugged in). The six desktop libraries
+  are committed under `src/code/` (2026-11-21); of them only the 64-bit Windows DLL has
+  met an engine (the IDE run above, by its size), and the Linux runs above used a locally
+  built library.
 - **Linux floors:** the 64-bit libraries need glibc 2.27 or newer; the 32-bit one 2.38 or
   newer (SDL's C23 `__isoc23_*` calls; measured with `objdump -T`, 2026-11-21).
 - **Not built for Android or iOS.** SDL reaches controllers there through its own Java or

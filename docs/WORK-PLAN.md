@@ -1059,23 +1059,36 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   server engine over a locally built library (2026-11-20), which its native lane repeats on
   every change. Its demo window, Gamepad Lab, was driven on OXT-Beyond's Linux desktop
   engine with no display on 2026-11-21 (`tests/demo-drive.livecodescript`, with that library
-  and without it). EVERY one of those drives SDL's virtual pads: no real controller has been
-  read through it, and no desktop IDE has loaded it. For everything beyond those runs it is
-  verified statically; needs an OXT pass.
+  and without it). The same day it ran in a desktop IDE for the first time, on the
+  maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit, the extension in the user's
+  Extensions folder): Gamepad Lab opened reading "SDL 3.4.20, gamepadxt ABI 1: reading
+  controllers" and played its first showcase, every button pressed on its software pad
+  and each press read back from `gpEvents()`, SDL's assertions at 0 (runbook section 8).
+  EVERY one of those drives SDL's virtual pads: no real controller has been read through
+  it, and no Linux IDE and no Mac engine has run it. For everything beyond those runs it
+  is verified statically; needs an OXT pass.
 - Binaries: none committed when it joined. The web archive was committed on 2026-11-21
-  (built with Emscripten 6.0.12, its tests run under node; no browser has run it), and the
-  six desktop libraries the same day by its first release-binaries dispatch (run
-  44848412320 from 4719e46, commit fdcb830; no Android ids, `docs/ANDROID.md`). The
-  `ships` row lists all seven. No engine has loaded any of them yet: the runs above used a
-  locally built library.
+  (built with Emscripten 6.0.12, its tests run under node), and the six desktop libraries
+  the same day by its first release-binaries dispatch (run 44848412320 from 4719e46,
+  commit fdcb830; no Android ids, `docs/ANDROID.md`). The `ships` row lists all seven.
+  The same day OXT-Beyond's pull request 612, which builds gamepadxt in, linked the
+  committed archive into its web engine, and that pull request's web IDE check ran a
+  gamepad step in Chromium, Firefox and WebKit: a virtual pad attached, a button pressed
+  and read back as an event, a stick, rumble and the light, the pad unplugged, and SDL's
+  assertions at 0 (Chromium's log read; the other two passed the same check). No real pad
+  has been read in a browser. Of the desktop libraries only the `x86_64-win32` DLL has met
+  an engine: the Windows IDE run above loaded a DLL of its size (1,936,384 bytes, not
+  hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC). The Linux runs used a
+  locally built library, and no engine has loaded the committed Linux, 32-bit Windows or
+  Mac ones.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
   2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44848412320, commit fdcb830, and the web archive): the first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | - | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
-| 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad. Gamepad Lab (`gamepadxt/examples/gamepad-lab.livecodescript`) shows every one of those steps in its window, so the pass can be: open it, plug the pad in, press, push, pull it out | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
-| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine, and a pad read in a browser after a button press | OXT-Beyond | - | `gpPads()` lists a pad in the web IDE |
+| 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad. Gamepad Lab (`gamepadxt/examples/gamepad-lab.livecodescript`) shows every one of those steps in its window, so the pass can be: open it, plug the pad in, press, push, pull it out. On Windows it has already opened in the IDE and played on its software pad (2026-11-21), so there the pass is the controller alone | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
+| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine (its pull request 612, whose web IDE check read a virtual pad in three browsers on 2026-11-21), and a REAL pad read in a browser after a button press | OXT-Beyond's 612 merged, a controller | - | `gpPads()` lists a real pad in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste (virtual pads make one possible without hardware), replacing its NO_HARNESS entry | coding | - | the board's gamepadxt row has a pill and a Run |
 | 6 | b2k Kit input from a pad: a b2k game steered by a controller through gamepadxt. (The pad tester half of this row landed 2026-11-21 as Gamepad Lab, `gamepadxt/examples/gamepad-lab.livecodescript`; its record is in `gamepadxt/CLAUDE.md`'s status.) | coding | - | a b2k game played with a controller |

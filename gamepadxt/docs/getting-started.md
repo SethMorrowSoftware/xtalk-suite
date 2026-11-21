@@ -180,5 +180,8 @@ line of the same format, and `gpPadMapping(tPad)` shows the line a pad is using.
 ## What has been checked
 
 Everything on this page has run in the member's tests against virtual pads, natively and on
-OXT-Beyond's headless Linux engine. Reading a real controller, and everything on Windows,
-macOS and the web, is verified statically; needs an OXT pass.
+OXT-Beyond's headless Linux engine. Part of it has run on Windows and in a browser, again
+on virtual pads, on 2026-11-21: in the IDE on Windows, `gpStart`, a pad's buttons and their
+events (the demo's first showcase); in Chromium, Firefox and WebKit, a pad attached, a
+button and a stick read, rumble and the light. Reading a real controller, the rest on
+Windows and the web, and everything on macOS, is verified statically; needs an OXT pass.

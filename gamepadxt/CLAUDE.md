@@ -118,8 +118,17 @@ Verified natively (smoke and fuzz over virtual pads, ASan/UBSan, 64-bit, 32-bit 
 under node) and on the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20,
 a locally built library). The demo window, `examples/gamepad-lab.livecodescript`, ran on the
 Linux desktop engine with no display (`tests/demo-drive.livecodescript`, 2026-11-21: every
-showcase and control, a pad plugged in mid-run, with the library and without). No real
-controller, no desktop IDE and no other platform's engine has run it: verified statically;
-needs an OXT pass. The six desktop libraries and the web archive are committed under
-`src/code/` (2026-11-21: the desktop ones by the suite's release-binaries run 44848412320);
-no engine has loaded a committed one yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+showcase and control, a pad plugged in mid-run, with the library and without). The same
+day it ran in the IDE on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit, over
+a DLL the size of the committed `x86_64-win32` one): Gamepad Lab opened reading "SDL
+3.4.20, gamepadxt ABI 1: reading controllers" and played its first showcase on the
+software pad, every press read back from `gpEvents()`, SDL's assertions at 0 (the suite
+runbook's section 8). No real controller, no Linux IDE and no Mac engine has run it:
+verified statically; needs an OXT pass. The six desktop libraries and the web archive are
+committed under `src/code/` (2026-11-21: the desktop ones by the suite's release-binaries
+run 44848412320). The committed web archive has run in a browser: OXT-Beyond's pull
+request 612 links it into the web engine, and on 2026-11-21 that pull request's web IDE
+check attached a virtual pad, pressed a button and read it back, moved a stick, rumbled
+and lit the pad in Chromium, Firefox and WebKit. Of the committed desktop libraries only
+the 64-bit Windows DLL has met an engine, by its size (the IDE run above); the Linux runs
+used a locally built one. Open work is in the suite's `docs/WORK-PLAN.md`.
