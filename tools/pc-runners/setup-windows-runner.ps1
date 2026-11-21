@@ -10,13 +10,16 @@
 # Running it again for the same repository replaces that runner.
 #
 # What it sets up, and why:
-#   - the runner as a Windows service under NT AUTHORITY\NETWORK SERVICE: a
-#     service lives in session 0, which has no desktop the user sees, so a job
-#     can never open a window on the screen; and the account is not the
+#   - the runner under NT AUTHORITY\NETWORK SERVICE, started at boot by a
+#     scheduled task in session 0, which has no desktop the user sees, so a
+#     job can never open a window on the screen; and the account is not the
 #     user's, so a job cannot read their files.
-#   - a HARD cap: runner-cpu-cap.ps1 holds the runner and every process it
-#     starts in a Windows job object limited to CpuPercent of the whole CPU
-#     (25% of six cores, a core and a half) and MemoryGB, so CI can never pin the PC.
+#   - a HARD cap: that task runs runner-cpu-cap.ps1, which joins a Windows job
+#     object limited to CpuPercent of the whole CPU (25% of six cores, a core
+#     and a half) and MemoryGB and only then starts the runner, so the runner
+#     and every process it starts are inside it and CI can never pin the PC.
+#     It is not a service: a service starts outside the cap, and Windows would
+#     not let the cap take it in afterwards (2026-11-21).
 #   - Below Normal CPU priority and Low I/O priority for the runner's two
 #     processes (Image File Execution Options). Windows gives a child process
 #     its parent's class when that class is Below Normal, so every compiler
@@ -99,12 +102,27 @@ $asset = $release.assets | Where-Object { $_.name -eq $assetName }
 if (-not $asset -or -not ($asset.digest -like 'sha256:*')) { Die "the runner release did not publish a sha256 digest for $assetName" }
 
 $dir = Join-Path $Root ($Repo -replace '/', '-')
-if (Test-Path "$dir\.runner") {
-  Write-Output "replacing the runner in $dir"
-  Push-Location $dir
-  & .\config.cmd remove --token $Token
-  Pop-Location
+$task = 'GitHub runner (capped)'
+# One runner per PC: the cap is per runner, and two would be two caps
+$others = Get-ChildItem -Directory $Root -ErrorAction SilentlyContinue |
+  Where-Object { $_.FullName -ne $dir -and (Test-Path (Join-Path $_.FullName '.runner')) }
+if ($others) { Die "another runner is registered in $($others[0].FullName); remove it first (docs/PC-RUNNERS.md)" }
+
+# Stop what an earlier install started: this script's task, and the first
+# version's service and separate SYSTEM cap task (2026-11-21), which Windows
+# would not let cap the service
+foreach ($t in $task, 'GitHub runner CPU cap') {
+  if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $t -Confirm:$false
+  }
 }
+foreach ($svc in Get-Service 'actions.runner.*' -ErrorAction SilentlyContinue) {
+  Stop-Service -Force $svc.Name -ErrorAction SilentlyContinue
+  & "$env:SystemRoot\System32\sc.exe" delete $svc.Name | Out-Null
+}
+# Its registration is replaced by --replace below; the files go
+if (Test-Path "$dir\.runner") { Write-Output "replacing the runner in $dir" }
 if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $zip = Join-Path $dir $assetName
@@ -118,42 +136,44 @@ $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
 Set-Content -NoNewline -Encoding ascii -Path "$dir\.path" -Value (
   @("$Root\bin", $gitBin, $cmakeBin, $ninjaBin, $pythonDir, (Join-Path $pythonDir 'Scripts'), $machinePath) -join ';')
 
+# Registered but NOT a service: only runner-cpu-cap.ps1 starts it, already
+# inside the cap, so it can never run uncapped
 Push-Location $dir
 $name = "$env:COMPUTERNAME-$($Repo.Split('/')[1])".ToLower()
 & .\config.cmd --unattended --replace --url "https://github.com/$Repo" --token $Token `
-  --name $name --labels $Labels --work _work --runasservice
+  --name $name --labels $Labels --work _work
 if ($LASTEXITCODE -ne 0) { Pop-Location; Die 'config.cmd failed' }
 Add-Content -Encoding ascii -Path "$dir\.env" -Value @(
   "ACTIONS_RUNNER_HOOK_JOB_STARTED=$Root\hooks\job-started.ps1",
   "ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$Root\hooks\job-completed.ps1")
-$service = (Get-Content "$dir\.service" -ErrorAction SilentlyContinue)
-if (-not $service) { $service = (Get-Service "actions.runner.*$name*" | Select-Object -First 1).Name }
 Pop-Location
-Restart-Service $service
 
-# NETWORK SERVICE writes its checkouts here, and the hooks must be readable
-icacls $Root /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' /T /Q | Out-Null
-Restart-Service $service
-
-# The hard cap (runner-cpu-cap.ps1): a job object holding the runner and
-# everything it starts to CpuPercent of the machine, started now and at every
-# boot by a SYSTEM task with no window
 $capSrc = Join-Path $PSScriptRoot 'runner-cpu-cap.ps1'
 if (-not (Test-Path $capSrc)) { Die 'runner-cpu-cap.ps1 must sit beside this script' }
 Copy-Item -Force $capSrc "$Root\runner-cpu-cap.ps1"
-$capArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\runner-cpu-cap.ps1`" -CpuPercent $CpuPercent -MemoryGB $MemoryGB"
-# By full path: Task Scheduler keeps the PATH it booted with, and on the maintainer's PC
-# (2026-11-21) that PATH had lost System32, so a bare powershell.exe never started
-$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument $capArgs
+Remove-Item -Force -ErrorAction SilentlyContinue "$Root\runner-cpu-cap.log", "$Root\runner-cpu-cap.state"
+
+# NETWORK SERVICE runs the runner, writes its checkouts and the cap's log here
+icacls $Root /grant 'NT AUTHORITY\NETWORK SERVICE:(OI)(CI)M' /T /Q | Out-Null
+
+# The task: at every boot, as NETWORK SERVICE in session 0 (no window, not
+# the user's account), runner-cpu-cap.ps1 joins the job and starts run.cmd.
+# PowerShell by full path: Task Scheduler keeps the PATH it booted with, and
+# on the maintainer's PC (2026-11-21) that PATH had lost System32, so a bare
+# powershell.exe never started.
+$ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$capArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\runner-cpu-cap.ps1`" -RunnerDir `"$dir`" -CpuPercent $CpuPercent -MemoryGB $MemoryGB"
+$action = New-ScheduledTaskAction -Execute $ps -Argument $capArgs -WorkingDirectory $dir
 $trigger = New-ScheduledTaskTrigger -AtStartup
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 99 `
+$principal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\NETWORK SERVICE' -LogonType ServiceAccount -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 10 `
   -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-Register-ScheduledTask -Force -TaskName 'GitHub runner CPU cap' -Action $action -Trigger $trigger `
-  -Settings $settings -User 'SYSTEM' -RunLevel Highest | Out-Null
-Stop-ScheduledTask -TaskName 'GitHub runner CPU cap' -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName 'GitHub runner CPU cap'
+Register-ScheduledTask -Force -TaskName $task -Action $action -Trigger $trigger -Principal $principal `
+  -Settings $settings | Out-Null
+Start-ScheduledTask -TaskName $task
 
 Write-Output ''
-Write-Output "Done: $name is registered with $Repo under the labels self-hosted, Windows, X64, $Labels."
+Write-Output "Done: $name is registered with $Repo under the labels self-hosted, Windows, X64, $Labels,"
+Write-Output "and runs inside a cap of $CpuPercent% of the CPU and $MemoryGB GB ($Root\runner-cpu-cap.log, .state)."
 Write-Output "It takes jobs only once the repository variable PC_RUNNERS_WINDOWS is 'on'."
-Write-Output "Pause it:  Stop-Service $service     Resume: Start-Service $service"
+Write-Output "Pause it:  Stop-ScheduledTask '$task'     Resume: Start-ScheduledTask '$task'"

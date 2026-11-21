@@ -47,8 +47,8 @@ the screen. Both caps below are enforced by the operating system, not asked of t
 | | Linux PC (`setup-linux-runner.sh`) | Windows PC (`setup-windows-runner.ps1`) |
 |---|---|---|
 | Account | system user `ghrunner`, no password, no sudo | `NT AUTHORITY\NETWORK SERVICE` |
-| Windows on screen | none: a systemd service has no display | none: a service runs in session 0 |
-| CPU | a HARD cap: `CPUQuota` 800% (8 of 20 threads) for all runners together; Nice 15, batch scheduler | a HARD cap: a job object (`runner-cpu-cap.ps1`) holds the runner and every process it starts to 25% of the CPU (a core and a half of 6; the PC is older, 2026-11-21); Below Normal priority |
+| Windows on screen | none: a systemd service has no display | none: a boot task as NETWORK SERVICE runs in session 0 |
+| CPU | a HARD cap: `CPUQuota` 800% (8 of 20 threads) for all runners together; Nice 15, batch scheduler | a HARD cap: `runner-cpu-cap.ps1` joins a job object of 25% of the CPU (a core and a half of 6; the PC is older, 2026-11-21) and only then starts the runner, so it and everything it starts are inside; if it cannot join, the runner does not start. Below Normal priority. Not a service: Windows would not let a cap take in a running service (2026-11-21) |
 | Disk I/O | idle class | Low I/O priority |
 | Memory | `MemoryMax` 12G for all runners together | 8 GB, in the same job object |
 | Disk | a job does not start with under 5 GB free; its checkout is deleted when it ends | the same, 4 GB |
@@ -79,7 +79,9 @@ already that low, and refuses everything else, loudly, naming the command.
 A job routed to a PC waits for that PC: GitHub does not fall back by itself. Before a PC is turned
 off for long, set its variable to anything but `on` (new runs then go to GitHub's machines; a run
 already waiting can be re-run). To pause without that: `sudo systemctl stop 'actions.runner.*'` on
-Linux, `Stop-Service actions.runner.*` on Windows, and start them again the same way.
+Linux, `Stop-ScheduledTask 'GitHub runner (capped)'` on Windows (ending the cap ends the runner), and
+start them again the same way. On Windows, `C:\actions-runner\runner-cpu-cap.state` lists what the
+cap holds, refreshed every 30 s, and `runner-cpu-cap.log` says when it started or why it would not.
 
 ## Taking it away
 
@@ -90,4 +92,7 @@ its folder, Linux under `/var/lib/ghrunner/`, Windows under `C:\actions-runner\`
 ## Status
 
 Verified statically (the routing test and its fixtures, the stand-in `sudo` run over every routed
-lane's install lines); no job has run on either PC yet.
+lane's install lines); no job has run on either PC yet. Both runners were registered on 2026-11-21.
+On Windows the first design (a service, capped afterwards by a SYSTEM task) was refused by Windows
+on every process, so the runner ran uncapped and jobs stayed switched off; the cap-starts-the-runner
+design replaced it the same day and needs a run on that PC.
