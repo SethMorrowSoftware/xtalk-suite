@@ -61,6 +61,11 @@ BINDINGS = [
      "datachannelxt", "dcx_", "DCX_API"),
     ("coinxt", "coinxt/src/coinxt.lcb", ["coinxt/native/coinxt.c"],
      "coinxt", "cnx_", None),
+    # Joined 2026-11-20. box3dxt is not here: its own gate holds its binds.
+    ("webpxt", "webpxt/src/webpxt.lcb", ["webpxt/src/webp_shim.c"],
+     "webpxt", "wpx_", "WPX_API"),
+    ("barcodext", "barcodext/src/barcodext.lcb", ["barcodext/src/barcode_shim.cpp"],
+     "barcodext", "bcx_", "BCX_API"),
 ]
 
 # Every LCB type these five bindings use, and the C spelling(s) each may take.

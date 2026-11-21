@@ -1,0 +1,948 @@
+/*
+webpxt.lcb - xTalk Builder (LCB) binding library for libwebp, via the
+             webp_shim C shim. Part of webpxt for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    put wpDecode(url ("binfile:" & tPath)) into tPicture
+
+Conventions (the shim, src/webp_shim.c, is where each is enforced):
+  * A WebP FILE is Data: the bytes of a .webp, as `url "binfile:..."` reads
+    them. A PICTURE is an array with the engine's own two pixel buffers:
+    "imageData" (4 bytes a pixel) and "alphaData" (1 byte a pixel), plus
+    "width" and "height". Nothing is reordered on the way.
+  * Nothing here throws, bar the ABI check: a refused call returns empty (an
+    empty array, empty Data, 0 or false) and wpLastError() says why. A damaged
+    file is an ordinary event, not an error dialog.
+  * An open animation, and an animation being written, are integer handles
+    (0 = invalid). A stale or 0 handle is harmless: getters return 0 or empty,
+    actions do nothing.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Bytes cross as a Pointer and a length. An LCB Data does not bridge to a
+    void*, so an input is MCDataGetBytePtr + MCDataGetLength and a result is
+    copied out of the shim's own buffer with MCDataCreateWithBytes. Text
+    crosses as a Pointer that textOf() copies, never as ZStringNative.
+
+The foreign handlers bind to the shared library "webpxt" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time.
+*/
+
+/**
+Reads and writes WebP images, still and animated, with Google's libwebp.
+
+WebP is the image format most web pictures are in today. It has a lossy
+kind (like JPEG, but smaller, and with transparency) and a lossless kind
+(like PNG, but smaller), and either can be animated.
+
+A WebP file is plain data: the bytes of a .webp, as
+url "binfile:..." reads them. A picture is an array with the keys "width",
+"height", "imageData" and "alphaData", the last two exactly what an image
+object's imageData and alphaData properties hold. <wpDecode> turns a file
+into a picture and <wpEncode> or <wpEncodeLossless> turn a picture into a
+file. <wpInfo> reads a file's size without decoding it.
+
+An animation is read one frame at a time with <wpAnimOpen> and
+<wpAnimNextFrame>, and written with <wpAnimEncoderCreate>,
+<wpAnimEncoderAddFrame> and <wpAnimEncoderFinish>.
+
+No call here throws on a bad file or a bad argument. A refused call returns
+empty, 0 or false, and <wpLastError> says why.
+
+Tags: Images, Graphics, Library
+*/
+library org.openxtalk.library.webpxt
+
+use com.livecode.foreign
+
+-- The engine's own builders, resolved by NAME (so no leading underscore).
+-- An LCB Data does not bridge to a C pointer: an input is its byte pointer
+-- and length, and a result is built from a pointer the shim owns.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+foreign handler MCDataGetLength(in pData as Data) returns CUInt binds to "<builtin>"
+foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pLength as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+
+metadata title is "WebP images for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Read and write WebP images, still and animated, lossy and lossless, via libwebp."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/webp_shim.c; the suite's tools/check-lcb-signatures.py holds every
+-- line to the C definition it binds (return type, each parameter type).
+-- =====================================================================
+
+-- ---- the library
+private foreign handler _abi_version() returns CInt binds to "c:webpxt>wpx_abi_version!cdecl"
+private foreign handler _library_version() returns Pointer binds to "c:webpxt>wpx_library_version!cdecl"
+private foreign handler _last_error() returns Pointer binds to "c:webpxt>wpx_last_error!cdecl"
+private foreign handler _text_length(in pText as Pointer) returns CInt binds to "c:webpxt>wpx_text_length!cdecl"
+
+-- ---- looking at a file
+private foreign handler _info_read(in pData as Pointer, in pLength as CInt) returns CInt binds to "c:webpxt>wpx_info_read!cdecl"
+private foreign handler _info_width() returns CInt binds to "c:webpxt>wpx_info_width!cdecl"
+private foreign handler _info_height() returns CInt binds to "c:webpxt>wpx_info_height!cdecl"
+private foreign handler _info_has_alpha() returns CInt binds to "c:webpxt>wpx_info_has_alpha!cdecl"
+private foreign handler _info_is_animated() returns CInt binds to "c:webpxt>wpx_info_is_animated!cdecl"
+private foreign handler _info_frame_count() returns CInt binds to "c:webpxt>wpx_info_frame_count!cdecl"
+private foreign handler _info_loop_count() returns CInt binds to "c:webpxt>wpx_info_loop_count!cdecl"
+private foreign handler _info_compression() returns CInt binds to "c:webpxt>wpx_info_compression!cdecl"
+
+-- ---- decoding: the picture slot
+private foreign handler _decode_image(in pData as Pointer, in pLength as CInt) returns CInt binds to "c:webpxt>wpx_decode_image!cdecl"
+private foreign handler _decode_scaled(in pData as Pointer, in pLength as CInt, in pWidth as CInt, in pHeight as CInt) returns CInt binds to "c:webpxt>wpx_decode_scaled!cdecl"
+private foreign handler _image_width() returns CInt binds to "c:webpxt>wpx_image_width!cdecl"
+private foreign handler _image_height() returns CInt binds to "c:webpxt>wpx_image_height!cdecl"
+private foreign handler _image_is_translucent() returns CInt binds to "c:webpxt>wpx_image_is_translucent!cdecl"
+private foreign handler _image_pixels() returns Pointer binds to "c:webpxt>wpx_image_pixels!cdecl"
+private foreign handler _image_alpha() returns Pointer binds to "c:webpxt>wpx_image_alpha!cdecl"
+private foreign handler _image_pixels_length() returns CInt binds to "c:webpxt>wpx_image_pixels_length!cdecl"
+private foreign handler _image_alpha_length() returns CInt binds to "c:webpxt>wpx_image_alpha_length!cdecl"
+private foreign handler _image_release() returns nothing binds to "c:webpxt>wpx_image_release!cdecl"
+
+-- ---- encoding: the output slot
+private foreign handler _encode_image(in pPixels as Pointer, in pPixelsLength as CInt, in pAlpha as Pointer, in pAlphaLength as CInt, in pWidth as CInt, in pHeight as CInt, in pQuality as CDouble, in pLossless as CInt, in pEffort as CInt) returns CInt binds to "c:webpxt>wpx_encode_image!cdecl"
+private foreign handler _output_bytes() returns Pointer binds to "c:webpxt>wpx_output_bytes!cdecl"
+private foreign handler _output_length() returns CInt binds to "c:webpxt>wpx_output_length!cdecl"
+private foreign handler _output_release() returns nothing binds to "c:webpxt>wpx_output_release!cdecl"
+
+-- ---- reading an animation
+private foreign handler _anim_open(in pData as Pointer, in pLength as CInt) returns CInt binds to "c:webpxt>wpx_anim_open!cdecl"
+private foreign handler _anim_close(in pAnim as CInt) returns nothing binds to "c:webpxt>wpx_anim_close!cdecl"
+private foreign handler _anim_is_valid(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_is_valid!cdecl"
+private foreign handler _anim_width(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_width!cdecl"
+private foreign handler _anim_height(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_height!cdecl"
+private foreign handler _anim_frame_count(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_frame_count!cdecl"
+private foreign handler _anim_loop_count(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_loop_count!cdecl"
+private foreign handler _anim_next(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_next!cdecl"
+private foreign handler _anim_frame_index(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_frame_index!cdecl"
+private foreign handler _anim_frame_duration(in pAnim as CInt) returns CInt binds to "c:webpxt>wpx_anim_frame_duration!cdecl"
+private foreign handler _anim_rewind(in pAnim as CInt) returns nothing binds to "c:webpxt>wpx_anim_rewind!cdecl"
+private foreign handler _anim_open_count() returns CInt binds to "c:webpxt>wpx_anim_open_count!cdecl"
+
+-- ---- writing an animation
+private foreign handler _animenc_create(in pWidth as CInt, in pHeight as CInt, in pLoops as CInt, in pQuality as CDouble, in pLossless as CInt, in pEffort as CInt) returns CInt binds to "c:webpxt>wpx_animenc_create!cdecl"
+private foreign handler _animenc_add(in pWriter as CInt, in pPixels as Pointer, in pPixelsLength as CInt, in pAlpha as Pointer, in pAlphaLength as CInt, in pDuration as CInt) returns CInt binds to "c:webpxt>wpx_animenc_add!cdecl"
+private foreign handler _animenc_is_valid(in pWriter as CInt) returns CInt binds to "c:webpxt>wpx_animenc_is_valid!cdecl"
+private foreign handler _animenc_frame_count(in pWriter as CInt) returns CInt binds to "c:webpxt>wpx_animenc_frame_count!cdecl"
+private foreign handler _animenc_finish(in pWriter as CInt) returns CInt binds to "c:webpxt>wpx_animenc_finish!cdecl"
+private foreign handler _animenc_discard(in pWriter as CInt) returns nothing binds to "c:webpxt>wpx_animenc_discard!cdecl"
+private foreign handler _animenc_open_count() returns CInt binds to "c:webpxt>wpx_animenc_open_count!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is WPX_ABI_VERSION in
+-- src/webp_shim.c (the suite's check-binary-freshness.py compares the two).
+-- Called where a script first reaches the library: every handler that takes
+-- a file or a picture, and wpLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "webpxt: incompatible native library (this binding needs ABI 1) - update the webpxt library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing a
+-- static buffer killed box3dxt's first engine run (2026-11-20). Encoding 4
+-- is UTF-8; the shim's texts are ASCII.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- How many bytes a Data holds.
+private handler lengthOf(in pData as Data) returns Integer
+   variable tLength as Integer
+   unsafe
+      put MCDataGetLength(pData) into tLength
+   end unsafe
+   return tLength
+end handler
+
+-- The bytes of a Data, for the shim to READ. An empty Data has no bytes to
+-- point at, so it is given a pointer that is certainly valid (the shim's own
+-- error text) beside its length of 0: the shim checks the length before it
+-- reads anything, and never reads through a pointer whose length is 0.
+private handler pointerOf(in pData as Data) returns Pointer
+   variable tPointer as Pointer
+   variable tLength as Integer
+   unsafe
+      put MCDataGetLength(pData) into tLength
+      if tLength is 0 then
+         put _last_error() into tPointer
+      else
+         put MCDataGetBytePtr(pData) into tPointer
+      end if
+   end unsafe
+   return tPointer
+end handler
+
+-- A copy of pLength bytes the shim owns, as Data.
+private handler bytesOf(in pBytes as Pointer, in pLength as Integer) returns Data
+   variable tResult as Data
+   variable tOk as CBool
+   if pLength <= 0 then
+      return the empty data
+   end if
+   unsafe
+      put MCDataCreateWithBytes(pBytes, pLength, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return the empty data
+   end if
+   return tResult
+end handler
+
+-- The shim's picture slot as a picture array, and the slot released. Called
+-- only after a decode that returned 1.
+private handler takePicture() returns Array
+   variable tPicture as Array
+   variable tWidth as Integer
+   variable tHeight as Integer
+   variable tTranslucent as Integer
+   variable tPixels as Pointer
+   variable tAlpha as Pointer
+   variable tPixelsLength as Integer
+   variable tAlphaLength as Integer
+   put {} into tPicture
+   unsafe
+      put _image_width() into tWidth
+      put _image_height() into tHeight
+      put _image_is_translucent() into tTranslucent
+      put _image_pixels_length() into tPixelsLength
+      put _image_alpha_length() into tAlphaLength
+   end unsafe
+   if tPixelsLength > 0 and tAlphaLength > 0 then
+      unsafe
+         put _image_pixels() into tPixels
+         put _image_alpha() into tAlpha
+      end unsafe
+      put tWidth into tPicture["width"]
+      put tHeight into tPicture["height"]
+      put tTranslucent is not 0 into tPicture["translucent"]
+      put bytesOf(tPixels, tPixelsLength) into tPicture["imageData"]
+      put bytesOf(tAlpha, tAlphaLength) into tPicture["alphaData"]
+   end if
+   unsafe
+      _image_release()
+   end unsafe
+   return tPicture
+end handler
+
+-- The shim's output slot as Data, and the slot released. pLength is what
+-- the encode returned (0 when it was refused).
+private handler takeOutput(in pLength as Integer) returns Data
+   variable tFile as Data
+   variable tBytes as Pointer
+   put the empty data into tFile
+   if pLength > 0 then
+      unsafe
+         put _output_bytes() into tBytes
+      end unsafe
+      put bytesOf(tBytes, pLength) into tFile
+   end if
+   unsafe
+      _output_release()
+   end unsafe
+   return tFile
+end handler
+
+-- One encode, for the three public spellings.
+private handler encodePicture(in pImageData as Data, in pAlphaData as Data, in pWidth as Integer, in pHeight as Integer, in pQuality as Number, in pLossless as Boolean, in pEffort as Integer) returns Data
+   variable tLength as Integer
+   variable tPixels as Pointer
+   variable tAlpha as Pointer
+   checkABI()
+   put pointerOf(pImageData) into tPixels
+   put pointerOf(pAlphaData) into tAlpha
+   unsafe
+      put _encode_image(tPixels, lengthOf(pImageData), tAlpha, lengthOf(pAlphaData), pWidth, pHeight, pQuality, asInt(pLossless), pEffort) into tLength
+   end unsafe
+   return takeOutput(tLength)
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler wpABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the versions of the native library and of libwebp inside it.
+
+Returns: Text such as "webpxt ABI 1; libwebp 1.6.0".
+
+Example:
+put wpLibraryVersion() into field "status"
+
+Description: A good first call. It throws if the library on disk has a
+different ABI from this binding, which means the two come from different
+releases.
+*/
+public handler wpLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns why the last refused call was refused.
+
+Returns: A short sentence, or empty if the last call worked.
+
+Example:
+put wpDecode(tFile) into tPicture
+if tPicture is empty then answer "That file could not be read:" && wpLastError()
+
+Description: A call given a damaged file or a bad argument returns empty, 0
+or false; it never throws. This says what was wrong, in plain words. Every
+call that reads or writes a picture sets it, and clears it when it works.
+*/
+public handler wpLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Reading a picture
+-- =====================================================================
+
+/**
+Summary: Reads the size and kind of a WebP file without decoding it.
+
+pData: The bytes of a WebP file.
+
+Returns: An array with the keys "width", "height", "alpha" (true if the file
+has transparency), "animated" (true for an animation), "frames" (1 for a
+still picture), "loops" (how many times an animation plays; 0 means for
+ever) and "compression" ("lossy", "lossless", or "mixed" when the file does
+not say or its frames differ). Empty if the data is not a WebP file.
+
+Example:
+put wpInfo(url ("binfile:" & tPath)) into tInfo
+if tInfo is empty then
+   answer "Not a WebP file:" && wpLastError()
+else
+   put tInfo["width"] & " x " & tInfo["height"] into field "size"
+end if
+
+Description: Only the start of the file is read, so this is quick on a file
+of any size. Use it to test whether data is WebP at all, to size an image
+object before decoding, or to choose between <wpDecode> and <wpAnimOpen>.
+*/
+public handler wpInfo(in pData as Data) returns Array
+   variable tInfo as Array
+   variable tOk as Integer
+   variable tKind as Integer
+   variable tBytes as Pointer
+   put {} into tInfo
+   checkABI()
+   put pointerOf(pData) into tBytes
+   unsafe
+      put _info_read(tBytes, lengthOf(pData)) into tOk
+   end unsafe
+   if tOk is 0 then
+      return tInfo
+   end if
+   unsafe
+      put _info_width() into tInfo["width"]
+      put _info_height() into tInfo["height"]
+      put _info_has_alpha() is not 0 into tInfo["alpha"]
+      put _info_is_animated() is not 0 into tInfo["animated"]
+      put _info_frame_count() into tInfo["frames"]
+      put _info_loop_count() into tInfo["loops"]
+      put _info_compression() into tKind
+   end unsafe
+   if tKind is 1 then
+      put "lossy" into tInfo["compression"]
+   else if tKind is 2 then
+      put "lossless" into tInfo["compression"]
+   else
+      put "mixed" into tInfo["compression"]
+   end if
+   return tInfo
+end handler
+
+/**
+Summary: Decodes a WebP file into a picture.
+
+pData: The bytes of a WebP file.
+
+Returns: A picture: an array with the keys "width", "height", "imageData"
+(4 bytes a pixel, as an image's imageData), "alphaData" (1 byte a pixel, as
+an image's alphaData) and "translucent" (true if any pixel is not fully
+solid). Empty if the file could not be read.
+
+Example:
+put wpDecode(url ("binfile:" & tPath)) into tPicture
+if tPicture is not empty then
+   lock screen
+   set the width of image "photo" to tPicture["width"]
+   set the height of image "photo" to tPicture["height"]
+   set the imageData of image "photo" to tPicture["imageData"]
+   set the alphaData of image "photo" to tPicture["alphaData"]
+   unlock screen
+end if
+
+Description: Give the image object the picture's width and height BEFORE
+setting its imageData: the engine reads the bytes against the image's
+current size. An animated file gives its first frame; read the rest with
+<wpAnimOpen>.
+
+One decode holds at most 67 million pixels (8192 by 8192). A bigger file is
+refused, and <wpDecodeScaled> reads it at a smaller size without ever
+holding the full one.
+*/
+public handler wpDecode(in pData as Data) returns Array
+   variable tOk as Integer
+   variable tBytes as Pointer
+   checkABI()
+   put pointerOf(pData) into tBytes
+   unsafe
+      put _decode_image(tBytes, lengthOf(pData)) into tOk
+   end unsafe
+   if tOk is 0 then
+      return {}
+   end if
+   return takePicture()
+end handler
+
+/**
+Summary: Decodes a still WebP file straight to a given size.
+
+pData: The bytes of a WebP file.
+
+pWidth: The width wanted, in pixels, or 0 to work it out from pHeight and
+the picture's shape.
+
+pHeight: The height wanted, in pixels, or 0 to work it out from pWidth and
+the picture's shape.
+
+Returns: A picture of that size, as <wpDecode> returns. Empty if the file
+could not be read or the size was refused.
+
+Example:
+-- a thumbnail 160 pixels wide, whatever the photo's shape
+put wpDecodeScaled(url ("binfile:" & tPath), 160, 0) into tThumb
+
+Description: The picture is scaled while it is decoded, which is faster
+than decoding and then resizing and never holds the full-size picture in
+memory. Give both sizes to stretch the picture to exactly that shape, or
+one size and 0 to keep its proportions. An animation is refused: open it
+with <wpAnimOpen>.
+*/
+public handler wpDecodeScaled(in pData as Data, in pWidth as Integer, in pHeight as Integer) returns Array
+   variable tOk as Integer
+   variable tBytes as Pointer
+   checkABI()
+   put pointerOf(pData) into tBytes
+   unsafe
+      put _decode_scaled(tBytes, lengthOf(pData), pWidth, pHeight) into tOk
+   end unsafe
+   if tOk is 0 then
+      return {}
+   end if
+   return takePicture()
+end handler
+
+-- =====================================================================
+-- Writing a picture
+-- =====================================================================
+
+/**
+Summary: Writes a picture as a lossy WebP file.
+
+pImageData: The picture's colour, as an image's imageData: 4 bytes a pixel.
+
+pAlphaData: The picture's transparency, as an image's alphaData: 1 byte a
+pixel. Pass empty for a picture with no transparency.
+
+pWidth: The picture's width in pixels.
+
+pHeight: The picture's height in pixels.
+
+pQuality: From 0 (smallest file) to 100 (best picture). 75 to 85 suits
+photographs.
+
+Returns: The bytes of a WebP file, or empty if the picture was refused.
+
+Example:
+put wpEncode(the imageData of image "photo", the alphaData of image "photo", \
+      the width of image "photo", the height of image "photo", 80) into tFile
+if tFile is empty then
+   answer wpLastError()
+else
+   put tFile into url ("binfile:" & tPath)
+end if
+
+Description: Lossy WebP is for photographs and other pictures where a small
+file matters more than keeping every pixel exact: it is typically a quarter
+to a third smaller than a JPEG that looks the same, and unlike JPEG it
+keeps transparency. For screenshots, drawings and icons use
+<wpEncodeLossless>.
+
+The imageData must be exactly pWidth times pHeight times 4 bytes, and the
+alphaData pWidth times pHeight bytes or empty; anything else is refused
+before a byte is read. A side is at most 16383 pixels.
+*/
+public handler wpEncode(in pImageData as Data, in pAlphaData as Data, in pWidth as Integer, in pHeight as Integer, in pQuality as Number) returns Data
+   return encodePicture(pImageData, pAlphaData, pWidth, pHeight, pQuality, false, 4)
+end handler
+
+/**
+Summary: Writes a picture as a lossless WebP file.
+
+pImageData: The picture's colour, as an image's imageData: 4 bytes a pixel.
+
+pAlphaData: The picture's transparency, as an image's alphaData: 1 byte a
+pixel. Pass empty for a picture with no transparency.
+
+pWidth: The picture's width in pixels.
+
+pHeight: The picture's height in pixels.
+
+Returns: The bytes of a WebP file, or empty if the picture was refused.
+
+Example:
+put wpEncodeLossless(the imageData of image "icon", the alphaData of image "icon", \
+      the width of image "icon", the height of image "icon") into url ("binfile:" & tPath)
+
+Description: Every pixel comes back exactly as it went in, transparency
+included, as with PNG; the file is usually a quarter smaller than the PNG.
+Right for screenshots, drawings, icons and anything that will be edited
+again.
+*/
+public handler wpEncodeLossless(in pImageData as Data, in pAlphaData as Data, in pWidth as Integer, in pHeight as Integer) returns Data
+   return encodePicture(pImageData, pAlphaData, pWidth, pHeight, 75, true, 4)
+end handler
+
+/**
+Summary: Writes a picture as a WebP file, with every setting given.
+
+pImageData: The picture's colour, as an image's imageData: 4 bytes a pixel.
+
+pAlphaData: The picture's transparency, as an image's alphaData: 1 byte a
+pixel. Pass empty for a picture with no transparency.
+
+pWidth: The picture's width in pixels.
+
+pHeight: The picture's height in pixels.
+
+pQuality: From 0 to 100. For a lossy file, the picture's quality. For a
+lossless file the picture is always exact, and a higher number spends more
+time to make the file smaller.
+
+pLossless: True for a lossless file, false for a lossy one.
+
+pEffort: A whole number from 0 (fastest) to 6 (smallest file). <wpEncode>
+and <wpEncodeLossless> use 4.
+
+Returns: The bytes of a WebP file, or empty if the picture was refused.
+
+Example:
+-- the smallest lossless file, however long it takes
+put wpEncodeAdvanced(tPixels, tAlpha, tWidth, tHeight, 100, true, 6) into tFile
+
+Description: <wpEncode> and <wpEncodeLossless> are this call with the usual
+settings. A low effort is for when a picture must be written quickly, such
+as each frame of a capture; a high one for a file made once and downloaded
+many times.
+*/
+public handler wpEncodeAdvanced(in pImageData as Data, in pAlphaData as Data, in pWidth as Integer, in pHeight as Integer, in pQuality as Number, in pLossless as Boolean, in pEffort as Integer) returns Data
+   return encodePicture(pImageData, pAlphaData, pWidth, pHeight, pQuality, pLossless, pEffort)
+end handler
+
+-- =====================================================================
+-- Reading an animation
+-- =====================================================================
+
+/**
+Summary: Opens a WebP file for reading one frame at a time.
+
+pData: The bytes of a WebP file, animated or still.
+
+Returns: A handle for the other wpAnim calls, or 0 if the file could not be
+read.
+
+Example:
+put wpAnimOpen(url ("binfile:" & tPath)) into sAnim
+if sAnim is 0 then answer wpLastError()
+
+Description: The file's bytes are copied, so the variable they came from
+can be reused. A still picture opens as an animation of one frame. Close
+the handle with <wpAnimClose> when the animation is no longer playing:
+each open animation holds its file and one full frame in memory, and at
+most 64 can be open at once.
+*/
+public handler wpAnimOpen(in pData as Data) returns Integer
+   variable tR as Integer
+   variable tBytes as Pointer
+   checkABI()
+   put pointerOf(pData) into tBytes
+   unsafe
+      put _anim_open(tBytes, lengthOf(pData)) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Closes an animation opened with wpAnimOpen and frees its memory.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Description: A handle that is already closed, or 0, does nothing.
+*/
+public handler wpAnimClose(in pAnim as Integer) returns nothing
+   unsafe
+      _anim_close(pAnim)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle is an open animation.
+
+pAnim: A handle <wpAnimOpen> returned.
+
+Returns: True while the animation is open; false once it is closed, and for
+0 or any number that was never a handle.
+*/
+public handler wpAnimIsValid(in pAnim as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _anim_is_valid(pAnim) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the width of an open animation, in pixels.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Returns: The width of every frame; 0 for a closed handle.
+*/
+public handler wpAnimWidth(in pAnim as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _anim_width(pAnim) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the height of an open animation, in pixels.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Returns: The height of every frame; 0 for a closed handle.
+*/
+public handler wpAnimHeight(in pAnim as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _anim_height(pAnim) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many frames an open animation has.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Returns: The number of frames; 0 for a closed handle.
+*/
+public handler wpAnimFrameCount(in pAnim as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _anim_frame_count(pAnim) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many times an animation asks to be played.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Returns: The number of times; 0 means for ever. Also 0 for a closed handle.
+
+Description: The file only states a wish. Playing it that many times, with
+<wpAnimRewind> between, is up to the stack.
+*/
+public handler wpAnimLoopCount(in pAnim as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _anim_loop_count(pAnim) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Decodes the next frame of an open animation.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Returns: A picture, as <wpDecode> returns, with two more keys: "index" (the
+frame's number, from 1) and "duration" (how long to show it, in
+milliseconds). Empty after the last frame, or if the frame is damaged.
+
+Example:
+on showNextFrame
+   local tFrame
+   put wpAnimNextFrame(sAnim) into tFrame
+   if tFrame is empty then
+      wpAnimRewind sAnim
+      put wpAnimNextFrame(sAnim) into tFrame
+   end if
+   if tFrame is empty then exit showNextFrame
+   set the imageData of image "anim" to tFrame["imageData"]
+   set the alphaData of image "anim" to tFrame["alphaData"]
+   send "showNextFrame" to me in tFrame["duration"] milliseconds
+end showNextFrame
+
+Description: Every frame is the whole picture, already combined with the
+frames before it, so it is simply shown. After the last frame this returns
+empty and <wpLastError> is empty too; a damaged frame returns empty with
+an explanation.
+*/
+public handler wpAnimNextFrame(in pAnim as Integer) returns Array
+   variable tOk as Integer
+   variable tFrame as Array
+   unsafe
+      put _anim_next(pAnim) into tOk
+   end unsafe
+   if tOk is 0 then
+      return {}
+   end if
+   put takePicture() into tFrame
+   unsafe
+      put _anim_frame_index(pAnim) into tFrame["index"]
+      put _anim_frame_duration(pAnim) into tFrame["duration"]
+   end unsafe
+   return tFrame
+end handler
+
+/**
+Summary: Starts an open animation again from its first frame.
+
+pAnim: The handle <wpAnimOpen> returned.
+
+Description: The next <wpAnimNextFrame> returns frame 1. A closed handle
+does nothing.
+*/
+public handler wpAnimRewind(in pAnim as Integer) returns nothing
+   unsafe
+      _anim_rewind(pAnim)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how many animations are open.
+
+Returns: The number of handles from <wpAnimOpen> not yet closed.
+
+Description: A stack that should have closed everything can check that
+this is 0.
+*/
+public handler wpAnimOpenCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _anim_open_count() into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Writing an animation
+-- =====================================================================
+
+/**
+Summary: Starts writing an animated WebP file.
+
+pWidth: The width of every frame, in pixels.
+
+pHeight: The height of every frame, in pixels.
+
+pLoops: How many times the animation plays; 0 for ever.
+
+pQuality: From 0 to 100, as for <wpEncodeAdvanced>.
+
+pLossless: True for lossless frames, false for lossy ones.
+
+Returns: A handle for the other wpAnimEncoder calls, or 0 if a setting was
+refused.
+
+Example:
+put wpAnimEncoderCreate(320, 240, 0, 80, false) into tWriter
+repeat with i = 1 to 10
+   -- draw frame i into image "canvas", then:
+   get wpAnimEncoderAddFrame(tWriter, the imageData of image "canvas", empty, 100)
+end repeat
+put wpAnimEncoderFinish(tWriter) into url ("binfile:" & tPath)
+
+Description: Add frames with <wpAnimEncoderAddFrame>, then
+<wpAnimEncoderFinish> returns the file. A writer that will not be finished
+is dropped with <wpAnimEncoderDiscard>. At most 64 can be open at once.
+*/
+public handler wpAnimEncoderCreate(in pWidth as Integer, in pHeight as Integer, in pLoops as Integer, in pQuality as Number, in pLossless as Boolean) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _animenc_create(pWidth, pHeight, pLoops, pQuality, asInt(pLossless), 4) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds one frame to an animation being written.
+
+pWriter: The handle <wpAnimEncoderCreate> returned.
+
+pImageData: The frame's colour, as an image's imageData: 4 bytes a pixel.
+
+pAlphaData: The frame's transparency, as an image's alphaData: 1 byte a
+pixel. Pass empty for a frame with no transparency.
+
+pDuration: How long the frame shows, in milliseconds, from 1 to 600000.
+
+Returns: True if the frame was added; false if it was refused.
+
+Description: The frame must be the animation's size exactly. Frames play
+in the order they are added. An animation holds at most 10000 frames.
+*/
+public handler wpAnimEncoderAddFrame(in pWriter as Integer, in pImageData as Data, in pAlphaData as Data, in pDuration as Integer) returns Boolean
+   variable tR as Integer
+   variable tPixels as Pointer
+   variable tAlpha as Pointer
+   put pointerOf(pImageData) into tPixels
+   put pointerOf(pAlphaData) into tAlpha
+   unsafe
+      put _animenc_add(pWriter, tPixels, lengthOf(pImageData), tAlpha, lengthOf(pAlphaData), pDuration) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Reports whether a handle is an animation being written.
+
+pWriter: A handle <wpAnimEncoderCreate> returned.
+
+Returns: True until the writer is finished or discarded; false after, and
+for 0 or any number that was never a handle.
+*/
+public handler wpAnimEncoderIsValid(in pWriter as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _animenc_is_valid(pWriter) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many frames an animation being written holds.
+
+pWriter: The handle <wpAnimEncoderCreate> returned.
+
+Returns: The number of frames added so far; 0 for a finished handle.
+*/
+public handler wpAnimEncoderFrameCount(in pWriter as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _animenc_frame_count(pWriter) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Finishes an animation and returns it as a WebP file.
+
+pWriter: The handle <wpAnimEncoderCreate> returned.
+
+Returns: The bytes of an animated WebP file, or empty if it could not be
+written (an animation with no frames, for one).
+
+Description: The handle is closed whatever the outcome: after this call it
+is no longer valid.
+*/
+public handler wpAnimEncoderFinish(in pWriter as Integer) returns Data
+   variable tLength as Integer
+   unsafe
+      put _animenc_finish(pWriter) into tLength
+   end unsafe
+   return takeOutput(tLength)
+end handler
+
+/**
+Summary: Drops an animation being written, without writing it.
+
+pWriter: The handle <wpAnimEncoderCreate> returned.
+
+Description: Frees the frames added so far. A handle that is already
+finished or discarded, or 0, does nothing.
+*/
+public handler wpAnimEncoderDiscard(in pWriter as Integer) returns nothing
+   unsafe
+      _animenc_discard(pWriter)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how many animations are being written.
+
+Returns: The number of handles from <wpAnimEncoderCreate> not yet finished
+or discarded.
+*/
+public handler wpAnimEncoderOpenCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _animenc_open_count() into tR
+   end unsafe
+   return tR
+end handler
+
+end library

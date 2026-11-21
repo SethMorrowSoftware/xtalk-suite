@@ -1,0 +1,16 @@
+/* webpxt.map - the linker version script for the shipped shared library.
+ *
+ * webpxt statically links libwebp, whose public functions are declared with
+ * default visibility (WEBP_EXTERN), so without this script every WebP*
+ * symbol would be exported from webpxt.so and could interpose on another
+ * copy of libwebp in the same process: the engine's own, a browser widget's
+ * (the enetxt lesson, release run 10, 2026-08-26). It keeps only wpx_*,
+ * which is all the .lcb binds by name; CMakeLists.txt gives ld64 the same
+ * pattern.
+ */
+{
+    global:
+        wpx_*;
+    local:
+        *;
+};
