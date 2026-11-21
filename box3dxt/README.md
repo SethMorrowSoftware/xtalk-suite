@@ -9,12 +9,15 @@ family's flat C shim and a thin LCB layer, the way box2dxt binds Box2D:
 
 ```
 Box3D (pinned to a commit, static)                the physics
-   |- C shim   src/box3d_shim.c  ->  box3dxt.{so,dll,dylib}     (ABI: b3x_*, v1)
+   |- C shim   src/box3d_shim.c  ->  box3dxt.{so,dll,dylib}     (ABI: b3x_*, v2)
         |- LCB binding  src/box3dxt.lcb     (org.openxtalk.library.boxthreed; public b3*)
 ```
 
-It is a physics engine only: it moves bodies and tells you where they are. Drawing them is
-the stack's business (a 3D view, or a 2D projection of the positions it reports).
+It moves bodies and tells you where they are, and it can SHOW them: a small software
+renderer inside the library paints a world into the imageData of an image, with no graphics
+library and no drawing code in the stack. It is there to see a simulation, not to be a game
+renderer (no textures; one light). The suite's render3dxt is the textured one, and the two
+count cameras, pictures and rays the same way.
 
 ## What it can do
 
@@ -27,6 +30,11 @@ the stack's business (a 3D view, or a 2D projection of the positions it reports)
   their limits, springs and motors, plus a filter joint that only stops two bodies colliding.
 - **Queries.** Ray casts (all hits or the closest), a swept sphere, box and sphere overlaps,
   each through an optional category filter.
+- **A picture of the world.** `b3RenderWorld` draws every shape, solid, lit and depth-tested
+  (or as a wireframe, or with outlines), into a picture up to 2048 pixels each way;
+  `b3RenderPixels` is that picture as imageData. A pixel names the shape drawn there and its
+  distance, a world point projects into the picture, and a click becomes a ray for
+  `b3CastRayClosest`. `b3ShapeTrianglesText` hands any shape to another renderer as triangles.
 - **Events.** Contact begin / end / hit, sensor enter / leave, the bodies that moved in the
   last step, and joints pushed past a force threshold: all read by polling after a step, so no
   callback ever runs script.
@@ -70,9 +78,34 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, dropped and stacked bodies, cast rays, read events and joints, and
   called every public handler once.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. No library is
-  committed under `src/code/` yet; the suite's release-binaries dispatch lands them.
+- **In the desktop IDE**, the same day: OXT-Beyond's IDE on 64-bit Linux (engine
+  9.7.1-BeyondEngine build 25923; Ubuntu 24.04) loaded a library built on that machine from
+  the suite's commit 144d529, by `load extension` and a `revLibraryMapping` line, not as an
+  installed extension. A stack built there dropped twelve boxes and spheres in a `send in`
+  frame loop: they fell as gravity says, landed at the right height and slept, a ray cast
+  found the ground, contact events arrived, a reset repeated the run exactly, and Box3D
+  counted no assert. That is one stack on one machine, not the release library.
+- **A real model** (2026-11-20): the Utah teapot, 3644 points and 6320 triangles, is loaded
+  as a static mesh and as falling hulls by the smoke test, which checks rays at it against
+  a ray-triangle test of its own, and from its `.obj` file by the engine self-test.
+- **The renderer** (ABI 2, 2026-11-20): the smoke test holds a picture to Box3D itself (the
+  shape and the distance at a pixel against a ray cast through it, over every shape kind and
+  the teapot, from five cameras) and to arithmetic done by hand for one square-on box; the
+  random-call test renders thousands of small pictures of whatever the other calls left and
+  reads every byte. On the server engine the self-test takes the picture as binary data and
+  reads its bytes. In OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built
+  on that machine from 9b7b59a, loaded by hand as above) a stack showed the teapot scene in
+  an image, the right way up and in the right colours, in all three modes; a click through
+  `b3RenderShapeAt` and `b3RenderRay` named the body under it; about 30 frames a second
+  solid at 640 by 400 with the engine's default paintCompression and about 48 with "rle"
+  (`docs/getting-started.md`, "Seeing the world");
+  four minutes with up to 150 spheres counted no assert. One stack on one machine; on
+  Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
+- **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
+  loaded a release library or an installed extension: on those it is verified statically;
+  needs an OXT pass. The libraries
+  committed under `src/code/` on 2026-11-20 (six desktop platforms, four Android ABIs, a web
+  archive) were tested where they were built; no engine has loaded one of them yet.
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins
 it to a commit and why the shim holds every argument to stated limits before Box3D sees it.

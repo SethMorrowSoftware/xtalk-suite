@@ -360,11 +360,15 @@ MEMBERS = [
         "name": "box3dxt",
         "lib": "box3dxt",
         "lcb": ["box3dxt/src/box3dxt.lcb"],
-        # EMPTY until the first release-binaries dispatch lands box3dxt's
-        # libraries (joined 2026-11-20 with none committed): that run's
-        # --installing tolerates each gained platform, and the change after it
-        # lists them here, exactly as this row's gained-platform failure says.
-        "ships": [],
+        # Its first release-binaries dispatch (run 44806507517, commit
+        # 6d132d3, 2026-11-20) landed the ten desktop and Android libraries;
+        # the web archive is built outside that workflow, with OXT-Beyond's
+        # pinned emsdk, and was committed in the change that wrote this row.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "box3dxt/src/box3d_shim.c",
         "prefix": "b3x_",
         # Like box2dxt, the ABI define lives in the shim itself.
@@ -374,7 +378,11 @@ MEMBERS = [
         # src/box3dxt.map (GNU ld) and the derived -exported_symbols_list
         # (ld64) export b3x_* and nothing else; Box3D is linked in with
         # hidden visibility (measured on the x86_64-linux build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        # wasm: decided before any archive is committed, because a locally
+        # built one (the web build writes src/code/wasm32-emscripten/) met
+        # this gate on 2026-11-20 with no entry to read.
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "audioxt",
