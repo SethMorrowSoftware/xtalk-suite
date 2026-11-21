@@ -90,7 +90,9 @@ def render():
     out = ["# curlxt API reference", "",
            "Every public handler, from the doc blocks in the source (the IDE dictionary reads the same",
            "blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a",
-           "gate). Verified statically; needs an OXT pass.", ""]
+           "gate). Every handler of the binding, and the helpers' requests and WebSocket calls, run on",
+           "OXT-Beyond's headless Linux server engine in the native lane (`tests/engine-selftest.lc`;",
+           "README, Status); the rest, the IDE and the other platforms need an OXT pass.", ""]
     for title, rel, is_lcb in SOURCES:
         out += ["## " + title, ""]
         for name, sig, (elements, params) in entries(rel, is_lcb):

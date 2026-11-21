@@ -28,8 +28,28 @@ CASES = [
      "   if tResult is 0 then\n      return empty\n   end if\n   return tsnxErr(",
      "   if tResult is 0 and cuInfo(pReq, \"responseCode\") < 400 then\n      return empty\n   end if\n   return tsnxErr("),
     ("the timer never stops", "curl-helpers.livecodescript",
-     "   if cuWaitingCount() is 0 then\n      put \"false\" into sCuPolling\n      exit cuPollOnce\n   end if\n",
+     "   if cuWaitingCount() is 0 and cuWsWatchedCount() is 0 then\n      put \"false\" into sCuPolling\n      exit cuPollOnce\n   end if\n",
      ""),
+    ("the timer stops while a socket is watched", "curl-helpers.livecodescript",
+     "   if cuWaitingCount() is 0 and cuWsWatchedCount() is 0 then", "   if cuWaitingCount() is 0 then"),
+    ("open sent to a socket that never opened", "curl-helpers.livecodescript",
+     "            if tWasOpen and tState >= 2 and sCuWsOpened", "            if tState >= 2 and sCuWsOpened"),
+    ("open sent on every pass", "curl-helpers.livecodescript",
+     '               put "true" into sCuWsOpened[tSock]\n', ""),
+    ("closed never sent", "curl-helpers.livecodescript",
+     'if cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "wsMessages") < 1 then',
+     'if cuInfo(tSock, "wsState") is 5 and cuInfo(tSock, "wsMessages") < 1 then'),
+    ("closed sent before the last messages", "curl-helpers.livecodescript",
+     'if cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "wsMessages") < 1 then',
+     'if cuInfo(tSock, "wsState") is 4 then'),
+    ("a text message handed over as binary", "curl-helpers.livecodescript",
+     "               if tKind is 1 then", "               if tKind is 9 then"),
+    ("a socket still watched after closed", "curl-helpers.livecodescript",
+     "   delete variable sCuWsWatch[pSocket]\n   set the itemDelimiter to tab", "   set the itemDelimiter to tab"),
+    ("wsCloseTimeout not an integer option", "curl-helpers.livecodescript",
+     "createDirs,wsCloseTimeout", "createDirs"),
+    ("cuWsOpenSync returns a socket that is not open", "curl-helpers.livecodescript",
+     '   if cuInfo(tSock, "wsState") is not 2 then', '   if false then'),
     ("integer options not validated", "curl-helpers.livecodescript",
      "            if tValue is not an integer then", "            if false then"),
 ]
@@ -58,7 +78,7 @@ def main():
             fh.write(src.replace(old, new, 1))
             path = fh.name
         try:
-            code, last = run(["--source", name, path])
+            code, last = run(["--fail-fast", "--source", name, path])
         finally:
             os.unlink(path)
         if code == 0:

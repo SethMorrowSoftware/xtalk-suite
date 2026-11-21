@@ -45,3 +45,21 @@ CURLXT_LIB=$PWD/build/curlxt.so bash tools/run-gates.sh
 
 `tools/run-gates.sh` is the member's whole compiler-free list. Without `CURLXT_LIB` the two
 execution gates SKIP and say so; `CURLXT_REQUIRE_LIB=1` makes that a failure.
+
+## On a real engine
+
+`tests/engine-selftest.lc` runs the binding and both script layers on OXT-Beyond's headless server
+engine, against loopback HTTP, `ws://` and `wss://` servers that `tools/run-engine-selftest.py`
+starts (the same servers `tools/check-script-vectors.py` runs). It needs a release's
+`linux-x86_64-binaries` archive for `lc-compile`, `modules/lci` and `server-community`; the root
+`native-curlxt.yml` `engine` job fetches one by its pinned hash and runs this on every change:
+
+```sh
+lc-compile -Werror --modulepath <bin>/modules/lci --output /tmp/curl.lcm src/curl.lcb
+python3 tools/run-engine-selftest.py <bin>/server-community /tmp/curl.lcm build/curlxt.so
+```
+
+Green is the engine's exit 0 and a `SUMMARY` line with no failure and at least the driver's floor
+of checks. The driver first holds the test's sweep to the binding: every public handler of
+`src/curl.lcb` must be called there. It is not one of `tools/run-gates.sh`'s gates, because it
+needs an engine.

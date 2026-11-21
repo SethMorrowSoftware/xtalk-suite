@@ -77,6 +77,10 @@ ADOPTERS = {
                  "nostrxt-demo.livecodescript"): "nd",
     os.path.join("coinxt", "examples",
                  "coin-wallet.livecodescript"): "wa",
+    # curlxt Live (2026-11-21), which wears OXT-Beyond's look instead of
+    # the kit's but carries this block like every other demo
+    os.path.join("curlxt", "examples",
+                 "curlxt-live.livecodescript"): "cd",
     os.path.join("render3dxt", "examples",
                  "render3d-physics-demo.livecodescript"): "rd",
     # the suite paste's hand-written half, since D-23 (2026-09-24)
