@@ -33,7 +33,7 @@ and picture files inside them, so they run from the folder the emulator is hande
 `tools/build-android.sh`, built for the four ABIs and tested on the emulator for the two x86 ones
 by their own lanes (`native-xlsxt.yml`, `native-webpxt.yml`, `native-barcodext.yml`). xlsxt has
 no Android library committed yet. webpxt's and barcodext's four each were committed on
-2026-11-21 by their release run (run 44846691681, commit @RELCOMMIT@; the x86 ones tested on the
+2026-11-21 by their release run (run 44846691681, commit 21f75b8; the x86 ones tested on the
 emulator, the ARM ones built and checked, not run).
 So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
 The ARM libraries are: built and verified statically; needs an OXT pass on Android.
@@ -160,8 +160,8 @@ engine.
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built and tested by its own lane, not yet by a release run; no library committed |
-| webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (@RELCOMMIT@); tested on the emulator for the two x86 ABIs, the ARM ones not run |
-| barcodext | None. zxing-cpp is C++20; the NDK's libc++ is linked into the library like every C++ member's. | built by the 2026-11-21 release run and committed (@RELCOMMIT@); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| barcodext | None. zxing-cpp is C++20; the NDK's libc++ is linked into the library like every C++ member's. | built by the 2026-11-21 release run and committed (21f75b8); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
 | nostrxt (script) | Pure script over coinxt and sodiumxt (both built for Android) and the engine's sockets. Its relay layer opens secure sockets, so an app needs the engine's SSL library in the package (the builder's `android,include revsecurity` setting) and the Internet permission ticked. Neither library file calls anything a desktop alone has (read 2026-11-18: no `shell`, no `open process`, no fixed path). | read, not run: verified statically; needs an OXT pass on Android |

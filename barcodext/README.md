@@ -72,7 +72,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   real camera has been read by it here: every picture the tests read was drawn by the
   library's own writer. The libraries committed under `src/code/` on 2026-11-21 (six
   desktop platforms, four Android ABIs, a web archive) were tested where they were built;
-  @MEMBERENGINE@
+  the same day the engine self-test ran again on that server engine over the committed
+  `x86_64-linux` library (80 checks, none failed). No engine has loaded the other committed
+  libraries yet.
 
 ## Building and testing
 

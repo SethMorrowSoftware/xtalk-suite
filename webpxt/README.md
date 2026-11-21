@@ -69,7 +69,9 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
   web has run it: on those it is verified statically; needs an OXT pass. The libraries
   committed under `src/code/` on 2026-11-21 (six desktop platforms, four Android ABIs, a web
-  archive) were tested where they were built; @MEMBERENGINE@
+  archive) were tested where they were built; the same day the engine self-test ran again on
+  that server engine over the committed `x86_64-linux` library (79 checks, none failed). No
+  engine has loaded the other committed libraries yet.
 
 ## Building and testing
 
