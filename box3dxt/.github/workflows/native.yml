@@ -140,6 +140,32 @@ jobs:
             echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /'
           } >> "$GITHUB_STEP_SUMMARY"
+      # The game Kit on the same engine and library: tests/engine-kit.lc uses
+      # the Kit as a library stack and hand-steps it; tests/engine-demo.lc
+      # builds the example game's window and plays it through a probe, then
+      # again with no extension loaded ("-"), where the game must say what is
+      # missing and nothing may throw. Each needs the same two signs of green
+      # as the self-test. These runs draw with box3dxt's own renderer: the
+      # render3dxt runs need that member's module and library beside this one.
+      - name: Run the game Kit's engine tests
+        run: |
+          set -o pipefail
+          engine="$RUNNER_TEMP/oxt/engine/server-community"
+          game="$PWD/examples/box3dxt-orb-island.livecodescript"
+          probe="$PWD/tests/engine-demo-probe.livecodescript"
+          "$engine" tests/engine-kit.lc "$RUNNER_TEMP/lcb/box3dxt.lcm" "$PWD/build/box3dxt" \
+            "$PWD/src/box3dxt-kit.livecodescript" | tee "$RUNNER_TEMP/kit.log"
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/kit.log"
+          "$engine" tests/engine-demo.lc "$RUNNER_TEMP/lcb/box3dxt.lcm" "$PWD/build/box3dxt" \
+            "$game" "$probe" | tee "$RUNNER_TEMP/demo.log"
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/demo.log"
+          "$engine" tests/engine-demo.lc - - "$game" "$probe" | tee "$RUNNER_TEMP/demo-bare.log"
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/demo-bare.log"
+          counts() { grep '^SUMMARY ' "$RUNNER_TEMP/$1.log" | awk '{print $2 " passed, " $3 " failed"}'; }
+          {
+            echo "Kit engine test: $(counts kit). Orb Island: $(counts demo); with no extension loaded: $(counts demo-bare)."
+            grep '^INFO one frame' "$RUNNER_TEMP/demo.log" | sed 's/^INFO /- /'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: The member's gates
         run: bash tools/run-gates.sh
 

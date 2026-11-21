@@ -16,14 +16,14 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
-  software renderer; joined 2026-11-20, its libraries committed that day), render3dxt (this
-  suite's own software 3D renderer, textured and lit, into an image's imageData, with stb_image
-  and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose transform, move and camera
-  texts it reads, with only its web archive committed yet), pdfxt (PDFium, read-only: draw,
-  text, search, outline; joined 2026-11-20 with no committed library yet; the one member that
-  ships a SECOND library, a pinned prebuilt PDFium its shim loads from beside itself, see
-  Building) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
-  2026-11-20 with no committed library yet).
+  software renderer, plus the pure-script b3k game Kit; joined 2026-11-20, its libraries
+  committed that day), render3dxt (this suite's own software 3D renderer, textured and lit,
+  into an image's imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside
+  box3dxt, whose transform, move and camera texts it reads, with only its web archive committed
+  yet), pdfxt (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no
+  committed library yet; the one member that ships a SECOND library, a pinned prebuilt PDFium
+  its shim loads from beside itself, see Building) and xlsxt (libxlsxwriter + zlib + Expat:
+  Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -100,8 +100,8 @@ every family: **edit the master, then regenerate or re-carry; never patch a copy
 | Script libraries in demos | `<member>/src/*.livecodescript` | `sync-demo-embeds.py --check` (after `test-demo-embeds.py --mutate`) |
 | Checker, docs-style gate, interpreter, templates | every carrier's copy | `tools/check-checker-drift.py` (TEMPLATE_SETS: onionxt, coinxt) |
 
-box2dxt carries the b2k Kit into its harness and games under its own `tools/sync-embedded-kit.py`;
-the suite paste is the generated case below. The family interpreter, `coinxt/tools/lcs-interp.py`
+box2dxt carries the b2k Kit into its harness and games, and box3dxt the b3k Kit into its example
+game, each under its own `tools/sync-embedded-kit.py`; the suite paste is the generated case below. The family interpreter, `coinxt/tools/lcs-interp.py`
 (twinned in nostrxt), and riptide's stack runner built on it let execution gates in coinxt, nostrxt,
 riptide, nocloud and holde-em RUN the shipped script headlessly (`check-script-vectors.py` and the
 boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label. Since
