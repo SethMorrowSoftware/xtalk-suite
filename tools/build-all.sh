@@ -178,6 +178,18 @@ if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
 fi
+# The kit's words on its own colours have a colour of the kit's (its rule 7):
+# uiInput's and uiArea's fields were white on white in the dark appearance
+# (2026-11-21). It reads the master; the drift gate above holds every copy to
+# it. Its fixture mutates the master in memory only.
+if [ -f tools/test-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/test-ui-kit-text-colour.py =="
+  python3 tools/test-ui-kit-text-colour.py
+fi
+if [ -f tools/check-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/check-ui-kit-text-colour.py =="
+  python3 tools/check-ui-kit-text-colour.py
+fi
 # Fixtures beside the gate: this one reported a confident 43/27 for months while
 # measuring nothing at all in nocloud, so its three legs are proven before it
 # is trusted.
