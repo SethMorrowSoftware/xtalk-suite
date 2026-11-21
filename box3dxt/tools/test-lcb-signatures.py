@@ -22,6 +22,9 @@ BUILTIN = ('foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pBy
            'in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool '
            'binds to "<builtin>"\n')
 
+DATA_BUILTIN = ('foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, '
+                'out rData as Data) returns CBool binds to "<builtin>"\n')
+
 # (label, file, old, new, text one of the problems must contain)
 CASES = [
     ("a foreign parameter of the wrong type", "lcb",
@@ -54,6 +57,25 @@ CASES = [
      "a foreign handler this gate cannot read"),
     ("the engine builtin declared twice", "lcb", BUILTIN, BUILTIN + BUILTIN,
      "MCStringCreateWithBytes must be declared exactly once"),
+    ("the data builtin declared twice", "lcb", DATA_BUILTIN, DATA_BUILTIN + DATA_BUILTIN,
+     "MCDataCreateWithBytes must be declared exactly once"),
+    ("the data builtin in another spelling", "lcb", DATA_BUILTIN,
+     DATA_BUILTIN.replace("in pByteCount as CUInt", "in pByteCount as CInt"),
+     "a foreign handler this gate cannot read"),
+    ("the picture copied as text", "lcb",
+     "public handler b3RenderPixels() returns Data", "public handler b3RenderPixels() returns String",
+     "b3RenderPixels returns String, but b3x_render_pixels gives bytes"),
+    ("a text result copied as bytes", "lcb",
+     "public handler b3RenderCamera() returns String", "public handler b3RenderCamera() returns Data",
+     "b3RenderCamera returns Data, but b3x_render_camera gives text"),
+    ("the picture not copied by dataOf", "lcb",
+     "      put _render_pixels() into tP\n   end unsafe\n   return dataOf(tP)",
+     "      put _render_pixels() into tP\n   end unsafe\n   return textOf(tP)",
+     "does not end `return dataOf(tP)`"),
+    ("dataOf measuring with something else", "lcb",
+     "      put _render_byte_count() into tLength\n      put MCDataCreateWithBytes",
+     "      put _text_length(pBytes) into tLength\n      put MCDataCreateWithBytes",
+     "dataOf() must measure with _render_byte_count"),
     ("a public handler off the mechanical name", "lcb",
      "public handler b3WorldStep(", "public handler b3WorldAdvance(",
      "b3WorldStep"),
@@ -74,9 +96,9 @@ CASES = [
      "Summary: Advances a world by a slice of time.\n", "",
      "b3WorldStep"),
     ("an ABI bump in the shim only", "shim",
-     "#define B3X_ABI_VERSION 1", "#define B3X_ABI_VERSION 2", "ABI"),
+     "#define B3X_ABI_VERSION 2", "#define B3X_ABI_VERSION 3", "ABI"),
     ("an ABI bump in the binding's check only", "lcb",
-     "   if tV is not 1 then", "   if tV is not 2 then", "ABI"),
+     "   if tV is not 2 then", "   if tV is not 3 then", "ABI"),
     ("a handler missing from the engine self-test's sweep", "selftest",
      '      put "b3ABIVersion" into tName\n      get b3ABIVersion()\n', "",
      "sweep"),

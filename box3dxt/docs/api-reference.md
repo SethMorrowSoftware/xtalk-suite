@@ -1,6 +1,6 @@
 # box3dxt API reference
 
-The 379 public handlers, from the doc blocks in `src/box3dxt.lcb` (the IDE dictionary reads the
+The 398 public handlers, from the doc blocks in `src/box3dxt.lcb` (the IDE dictionary reads the
 same blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
 gate). Read [getting-started.md](getting-started.md) first: it has the units, the limits every
 call is held to, and the handful of rules that decide whether a scene works.
@@ -13,7 +13,7 @@ call is held to, and the handful of rules that decide whether a scene works.
 
 Returns the ABI number of the native library that is loaded.
 
-Returns: The ABI number; this binding needs 1.
+Returns: The ABI number; this binding needs 2.
 
 ### `b3LibraryVersion`
 
@@ -21,7 +21,7 @@ Returns: The ABI number; this binding needs 1.
 
 Returns the versions of the native library and of Box3D inside it.
 
-Returns: Text such as "box3dxt ABI 1; Box3D 0.2.0".
+Returns: Text such as "box3dxt ABI 2; Box3D 0.2.0".
 
 The first call that reaches the native library. It throws if the library on disk has a different ABI from this binding, which means the two come from different releases.
 
@@ -1342,7 +1342,7 @@ Adds the convex hull of the points added since `b3GeometryBegin`.
 
 Returns: A shape handle, or 0 if the arguments were refused (see `b3LastError`).
 
-Needs at least 4 points that are not all in one plane. The hull is the tightest convex solid around them, simplified to at most 128 corners.
+Needs at least 4 points that are not all in one plane. The hull is the tightest convex solid around them, SIMPLIFIED to what Box3D can hold: at most 128 corners, 128 faces and 128 edges. A boxy shape keeps its corners; the points of a rounded model (thousands are fine) come down to about 40, so the hull lies a little inside the model. A hull is convex: a hollow, a handle or a spout is filled in. For a concave moving object, add several hulls to one body.
 
 ### `b3ShapeAddMesh`
 
@@ -1356,7 +1356,7 @@ Adds a triangle mesh built from the points and triangles added since `b3Geometry
 
 Returns: A shape handle, or 0 if the arguments were refused (see `b3LastError`).
 
-For static scenery only: the body must be static. A mesh may be concave.
+For static scenery only: the body must be static. A mesh may be concave and may hold many thousands of triangles, such as a model read from a file. It is ONE-SIDED: a triangle stops bodies and rays that meet its front, the side from which its three points run counter-clockwise, and lets through whatever comes from behind. Models are normally exported with their fronts facing out; if things fall through one, its triangles are wound the other way, so swap two points of each.
 
 ### `b3ShapeAddHeightField`
 
@@ -4100,3 +4100,237 @@ Returns the max torque of a parallel joint.
 - pJoint: A joint handle from one of the b3Joint creators.
 
 Returns: The max torque, in newton metres.
+
+### `b3RenderSetCamera`
+
+`b3RenderSetCamera(in pEyeX as Number, in pEyeY as Number, in pEyeZ as Number, in pTargetX as Number, in pTargetY as Number, in pTargetZ as Number, in pDegrees as Number) returns nothing`
+
+Places the camera the renderer looks through.
+
+- pEyeX: Where the camera stands, x, in metres.
+- pEyeY: Where the camera stands, y (up).
+- pEyeZ: Where the camera stands, z.
+- pTargetX: The point the camera looks at, x.
+- pTargetY: The point the camera looks at, y.
+- pTargetZ: The point the camera looks at, z.
+- pDegrees: The vertical field of view in degrees, 5 to 150. 50 is a natural lens.
+
+y is up in the picture. The camera stays where it is put until the next call; it starts at 0,4,12 looking at 0,1,0 through 50 degrees. Refused, with a reason in `b3LastError`, if the two points are the same, any number is not finite or the angle is outside 5 to 150; the camera then stays as it was.
+
+```
+b3RenderSetCamera 6, 5, 10, 0, 1, 0, 50
+```
+
+### `b3RenderCamera`
+
+`b3RenderCamera() returns String`
+
+Returns the renderer's camera.
+
+Returns: Seven numbers as text: "eyeX,eyeY,eyeZ,targetX,targetY,targetZ,degrees".
+
+What `b3RenderSetCamera` last accepted. Another renderer handed these seven numbers looks at the world from the same place.
+
+### `b3RenderSetLight`
+
+`b3RenderSetLight(in pX as Number, in pY as Number, in pZ as Number) returns nothing`
+
+Sets the direction the renderer's one light travels.
+
+- pX: The x of the direction the light travels.
+- pY: The y of that direction; -1 is straight down.
+- pZ: The z of that direction.
+
+Any length will do; a direction of no length is refused. A surface facing the light is brightest and one facing away keeps a dim ambient shade, so nothing is drawn black.
+
+### `b3RenderSetBackground`
+
+`b3RenderSetBackground(in pRed as Integer, in pGreen as Integer, in pBlue as Integer) returns nothing`
+
+Sets the colour the renderer paints where there is no shape.
+
+- pRed: Red, 0 to 255.
+- pGreen: Green, 0 to 255.
+- pBlue: Blue, 0 to 255.
+
+A number outside 0 to 255 is refused and the colour stays.
+
+### `b3ShapeSetColor`
+
+`b3ShapeSetColor(in pShape as Integer, in pRed as Integer, in pGreen as Integer, in pBlue as Integer) returns nothing`
+
+Gives a shape its own colour in the renderer.
+
+- pShape: A shape handle from one of the b3ShapeAdd calls.
+- pRed: Red, 0 to 255.
+- pGreen: Green, 0 to 255.
+- pBlue: Blue, 0 to 255.
+
+Without one a shape is drawn in a colour that says what its body is doing: grey-green for static scenery, one of eight colours for a moving body, the same colour dimmed while the body sleeps. The colour goes when the shape does. Nothing in the simulation reads it.
+
+```
+b3ShapeSetColor tShape, 230, 120, 40
+```
+
+### `b3ShapeClearColor`
+
+`b3ShapeClearColor(in pShape as Integer) returns nothing`
+
+Takes a shape's own colour away, so the renderer chooses again.
+
+- pShape: A shape handle from one of the b3ShapeAdd calls.
+
+### `b3ShapeColor`
+
+`b3ShapeColor(in pShape as Integer) returns String`
+
+Returns the colour a shape was given for the renderer.
+
+- pShape: A shape handle from one of the b3ShapeAdd calls.
+
+Returns: Text "red,green,blue", or empty for a shape with no colour of its own or a handle that is not a shape.
+
+### `b3RenderWorld`
+
+`b3RenderWorld(in pWorld as Integer, in pWidth as Integer, in pHeight as Integer, in pMode as Integer) returns Boolean`
+
+Paints a world into a picture.
+
+- pWorld: A world handle from b3WorldCreate.
+- pWidth: The picture's width in pixels, 1 to 2048.
+- pHeight: The picture's height in pixels, 1 to 2048.
+- pMode: 0 for solid shapes, 1 for a wireframe, 2 for solid shapes with their edges drawn over them.
+
+Returns: True if the picture was painted; false if it was refused, with the reason in `b3LastError`.
+
+Every shape of every enabled body is drawn as the camera of `b3RenderSetCamera` sees it: lit by one light, nearer surfaces hiding farther ones. Take the picture with `b3RenderPixels`; it stays until the next render. Make the image the same size first: the engine takes data of another size without complaint and shows it as sheared stripes. Rendering reads the world and never changes it, so it is safe at any moment between steps. There is one picture for the whole library, not one per world.
+
+```
+if b3RenderWorld(sWorld, 640, 400, 0) then
+set the imageData of image "view" to b3RenderPixels()
+end if
+```
+
+### `b3RenderPixels`
+
+`b3RenderPixels() returns Data`
+
+Returns the picture the last render painted.
+
+Returns: Binary data, width times height times 4 bytes: rows from the top, four bytes a pixel (0, red, green, blue), which is the layout of an image's imageData. Empty before the first render.
+
+The image must already have the picture's width and height.
+
+```
+set the imageData of image "view" to b3RenderPixels()
+```
+
+### `b3RenderByteCount`
+
+`b3RenderByteCount() returns Integer`
+
+Returns the size of the last picture in bytes.
+
+Returns: Width times height times 4; 0 before the first render.
+
+### `b3RenderWidth`
+
+`b3RenderWidth() returns Integer`
+
+Returns the width of the last picture.
+
+Returns: The width in pixels; 0 before the first render.
+
+### `b3RenderHeight`
+
+`b3RenderHeight() returns Integer`
+
+Returns the height of the last picture.
+
+Returns: The height in pixels; 0 before the first render.
+
+### `b3RenderTriangleCount`
+
+`b3RenderTriangleCount() returns Integer`
+
+Returns how many triangles the last render drew from.
+
+Returns: The number of triangles the shapes were turned into, before any was clipped or hidden. A measure of how heavy a scene is to draw.
+
+### `b3RenderPixel`
+
+`b3RenderPixel(in pX as Integer, in pY as Integer) returns Integer`
+
+Returns the colour of one pixel of the last picture.
+
+- pX: Across the picture in pixels; 0 is its left edge.
+- pY: Down the picture in pixels; 0 is its top edge.
+
+Returns: Red times 65536 plus green times 256 plus blue; -1 outside the picture.
+
+### `b3RenderShapeAt`
+
+`b3RenderShapeAt(in pX as Integer, in pY as Integer) returns Integer`
+
+Returns the shape drawn at a pixel of the last picture.
+
+- pX: Across the picture in pixels; 0 is its left edge.
+- pY: Down the picture in pixels; 0 is its top edge.
+
+Returns: A shape handle, or 0 for the background, a point outside the picture, or a shape destroyed since the render.
+
+The quick way to find what is under the mouse: no ray is cast. `b3ShapeBody` then names the body.
+
+```
+put b3RenderShapeAt(the mouseH - the left of image "view", the mouseV - the top of image "view") into tShape
+```
+
+### `b3RenderDepth`
+
+`b3RenderDepth(in pX as Integer, in pY as Integer) returns Number`
+
+Returns how far away the surface at a pixel of the last picture is.
+
+- pX: Across the picture in pixels; 0 is its left edge.
+- pY: Down the picture in pixels; 0 is its top edge.
+
+Returns: Metres from the camera, measured along the way it looks; 0 for the background or a point outside the picture.
+
+### `b3RenderProject`
+
+`b3RenderProject(in pX as Number, in pY as Number, in pZ as Number) returns String`
+
+Returns where a point of the world lands in the last picture.
+
+- pX: The x of a point of the world, in metres.
+- pY: The y of that point.
+- pZ: The z of that point.
+
+Returns: Text "x,y,depth": x and y in picture coordinates (they may lie outside the picture) and depth in metres along the camera's view. Empty if the point is behind the camera or nothing has been rendered.
+
+Use it to put a label or a control over a body: project the body's position and add the image's left and top.
+
+### `b3RenderRay`
+
+`b3RenderRay(in pX as Number, in pY as Number) returns String`
+
+Returns the ray from the camera through a point of the last picture.
+
+- pX: Across the picture in pixels; 0 is its left edge, and half a pixel in is the centre of the first one.
+- pY: Down the picture in pixels, counted the same way from its top.
+
+Returns: Text "ox,oy,oz,dx,dy,dz": the camera's position and a direction of length 1. Empty if nothing has been rendered.
+
+Multiply the direction by a reach in metres and hand both to `b3CastRayClosest` to find the exact point under the mouse.
+
+### `b3ShapeTrianglesText`
+
+`b3ShapeTrianglesText(in pShape as Integer) returns String`
+
+Returns a shape as a list of triangles.
+
+- pShape: A shape handle from one of the b3ShapeAdd calls.
+
+Returns: One line per triangle, nine numbers "x1,y1,z1,x2,y2,z2,x3,y3,z3" in metres, in the frame of the shape's BODY (the body's position and rotation place them in the world), counter-clockwise seen from outside (a mesh's triangles keep the order they were given in). Empty for a handle that is not a shape.
+
+For drawing a shape with something other than this library's renderer. A hull, a mesh and a height field give the triangles Box3D collides with; a sphere and a capsule are rounded off into the triangles the renderer here draws.

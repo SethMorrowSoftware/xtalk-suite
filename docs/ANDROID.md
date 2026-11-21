@@ -23,8 +23,9 @@ The fourteen ARM libraries were built and checked in both runs and **not run**. 
 on Android has loaded any of the twenty-eight.**
 **box3dxt joined on 2026-11-20**, after both runs: `tools/build-android.sh` names it as an eighth
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
-its tests on the emulator for the two x86 ones on every change, and none of its Android libraries
-is committed yet. The counts in this page's dated records are of the seven members of those runs.
+its tests on the emulator for the two x86 ones on every change. Its four libraries were
+committed on 2026-11-20 by its own release run (run 44806507517, commit 6d132d3; the x86 ones
+tested on the emulator, the ARM ones built and checked, not run). The counts in this page's dated records are of the seven members of those runs.
 **gamepadxt (joined 2026-11-20) is not built for Android**, and `tools/build-android.sh` does not
 name it: SDL reaches controllers on Android through its own Java activity, which an OXT app does
 not have. Its packager names no Android id, so the all-four-or-none rule has nothing to hold.
@@ -153,7 +154,7 @@ engine.
 | coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
-| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built and tested by its own lane, not yet by a release run; no library committed |
+| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built and tested by its own lane, not yet by a release run; no library committed |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
