@@ -885,7 +885,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   pressed every button. Its first frame loop showed 20 pictures a second, 36 of each
   frame's 47 ms in `set the imageData` (the engine encoding a PNG, #11); with "rle" set
   around that line and the picture begun in the background it showed 57 with nine things
-  and 50 to 52 with about fifty, the engine busy 12 ms a frame. Windows, macOS, Android and
+  and 50 to 52 with about fifty, the engine busy 12 ms a frame. On Windows (OXT-Beyond
+  0.2.8-dp.1, 64-bit, dark system appearance, a locally built library, 2026-11-21 UTC)
+  the demo drew (7.8 ms a picture on six threads, its words white on white) and then its
+  rebuilt look was readable; the faults that run found are fixed (5fabc82, 904bb16), and
+  those fixes, the wheel and the buttons' hover have not run there (#2). macOS, Android and
   the web have not run it: there it is verified statically; needs an OXT pass.
 - The contract with box3dxt (world, transform text, move lines, camera text, picture
   coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
@@ -905,7 +909,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
+| 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above; Windows showed the demo on 2026-11-21 but no pointer was driven there): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
 | 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
 | 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |

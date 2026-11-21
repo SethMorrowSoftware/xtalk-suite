@@ -100,8 +100,14 @@ Joined the suite on 2026-11-20. What has run, and where:
   kicked a thing and pressed every button. It showed 57 pictures a second with nine things
   falling and 50 to 52 with about fifty (20 before the demo stopped the engine encoding a
   PNG of every frame and began its pictures in the background).
-- **Not yet:** no engine on Windows, macOS, Android or the web has run it: on those it is
-  verified statically; needs an OXT pass. Only the web archive is committed under
+- **On Windows:** OXT-Beyond 0.2.8-dp.1, 64-bit, under a dark system appearance, with a
+  locally built library, 2026-11-21 (UTC). The demo first drew its scene (7.8 ms a
+  picture on six threads) with its words white on white; its rebuilt look was then readable
+  throughout, and the faults that run showed (the corner's badge, the self-check printed twice
+  after a quick reopen, the far floor shimmering) were fixed after it. Those last fixes, the
+  wheel and the painted buttons' hover have not run there.
+- **Not yet:** no engine on macOS, Android or the web has run it: on those it is verified
+  statically; needs an OXT pass. Only the web archive is committed under
   `src/code/` yet; the suite's release-binaries dispatch lands the desktop and Android
   libraries.
 
