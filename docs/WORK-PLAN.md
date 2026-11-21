@@ -832,7 +832,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 2.10 box3dxt
 
 - Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
-  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20) and the `b3*` binding, whose names are mechanical. Records: the
+  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20; ABI 3 since the sky, 2026-11-21) and the `b3*` binding, whose names are mechanical. Records: the
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which

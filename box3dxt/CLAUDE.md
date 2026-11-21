@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **box3dxt** binds Box3D (Erin Catto's 3D rigid-body engine, MIT, C17) for OXT: Box3D (static,
 FetchContent, pinned to a COMMIT in `CMakeLists.txt` because it has no release tag yet) -> the
-C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 2**: `B3X_ABI_VERSION` there equals the
+C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 3**: `B3X_ABI_VERSION` there equals the
 literal in `checkABI()` of the binding) -> ONE library `box3dxt.{so,dll,dylib}` (bare token),
 or `box3dxt.a` for the web -> the LCB binding `src/box3dxt.lcb`
 (`org.openxtalk.library.boxthreed`, public `b3*`). box2dxt is its ancestor; read that
@@ -89,6 +89,10 @@ member's CLAUDE.md for the reasons behind the shared shape.
   from the top left with pixel centres at +0.5, a ray as origin and unit direction, y up,
   the fallback up of world -z looking straight down) is in the shim's comments: change
   neither side alone.
+- **The sky (ABI 3, 2026-11-21)**: `b3x_render_set_sky` gives the picture's top row one
+  colour and its bottom row another, each row between them one colour, in whole numbers.
+  `b3x_render_set_background` is a sky of one colour twice, so what it painted before is
+  what it paints now, byte for byte (the smoke test holds both by hand-worked rows).
 - **Box3D re-pairs shapes only when one leaves its fat bounding box**: destroying a filter
   joint does not make two resting bodies collide until one of them moves far enough.
 - **32-bit x86 is built with SSE2**, not scalar: Box3D's determinism test fails on x87.
