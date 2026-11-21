@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Nineteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -21,9 +21,12 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
   render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
-  transform, move and camera texts it reads, with only its web archive committed yet) and xlsxt
+  transform, move and camera texts it reads, with only its web archive committed yet), xlsxt
   (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
-  libraries committed 2026-11-21).
+  libraries committed 2026-11-21), and ShowControl's three, which joined 2026-11-21 with no
+  committed library yet: oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and
+  artnetxt (Art-Net DMX lighting in pure LCB, with no native library at all, but a native lane:
+  its suites run on an engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -210,9 +213,10 @@ their real names: coinxt, onionxt, the b2k Kit, riptide and the nostrxt core. (T
 because a harness once ran against a stale in-memory library and reported failures already fixed.)
 
 - **The board (D-23).** The paste wears the demos' look: one row per `tools/member-registry.py`
-  member plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a results filter
-  and the boot self-check. nocloud's row is a caption: the generator's `NO_HARNESS`, and it refuses
-  a registry member with neither a harness nor such a reason. A row's Run is a subsequence of Run
+  member with a harness plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a
+  results filter and the boot self-check. A member with no harness (the generator's `NO_HARNESS`,
+  which refuses a registry member with neither a harness nor such a reason) is a name in a band
+  under the rows since 2026-11-21, so a member that joins without one costs no row. A row's Run is a subsequence of Run
   all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
@@ -295,8 +299,8 @@ vector gates. Run it for the ratio; never copy the ratio into prose. Two advisor
 the ratchet, each with an armed floor (a new gap, a promoted or a stale entry fails):
 
 - **box2dxt's raw `b2*` binding.** By the gate's convention (comments stripped, literals blanked)
-  131 of 376 handlers are named by a script and 245 are not; a raw token count gives 132/244. Both
-  are real; the convention decides. (An older "374 foreign declarations" was a `grep -c` that also
+  133 of 376 handlers are named by a script and 243 are not; a raw token count gives 134/242 (both
+  since 2026-11-21: 131/245 and 132/244 before). Both are real; the convention decides. (An older "374 foreign declarations" was a `grep -c` that also
   counted a line of header prose at `box2dxt.lcb:16`.) The C side is measured by gcov, not grep:
   `box2dxt/tests/smoke_test.c` entered all 370 LC_API exports on 2026-08-23 (about 92% line
   coverage), in build-all's Release walk and the ASan/UBSan job of `native-box2dxt.yml`. A
@@ -332,7 +336,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, oscxt, midixt; midixt needs ALSA's headers on Linux) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

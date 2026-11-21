@@ -15,15 +15,16 @@
 
 **Extensions that give OpenXTalk (OXT) and the xTalk family (also LiveCode 9.6.3+) the
 capabilities app authors reach for: cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor,
-Bitcoin and Ethereum primitives, 2-D physics with a game kit, and Nostr.** Each is a small,
-friendly set of xTalk handlers, and each native member bundles its library inside the extension,
-so there is nothing else to install. Eight extensions, plus three apps built on them.
+Bitcoin and Ethereum primitives, 2-D physics with a game kit, Nostr, and show control (OSC, MIDI
+and Art-Net lighting).** Each is a small, friendly set of xTalk handlers, and each native member
+bundles its library inside the extension, so there is nothing else to install. Sixteen
+extensions, plus three apps built on them.
 
-Every member is a thin binding over a proven C/C++ library (or, for OnionXT and NostrXT, pure
-LiveCodeScript), built to one set of engineering rules so they read as one system and compose:
-identity, transport and storage can come from different members. The apps are the proof. All of
-it is developed here, and each member is also published into its own repository
-([docs/MEMBER-REPO-SPLIT.md](docs/MEMBER-REPO-SPLIT.md)).
+Every member is a thin binding over a proven C/C++ library (or pure LiveCodeScript for OnionXT
+and NostrXT, and pure LiveCode Builder for artnetxt), built to one set of engineering rules so
+they read as one system and compose: identity, transport and storage can come from different
+members. The apps are the proof. All of it is developed here, and each member is also published
+into its own repository ([docs/MEMBER-REPO-SPLIT.md](docs/MEMBER-REPO-SPLIT.md)).
 
 ## The extensions
 
@@ -42,6 +43,9 @@ it is developed here, and each member is also published into its own repository
 | [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; WebSockets (`ws://`, `wss://`); plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
+| [oscxt](oscxt/) | `osc*` / `scOsc*` | tinyosc (vendored) | Open Sound Control, the network language of TouchOSC, QLab, Resolume and SuperCollider: messages and bundles built from typed arguments and read back into arrays, OSC 1.0 address patterns matched, sent and received over the engine's own UDP sockets |
+| [midixt](midixt/) | `midi*` / `scMidi*` | RtMidi 6.0.0 | Realtime MIDI: every port listed and opened (and virtual ports of your own on macOS and Linux), notes, controllers, program changes, pitch bends and SysEx sent, and everything that arrives drained by polling, decoded and time-stamped |
+| [artnetxt](artnetxt/) | `artnet*` / `scArtnet*` | pure LCB (no native library) | Art-Net DMX lighting: up to 512 channel levels per universe sent to nodes and read from other controllers, and nodes found by ArtPoll discovery, over the engine's own UDP sockets |
 
 Design facts that decide how you use them (each member's own docs have the rest):
 
@@ -84,6 +88,13 @@ Design facts that decide how you use them (each member's own docs have the rest)
 - **curlxt** is "pump or nothing" like enetxt: libcurl runs inside `cuPoll` / `cuWait`, and the
   helpers keep a timer only while something waits. It never touches libURL: `get url` behaves as
   before. Its tsNet layer was written from tsNet's public dictionary only.
+- **oscxt** and **artnetxt** are codecs: they turn values into datagrams and datagrams back
+  into values, and the stack sends and receives with the engine's own UDP sockets (each
+  member's helpers do it for you). Neither starts a thread or holds a socket of its own.
+- **midixt** is "poll or nothing" on input: RtMidi's thread fills a queue, and `midiPoll` (or
+  the helpers' timer) drains it on the engine's thread, up to 256 messages in one call; no
+  callback ever runs script. ShowControl's stacks keep working: the library ids, handlers and
+  helper names of all three are ShowControl's, unchanged.
 - **coinxt** signs only a digest the app hands it: the app owns custody. Secrets are wiped before
   free. `coinxt/examples/coin-wallet.livecodescript` is a full wallet over Esplora, Electrum or
   Bitcoin Core, clearnet or Tor.
@@ -146,6 +157,9 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | audioxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library and through miniaudio's silent device: the module loaded, the ABI check passed, binary data crossed both ways, a tone was rendered and measured, and every public handler was called; the web archive played and recorded in headless Chromium the same day; in the IDE on the maintainer's Windows PC, 2026-11-21, a CI-built 64-bit DLL loaded on WASAPI and the same self-test passed 89, failed 0; the demo driven on the Linux desktop engine the same day (`audioxt/tests/demo-drive.livecodescript`) | the committed release libraries on any engine; macOS, Android and the web engine; anyone hearing it (every run so far played through the silent device); a row in the suite paste |
 | render3dxt | the web archive only (the first release dispatch lands the rest), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second. On Windows (OXT-Beyond 0.2.8-dp.1, dark system appearance) the rebuilt demo was readable, 2026-11-21 | macOS, Android and the web; a pointer on Windows; the desktop and Android libraries committed; a row in the suite paste |
 | xlsxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change); in the IDE on the maintainer's Windows PC, 2026-11-21, over the native lane's DLL: that self-test 64/0 and the demo's checks 39/0 (its words were white on white under the dark theme; the demo was rebuilt the same day as a self-playing showcase that names every colour, and that window ran on the same PC readable throughout, its tour and checks 39/0); the committed web archive in OXT-Beyond's web engine (its pull request 605), 2026-11-21: a workbook written and read back in Chromium, Firefox and WebKit | the committed desktop and Android release libraries on any engine (the runs so far loaded locally built or lane-built ones); macOS and Android; most of its handlers in a browser; a file of its own opened in Excel, on the record; a row in the suite paste |
+| oscxt | none yet (the first release dispatch lands them), ABI 2 | its LCB suite under lc-run and its Script suite in OXT-Beyond's headless standalone engine (`-ui`), Linux x86_64, 2026-11-21, over a locally built library: real UDP through the engine's own sockets and an independent OSC peer included (`oscxt/tools/run-lcb-tests.py`, `run-lcs-tests.py`; its native lane runs both on Linux, Windows and macOS on every change); the parser fuzzed under ASan/UBSan the same day | any desktop IDE; Windows and macOS on the record outside CI; a committed library; Android; a row in the suite paste |
+| midixt | none yet (the first release dispatch lands them), ABI 2 | the same two suites on the same engine, 2026-11-21, over a locally built library and the member's mock MIDI backend | a message through a real MIDI service (ALSA, CoreMIDI or Windows MM) on the record; any desktop IDE; a committed library; a row in the suite paste |
+| artnetxt | pure LCB (no library to commit) | the same two suites on the same engine, 2026-11-21: lc-compile `-Werror`, real UDP, discovery and DMX against an independent virtual node | a hardware node or lighting desk on the record; any desktop IDE; Windows and macOS on the record outside CI; a row in the suite paste |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
 | box2dxt | 5 platforms, ABI 4 | Kit harness v32: 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 (run 12's `x86_64-linux` file, by the maintainer's account) and Windows 2026-09-24 to 09-26 (on the 2026-09-12 DLL there); every run settles the itemDelimiter half of engine note 2.3 (handler-local). `playLoudness` reads back 0 on Linux and exact on Windows (engine note 5.4), a printed note since v31 | the five game stacks since the 2026-08-14 fold; risk R1 on Linux and macOS |
@@ -196,7 +210,9 @@ run 44847619287 (78223d8), the x86 ones tested on the emulator, the ARM ones bui
 render3dxt joined the same day and is in the recipe; none of its Android libraries is
 committed yet. xlsxt joined the same day too; its four Android libraries were committed on
 2026-11-21 by its own release run (0be6db1), tested on the emulator for the two x86
-ABIs, the ARM ones built and checked, not run.
+ABIs, the ARM ones built and checked, not run. oscxt and midixt joined on 2026-11-21 with no
+Android build (`tools/build-android.sh` names them desktop-only and says why); artnetxt has no
+library.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -256,7 +272,8 @@ libraries in a package are the committed ones (verified statically; needs an IDE
 
 **From the tree.** Each native member is a standard OXT extension: an LCB module plus the
 per-platform library bundled under `src/code/<arch>-<platform>/`, which the engine finds itself
-(no `sudo`, no `LD_LIBRARY_PATH`). OnionXT and NostrXT are pure LiveCodeScript: `start using`
+(no `sudo`, no `LD_LIBRARY_PATH`); artnetxt is the same with no library at all. OnionXT and
+NostrXT are pure LiveCodeScript: `start using`
 their `src/*.livecodescript` libraries, or open a demo that carries them
 (`onionxt/examples/onionxt-demo.livecodescript`, `nostrxt/examples/nostrxt-demo.livecodescript`).
 Install only what you need. Each member answers a load check in the message box:
@@ -273,6 +290,9 @@ put b3LibraryVersion()   -- box3dxt
 put auLibraryVersion()   -- audioxt
 put r3LibraryVersion()   -- render3dxt
 put xlLibraryVersion()   -- xlsxt
+put oscVersion()         -- oscxt: prints 2 (its ABI)
+put midiVersion()        -- midixt: prints 2 (its ABI)
+put the number of bytes in artnetBuildPoll()   -- artnetxt: prints 14
 put oxVersion()          -- onionxt (its library in use)
 put nxVersion()          -- nostrxt (after start using stack "nostrxt")
 ```

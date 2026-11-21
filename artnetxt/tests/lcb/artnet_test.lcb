@@ -1,0 +1,304 @@
+/*
+artnet_test.lcb - headless behavioural tests for the Art-Net binding.
+
+Run by tools/run-lcb-tests.py under lc-run: every public Test* handler runs in
+its own process. Byte-exact wire formats are pinned by the shared vectors
+(tests/vectors/artnet.json, asserted in the generated vectors module); this
+file covers behaviour -- round-trips across the whole universe range, the
+length rules, the quiet-failure contract, malformed and hostile input, and
+the ArtPollReply fields a cut-short reply does and does not reach.
+
+Art-Net is pure LCB, so this suite needs no native library. The runner
+compiles src/artnet.lcb with -Werror first, as the IDE's Extension Builder
+does: ShowControl's copy failed exactly there (two all-lowercase names).
+*/
+-- requires:
+
+module org.openxtalk.showcontrol.tests.artnet
+
+use com.livecode.unittest
+use org.openxtalk.library.artnet
+use org.openxtalk.showcontrol.tests.support
+
+-- Every universe's Port-Address must survive build -> parse, split SubUni/Net.
+public handler TestUniverseRoundTrip()
+   variable tUnis as List
+   variable tU as Number
+   variable tP as Array
+   put [0, 1, 15, 16, 255, 256, 257, 258, 4095, 4096, 16383, 32766, 32767] into tUnis
+   repeat for each element tU in tUnis
+      put artnetParseDmx(artnetBuildDmx(tU, HexToData("ff00"))) into tP
+      test "universe round-trips: " & (tU formatted as string) when tP["universe"] is tU
+      test "subuni is universe mod 256: " & (tU formatted as string) when tP["subuni"] is tU mod 256
+      test "net is the high 7 bits: " & (tU formatted as string) when tP["net"] is (tU - (tU mod 256)) / 256
+   end repeat
+end handler
+
+-- A fractional universe is cut toward zero where it becomes a byte (the
+-- suite's engine note 6.17): the same universe on both bytes, never a mix.
+public handler TestFractionalUniverseTruncates()
+   variable tP as Array
+   put artnetParseDmx(artnetBuildDmx(258.9, HexToData("0102"))) into tP
+   test "258.9 sends universe 258" when tP["universe"] is 258
+   put artnetParseDmx(artnetBuildDmx(255.5, HexToData("0102"))) into tP
+   test "255.5 sends universe 255 (not 256's Net with 255's SubUni)" when tP["universe"] is 255
+   put artnetParseDmx(artnetBuildDmx(32767.5, HexToData("0102"))) into tP
+   test "32767.5 is out of range" when tP["opcode"] is "" and artnetLastError() is not ""
+end handler
+
+-- Length is forced even and into 2..512; padding is zeros; over-long truncates.
+public handler TestLengthRules()
+   variable tP as Array
+   variable tN as Integer
+   repeat with tN from 0 up to 9
+      put artnetParseDmx(artnetBuildDmx(0, RepeatByte(7, tN))) into tP
+      if tN < 2 then
+         test "length for " & (tN formatted as string) & " channels is 2" when tP["length"] is 2
+      else if tN mod 2 is 1 then
+         test "odd " & (tN formatted as string) & " channels pads to even" when tP["length"] is tN + 1
+      else
+         test "even " & (tN formatted as string) & " channels kept" when tP["length"] is tN
+      end if
+   end repeat
+   put artnetParseDmx(artnetBuildDmx(0, HexToData("0a141e"))) into tP
+   test "padding byte is zero" when DataToHex(tP["channels"]) is "0a141e00"
+   put artnetParseDmx(artnetBuildDmx(0, the empty data)) into tP
+   test "no channels at all sends two zeros" when DataToHex(tP["channels"]) is "0000"
+   put artnetParseDmx(artnetBuildDmx(0, RepeatByte(255, 512))) into tP
+   test "512 channels kept" when tP["length"] is 512
+   put artnetParseDmx(artnetBuildDmx(0, RepeatByte(255, 513))) into tP
+   test "513 channels truncate to 512" when tP["length"] is 512
+   put artnetParseDmx(artnetBuildDmx(0, RepeatByte(1, 2000))) into tP
+   test "2000 channels truncate to 512" when tP["length"] is 512
+   test "packet is 18 + 512 bytes" when the number of bytes in artnetBuildDmx(0, RepeatByte(1, 2000)) is 530
+end handler
+
+-- The contract: failure is quiet (empty result + artnetLastError), never thrown;
+-- a successful call clears the error.
+public handler TestUniverseOutOfRange()
+   variable tPkt as Data
+   put artnetBuildDmx(-1, HexToData("ff")) into tPkt
+   test "universe -1 builds nothing" when the number of bytes in tPkt is 0
+   test "universe -1 sets artnetLastError" when artnetLastError() is not ""
+   put artnetBuildDmx(32768, HexToData("ff")) into tPkt
+   test "universe 32768 builds nothing" when the number of bytes in tPkt is 0
+   test "universe 32768 sets artnetLastError" when artnetLastError() is not ""
+   put artnetBuildDmx(0, HexToData("ff")) into tPkt
+   test "a good build clears artnetLastError" when artnetLastError() is ""
+   put artnetBuildDmx(99999, HexToData("ff")) into tPkt
+   put artnetBuildPoll() into tPkt
+   test "artnetBuildPoll clears it too" when artnetLastError() is ""
+end handler
+
+-- A length field that lies (bigger than the packet, or > 512) is clamped, never
+-- read past the end.
+public handler TestParseDefensive()
+   variable tP as Array
+   -- header claims 512 channels but only 2 follow
+   put artnetParseDmx(HexToData("4172742d4e6574000050000e00000000" & "0200" & "0102")) into tP
+   test "short tail: opcode still ArtDmx" when tP["opcode"] is "ArtDmx"
+   test "short tail: length clamped to the bytes present" when tP["length"] is 2
+   test "short tail: channels are the bytes present" when DataToHex(tP["channels"]) is "0102"
+   -- header claims 600 (> 512)
+   put artnetParseDmx(HexToData("4172742d4e6574000050000e00000000" & "0258") & RepeatByte(9, 600)) into tP
+   test "length > 512 clamps to 512" when tP["length"] is 512
+   -- exactly the 18-byte header, zero channels
+   put artnetParseDmx(HexToData("4172742d4e6574000050000e00000000" & "0000")) into tP
+   test "zero-length frame parses" when tP["opcode"] is "ArtDmx" and tP["length"] is 0
+   test "zero-length frame has empty channels" when the number of bytes in tP["channels"] is 0
+end handler
+
+public handler TestParseErrorsClearOnSuccess()
+   variable tP as Array
+   put artnetParseDmx(HexToData("00")) into tP
+   test "garbage sets an error" when artnetLastError() is not ""
+   put artnetParseDmx(artnetBuildDmx(1, HexToData("01"))) into tP
+   test "next good parse clears the error" when artnetLastError() is ""
+   put artnetParseReply(artnetBuildPoll()) into tP
+   test "ArtPoll is not an ArtPollReply" when tP["opcode"] is "" and artnetLastError() is not ""
+   put artnetParseReply(HexToData("4172742d4e65740000210a000001")) into tP
+   test "truncated ArtPollReply is rejected" when tP["opcode"] is ""
+end handler
+
+-- A minimal (26..44 byte) reply: names absent rather than garbage, and every
+-- field the reply does not reach is empty, 0 or an empty list.
+-- Layout (0-based): ID 0-7, OpCode 8-9, IP 10-13, Port 14-15, VersInfo 16-17,
+-- NetSwitch 18, SubSwitch 19, Oem..EstaMan 20-25, ShortName from 26.
+public handler TestPollReplyShortNames()
+   variable tR as Array
+   variable tPkt as Data
+   put HexToData("4172742d4e6574000021" & "c0a80164" & "3619" & "0000" & "0102") & RepeatByte(0, 6) into tPkt
+   put tPkt & HexToData("4e6f6465") into tPkt
+   put artnetParseReply(tPkt) into tR
+   test "short reply parses" when tR["opcode"] is "ArtPollReply"
+   test "short reply ip" when tR["ip"] is "192.168.1.100"
+   test "short reply port (little-endian 36 19)" when tR["port"] is 6454
+   test "short reply net/subuni" when tR["net"] is 1 and tR["subuni"] is 2
+   test "short reply shortName (unterminated, read to the end)" when tR["shortName"] is "Node"
+   test "short reply has no longName" when tR["longName"] is ""
+   test "short reply has no nodeReport" when tR["nodeReport"] is ""
+   test "short reply has no output universes" when the number of elements in tR["outputUniverses"] is 0
+   test "short reply has no input universes" when the number of elements in tR["inputUniverses"] is 0
+   test "short reply has no MAC" when tR["mac"] is ""
+   test "short reply style and bindIndex are 0" when tR["style"] is 0 and tR["bindIndex"] is 0
+end handler
+
+-- The port fields end at byte 194 (1-based): a reply that reaches them but not
+-- the MAC lists its universes and leaves the MAC empty. Ports 1 and 2 output,
+-- port 3 inputs; Net 0, Sub-Net 1, SwOut 2 and 3, SwIn 4.
+public handler TestPollReplyPortsWithoutMac()
+   variable tR as Array
+   variable tPkt as Data
+   put HexToData("4172742d4e6574000021" & "0a000001" & "3619" & "0000" & "0001") into tPkt
+   put tPkt & RepeatByte(0, 154) into tPkt                     -- bytes 21..174
+   put tPkt & HexToData("80804000") into tPkt                  -- PortTypes 175..178
+   put tPkt & RepeatByte(0, 8) into tPkt                       -- GoodInput, GoodOutputA
+   put tPkt & HexToData("00000400" & "02030000") into tPkt     -- SwIn 187..190, SwOut 191..194
+   test "the packet is 194 bytes" when the number of bytes in tPkt is 194
+   put artnetParseReply(tPkt) into tR
+   test "parses" when tR["opcode"] is "ArtPollReply"
+   test "two output universes" when the number of elements in tR["outputUniverses"] is 2
+   test "output 1 is universe 18 (Sub-Net 1, SwOut 2)" when element 1 of tR["outputUniverses"] is 18
+   test "output 2 is universe 19" when element 2 of tR["outputUniverses"] is 19
+   test "one input universe, 20" when the number of elements in tR["inputUniverses"] is 1 and element 1 of tR["inputUniverses"] is 20
+   test "no MAC yet" when tR["mac"] is ""
+   put tPkt & RepeatByte(0, 7) & HexToData("0a0b0c0d0e0f") into tPkt   -- 195..201, MAC 202..207
+   put artnetParseReply(tPkt) into tR
+   test "the MAC once it is there" when tR["mac"] is "0a:0b:0c:0d:0e:0f"
+end handler
+
+
+-- Park-Miller minimal standard PRNG: deterministic (same seed, same bytes, so a
+-- failure always reproduces) and exact in LCB's double-backed numbers
+-- (48271 * (2^31 - 1) < 2^53).
+variable sRng as Number
+
+private handler nextRand() returns Number
+   put (sRng * 48271) mod 2147483647 into sRng
+   return sRng
+end handler
+
+private handler randBytes(in pCount as Integer) returns Data
+   variable tOut as Data
+   variable tIndex as Integer
+   put the empty data into tOut
+   repeat with tIndex from 1 up to pCount
+      put the byte with code (nextRand() mod 256) after tOut
+   end repeat
+   return tOut
+end handler
+
+-- Mutate pSeed: overwrite a few random bytes, sometimes truncate.
+private handler mutateBytes(in pSeed as Data) returns Data
+   variable tOut as Data
+   variable tN as Integer
+   variable tRound as Integer
+   variable tPos as Integer
+   put pSeed into tOut
+   put the number of bytes in tOut into tN
+   if tN is 0 then
+      return randBytes(nextRand() mod 64)
+   end if
+   repeat with tRound from 1 up to 1 + (nextRand() mod 4)
+      put 1 + (nextRand() mod tN) into tPos
+      put the byte with code (nextRand() mod 256) into byte tPos of tOut
+   end repeat
+   if nextRand() mod 4 is 0 then
+      put byte 1 to (1 + (nextRand() mod tN)) of tOut into tOut
+   end if
+   return tOut
+end handler
+
+-- Do a reply's port lists hold only real universes (at most four, 0..32767)?
+private handler portsAreSane(in pList as List) returns Boolean
+   variable tU as Number
+   if the number of elements in pList > 4 then
+      return false
+   end if
+   repeat for each element tU in pList
+      if tU < 0 or tU > 32767 then
+         return false
+      end if
+   end repeat
+   return true
+end handler
+
+-- Property: hostile packets never throw, and a parsed ArtDmx always satisfies
+-- the invariants a renderer relies on (length <= 512, channels == length bytes).
+public handler TestFuzzParseInvariants()
+   variable tIndex as Integer
+   variable tSeed as Data
+   variable tPkt as Data
+   variable tP as Array
+   variable tOk as Boolean
+   put 1006 into sRng
+   put artnetBuildDmx(300, RepeatByte(9, 40)) into tSeed
+   put true into tOk
+   repeat with tIndex from 1 up to 1500
+      if tIndex mod 4 is 0 then
+         put randBytes(nextRand() mod 600) into tPkt
+      else
+         put mutateBytes(tSeed) into tPkt
+      end if
+      put artnetParseDmx(tPkt) into tP
+      if tP["opcode"] is "ArtDmx" then
+         if tP["length"] > 512 or the number of bytes in tP["channels"] is not tP["length"] then
+            put false into tOk
+         end if
+      else if artnetLastError() is "" then
+         put false into tOk
+      end if
+      put artnetParseReply(tPkt) into tP
+   end repeat
+   test "1500 hostile packets: invariants hold, rejections explain themselves" when tOk
+end handler
+
+-- The same for ArtPollReply, seeded from a full 239-byte reply with every
+-- port in use: no throw, every list a real set of universes, the MAC empty or
+-- six pairs, and a refusal always says why.
+public handler TestFuzzReplyInvariants()
+   variable tIndex as Integer
+   variable tSeed as Data
+   variable tPkt as Data
+   variable tR as Array
+   variable tOk as Boolean
+   put 2024 into sRng
+   put HexToData("4172742d4e6574000021" & "0a000007" & "3619" & "0102" & "0102") & RepeatByte(0, 6) into tSeed
+   put tSeed & HexToData("517561642066756c6c") & RepeatByte(0, 9) into tSeed     -- ShortName 18
+   put tSeed & RepeatByte(65, 63) & RepeatByte(0, 1) into tSeed                  -- LongName 64
+   put tSeed & RepeatByte(66, 64) into tSeed                                     -- NodeReport 64, no NUL
+   put tSeed & HexToData("0004" & "c0c0c0c0") & RepeatByte(0, 8) into tSeed      -- NumPorts, PortTypes, Good*
+   put tSeed & HexToData("0f0e0d0c" & "01020304") & RepeatByte(0, 6) into tSeed  -- SwIn, SwOut, 195..200
+   put tSeed & HexToData("00" & "001122334455") & RepeatByte(0, 32) into tSeed   -- Style, MAC, rest
+   test "the seed is a full Art-Net 4 reply (239 bytes)" when the number of bytes in tSeed is 239
+   put artnetParseReply(tSeed) into tR
+   test "the seed parses with four outputs and four inputs" when \
+         the number of elements in tR["outputUniverses"] is 4 and the number of elements in tR["inputUniverses"] is 4
+   test "an unterminated NodeReport stops at its 64 bytes" when the number of chars in tR["nodeReport"] is 64
+   put true into tOk
+   repeat with tIndex from 1 up to 1500
+      if tIndex mod 5 is 0 then
+         put randBytes(nextRand() mod 300) into tPkt
+      else
+         put mutateBytes(tSeed) into tPkt
+      end if
+      put artnetParseReply(tPkt) into tR
+      if tR["opcode"] is "ArtPollReply" then
+         if not portsAreSane(tR["outputUniverses"]) or not portsAreSane(tR["inputUniverses"]) then
+            put false into tOk
+         end if
+         if tR["mac"] is not "" and the number of chars in tR["mac"] is not 17 then
+            put false into tOk
+         end if
+         if the number of chars in tR["shortName"] > 18 or the number of chars in tR["longName"] > 64 then
+            put false into tOk
+         end if
+      else if artnetLastError() is "" then
+         put false into tOk
+      end if
+      put artnetParseDmx(tPkt) into tR
+   end repeat
+   test "1500 hostile replies: invariants hold, rejections explain themselves" when tOk
+end handler
+
+end module

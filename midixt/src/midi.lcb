@@ -1,0 +1,973 @@
+/*
+midi.lcb - xTalk Builder (LCB) binding library for realtime MIDI I/O, via the
+           midi_shim C layer over RtMidi. The midixt member of the xTalk suite
+           (born as the MIDI third of ShowControl for OpenXTalk).
+
+It targets OpenXTalk / the xTalk language family and is compatible with
+LiveCode 9.6.3+. Once this extension is loaded, every public handler below is
+callable directly from xTalk script:
+
+    local tOut
+    put midiOpenOutput(0) into tOut
+    if tOut is 0 then answer midiLastError()
+    midiNoteOn tOut, 1, 60, 100
+
+Output is request/response. Input uses RtMidi's internal FIFO plus POLLING: the
+script (or the shipped dispatcher, examples/midi-helpers) calls midiPoll on a
+timer and drains the queue. Nothing here calls back into script from a foreign
+thread (suite rule 1). Because RtMidi buffers and delta-time-stamps every
+message, message integrity and timing survive jittery poll cadence; only added
+latency scales with the interval.
+
+Conventions:
+  * Handles are integers (0 = invalid); a stale handle is a harmless no-op.
+  * Channels in the public API are 1-based (1..16). Raw MIDI bytes are 0-based
+    on the wire; the convenience senders convert.
+  * MIDI byte buffers are LiveCode `Data`. A Data does NOT auto-bridge to a
+    foreign `Pointer` (it marshals as an MCDataRef), so -- exactly as osc.lcb and
+    the other suite bindings do -- sends pass MCDataGetBytePtr(theData), and the
+    drain fills a raw engine block (MCMemoryAllocate) whose written bytes are
+    copied back with MCDataCreateWithBytes.
+  * No binding RETURNS a C string: the engine free()s a returned ZString, which
+    crashes on the shim's static name/error buffers. Names and the last error
+    come back through the caller-buffer entry points instead (see shimText).
+  * Nothing here throws for bad INPUT: a refusal returns 0 / does nothing and
+    midiLastError() says why. A throw means the native library is missing or is
+    not the ABI this binding was built for.
+
+The foreign handlers bind to the shared library "midixt" (built by
+CMakeLists.txt, bundled inside the extension under
+code/<arch>-<platform>/midixt.{so,dll,dylib}). The exported C ABI symbols keep
+the stable "midi_" prefix.
+*/
+
+/**
+Sends and receives MIDI: the messages keyboards, controllers, synthesizers,
+lighting desks and music software use to talk to each other.
+
+Open a port with <midiOpenOutput> or <midiOpenInput> (their numbers come from
+<midiOutputPorts> and <midiInputPorts>), or make one of your own that other
+programs can connect to with <midiOpenVirtualOutput> and
+<midiOpenVirtualInput> (macOS and Linux). Send with <midiNoteOn>,
+<midiControlChange> and the other senders, or any bytes at all with
+<midiSend>. Incoming MIDI waits in a queue until you collect it with
+<midiPoll>, which a timer calls; the midi-helpers script
+(examples/midi-helpers.livecodescript) runs that timer for you and sends an
+`scNoteOn`, `scMidiCC` or other message for each event. Close every port with
+<midiClose>.
+
+Nothing here throws for a mistake in what you pass. A port that will not open
+returns 0, and <midiLastError> says why.
+
+Built on RtMidi by Gary P. Scavone.
+
+Tags: MIDI, Music, Show control, Library
+*/
+library org.openxtalk.library.midi
+
+use com.livecode.foreign
+
+metadata title is "MIDI for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+
+-- =====================================================================
+-- Foreign bindings to the shim (private)
+-- =====================================================================
+private foreign handler _abi_version() returns CInt binds to "c:midixt>midi_abi_version!cdecl"
+private foreign handler _in_count() returns CInt binds to "c:midixt>midi_in_count!cdecl"
+private foreign handler _out_count() returns CInt binds to "c:midixt>midi_out_count!cdecl"
+private foreign handler _in_name(in pIndex as CInt, in pOut as optional Pointer, in pCap as CInt) returns CInt binds to "c:midixt>midi_in_name!cdecl"
+private foreign handler _out_name(in pIndex as CInt, in pOut as optional Pointer, in pCap as CInt) returns CInt binds to "c:midixt>midi_out_name!cdecl"
+private foreign handler _in_open(in pIndex as CInt) returns CInt binds to "c:midixt>midi_in_open!cdecl"
+private foreign handler _out_open(in pIndex as CInt) returns CInt binds to "c:midixt>midi_out_open!cdecl"
+private foreign handler _in_open_virtual(in pName as ZStringUTF8) returns CInt binds to "c:midixt>midi_in_open_virtual!cdecl"
+private foreign handler _out_open_virtual(in pName as ZStringUTF8) returns CInt binds to "c:midixt>midi_out_open_virtual!cdecl"
+private foreign handler _port_close(in pH as CInt) returns nothing binds to "c:midixt>midi_close!cdecl"
+private foreign handler _in_ignore(in pH as CInt, in pSysex as CInt, in pTime as CInt, in pSense as CInt) returns nothing binds to "c:midixt>midi_in_ignore!cdecl"
+-- midi_in_drain_bytes (ABI 2) returns the BYTES written, which is what we need to
+-- copy exactly the drained records back out of the raw block.
+private foreign handler _in_drain_bytes(in pH as CInt, in pOut as Pointer, in pCap as CInt, in pMax as CInt) returns CInt binds to "c:midixt>midi_in_drain_bytes!cdecl"
+private foreign handler _out_send(in pH as CInt, in pData as optional Pointer, in pLen as CInt) returns CInt binds to "c:midixt>midi_out_send!cdecl"
+private foreign handler _last_error(in pOut as optional Pointer, in pCap as CInt) returns CInt binds to "c:midixt>midi_last_error!cdecl"
+
+-- dlerror() returns libc-owned text: take it as a raw Pointer and COPY it with
+-- MCStringCreateWithCString, never as a ZString the engine would free. (The
+-- names carry an inner "_": lc-compile -Werror, the IDE's Extension Builder
+-- flag, refuses an all-lowercase single-word name such as _dlopen.)
+private foreign handler _dl_open(in pPath as ZStringNative, in pFlags as CInt) returns optional Pointer binds to "c:>dlopen!cdecl"
+private foreign handler _dl_error() returns optional Pointer binds to "c:>dlerror!cdecl"
+
+-- Engine <builtin> helpers (libfoundation/foundation.h). A `<builtin>` handler
+-- resolves by its NAME matching the engine symbol, so these carry NO leading `_`.
+private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+private foreign handler MCMemoryAllocate(in pSize as UIntSize, out rBlock as Pointer) returns CBool binds to "<builtin>"
+private foreign handler MCMemoryDeallocate(in pBlock as Pointer) returns nothing binds to "<builtin>"
+private foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+private foreign handler MCStringDecode(in pData as Data, in pEncoding as CInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+private foreign handler MCStringCreateWithCString(in pCString as Pointer, out rString as String) returns CBool binds to "<builtin>"
+
+-- =====================================================================
+-- Raw buffers (reused -- never rebuilt in the poll hot path).
+-- =====================================================================
+-- The drain block: allocated ONCE (kDrainCap bytes) and reused every poll. The
+-- flag guards the first allocation, so an unset Pointer is never passed.
+variable sDrainPtr as Pointer
+variable sDrainReady as Boolean
+-- A small block for names / the last error, grown on demand. Its capacity (0
+-- until the first allocation) doubles as the "is it allocated?" flag.
+variable sTextPtr as Pointer
+variable sTextCap as Integer
+
+-- A refusal decided HERE, before anything reaches the shim (a NUL character in
+-- a port name, which the engine cannot pass as a C string and would THROW
+-- into script for). Each fallible public handler clears it on entry, as the
+-- shim clears its own, and midiLastError() reports it ahead of the shim's.
+variable sBindingError as String
+
+-- The reason the last midiLoadNativeLib failed, read from dlerror() at the
+-- moment of the failure and kept. Read there, not later: glibc frees the text
+-- dlerror() returned at the NEXT dl* call in the process, and the engine makes
+-- such calls itself, binding each foreign handler on its first call through
+-- dlsym (engine note 6.19). ShowControl's midiLoadNativeLibError read dlerror()
+-- when it was called: its first answer after a failure was empty, and its
+-- second the freed text (OBSERVED under lc-run, 2026-11-21).
+variable sLoadError as String
+
+-- Must be >= the C shim's largest single drain record: a 2-byte length prefix, a
+-- 65535-byte maximum SysEx payload, and a 4-byte delta = 65541 bytes. A smaller
+-- cap lets an inbound message bigger than the buffer get stashed but never
+-- re-emitted, permanently wedging the input port. (Allocated just once.)
+private constant kDrainCap is 65541
+
+-- LiveCode Builder has no integer-division operator -- 'div' is LiveCode Script
+-- only and does not parse in LCB. Compute floor division for non-negative
+-- integers: a - (a mod b) is an exact multiple of b, so dividing gives the exact
+-- quotient. (Defined before first use.)
+private handler intDiv(in pA as Integer, in pB as Integer) returns Integer
+   variable tQ as Integer
+   put (pA - (pA mod pB)) / pB into tQ
+   return tQ
+end handler
+
+private handler ensureDrainBuf()
+   variable tOk as Boolean
+   if sDrainReady is true then
+      return
+   end if
+   put false into tOk
+   unsafe
+      put MCMemoryAllocate(kDrainCap, sDrainPtr) into tOk
+   end unsafe
+   if not tOk then
+      throw "midi: failed to allocate the drain buffer"
+   end if
+   put true into sDrainReady
+end handler
+
+private handler ensureTextBuf(in pNeed as Integer)
+   variable tOk as Boolean
+   if sTextCap >= pNeed then
+      return
+   end if
+   if sTextCap > 0 then
+      unsafe
+         MCMemoryDeallocate(sTextPtr)
+      end unsafe
+      put 0 into sTextCap
+   end if
+   put false into tOk
+   unsafe
+      put MCMemoryAllocate(pNeed, sTextPtr) into tOk
+   end unsafe
+   if not tOk then
+      throw "midi: failed to allocate a text buffer"
+   end if
+   put pNeed into sTextCap
+end handler
+
+-- Which caller-buffer string getter shimText calls (literal, declared before use).
+private constant kTxtInName is 1
+private constant kTxtOutName is 2
+private constant kTxtError is 3
+
+-- Fetch one string through the shim's caller-buffer contract: bytes written
+-- (>= 0), or -needed when too small (grow once, retry). Decoded as UTF-8.
+private handler shimText(in pWhich as Integer, in pIndex as Integer) returns String
+   variable tRc as Integer
+   variable tTry as Integer
+   variable tNeed as Integer
+   variable tData as Data
+   variable tStr as String
+   variable tOk as Boolean
+   put 256 into tNeed
+   put the empty string into tStr
+   repeat with tTry from 1 up to 2
+      ensureTextBuf(tNeed)
+      unsafe
+         if pWhich is kTxtInName then
+            put _in_name(pIndex, sTextPtr, sTextCap) into tRc
+         else if pWhich is kTxtOutName then
+            put _out_name(pIndex, sTextPtr, sTextCap) into tRc
+         else
+            put _last_error(sTextPtr, sTextCap) into tRc
+         end if
+      end unsafe
+      if tRc is 0 then
+         return tStr
+      end if
+      if tRc > 0 then
+         unsafe
+            put MCDataCreateWithBytes(sTextPtr, tRc, tData) into tOk
+         end unsafe
+         if not tOk then
+            return the empty string
+         end if
+         unsafe
+            put MCStringDecode(tData, 4, false, tStr) into tOk
+         end unsafe
+         if not tOk then
+            return the empty string
+         end if
+         return tStr
+      end if
+      if -tRc <= sTextCap then
+         return the empty string
+      end if
+      put -tRc into tNeed
+   end repeat
+   return the empty string
+end handler
+
+-- Does this text hold a NUL? A NUL cannot cross as a ZString: the engine
+-- THROWS "cannot export char U+0000 in nul-terminated string buffer" into
+-- script at the call, where every other bad value is a quiet 0.
+private handler hasNul(in pText as String) returns Boolean
+   return pText contains (the char with code 0)
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 2.
+
+Example:
+put midiVersion() into field "status"
+
+Description: Every call that lists or opens ports checks this number first
+and throws when it is not 2, which means the native library and this binding
+come from different releases.
+*/
+public handler midiVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 2 then
+      throw "midi: incompatible native library ABI (binding needs ABI 2) - rebuild/repackage the midixt library"
+   end if
+end handler
+
+-- =====================================================================
+-- Listing the ports
+-- =====================================================================
+private handler portNames(in pWhich as Integer) returns List
+   variable tCount as Integer
+   variable tList as List
+   variable tIndex as Integer
+   checkABI()
+   put the empty string into sBindingError
+   unsafe
+      if pWhich is kTxtInName then
+         put _in_count() into tCount
+      else
+         put _out_count() into tCount
+      end if
+   end unsafe
+   put [] into tList
+   if tCount > 0 then
+      repeat with tIndex from 0 up to tCount - 1
+         push shimText(pWhich, tIndex) onto tList
+      end repeat
+   end if
+   return tList
+end handler
+
+/**
+Summary: Lists the MIDI inputs this computer has.
+
+Returns: A list of port names. The first is port 0, the second port 1, and
+so on: pass that number to <midiOpenInput>.
+
+Example:
+put midiInputPorts() into tPorts
+repeat with tIndex = 1 to the number of elements of tPorts
+   put tIndex - 1 & ":" && tPorts[tIndex] & return after field "Inputs"
+end repeat
+
+Description: An empty list means no inputs, or no MIDI service at all: then
+<midiLastError> says so.
+*/
+public handler midiInputPorts() returns List
+   return portNames(kTxtInName)
+end handler
+
+/**
+Summary: Lists the MIDI outputs this computer has.
+
+Returns: A list of port names. The first is port 0, the second port 1, and
+so on: pass that number to <midiOpenOutput>.
+
+Example:
+put midiOutputPorts() into tPorts
+
+Description: An empty list means no outputs, or no MIDI service at all: then
+<midiLastError> says so.
+*/
+public handler midiOutputPorts() returns List
+   return portNames(kTxtOutName)
+end handler
+
+-- =====================================================================
+-- Opening and closing ports
+-- =====================================================================
+/**
+Summary: Opens a MIDI input so that its messages can be read.
+
+pIndex: The port's number: 0 for the first name <midiInputPorts> lists, 1
+for the second, and so on.
+
+Returns: The port's handle, or 0 when it would not open (<midiLastError> says
+why).
+
+Example:
+put midiOpenInput(0) into tIn
+if tIn is 0 then answer "No MIDI in:" && midiLastError()
+
+Description: Read what arrives with <midiPoll>, and close the port with
+<midiClose> when you are done with it.
+*/
+public handler midiOpenInput(in pIndex as Integer) returns Integer
+   variable tH as Integer
+   checkABI()
+   put the empty string into sBindingError
+   unsafe
+      put _in_open(pIndex) into tH
+   end unsafe
+   return tH
+end handler
+
+/**
+Summary: Opens a MIDI output so that messages can be sent to it.
+
+pIndex: The port's number: 0 for the first name <midiOutputPorts> lists, 1
+for the second, and so on.
+
+Returns: The port's handle, or 0 when it would not open (<midiLastError> says
+why).
+
+Example:
+put midiOpenOutput(0) into tOut
+if tOut is 0 then answer midiLastError()
+
+Description: Close the port with <midiClose> when you are done with it.
+*/
+public handler midiOpenOutput(in pIndex as Integer) returns Integer
+   variable tH as Integer
+   checkABI()
+   put the empty string into sBindingError
+   unsafe
+      put _out_open(pIndex) into tH
+   end unsafe
+   return tH
+end handler
+
+private handler openVirtual(in pIsInput as Boolean, in pName as String) returns Integer
+   variable tH as Integer
+   checkABI()
+   put the empty string into sBindingError
+   if hasNul(pName) then
+      if pIsInput then
+         put "midiOpenVirtualInput: a port name cannot contain a NUL character" into sBindingError
+      else
+         put "midiOpenVirtualOutput: a port name cannot contain a NUL character" into sBindingError
+      end if
+      return 0
+   end if
+   unsafe
+      if pIsInput then
+         put _in_open_virtual(pName) into tH
+      else
+         put _out_open_virtual(pName) into tH
+      end if
+   end unsafe
+   return tH
+end handler
+
+/**
+Summary: Makes a new MIDI input that other programs can send to (macOS and
+Linux).
+
+pName: The name other programs list it under. Empty gives "ShowControl In".
+
+Returns: The port's handle, or 0 when it could not be made (<midiLastError>
+says why).
+
+Example:
+put midiOpenVirtualInput("My Show In") into tIn
+
+Description: Windows has no virtual ports: there this returns 0 and the error
+names the fix, a loopback driver such as loopMIDI, whose ports
+<midiOpenInput> opens like any other.
+*/
+public handler midiOpenVirtualInput(in pName as String) returns Integer
+   return openVirtual(true, pName)
+end handler
+
+/**
+Summary: Makes a new MIDI output that other programs can receive from (macOS
+and Linux).
+
+pName: The name other programs list it under. Empty gives "ShowControl Out".
+
+Returns: The port's handle, or 0 when it could not be made (<midiLastError>
+says why).
+
+Example:
+put midiOpenVirtualOutput("My Show Out") into tOut
+
+Description: Windows has no virtual ports: there this returns 0 and the error
+names the fix, a loopback driver such as loopMIDI, whose ports
+<midiOpenOutput> opens like any other.
+*/
+public handler midiOpenVirtualOutput(in pName as String) returns Integer
+   return openVirtual(false, pName)
+end handler
+
+/**
+Summary: Closes a MIDI port.
+
+pHandle: The handle an open call returned.
+
+Example:
+midiClose tOut
+
+Description: After this the handle is dead: every call with it does nothing.
+Closing 0, or a handle that is already closed, does nothing.
+*/
+public handler midiClose(in pHandle as Integer)
+   unsafe
+      _port_close(pHandle)
+   end unsafe
+end handler
+
+private handler boolFlag(in pB as Boolean) returns Integer
+   if pB then
+      return 1
+   end if
+   return 0
+end handler
+
+/**
+Summary: Chooses which kinds of message an input skips.
+
+pHandle: The handle <midiOpenInput> or <midiOpenVirtualInput> returned.
+
+pSysex: true to skip SysEx messages.
+
+pTime: true to skip MIDI timing clock and time code.
+
+pSense: true to skip active sensing.
+
+Example:
+midiIgnoreTypes tIn, false, true, true -- keep SysEx, skip clock and sensing
+
+Description: A new input skips all three, as RtMidi does, so call this with
+false for any kind you want to receive.
+*/
+public handler midiIgnoreTypes(in pHandle as Integer, in pSysex as Boolean, in pTime as Boolean, in pSense as Boolean)
+   unsafe
+      _in_ignore(pHandle, boolFlag(pSysex), boolFlag(pTime), boolFlag(pSense))
+   end unsafe
+end handler
+
+-- Clamp a value into a single MIDI data byte (0..127). Installations feed junk
+-- from sliders / fields / incoming data; a data byte with the high bit set is
+-- illegal MIDI and desyncs any receiver, and numToByte of an out-of-range value
+-- has engine-dependent behaviour. Clamp so the convenience API is junk-proof.
+private handler clamp7(in pV as Integer) returns Integer
+   if pV < 0 then
+      return 0
+   end if
+   if pV > 127 then
+      return 127
+   end if
+   return pV
+end handler
+
+-- Map a 1..16 channel to its 0..15 status-byte nibble, normalizing out-of-range.
+-- LCB mod follows the dividend's sign, so a bare (pChannel - 1) mod 16 goes
+-- negative for pChannel <= 0 and would corrupt the status byte.
+private handler chanNib(in pChannel as Integer) returns Integer
+   return (((pChannel - 1) mod 16) + 16) mod 16
+end handler
+
+-- =====================================================================
+-- Sending
+-- =====================================================================
+/**
+Summary: Sends any MIDI bytes to an output.
+
+pHandle: The handle <midiOpenOutput> or <midiOpenVirtualOutput> returned.
+
+pBytes: The message, as binary data: one complete MIDI message, or a whole
+SysEx message (F0 ... F7).
+
+Example:
+midiSend tOut, numToByte(240) & numToByte(126) & numToByte(127) & numToByte(6) & numToByte(1) & numToByte(247)
+
+Description: When nothing is sent -- a closed handle, empty data, or a send
+the MIDI service refused -- <midiLastError> says why, and is empty after a
+send that went out. On macOS and Windows a message that is not SysEx must be
+one message of 1 to 3 bytes; Linux also takes several messages in one call.
+*/
+public handler midiSend(in pHandle as Integer, in pBytes as Data)
+   variable tPtr as Pointer
+   variable tLen as Integer
+   put the empty string into sBindingError
+   put the number of bytes in pBytes into tLen
+   unsafe
+      if tLen is 0 then
+         _out_send(pHandle, nothing, 0)     -- the shim says why nothing went
+      else
+         put MCDataGetBytePtr(pBytes) into tPtr
+         _out_send(pHandle, tPtr, tLen)
+      end if
+   end unsafe
+end handler
+
+-- Pack up to three bytes into Data and send.
+private handler send3(in pHandle as Integer, in pStatus as Integer, in pD1 as Integer, in pD2 as Integer, in pLen as Integer)
+   variable tMsg as Data
+   put the byte with code (pStatus) into tMsg
+   if pLen >= 2 then
+      put the byte with code (clamp7(pD1)) after tMsg
+   end if
+   if pLen >= 3 then
+      put the byte with code (clamp7(pD2)) after tMsg
+   end if
+   midiSend(pHandle, tMsg)
+end handler
+
+/**
+Summary: Sends a Note On.
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pNote: The note number, 0 to 127 (60 is middle C).
+
+pVelocity: How hard, 1 to 127; 0 is read as a Note Off by most receivers.
+
+Example:
+midiNoteOn tOut, 1, 60, 100
+
+Description: A note or velocity outside 0 to 127 is clamped into it, and a
+channel outside 1 to 16 wraps (17 is channel 1).
+*/
+public handler midiNoteOn(in pHandle as Integer, in pChannel as Integer, in pNote as Integer, in pVelocity as Integer)
+   send3(pHandle, 144 + chanNib(pChannel), pNote, pVelocity, 3)
+end handler
+
+/**
+Summary: Sends a Note Off.
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pNote: The note number, 0 to 127.
+
+pVelocity: The release velocity, 0 to 127 (64 when in doubt).
+
+Example:
+midiNoteOff tOut, 1, 60, 64
+*/
+public handler midiNoteOff(in pHandle as Integer, in pChannel as Integer, in pNote as Integer, in pVelocity as Integer)
+   send3(pHandle, 128 + chanNib(pChannel), pNote, pVelocity, 3)
+end handler
+
+/**
+Summary: Sends a Control Change.
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pController: The controller number, 0 to 127 (7 is volume, 1 the mod wheel).
+
+pValue: The value, 0 to 127.
+
+Example:
+midiControlChange tOut, 1, 7, 96
+*/
+public handler midiControlChange(in pHandle as Integer, in pChannel as Integer, in pController as Integer, in pValue as Integer)
+   send3(pHandle, 176 + chanNib(pChannel), pController, pValue, 3)
+end handler
+
+/**
+Summary: Sends a Program Change.
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pProgram: The program number as it travels, 0 to 127 (many instruments show
+it as 1 to 128).
+
+Example:
+midiProgramChange tOut, 1, 4
+*/
+public handler midiProgramChange(in pHandle as Integer, in pChannel as Integer, in pProgram as Integer)
+   send3(pHandle, 192 + chanNib(pChannel), pProgram, 0, 2)
+end handler
+
+/**
+Summary: Sends Channel Pressure (mono aftertouch).
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pValue: The pressure, 0 to 127.
+
+Example:
+midiChannelPressure tOut, 1, 80
+*/
+public handler midiChannelPressure(in pHandle as Integer, in pChannel as Integer, in pValue as Integer)
+   send3(pHandle, 208 + chanNib(pChannel), pValue, 0, 2)
+end handler
+
+/**
+Summary: Sends a Pitch Bend.
+
+pHandle: The handle of an open output.
+
+pChannel: The channel, 1 to 16.
+
+pValue14bit: The bend, 0 to 16383; 8192 is no bend.
+
+Example:
+midiPitchBend tOut, 1, 8192
+
+Description: A value outside 0 to 16383 is clamped into it.
+*/
+public handler midiPitchBend(in pHandle as Integer, in pChannel as Integer, in pValue14bit as Integer)
+   -- Clamp to the 14-bit range first; otherwise a negative or >16383 value makes
+   -- the mod / intDiv below produce out-of-range (or negative) data bytes.
+   variable tVal as Integer
+   variable tLsb as Integer
+   variable tMsb as Integer
+   put pValue14bit into tVal
+   if tVal < 0 then
+      put 0 into tVal
+   end if
+   if tVal > 16383 then
+      put 16383 into tVal
+   end if
+   put tVal mod 128 into tLsb
+   put intDiv(tVal, 128) mod 128 into tMsb
+   send3(pHandle, 224 + chanNib(pChannel), tLsb, tMsb, 3)
+end handler
+
+-- =====================================================================
+-- Receiving
+-- =====================================================================
+-- midiPoll(pHandle) -> List of records, each:
+--   ["delta": <seconds>, "bytes": <Data>, "kind": "noteOn",
+--    "channel": 1, "data1": 60, "data2": 100]
+/**
+Summary: Collects the messages an input has received since the last call.
+
+pHandle: The handle <midiOpenInput> or <midiOpenVirtualInput> returned.
+
+Returns: A list of events, oldest first (empty when nothing is waiting). Each
+event is an array: "kind" (such as "noteOn" or "controlChange"), "channel"
+(1 to 16), "data1", "data2", "value14" for a pitch bend, "bytes" (the raw
+message) and "delta" (seconds since the message before it).
+
+Example:
+repeat for each element tEvent in midiPoll(tIn)
+   if tEvent["kind"] is "noteOn" then playNote tEvent["data1"], tEvent["data2"]
+end repeat
+
+Description: Call it on a timer: messages wait in a queue between calls, with
+their timing, so a slow timer adds delay but loses nothing. One call returns
+at most 256 events; call again at once when you get 256. A handle that is not
+an open input (closed, or an output) returns an empty list, and
+<midiLastError> says so.
+*/
+public handler midiPoll(in pHandle as Integer) returns List
+   variable tBytes as Integer
+   variable tDrain as Data
+   variable tOk as Boolean
+   variable tEvents as List
+   variable tPos as Integer
+   variable tLen as Integer
+   variable tMsg as Data
+   variable tDeltaUs as Integer
+   put [] into tEvents
+   put the empty string into sBindingError
+   ensureDrainBuf()
+   unsafe
+      put _in_drain_bytes(pHandle, sDrainPtr, kDrainCap, 256) into tBytes
+   end unsafe
+   if tBytes <= 0 then
+      return tEvents
+   end if
+   -- Copy exactly the drained bytes out of the raw block (ONE copy per poll, of
+   -- only what was written -- not the whole 64 KB block).
+   unsafe
+      put MCDataCreateWithBytes(sDrainPtr, tBytes, tDrain) into tOk
+   end unsafe
+   if not tOk then
+      return tEvents
+   end if
+   -- Walk the self-delimiting records, never past the bytes the shim wrote:
+   -- [2 bytes len BE][len bytes message][4 bytes delta micros BE]
+   put 1 into tPos          -- 1-based byte index into tDrain
+   repeat while tPos + 5 <= tBytes
+      put the code of (byte tPos of tDrain) * 256 + the code of (byte (tPos + 1) of tDrain) into tLen
+      put tPos + 2 into tPos
+      if tPos + tLen + 3 > tBytes then
+         exit repeat        -- truncated record: cannot happen with a well-behaved shim
+      end if
+      if tLen > 0 then
+         put byte tPos to (tPos + tLen - 1) of tDrain into tMsg
+      else
+         put the empty data into tMsg
+      end if
+      put tPos + tLen into tPos
+      put the code of (byte tPos of tDrain) * 16777216 \
+        + the code of (byte (tPos + 1) of tDrain) * 65536 \
+        + the code of (byte (tPos + 2) of tDrain) * 256 \
+        + the code of (byte (tPos + 3) of tDrain) into tDeltaUs
+      put tPos + 4 into tPos
+      push decodeEvent(tMsg, tDeltaUs) onto tEvents
+   end repeat
+   return tEvents
+end handler
+
+-- Decode a raw MIDI message + delta into a semantic record.
+private handler decodeEvent(in pBytes as Data, in pDeltaUs as Integer) returns Array
+   variable tRec as Array
+   variable tN as Integer
+   variable tStatus as Integer
+   variable tD1 as Integer
+   variable tD2 as Integer
+   variable tType as Integer
+   put (pDeltaUs / 1000000) into tRec["delta"]
+   put pBytes into tRec["bytes"]
+   put the number of bytes in pBytes into tN
+   if tN is 0 then
+      put "empty" into tRec["kind"]
+      return tRec
+   end if
+   put the code of (byte 1 of pBytes) into tStatus
+   put 0 into tD1
+   put 0 into tD2
+   if tN >= 2 then
+      put the code of (byte 2 of pBytes) into tD1
+   end if
+   if tN >= 3 then
+      put the code of (byte 3 of pBytes) into tD2
+   end if
+   put tD1 into tRec["data1"]
+   put tD2 into tRec["data2"]
+   if tStatus >= 240 then
+      -- system messages (0xF0..0xFF); SysEx etc.
+      put 0 into tRec["channel"]
+      if tStatus is 240 then
+         put "sysex" into tRec["kind"]
+      else
+         put "system" into tRec["kind"]
+      end if
+      return tRec
+   end if
+   put tStatus - (tStatus mod 16) into tType    -- high nibble
+   put (tStatus mod 16) + 1 into tRec["channel"]
+   if tType is 144 then
+      if tD2 is 0 then
+         put "noteOff" into tRec["kind"]      -- note-on velocity 0 == note-off
+      else
+         put "noteOn" into tRec["kind"]
+      end if
+   else if tType is 128 then
+      put "noteOff" into tRec["kind"]
+   else if tType is 176 then
+      put "controlChange" into tRec["kind"]
+   else if tType is 192 then
+      put "programChange" into tRec["kind"]
+   else if tType is 224 then
+      put "pitchBend" into tRec["kind"]
+      put tD1 + tD2 * 128 into tRec["value14"]
+   else if tType is 208 then
+      put "channelPressure" into tRec["kind"]
+   else if tType is 160 then
+      put "polyAftertouch" into tRec["kind"]
+   else
+      put "other" into tRec["kind"]
+   end if
+   return tRec
+end handler
+
+-- midiDecode(pBytes) -> Array
+--   Decode one raw MIDI message (Data) into the SAME semantic record midiPoll
+--   produces -- ["kind", "channel", "data1", "data2", "value14", "bytes", "delta"]
+--   -- with delta 0. Useful for decoding MIDI that arrives from somewhere other
+--   than a polled input (a file, a Web-MIDI bridge, a test harness), and it makes
+--   the decode logic verifiable with NO MIDI hardware at all.
+/**
+Summary: Reads one MIDI message into the same event array <midiPoll> returns.
+
+pBytes: One raw MIDI message, as binary data.
+
+Returns: An array with "kind", "channel", "data1", "data2", "value14" (pitch
+bend only), "bytes" and "delta" (0).
+
+Example:
+put midiDecode(numToByte(144) & numToByte(60) & numToByte(100)) into tEvent
+-- tEvent["kind"] is "noteOn", tEvent["channel"] is 1
+
+Description: For MIDI that comes from somewhere other than an input, such as
+a file, and for testing a stack's MIDI handling with no MIDI device at all.
+*/
+public handler midiDecode(in pBytes as Data) returns Array
+   return decodeEvent(pBytes, 0)
+end handler
+
+-- =====================================================================
+-- Errors, and loading the library by hand
+-- =====================================================================
+/**
+Summary: Says why the last MIDI call failed.
+
+Returns: The reason, or empty when the last call that lists, opens, sends to
+or polls a port succeeded.
+
+Example:
+put midiOpenOutput(99) into tOut
+if tOut is 0 then answer midiLastError()
+
+Description: Read it straight after the call that failed: the next such call
+replaces it.
+*/
+public handler midiLastError() returns String
+   if sBindingError is not the empty string then
+      return sBindingError
+   end if
+   return shimText(kTxtError, 0)
+end handler
+
+-- Linux helper: preload midixt.so by absolute path (no /usr/lib, no sudo, no
+-- LD_LIBRARY_PATH). Returns 1 on success, 0 on failure (then midiLoadNativeLibError).
+-- Flags 258 = RTLD_NOW | RTLD_GLOBAL. Gate the call to Linux when wiring it in.
+/**
+Summary: Loads the native library from a path you choose (Linux).
+
+pPath: The full path of midixt.so.
+
+Returns: 1 when it loaded, 0 when it did not (<midiLoadNativeLibError> says
+why).
+
+Example:
+if the platform is "Linux" then get midiLoadNativeLib(tFolder & "/midixt.so")
+
+Description: Only needed when the library is not where the engine looks for
+it. Call it on Linux only, before any other call of this library.
+*/
+public handler midiLoadNativeLib(in pPath as String) returns Integer
+   variable tHandle as optional Pointer
+   put the empty string into sLoadError
+   if hasNul(pPath) then
+      put "midixt: the path contains a NUL character" into sLoadError
+      return 0
+   end if
+   bindLoaderErrorPath()
+   unsafe
+      put _dl_open(pPath, 258) into tHandle
+   end unsafe
+   if tHandle is nothing then
+      put loaderErrorNow() into sLoadError
+      return 0
+   end if
+   return 1
+end handler
+
+/**
+Summary: Says why <midiLoadNativeLib> could not load the library.
+
+Returns: The system's reason for the last <midiLoadNativeLib> that returned
+0, or empty when the last one loaded the library (or none has run).
+
+Description: The reason is read when the load fails and kept until the next
+<midiLoadNativeLib>, so it can be asked for at any time after.
+*/
+public handler midiLoadNativeLibError() returns String
+   return sLoadError
+end handler
+
+-- The engine binds a foreign handler on its FIRST call, through dlsym, and
+-- that call consumes or frees the error text of a dlopen that just failed
+-- (engine note 6.19). So the two handlers the error path needs are called
+-- once BEFORE the dlopen whose error they read: the string copy (on a
+-- one-byte empty C string) and dlerror itself, which also clears an older
+-- error first, the POSIX idiom.
+private handler bindLoaderErrorPath()
+   variable tNulByte as Data
+   variable tNulPtr as Pointer
+   variable tEmpty as String
+   variable tOk as Boolean
+   variable tOlder as optional Pointer
+   put the byte with code 0 into tNulByte
+   unsafe
+      put MCDataGetBytePtr(tNulByte) into tNulPtr
+      put MCStringCreateWithCString(tNulPtr, tEmpty) into tOk
+      put _dl_error() into tOlder
+   end unsafe
+end handler
+
+-- dlerror()'s text, COPIED at once: it is libc's, so it comes back as a raw
+-- Pointer and never as a ZString the engine would free (engine note 6.18).
+private handler loaderErrorNow() returns String
+   variable tPtr as optional Pointer
+   variable tErr as String
+   variable tOk as Boolean
+   unsafe
+      put _dl_error() into tPtr
+   end unsafe
+   if tPtr is nothing then
+      return "midixt: the library did not load, and the loader gave no reason"
+   end if
+   unsafe
+      put MCStringCreateWithCString(tPtr, tErr) into tOk
+   end unsafe
+   if not tOk then
+      return "midixt: the library did not load (its reason could not be read)"
+   end if
+   return tErr
+end handler
+
+end library

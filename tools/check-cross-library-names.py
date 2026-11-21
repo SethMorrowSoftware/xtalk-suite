@@ -91,6 +91,21 @@ SCRIPT_LIBS = {
     # whose private ones are tsnx*.
     "curlxt/src/curl-helpers.livecodescript": ("cu",),
     "curlxt/src/tsnet.livecodescript": ("tsNet", "tsnx"),
+    # The ShowControl helpers joined 2026-11-21 with oscxt, midixt and
+    # artnetxt. Their prefixes are scOsc, scMidi and scArtnet, never a bare
+    # "sc": that is also the demo boot self-check block's (scBegin, scAssert,
+    # ...), which a sample stack carries beside an embedded helper. The full
+    # names after those are ShowControl's own, kept so its stacks keep
+    # working; registering each by name admits exactly those and no new one.
+    # socketReceived is the message ShowControl's stacks wire their OSC port
+    # to (`accept datagram connections on port 9000 with message
+    # "socketReceived"`), so the name is the API, not a choice.
+    "oscxt/examples/osc-helpers.livecodescript": (
+        "scOsc", "scAddArg", "scEnsureDatagramSocket", "scLooksLikeOsc",
+        "socketReceived"),
+    "midixt/examples/midi-helpers.livecodescript": ("scMidi",),
+    "artnetxt/examples/artnet-helpers.livecodescript": (
+        "scArtnet", "artnetSendDmx", "scLooksLikeArtnet"),
 }
 
 LCB_LIBS = {
@@ -111,6 +126,10 @@ LCB_LIBS = {
     "curlxt/src/curl.lcb": ("cu",),
     # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
     "xlsxt/src/xlsxt.lcb": ("xl",),
+    # oscxt, midixt and artnetxt joined 2026-11-21, with ShowControl's names.
+    "oscxt/src/osc.lcb": ("osc",),
+    "midixt/src/midi.lcb": ("midi",),
+    "artnetxt/src/artnet.lcb": ("artnet",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")

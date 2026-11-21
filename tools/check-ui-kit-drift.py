@@ -145,6 +145,17 @@ EXEMPT = {
     # own uiStatus, in the dark palette.
     os.path.join("curlxt", "examples", "curlxt-live.livecodescript"):
         "OXT-Beyond's dark showcase look at the owner's request (2026-11-21); carries the boot self-check",
+    # ShowControl's three showcases wear OXT-Beyond's dark stage (the
+    # Render3D Tour's palette and flat buttons), not the light card look, at
+    # the owner's request of 2026-11-21: the same bar as Beyond's own demos.
+    # Each sets every field's and button's own colours, so a dark system
+    # theme cannot turn their words white on white (each demo_test pins it).
+    os.path.join("oscxt", "examples", "osc-show-surface.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
+    os.path.join("midixt", "examples", "midi-stage.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
+    os.path.join("artnetxt", "examples", "artnet-light-board.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
 }
 
 # The three spellings that mean "this file builds a window". Until the

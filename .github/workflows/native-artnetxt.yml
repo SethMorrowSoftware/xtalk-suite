@@ -1,0 +1,142 @@
+# artnetxt's engine lane, at the ROOT of the monorepo (GitHub runs only root
+# workflows here; member workflows are generated for published repos).
+#
+# artnetxt is pure LiveCode Builder: there is no shim, no native library and
+# nothing to build or commit per platform, so this lane has no build matrix.
+# What it has is the engine. On Linux, Windows and macOS it compiles the
+# binding with OXT-Beyond's lc-compile -Werror (as the IDE's Extension
+# Builder compiles: a warning there is a module nobody can install), RUNS
+# every LCB test under lc-run, and runs the Script layer in the standalone
+# engine with -ui: the boundary, the helpers, the shipped self-test, real UDP
+# through the engine's own sockets, and discovery plus DMX against the
+# independent virtual node (tools/sim/artnet_node.py). ARTNETXT_REQUIRE_ALL
+# makes a suite that cannot run a failure instead of a skip. The member's
+# compiler-free gates run in suite-gates.yml.
+name: native artnetxt
+
+on:
+  pull_request:
+    paths:
+      - "artnetxt/**"
+      - "!artnetxt/docs/**"
+      - "!artnetxt/**/*.md"
+      - "artnetxt/THIRD-PARTY-LICENSES.md"
+      - ".github/workflows/native-artnetxt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "artnetxt/**"
+      - "!artnetxt/docs/**"
+      - "!artnetxt/**/*.md"
+      - "artnetxt/THIRD-PARTY-LICENSES.md"
+      - ".github/workflows/native-artnetxt.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-artnetxt-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The OXT-Beyond release whose tools and engines the `engine` job runs:
+  # the release lce-packages.yml and the other native lanes pin, so one
+  # engine build compiles and runs every member's modules. Each archive's
+  # SHA-256 is pinned in the matrix row that downloads it (the release's own
+  # digests, read 2026-11-21).
+  OXT_BEYOND_REPO: SethMorrowSoftware/OpenXTalk-Beyond
+  OXT_BEYOND_TAG: v0.2.7-rc.6
+
+defaults:
+  run:
+    working-directory: artnetxt
+
+jobs:
+  engine:
+    name: engine ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            oxt: OXT-Beyond-0.2.7-rc.6-linux-x86_64-binaries.tar.xz
+            oxt_sha256: 12504ee02cbf26c59f218263724790853b50993ebdda02546df66bcf6525add8
+          - name: windows-x86_64
+            os: windows-2025
+            oxt: OXT-Beyond-0.2.7-rc.6-win-x86_64-binaries.zip
+            oxt_sha256: 49607dd4bb15648550bf31a5de652cc9cf0fbf49632e63bf2cc5612fc190296b
+          - name: macos-universal
+            os: macos-15
+            oxt: OXT-Beyond-0.2.7-rc.6-mac-universal-binaries.tar.xz
+            oxt_sha256: 7f043df59a2540c6b8c7d8a96d649793af975d96826fec84d052b12726c872d7
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The standalone engine's core libraries (OXT-Beyond's
+      # Installer/linux/libraries.txt); -ui needs no X display.
+      - name: Engine runtime libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-0t64 libfontconfig1 libfreetype6
+
+      # lc-compile, lc-run, modules/lci and the standalone engine from the
+      # release's binaries archive, checked against its pin. The Linux
+      # folder is renamed from linux-x86_64-bin: a folder of that name in
+      # the engine's path makes the engine look for a source checkout.
+      - name: Fetch OXT-Beyond's engine and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          oxt="$RUNNER_TEMP/oxt"
+          mkdir -p "$oxt"
+          curl -sSfL --retry 4 -o "$RUNNER_TEMP/oxt-archive" \
+            "https://github.com/$OXT_BEYOND_REPO/releases/download/$OXT_BEYOND_TAG/${{ matrix.oxt }}"
+          have=$(python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$RUNNER_TEMP/oxt-archive")
+          if [ "$have" != "${{ matrix.oxt_sha256 }}" ]; then
+            echo "::error::${{ matrix.oxt }} has SHA-256 $have, pinned ${{ matrix.oxt_sha256 }}"
+            exit 1
+          fi
+          case "${{ matrix.oxt }}" in
+            *.zip) python -m zipfile -e "$RUNNER_TEMP/oxt-archive" "$oxt" ;;
+            *)     tar -xJf "$RUNNER_TEMP/oxt-archive" -C "$oxt" ;;
+          esac
+          rm "$RUNNER_TEMP/oxt-archive"
+          if [ -d "$oxt/linux-x86_64-bin" ]; then mv "$oxt/linux-x86_64-bin" "$oxt/engine"; fi
+          lcc=$(find "$oxt" -maxdepth 2 -type f \( -name lc-compile -o -name lc-compile.exe \) | head -n 1)
+          [ -n "$lcc" ] || { echo "::error::no lc-compile in ${{ matrix.oxt }}"; exit 1; }
+          bin=$(dirname "$lcc")
+          chmod +x "$bin"/lc-compile* "$bin"/lc-run* 2>/dev/null || true
+          echo "OXT_BIN=$bin" >> "$GITHUB_ENV"
+          echo "toolchain: $bin"
+
+      # The build folder is only the runners' scratch space here: there is
+      # nothing to build. The floor guards a run that collapsed to a few
+      # assertions (263 on Linux, 2026-11-21).
+      - name: The binding under lc-run (tests/lcb)
+        shell: bash
+        env:
+          ARTNETXT_REQUIRE_ALL: "1"
+        run: python tools/run-lcb-tests.py --oxt-bin "$OXT_BIN" --build-dir build --min-assertions 250 --tap-out lcb-tests.tap
+
+      # 164 assertions on Linux, 2026-11-21.
+      - name: The Script layer in the engine (tests/lcs)
+        shell: bash
+        env:
+          ARTNETXT_REQUIRE_ALL: "1"
+        run: python tools/run-lcs-tests.py --oxt-bin "$OXT_BIN" --build-dir build --min-assertions 150 -v
+
+      - name: Keep the TAP stream
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artnetxt-engine-${{ matrix.name }}-tap
+          path: artnetxt/lcb-tests.tap
+          if-no-files-found: ignore
