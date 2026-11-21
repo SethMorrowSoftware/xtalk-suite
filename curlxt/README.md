@@ -144,6 +144,27 @@ has opened one yet: needs an OXT pass there. The ABI number moved from 1 to 2, s
 native library must come from the same build, as always. There is no web (Emscripten) build of
 curlxt, so none of this reaches an HTML5 standalone; a browser has its own WebSocket.
 
+**Control frames (2026-11-21).** A review found that pings and pongs had no bound: a peer that
+pinged and never read made the shim queue one pong per ping without limit, and a flood of control
+frames could hold one pump for as long as it lasted. Now at most one answer waits behind the frame
+being sent (a later ping replaces it, as RFC 6455 allows, so the last pong out answers the last
+ping), and one pass over a socket handles at most 1024 pings and pongs. The smoke test floods
+200,000 pings at a client whose answers cannot leave, and 5,000 pongs in one write; its three new
+checks failed on the earlier shim and pass now, clean under ASan/UBSan. A script sees the
+difference only under such a flood: `wsQueuedBytes` stays small, and a burst of pongs is counted
+in `wsPongs` over several pumps instead of one.
+
+**`cuWsWait` with a message waiting (2026-11-21, the owner's choice).** `cuWsWait` answers 1 at
+once while a message is waiting to be read. It used to answer without moving anything, so a loop
+that waited for something later, such as the close, with a message unread spun in place: the
+engine test's first run lost eight checks to it. Now it moves every socket and request once, without
+waiting, before it answers, so such a loop ends. Its answers are the same for every call; only the
+socket moves on meanwhile. The loop still never pauses, so reading the messages first, or looping
+on `cuWsPoll` with a short `wait`, stays the better way. The smoke test and the engine test each
+pin it with a server that sends a message and closes only when the client then says so: on the
+earlier shim two of the smoke test's three new checks failed, and one of the engine test's three
+(the loop ran out its five seconds with the socket still open), and all six pass now.
+
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
@@ -191,9 +212,25 @@ started by itself and kept going; every scene reached its own verdict (all 8 mes
 identical, over 11,000 echoes in 8.1 s every one in order, 15 of 15 local requests answered, the server's
 1001 heard and the reconnect made); closing left no request, socket or listener behind; and the
 demo opened and ran again. It ran again the same day over the committed `x86_64-linux` library:
-26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn:
-the demo's look, and the demo in the IDE and on Windows, mac and Android, are verified
-statically; needs an OXT pass.
+26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn.
+
+**The demo on Windows (2026-11-21).** OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 opened it over
+its built-in curlxt 0.1.0 (ABI 1, so scene 4 was the one that could run): the boot self-check was
+green and scene 4 ran, but the window opened 430 px off the screen, every one-line label had its
+top cut off, building the window held the IDE for 22.7 s, and the HEAD tile failed. That tile was
+the demo's own server closing a new connection under an id Windows had just given it (the suite's
+engine note 6.20), which cost one request in four on that machine the same day, GETs too. With the
+fixes (the server lets the client close and closes a straggler only by its serial, the window is
+centred, messages are locked while the window is built, a running tile says so and a failed one's
+reason goes to the log) the demo ran there again the same day, from commit f5309f5 in a new stack:
+the boot self-check green (26 passed, the WebSocket scenes skipped), the window centred and open in
+1.6 s, and scene 4 run seven times, 105 of 105 local requests answered, HEAD included. The labels
+were still cut: a field lays its first line out 6 px above its top margin (the suite's engine note
+5.19), and the demo's margins were 2. Every field's top margin is 6 since; set so on that window,
+every label read whole, and the boot self-check's new measure of each field's first line passed for
+all 47 (on Linux it fails all 46 with the old margins). The WebSocket scenes on Windows, the demo's
+look on Linux, mac and Android, and the demo in those IDEs are verified statically; needs an OXT
+pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

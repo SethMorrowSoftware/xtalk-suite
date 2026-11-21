@@ -329,6 +329,7 @@ keeping the scaffold for its report.
 | 28 | **Rebuild the six mac dylibs at the macOS floor.** Dispatch `release-binaries.yml` with `platforms: universal-mac` (or `all`) once the floor is on the branch it runs from: every committed universal-mac dylib was built for macOS 15.0, and by their imports torrentxt's and datachannelxt's cannot load before macOS 15 nor enetxt's before 11 (section 1.1). Until then the installer's selftest notes box2dxt's committed dylib as pre-floor | Two native members cannot load on any Mac older than macOS 15, and a third before 11 | S | dispatch |
 | 29 | **Install the .lce packages through an IDE's Extension Manager.** `lce-packages.yml` (2026-10-21) builds one `.lce` per extension and, on every run, validates each with extension-utils' own `extensionValidateLCEPackage`, extracts it with revZip, maps its code folder and loads and probes it on OXT-Beyond's server engine, Linux x86-64 only. One IDE install is on record: on 2026-10-21 `sodiumxt-0.1.0.lce` (built by this tool from 1d4557c's tree) was installed through `revIDEExtensionInstall` in the maintainer's OXT-Beyond IDE on Windows x86-64: it landed in the user extensions folder with `api.lcdoc`, `module.lcm`, `manifest.xml`, the source and all six code folders, loaded, mapped `code/x86_64-win32/sodiumxt`, and `sxVersion()` answered `SodiumXT 0.1.0 (libsodium 1.0.22)`. Still owed: the other fourteen packages in a running IDE on Windows (the enetxt and box2dxt packages on a PC WITHOUT the Visual C++ Redistributable, which is what their bundled runtime is for), macOS and stock LiveCode Community 9.6.3 (whose IDE loads a `module.lcm` from OXT-Beyond's lc-compile, same bytecode header, or recompiles it from the `.lcb` beside it), and the Dictionary entry each `api.lcdoc` gives | A package that only one engine and one platform have loaded; verified statically for the rest; needs an IDE pass | S | an engine session |
 | 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets): its two library files were read on 2026-11-18 and call nothing a desktop alone has ([ANDROID.md](ANDROID.md)), and it has not run on an Android engine; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | owner (onionxt's path) |
+| 34 | **Check the suite's script servers against engine note 6.20.** On Windows an accepted socket's id is its handle, which the next connection gets as soon as the engine closes the old one, so a `close socket` by id that can run after the client has closed (in a write's message, a timer, `socketClosed` or `socketError`) closes the NEXT connection. curlxt Live lost one request in four to it on 2026-11-21 and now lets the client close, forgets on `socketClosed` without closing, and closes a straggler only by a serial (`cdSrvTakeId`, `cdSrvReap`). Read each other server for the same shape: holde-em (`holde-em/src/holdem.livecodescript`), torrentxt's `torrent-dht-channels` and `torrent-quickshare`, coinxt's `coin-wallet`, onionxt (`onionxt/src/onionxt.livecodescript`, its demo, its tests and the `onion-httpd` spike), the suite closing pass, nocloud and riptide-social; fix each site that has it, with a headless check where the family interpreter can drive one | Found on the maintainer's Windows PC through curlxt Live's server (engine note 6.20); the other servers were not looked at, and most of them run on Windows | M | none |
 
 ### 1.3 Engine work (suite-level)
 
@@ -838,7 +839,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
   `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
   opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
-  of it reaches an HTML5 standalone.
+  of it reaches an HTML5 standalone. A review's finding, fixed 2026-11-21: control frames
+  had no bound (a peer that pinged without reading grew the pong queue without limit, and
+  a flood of control frames held one pump); at most one automatic pong now waits behind
+  the frame in flight, and a pass handles at most 1024 control frames, both pinned by the
+  smoke test (`curlxt/README.md`, Status). The same day, by the owner's choice, `cuWsWait`
+  with a message already waiting moves the socket once before it answers, so a loop that
+  waits for the close with a message unread ends (curlxt gotcha 6; the former row 5, pinned
+  by the smoke test and the engine test).
 - The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
   scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
   the engine's own sockets, launched from `start-here`. It ran start to finish the same day
@@ -847,6 +855,23 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   checks, a close and a reopen included; again over the committed `x86_64-linux` library,
   26 checks; the native lane's `engine` job runs it on every change). The server engine
   cannot host it (engine note 6.15). What it draws needs an OXT pass on a screen (row 6).
+  Its first picture on a screen, 2026-11-21 (OXT-Beyond 0.2.8-dp.1 on Windows x86-64, over the
+  IDE's built-in curlxt 0.1.0, ABI 1): the boot self-check green and scene 4 running, but the
+  window opened 430 px off the screen's left edge, every one-line label had its top cut off,
+  building the window held the IDE for 22.7 s, the tiles still running said "queued", and
+  scene 4's HEAD tile failed with no reason shown. The HEAD tile was the demo's own server:
+  it closed a finished connection by an id Windows had already given to the next one (engine
+  note 6.20; one request in four the same day, GETs too, reproduced on that PC). Fixed the
+  same day (the server lets the client close and closes a straggler only by its serial, the
+  window is centred when it is not on a screen, messages are locked while the window is
+  built, running tiles say so, and a failed tile's reason goes to the log) and run on that PC
+  again from f5309f5: boot self-check green, the window centred and open in 1.6 s, scene 4
+  seven times with 105 of 105 local requests answered. Its labels were still cut, because a
+  field lays its first line out 6 px above its top margin (engine note 5.19) and the demo's
+  were 2; every field's top margin is 6 since, which on that window read every label whole,
+  and the boot self-check measures each field's first line (it fails all 46 quiet fields with
+  the old margins on Linux). Its WebSocket scenes on Windows wait for curlxt ABI 2 in that
+  IDE (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -854,7 +879,6 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
 | 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
 | 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
-| 5 | `cux_ws_wait` pumps once before it answers 1 for a message already waiting, so a loop that waits for a later state with messages unread still moves the socket (curlxt gotcha 6, found by the engine test's first run); today's contract, documented in `cuWsWait`'s block, is to read first or loop on `cuWsPoll`. A shim change: it rides the next curlxt rebuild, and the smoke test and engine test pin both orders | coding, with the next rebuild | - | a `cuWsWait` loop waiting for "closed" with messages unread ends, in the smoke test and on the engine |
 | 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 
 ### 2.10 box3dxt
