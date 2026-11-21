@@ -2001,7 +2001,8 @@ is the likeliest case: an Art-Net engine test that closed its listener after
 hearing the show, and so left such a name, never exited in 5 of 355 runs (in
 the two that gdb examined, glibc found the heap corrupt as the engine freed
 its objects at quit); once the test and the show closed their senders' names
-first, none of 350 runs failed (2026-11-21, Linux).
+first, none of 700 runs failed (2026-11-21, Linux; 350 of them counted by the
+test's own PASS line).
 **Rule:** a script that listens remembers each sender its message hears
 (the handler's first parameter) and, when it stops, closes those names
 that are still in `the openSockets`, first, while the listener is open, and
@@ -2010,7 +2011,9 @@ then the listener: `osdStop` in `oscxt/examples/osc-show-surface.livecodescript`
 self-tests' `oscStopSelfTest` and `artnetStopSelfTest`. A test runner that
 starts an engine per test closes whatever a test left listed before that
 engine quits, as the three ShowControl members' runner does
-(`scCloseLeftSockets` in each one's `tests/lcs/_runner.livecodescript`).
+(`scCloseLeftSockets` in each one's `tests/lcs/_runner.livecodescript`). With
+the rule, the Light Board and the Art-Net self-test left nothing listed on
+Windows (2026-11-21, runbook section 8).
 Never write to a sender's name after its listener has closed: the name keeps
 the closed descriptor's number, so the write goes to whatever holds that
 number by then (INFERRED from the source, not run). A helper that opens a

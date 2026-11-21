@@ -28,7 +28,8 @@ a frame was still queued; `TestAClosedWindowStopsItsShow`). A Windows pass of th
 nothing queued after either kind of close, and one socket still listed, named by the address
 the board sent from: the engine lists one per sender a datagram listener hears, and closing
 the listener leaves it (the suite's engine note 6.20). Its stop now closes each sender's name
-first (the same test, strengthened, failed first on Linux too).
+first (the same test, strengthened, failed first on Linux too), and a Windows pass of that
+fix found nothing of the show listed a second after either kind of close (the same day).
 
 It is the Art-Net third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -99,7 +100,7 @@ plus `scArtnetEnsureSocket`, `scArtnetSetChannel`, `scArtnetChannel`, `scArtnetP
   showcase's `albStop` and the self-test's `artnetStopSelfTest` do (held by
   `TestAClosedWindowStopsItsShow` and `TestShippedSelfTestTier2`). At quit the engine frees
   its sockets while that thread may still be reading them: the also-to test, which left one,
-  never exited in 5 of 355 runs, and in none of 350 once the names were closed first
+  never exited in 5 of 355 runs, and in none of 700 once the names were closed first
   (2026-11-21; the suite's work plan, artnetxt row 8). The test runner now closes whatever a
   test left listed before its engine quits (`scCloseLeftSockets`). While one is listed,
   `scArtnetEnsureSocket` finds it and opens nothing, so a send to a node that answered from
