@@ -47,6 +47,14 @@ TAG = "test-build-android"
 # libdatachannel's ICE and SCTP, libtorrent's listeners and DHT). The other
 # three (sodiumxt, coinxt, box2dxt) compute and never touch the network.
 NETWORK_MEMBERS = ("enetxt", "curlxt", "datachannelxt", "torrentxt")
+# The native members that are NOT built for Android, each with its reason
+# (2026-11-20). Such a member is held to the opposite of every Android rule
+# below: build-android.sh must not name it and its packager must name no
+# Android id, so "not built" can never drift into "half built".
+NO_ANDROID = {
+    "gamepadxt": "SDL reads controllers on Android through its own Java "
+                 "activity, which an OXT app does not have (docs/ANDROID.md)",
+}
 FAILURES = []
 
 
@@ -116,13 +124,24 @@ def main():
     platforms = listed.get("platforms", "").split()
     check(rc == 0 and members and platforms, "--list names members and "
           "platform ids", (rc, out, err))
-    native = [m["name"] for m in freshness.MEMBERS]
+    every_native = [m["name"] for m in freshness.MEMBERS]
+    check(set(NO_ANDROID) <= set(every_native),
+          "every member in NO_ANDROID is a native member", sorted(NO_ANDROID))
+    native = [m for m in every_native if m not in NO_ANDROID]
     check(sorted(members) == sorted(native),
-          "it builds exactly the native members the freshness gate knows",
-          (members, native))
-    check(sorted(members) == sorted(installer.MEMBERS),
-          "  ...which are the members the installer installs",
+          "it builds exactly the native members the freshness gate knows, "
+          "bar NO_ANDROID's", (members, native))
+    check(sorted(members) == sorted(m for m in installer.MEMBERS
+                                    if m not in NO_ANDROID),
+          "  ...which are the members the installer installs, bar NO_ANDROID's",
           (members, sorted(installer.MEMBERS)))
+    for member in sorted(NO_ANDROID):
+        packer = os.path.join(ROOT, member, "tools", "package-extension.py")
+        with open(packer, encoding="utf-8") as fh:
+            text = fh.read()
+        check("-android" not in text,
+              f"{member} is not built for Android, so its packager names no "
+              f"Android id")
     check(sorted(platforms) == sorted(installer.ANDROID_ABIS),
           "its platform ids are the installer's ANDROID_ABIS",
           (platforms, sorted(installer.ANDROID_ABIS)))
