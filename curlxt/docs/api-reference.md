@@ -2,7 +2,9 @@
 
 Every public handler, from the doc blocks in the source (the IDE dictionary reads the same
 blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
-gate). Verified statically; needs an OXT pass.
+gate). Every handler of the binding, and the helpers' requests and WebSocket calls, run on
+OXT-Beyond's headless Linux server engine in the native lane (`tests/engine-selftest.lc`;
+README, Status); the rest, the IDE and the other platforms need an OXT pass.
 
 ## The binding: src/curl.lcb
 
@@ -28,7 +30,7 @@ Returns: The number of holds still taken; 0 means curlxt is shut down.
 
 The versions of curlxt's ABI, libcurl and the libraries it uses.
 
-Returns: A line such as "curlxt ABI 1; libcurl/8.22.0 OpenSSL/3.0.13 libssh2/1.11.1".
+Returns: A line such as "curlxt ABI 2; libcurl/8.22.0 OpenSSL/3.5.9 libssh2/1.11.1".
 
 ### `cuLastError`
 
@@ -73,7 +75,7 @@ Returns: 0, or a negative error.
 Set a number option of a request.
 
 - pRequest: A handle from <cuRequestNew>.
-- pName: timeout (ms, whole transfer), connectTimeout (ms), followRedirects (0 or 1), maxRedirects, verifyPeer (0 or 1), verifyHost (0 or 1), lowSpeedLimit (bytes a second), lowSpeedTime (seconds), useSsl (0 none, 1 try, 2 control, 3 all), ftpPassive (0 or 1), maxBodyBytes (0 = no cap), httpVersion (0 default, 1 is 1.0, 2 is 1.1), dnsCacheSeconds, createDirs (0 or 1).
+- pName: timeout (ms, whole transfer), connectTimeout (ms), followRedirects (0 or 1), maxRedirects, verifyPeer (0 or 1), verifyHost (0 or 1), lowSpeedLimit (bytes a second), lowSpeedTime (seconds), useSsl (0 none, 1 try, 2 control, 3 all), ftpPassive (0 or 1), maxBodyBytes (0 = no cap), httpVersion (0 default, 1 is 1.0, 2 is 1.1), dnsCacheSeconds, createDirs (0 or 1), wsCloseTimeout (ms a WebSocket waits for the other side to answer a close; 5000 unless set, 0 = no limit).
 - pValue: The value.
 
 Returns: 0, or a negative error (an unknown name included).
@@ -157,7 +159,7 @@ Returns: 1 when it ended, 0 when the wait ran out (it keeps running, and <cuPoll
 A number about a request.
 
 - pRequest: A request handle.
-- pName: state (0 new, 1 running, 2 ended), result (0 = success, a libcurl error number, 1000 = cancelled, -1 while running), responseCode, bytesDown, bytesUp, lengthDown and lengthUp (-1 = not known), totalTime (seconds), redirectCount, bodySize, cancelled (0 or 1).
+- pName: state (0 new, 1 running, 2 ended), result (0 = success, a libcurl error number, 1000 = cancelled, -1 while running), responseCode, bytesDown, bytesUp, lengthDown and lengthUp (-1 = not known), totalTime (seconds), redirectCount, bodySize, cancelled (0 or 1). For a WebSocket also wsState (1 connecting, 2 open, 3 closing, 4 closed; 0 = not a WebSocket), wsMessages (messages waiting to be read), wsNextType (1 text, 2 binary, 0 = none waiting), wsNextSize (bytes), wsCloseCode, wsQueuedBytes (sent by script, not yet on the wire), wsPongs (pongs received).
 
 Returns: The number, or -1 for a stale handle or an unknown name.
 
@@ -168,7 +170,7 @@ Returns: The number, or -1 for a stale handle or an unknown name.
 A piece of text about a request.
 
 - pRequest: A request handle.
-- pName: headers (the final response's header block), error, effectiveUrl, contentType, method.
+- pName: headers (the final response's header block), error, effectiveUrl, contentType, method, wsCloseReason (the reason a WebSocket's close gave).
 
 Returns: The text, decoded from UTF-8, or empty.
 
@@ -198,6 +200,100 @@ Returns: The bytes, or empty. Reading the body does not release it; <cuFree> doe
 How many request handles are live.
 
 Returns: The count of requests made and not yet freed.
+
+### `cuWsNew`
+
+`cuWsNew(in pURL as String) returns Integer`
+
+Make a new WebSocket.
+
+- pURL: The address, starting with ws:// or wss:// (wss is the secure kind).
+
+Returns: A socket handle, or 0 if it could not be made (see <cuLastError>).
+
+### `cuWsSendText`
+
+`cuWsSendText(in pSocket as Integer, in pText as String) returns Integer`
+
+Send a text message on a WebSocket.
+
+- pSocket: An open socket from <cuWsNew>.
+- pText: The text. It is sent as UTF-8.
+
+Returns: 0, or a negative error: -4 when the socket is not open, or when the other side has stopped reading and too much is already waiting.
+
+### `cuWsSendData`
+
+`cuWsSendData(in pSocket as Integer, in pData as Data) returns Integer`
+
+Send a binary message on a WebSocket.
+
+- pSocket: An open socket from <cuWsNew>.
+- pData: The bytes.
+
+Returns: 0, or a negative error, as for <cuWsSendText>.
+
+### `cuWsPing`
+
+`cuWsPing(in pSocket as Integer, in pData as Data) returns Integer`
+
+Send a ping on a WebSocket, to check the other side is there.
+
+- pSocket: An open socket from <cuWsNew>.
+- pData: Up to 125 bytes to send with it, or empty.
+
+Returns: 0, or a negative error.
+
+### `cuWsClose`
+
+`cuWsClose(in pSocket as Integer, in pCode as Integer, in pReason as String) returns Integer`
+
+Close a WebSocket politely.
+
+- pSocket: A socket from <cuWsNew>.
+- pCode: The close code: 1000 for a normal close, 1001, a code of your own from 3000 to 4999, or 0 for none.
+- pReason: A short reason (up to 123 bytes), or empty.
+
+Returns: 0, or a negative error.
+
+### `cuWsRead`
+
+`cuWsRead(in pSocket as Integer) returns Data`
+
+Take the next message a WebSocket received, as bytes.
+
+- pSocket: A socket from <cuWsNew>.
+
+Returns: The bytes of the oldest waiting message, or empty.
+
+### `cuWsReadText`
+
+`cuWsReadText(in pSocket as Integer) returns String`
+
+Take the next message a WebSocket received, as text.
+
+- pSocket: A socket from <cuWsNew>.
+
+Returns: The oldest waiting message, decoded from UTF-8, or empty.
+
+### `cuWsPoll`
+
+`cuWsPoll() returns Integer`
+
+Move every WebSocket (and every request) along.
+
+Returns: How many received messages are waiting to be read, over every socket, or a negative error.
+
+### `cuWsWait`
+
+`cuWsWait(in pSocket as Integer, in pTimeoutMs as Integer) returns Integer`
+
+Wait until something happens on a WebSocket.
+
+- pSocket: A started socket from <cuWsNew>.
+- pTimeoutMs: The longest to wait, in milliseconds; -1 waits without limit.
+
+Returns: 1 when a message is waiting, the socket has closed, or a connecting socket has opened; 0 when the wait ran out; or a negative error.
 
 ## The helpers: src/curl-helpers.livecodescript
 
@@ -324,6 +420,59 @@ Everything about an ended request, as an array.
 - pRequest: A request handle.
 
 Returns: An array with the keys ok (true when the transfer itself worked, whatever the server answered), result (0 = success, a libcurl error number, or 1000 = cancelled), responseCode, error, headers, body, bytesDown, bytesUp, contentType, effectiveUrl and totalTime.
+
+### `cuWsOpen`
+
+`cuWsOpen pURL, pHeaders, pOptions, pTarget, pMessage`
+
+Open a WebSocket in the background, and get a message for each thing that happens on it.
+
+- pURL: The address, starting with ws:// or wss://.
+- pHeaders: Header lines for the opening request, or empty (a line such as "Sec-WebSocket-Protocol: chat" asks for a subprotocol).
+- pOptions: An array of options, or empty (see <cuSetOption> and <cuSetTextOption>).
+- pTarget: The object to send the message to; empty means this card.
+- pMessage: The message. It is sent with three parameters: the socket handle, what happened, and a value.
+
+Returns: The socket handle, or 0 with the reason in <cuHelpersError>.
+
+### `cuWsOpenSync`
+
+`cuWsOpenSync pURL, pHeaders, pOptions, pTimeoutMs`
+
+Open a WebSocket and wait until it is connected.
+
+- pURL: The address, starting with ws:// or wss://.
+- pHeaders: Header lines for the opening request, or empty.
+- pOptions: An array of options, or empty.
+- pTimeoutMs: The longest to wait; empty or -1 waits for the socket's own timeouts.
+
+Returns: The handle of the OPEN socket, or 0 with the reason in <cuHelpersError>.
+
+### `cuWsWatch`
+
+`cuWsWatch pSocket, pTarget, pMessage`
+
+Send a message for each thing that happens on a started WebSocket.
+
+- pSocket: A socket made with <cuWsNew> and started with <cuStart>.
+- pTarget: The object to send the message to; empty means this card.
+- pMessage: The message, sent as <cuWsOpen> describes.
+
+### `cuWsUnwatch`
+
+`cuWsUnwatch pSocket`
+
+Stop sending messages about a WebSocket.
+
+- pSocket: A socket handle.
+
+### `cuWsWatchedCount`
+
+`cuWsWatchedCount`
+
+How many WebSockets the background timer is watching.
+
+Returns: A count.
 
 ## The tsNet calls
 

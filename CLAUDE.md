@@ -9,18 +9,21 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Fifteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
-  software renderer; joined 2026-11-20, its libraries committed that day), render3dxt (this
-  suite's own software 3D renderer, textured and lit, into an image's imageData, with stb_image
-  and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose transform, move and camera
-  texts it reads, its libraries committed 2026-11-21) and xlsxt (libxlsxwriter + zlib +
-  Expat: Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet).
+  software renderer, plus the pure-script b3k game Kit; joined 2026-11-20, its libraries
+  committed that day), audioxt (miniaudio: mixing, streaming, 3D sound and microphone capture,
+  beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
+  render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
+  imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
+  transform, move and camera texts it reads, its libraries committed 2026-11-21) and xlsxt
+  (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
+  libraries committed 2026-11-21).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -97,8 +100,8 @@ every family: **edit the master, then regenerate or re-carry; never patch a copy
 | Script libraries in demos | `<member>/src/*.livecodescript` | `sync-demo-embeds.py --check` (after `test-demo-embeds.py --mutate`) |
 | Checker, docs-style gate, interpreter, templates | every carrier's copy | `tools/check-checker-drift.py` (TEMPLATE_SETS: onionxt, coinxt) |
 
-box2dxt carries the b2k Kit into its harness and games under its own `tools/sync-embedded-kit.py`;
-the suite paste is the generated case below. The family interpreter, `coinxt/tools/lcs-interp.py`
+box2dxt carries the b2k Kit into its harness and games, and box3dxt the b3k Kit into its example
+game, each under its own `tools/sync-embedded-kit.py`; the suite paste is the generated case below. The family interpreter, `coinxt/tools/lcs-interp.py`
 (twinned in nostrxt), and riptide's stack runner built on it let execution gates in coinxt, nostrxt,
 riptide, nocloud and holde-em RUN the shipped script headlessly (`check-script-vectors.py` and the
 boot runners). They settle logic, not parser behaviour, so they upgrade no honesty label. Since
@@ -329,7 +332,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -346,11 +349,18 @@ worse than no gate, because it answers the question nobody asks twice.
   `tools/test-native-lane-paths.py`); artifacts only, it NEVER commits a binary. Member
   `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
-  requires. It builds all six native members on every platform, installs each library through
+  requires. It builds every native member on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a
   thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
   manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
-  stage waits on the WHOLE matrix: one red lane discards every artifact.
+  stage waits on the WHOLE matrix: one red lane discards every artifact. **`build: named`
+  (2026-11-21)** builds only the lanes of the members `members` names, so one member's release
+  does not queue behind every other member's builds: a `plan` job reads the rows of the
+  workflow's own `include` lists through `tools/release-plan.py` (which refuses any shape it
+  cannot read exactly) and twin jobs run those rows with the originals' steps, by YAML alias.
+  `build: all` stays the default and runs as before. Rows are still added in place; a new JOB
+  needs a place in the plan and in `tools/test-release-plan.py`, which evaluates every job's
+  `if` against the conditions a full build had before.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
@@ -376,10 +386,14 @@ worse than no gate, because it answers the question nobody asks twice.
   status. The job first ran on 2026-11-18 (run 44379162842 from 7364c0f, `commit_mode: none`):
   all four rows green, every member's tests run on the emulator for both x86 ABIs. The same day
   run 44391791349 from 17b1f93 (green again) committed the twenty-eight libraries, commit
-  5aa3ad4, and every member's `ships` row names the four ids since. No ARM library and no engine
-  on Android has run any of them. The four members that open sockets declare
+  5aa3ad4, and every member's `ships` row names the four ids since. An engine first loaded them
+  on 2026-11-19: OXT-Beyond pinned the twenty-eight (its pull request 572) and its CI ran an app
+  with the seven extensions on x86_64 emulators, each library answering ONE call; no member's
+  selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
+  one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238);
+  the engine load was of its ABI 1 files. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
-  builder writes into an app's manifest (verified statically).
+  builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

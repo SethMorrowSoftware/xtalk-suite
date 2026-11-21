@@ -1,0 +1,2407 @@
+/*
+audioxt.lcb - xTalk Builder (LCB) binding library for miniaudio, via the
+              audio_shim C shim. Part of audioxt for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    put auEngineCreate(0, 0, 0) into sEngine
+
+Nothing here touches the engine's own `play` command or its sound and
+player objects: this is a second, separate way to make sound, and a stack
+that never calls an au* handler behaves exactly as it did.
+
+Conventions (the shim, src/audio_shim.c, is where each is enforced):
+  * Handles are integers (0 = invalid). Every handler tolerates a stale or 0
+    handle: getters return 0 or empty, actions do nothing.
+  * NAMES ARE MECHANICAL: the handler for the shim's aux_sound_set_volume is
+    auSoundSetVolume; nothing is renamed by hand. tools/check-lcb-signatures.py
+    holds the bijection (every export bound once, every binding wrapped by the
+    one public handler of that name).
+  * Every time is in SECONDS. A volume is a multiplier (1 = unchanged).
+  * A result of several numbers comes back as TEXT, comma-separated, with a
+    "." decimal point in every locale: "x,y,z". Text results cross as a
+    Pointer that textOf() copies, never as ZStringNative. Text ARGUMENTS
+    (a path, a format name) cross as ZStringUTF8, which the engine makes and
+    frees around the call.
+  * BYTES IN (a sound file, raw samples) are a Data value: the handler hands
+    the shim a pointer and a length, and the shim copies what it keeps
+    before it returns. BYTES OUT (decoded or rendered samples, a WAV file,
+    what the microphone heard) stay in one buffer the shim owns: the foreign
+    call returns the byte count and dataOf() copies that many out at once.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Nothing here throws, bar the ABI check: a refused call returns 0 or empty
+    and auLastError() says why. A sound call on a timer must not be able to
+    stop the timer.
+  * NOTHING CALLS SCRIPT. The audio system runs on its own threads; they set
+    flags, and auPollEnded() reads them on the script's own thread.
+
+The foreign handlers bind to the shared library "audioxt" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time.
+*/
+
+/**
+Sound for xTalk: many sounds mixed at once with low delay, music streamed
+from disk, tones, a microphone, and the samples themselves, through
+miniaudio.
+
+An engine (<auEngineCreate>) is a mixer playing into one sound device. A
+sound is loaded into an engine from a WAV, FLAC or MP3 file
+(<auSoundLoad>), from the bytes of such a file (<auSoundLoadData>), from raw
+samples (<auSoundFromPCM>) or made as a tone (<auSoundTone>), and played
+with <auSoundStart>. Any number of sounds play at the same time, each with
+its own volume, pan and pitch; <auSoundClone> plays one loaded effect many
+times at once. Groups (<auGroupCreate>) give several sounds one volume
+slider. A sound can also be given a place in 3D (<auSoundSetSpatial>).
+
+A microphone is opened with <auCaptureOpen>; what it hears is read as
+samples (<auCaptureRead>) or written straight to a WAV file
+(<auCaptureRecordStart>). <auDecodeFile> turns a sound file into samples and
+<auWAVEncode> turns samples into a WAV file.
+
+Engines, sounds, groups and captures are integer handles. 0 means a call was
+refused, and a stale handle is harmless: getters return 0 or empty, actions
+do nothing. <auLastError> says why a call was refused. Every time is in
+seconds. The library never sends a message: to learn that a sound has
+ended, call <auPollEnded> on a timer. Call <auShutDown> when the stack closes.
+
+This library is separate from the play command and the player object,
+which work as they always have.
+
+Tags: Audio, Sound, Library
+*/
+library org.openxtalk.library.audioxt
+
+use com.livecode.foreign
+
+-- The engine's own builders and readers, resolved by NAME (so no leading
+-- underscore): see textOf(), dataOf() and the Data parameters below.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pCount as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+
+metadata title is "Audio for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Mixing, streaming, tones, 3D sound and microphone capture for xTalk via miniaudio (WAV, FLAC, MP3)."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/audio_shim.c; tools/check-lcb-signatures.py holds every line to the
+-- C definition it binds (name, return type, each parameter type).
+-- =====================================================================
+
+
+-- ---- the library
+private foreign handler _abi_version() returns CInt binds to "c:audioxt>aux_abi_version!cdecl"
+private foreign handler _library_version() returns Pointer binds to "c:audioxt>aux_library_version!cdecl"
+private foreign handler _last_error() returns Pointer binds to "c:audioxt>aux_last_error!cdecl"
+private foreign handler _text_length(in pText as Pointer) returns CInt binds to "c:audioxt>aux_text_length!cdecl"
+private foreign handler _out_pointer() returns Pointer binds to "c:audioxt>aux_out_pointer!cdecl"
+private foreign handler _out_sample_rate() returns CInt binds to "c:audioxt>aux_out_sample_rate!cdecl"
+private foreign handler _out_channels() returns CInt binds to "c:audioxt>aux_out_channels!cdecl"
+private foreign handler _backend_name() returns Pointer binds to "c:audioxt>aux_backend_name!cdecl"
+
+-- ---- devices
+private foreign handler _device_scan() returns CInt binds to "c:audioxt>aux_device_scan!cdecl"
+private foreign handler _playback_device_count() returns CInt binds to "c:audioxt>aux_playback_device_count!cdecl"
+private foreign handler _playback_device_name(in pIndex as CInt) returns Pointer binds to "c:audioxt>aux_playback_device_name!cdecl"
+private foreign handler _playback_device_is_default(in pIndex as CInt) returns CInt binds to "c:audioxt>aux_playback_device_is_default!cdecl"
+private foreign handler _capture_device_count() returns CInt binds to "c:audioxt>aux_capture_device_count!cdecl"
+private foreign handler _capture_device_name(in pIndex as CInt) returns Pointer binds to "c:audioxt>aux_capture_device_name!cdecl"
+private foreign handler _capture_device_is_default(in pIndex as CInt) returns CInt binds to "c:audioxt>aux_capture_device_is_default!cdecl"
+
+-- ---- engines
+private foreign handler _engine_create(in pDevice as CInt, in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_engine_create!cdecl"
+private foreign handler _engine_create_offline(in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_engine_create_offline!cdecl"
+private foreign handler _engine_free(in pEngine as CInt) returns nothing binds to "c:audioxt>aux_engine_free!cdecl"
+private foreign handler _engine_is_valid(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_engine_is_valid!cdecl"
+private foreign handler _engine_is_offline(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_engine_is_offline!cdecl"
+private foreign handler _engine_start(in pEngine as CInt) returns nothing binds to "c:audioxt>aux_engine_start!cdecl"
+private foreign handler _engine_stop(in pEngine as CInt) returns nothing binds to "c:audioxt>aux_engine_stop!cdecl"
+private foreign handler _engine_set_volume(in pEngine as CInt, in pVolume as CDouble) returns nothing binds to "c:audioxt>aux_engine_set_volume!cdecl"
+private foreign handler _engine_volume(in pEngine as CInt) returns CDouble binds to "c:audioxt>aux_engine_volume!cdecl"
+private foreign handler _engine_sample_rate(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_engine_sample_rate!cdecl"
+private foreign handler _engine_channels(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_engine_channels!cdecl"
+private foreign handler _engine_time(in pEngine as CInt) returns CDouble binds to "c:audioxt>aux_engine_time!cdecl"
+private foreign handler _engine_sound_count(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_engine_sound_count!cdecl"
+private foreign handler _engine_device_name(in pEngine as CInt) returns Pointer binds to "c:audioxt>aux_engine_device_name!cdecl"
+private foreign handler _engine_stop_all(in pEngine as CInt) returns nothing binds to "c:audioxt>aux_engine_stop_all!cdecl"
+private foreign handler _engine_peak(in pEngine as CInt) returns Pointer binds to "c:audioxt>aux_engine_peak!cdecl"
+private foreign handler _engine_waveform(in pEngine as CInt, in pPoints as CInt) returns Pointer binds to "c:audioxt>aux_engine_waveform!cdecl"
+private foreign handler _engine_render(in pEngine as CInt, in pFrames as CInt, in pFormat as ZStringUTF8) returns CInt binds to "c:audioxt>aux_engine_render!cdecl"
+
+-- ---- the listener
+private foreign handler _engine_set_listener_position(in pEngine as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_engine_set_listener_position!cdecl"
+private foreign handler _engine_listener_position(in pEngine as CInt) returns Pointer binds to "c:audioxt>aux_engine_listener_position!cdecl"
+private foreign handler _engine_set_listener_direction(in pEngine as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_engine_set_listener_direction!cdecl"
+private foreign handler _engine_listener_direction(in pEngine as CInt) returns Pointer binds to "c:audioxt>aux_engine_listener_direction!cdecl"
+private foreign handler _engine_set_listener_up(in pEngine as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_engine_set_listener_up!cdecl"
+private foreign handler _engine_set_listener_velocity(in pEngine as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_engine_set_listener_velocity!cdecl"
+
+-- ---- sounds: loading and making
+private foreign handler _sound_load(in pEngine as CInt, in pPath as ZStringUTF8, in pStream as CInt) returns CInt binds to "c:audioxt>aux_sound_load!cdecl"
+private foreign handler _sound_load_data(in pEngine as CInt, in pBytes as Pointer, in pLength as CInt, in pStream as CInt) returns CInt binds to "c:audioxt>aux_sound_load_data!cdecl"
+private foreign handler _sound_from_pcm(in pEngine as CInt, in pBytes as Pointer, in pLength as CInt, in pFormat as ZStringUTF8, in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_sound_from_pcm!cdecl"
+private foreign handler _sound_tone(in pEngine as CInt, in pShape as ZStringUTF8, in pHertz as CDouble, in pAmplitude as CDouble) returns CInt binds to "c:audioxt>aux_sound_tone!cdecl"
+private foreign handler _sound_noise(in pEngine as CInt, in pColor as ZStringUTF8, in pAmplitude as CDouble) returns CInt binds to "c:audioxt>aux_sound_noise!cdecl"
+private foreign handler _sound_clone(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_clone!cdecl"
+private foreign handler _sound_free(in pSound as CInt) returns nothing binds to "c:audioxt>aux_sound_free!cdecl"
+private foreign handler _sound_is_valid(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_is_valid!cdecl"
+private foreign handler _sound_engine(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_engine!cdecl"
+
+-- ---- sounds: playing
+private foreign handler _sound_start(in pSound as CInt) returns nothing binds to "c:audioxt>aux_sound_start!cdecl"
+private foreign handler _sound_start_at(in pSound as CInt, in pSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_start_at!cdecl"
+private foreign handler _sound_stop(in pSound as CInt) returns nothing binds to "c:audioxt>aux_sound_stop!cdecl"
+private foreign handler _sound_stop_at(in pSound as CInt, in pSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_stop_at!cdecl"
+private foreign handler _sound_stop_with_fade(in pSound as CInt, in pSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_stop_with_fade!cdecl"
+private foreign handler _sound_fade(in pSound as CInt, in pFrom as CDouble, in pTo as CDouble, in pSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_fade!cdecl"
+private foreign handler _sound_is_playing(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_is_playing!cdecl"
+private foreign handler _sound_at_end(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_at_end!cdecl"
+private foreign handler _sound_seek(in pSound as CInt, in pSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_seek!cdecl"
+private foreign handler _sound_position(in pSound as CInt) returns CDouble binds to "c:audioxt>aux_sound_position!cdecl"
+private foreign handler _sound_length(in pSound as CInt) returns CDouble binds to "c:audioxt>aux_sound_length!cdecl"
+
+-- ---- sounds: volume, pan, pitch and loops
+private foreign handler _sound_set_volume(in pSound as CInt, in pVolume as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_volume!cdecl"
+private foreign handler _sound_volume(in pSound as CInt) returns CDouble binds to "c:audioxt>aux_sound_volume!cdecl"
+private foreign handler _sound_set_pan(in pSound as CInt, in pPan as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_pan!cdecl"
+private foreign handler _sound_pan(in pSound as CInt) returns CDouble binds to "c:audioxt>aux_sound_pan!cdecl"
+private foreign handler _sound_set_pitch(in pSound as CInt, in pPitch as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_pitch!cdecl"
+private foreign handler _sound_pitch(in pSound as CInt) returns CDouble binds to "c:audioxt>aux_sound_pitch!cdecl"
+private foreign handler _sound_set_looping(in pSound as CInt, in pFlag as CInt) returns nothing binds to "c:audioxt>aux_sound_set_looping!cdecl"
+private foreign handler _sound_is_looping(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_is_looping!cdecl"
+private foreign handler _sound_set_loop_range(in pSound as CInt, in pStartSeconds as CDouble, in pEndSeconds as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_loop_range!cdecl"
+private foreign handler _sound_set_frequency(in pSound as CInt, in pHertz as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_frequency!cdecl"
+private foreign handler _sound_set_auto_free(in pSound as CInt, in pFlag as CInt) returns nothing binds to "c:audioxt>aux_sound_set_auto_free!cdecl"
+private foreign handler _sound_set_group(in pSound as CInt, in pGroup as CInt) returns nothing binds to "c:audioxt>aux_sound_set_group!cdecl"
+private foreign handler _sound_group(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_group!cdecl"
+
+-- ---- sounds: a place in 3D
+private foreign handler _sound_set_spatial(in pSound as CInt, in pFlag as CInt) returns nothing binds to "c:audioxt>aux_sound_set_spatial!cdecl"
+private foreign handler _sound_is_spatial(in pSound as CInt) returns CInt binds to "c:audioxt>aux_sound_is_spatial!cdecl"
+private foreign handler _sound_set_position(in pSound as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_position!cdecl"
+private foreign handler _sound_position_xyz(in pSound as CInt) returns Pointer binds to "c:audioxt>aux_sound_position_xyz!cdecl"
+private foreign handler _sound_set_velocity(in pSound as CInt, in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_velocity!cdecl"
+private foreign handler _sound_set_distance_range(in pSound as CInt, in pNearest as CDouble, in pFarthest as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_distance_range!cdecl"
+private foreign handler _sound_set_rolloff(in pSound as CInt, in pRolloff as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_rolloff!cdecl"
+private foreign handler _sound_set_doppler(in pSound as CInt, in pFactor as CDouble) returns nothing binds to "c:audioxt>aux_sound_set_doppler!cdecl"
+
+-- ---- groups
+private foreign handler _group_create(in pEngine as CInt) returns CInt binds to "c:audioxt>aux_group_create!cdecl"
+private foreign handler _group_free(in pGroup as CInt) returns nothing binds to "c:audioxt>aux_group_free!cdecl"
+private foreign handler _group_is_valid(in pGroup as CInt) returns CInt binds to "c:audioxt>aux_group_is_valid!cdecl"
+private foreign handler _group_set_volume(in pGroup as CInt, in pVolume as CDouble) returns nothing binds to "c:audioxt>aux_group_set_volume!cdecl"
+private foreign handler _group_volume(in pGroup as CInt) returns CDouble binds to "c:audioxt>aux_group_volume!cdecl"
+private foreign handler _group_set_pan(in pGroup as CInt, in pPan as CDouble) returns nothing binds to "c:audioxt>aux_group_set_pan!cdecl"
+private foreign handler _group_pan(in pGroup as CInt) returns CDouble binds to "c:audioxt>aux_group_pan!cdecl"
+private foreign handler _group_set_pitch(in pGroup as CInt, in pPitch as CDouble) returns nothing binds to "c:audioxt>aux_group_set_pitch!cdecl"
+private foreign handler _group_pitch(in pGroup as CInt) returns CDouble binds to "c:audioxt>aux_group_pitch!cdecl"
+private foreign handler _group_start(in pGroup as CInt) returns nothing binds to "c:audioxt>aux_group_start!cdecl"
+private foreign handler _group_stop(in pGroup as CInt) returns nothing binds to "c:audioxt>aux_group_stop!cdecl"
+
+-- ---- sounds that ended
+private foreign handler _poll_ended() returns CInt binds to "c:audioxt>aux_poll_ended!cdecl"
+private foreign handler _ended_sound(in pIndex as CInt) returns CInt binds to "c:audioxt>aux_ended_sound!cdecl"
+
+-- ---- the microphone
+private foreign handler _capture_open(in pDevice as CInt, in pFormat as ZStringUTF8, in pSampleRate as CInt, in pChannels as CInt, in pBufferSeconds as CDouble) returns CInt binds to "c:audioxt>aux_capture_open!cdecl"
+private foreign handler _capture_close(in pCapture as CInt) returns nothing binds to "c:audioxt>aux_capture_close!cdecl"
+private foreign handler _capture_is_valid(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_is_valid!cdecl"
+private foreign handler _capture_start(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_start!cdecl"
+private foreign handler _capture_stop(in pCapture as CInt) returns nothing binds to "c:audioxt>aux_capture_stop!cdecl"
+private foreign handler _capture_is_running(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_is_running!cdecl"
+private foreign handler _capture_available(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_available!cdecl"
+private foreign handler _capture_read(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_read!cdecl"
+private foreign handler _capture_format(in pCapture as CInt) returns Pointer binds to "c:audioxt>aux_capture_format!cdecl"
+private foreign handler _capture_sample_rate(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_sample_rate!cdecl"
+private foreign handler _capture_channels(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_channels!cdecl"
+private foreign handler _capture_device_label(in pCapture as CInt) returns Pointer binds to "c:audioxt>aux_capture_device_label!cdecl"
+private foreign handler _capture_dropped(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_dropped!cdecl"
+private foreign handler _capture_peak(in pCapture as CInt) returns CDouble binds to "c:audioxt>aux_capture_peak!cdecl"
+private foreign handler _capture_record_start(in pCapture as CInt, in pSavePath as ZStringUTF8) returns CInt binds to "c:audioxt>aux_capture_record_start!cdecl"
+private foreign handler _capture_record_stop(in pCapture as CInt) returns CDouble binds to "c:audioxt>aux_capture_record_stop!cdecl"
+private foreign handler _capture_is_recording(in pCapture as CInt) returns CInt binds to "c:audioxt>aux_capture_is_recording!cdecl"
+
+-- ---- decoding and encoding
+private foreign handler _decode_file(in pPath as ZStringUTF8, in pFormat as ZStringUTF8, in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_decode_file!cdecl"
+private foreign handler _decode_data(in pBytes as Pointer, in pLength as CInt, in pFormat as ZStringUTF8, in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_decode_data!cdecl"
+private foreign handler _wav_encode(in pBytes as Pointer, in pLength as CInt, in pFormat as ZStringUTF8, in pSampleRate as CInt, in pChannels as CInt) returns CInt binds to "c:audioxt>aux_wav_encode!cdecl"
+
+-- ---- shutting down
+private foreign handler _shut_down() returns nothing binds to "c:audioxt>aux_shut_down!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is AUX_ABI_VERSION in
+-- src/audio_shim.c (the suite's check-binary-freshness.py compares the two).
+-- Called where a script first reaches the library: the creators that
+-- everything else needs a handle from, the device scan, the decoders and
+-- auLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "audioxt: incompatible native library (this binding needs ABI 1) - update the audioxt library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing a
+-- static buffer kills the host (box3dxt's first engine run, 2026-11-20).
+-- 4 is the engine's MCStringEncoding value for UTF-8 (a device name can be
+-- any text), sodiumxt's proven way to build a String from bytes.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- A bytes result of the shim, copied into a Data. pCount is what the
+-- foreign call just returned: that many bytes are waiting in the shim's one
+-- out buffer, valid until the next call into the library, so they are
+-- copied here, at once, on the same thread. 0 (refused, or nothing to
+-- give) is the empty data, without asking for the pointer.
+private handler dataOf(in pCount as Integer) returns Data
+   variable tBytes as Pointer
+   variable tResult as Data
+   variable tOk as CBool
+   if pCount <= 0 then
+      return the empty data
+   end if
+   unsafe
+      put _out_pointer() into tBytes
+      put MCDataCreateWithBytes(tBytes, pCount, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return the empty data
+   end if
+   return tResult
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler auABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the versions of the native library and of miniaudio inside
+it.
+
+Returns: Text such as "audioxt ABI 1; miniaudio 0.11.26".
+
+Example:
+put auLibraryVersion() into field "status"
+
+Description: It throws if the library on disk has a different ABI from this
+binding, which means the two come from different releases.
+*/
+public handler auLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns why the last refused call was refused.
+
+Returns: A short sentence, or empty if nothing has been refused yet.
+
+Description: A call given a bad argument does nothing and returns 0 or
+empty; it never throws. This says what was wrong, for example "the pan must
+be -1 (left) to 1 (right)" or the reason a sound file would not load. A
+successful create clears it.
+*/
+public handler auLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the sample rate of the samples the last decode, render or
+capture read returned.
+
+Returns: The sample rate in hertz, or 0 before the first such call.
+
+Description: <auDecodeFile> and <auDecodeData> can keep a file's own sample
+rate; this is how a script learns what that was.
+*/
+public handler auOutSampleRate() returns Integer
+   variable tR as Integer
+   unsafe
+      put _out_sample_rate() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the channel count of the samples the last decode, render or
+capture read returned.
+
+Returns: The channel count (1 is mono, 2 stereo), or 0 before the first such
+call.
+*/
+public handler auOutChannels() returns Integer
+   variable tR as Integer
+   unsafe
+      put _out_channels() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of the audio system the library is using.
+
+Returns: A name such as "WASAPI", "Core Audio", "PulseAudio", "ALSA",
+"AAudio" or "Web Audio", or empty if this machine has none the library can
+use.
+
+Description: Asking opens the audio system if it is not open yet.
+*/
+public handler auBackendName() returns String
+   variable tP as Pointer
+   unsafe
+      put _backend_name() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Devices
+-- =====================================================================
+
+/**
+Summary: Asks the audio system which playback and capture devices it has.
+
+Returns: How many devices were found in all, or -1 if there is no audio
+system to ask.
+
+Example:
+if auDeviceScan() > 0 then
+   repeat with i = 1 to auPlaybackDeviceCount()
+      put auPlaybackDeviceName(i) & return after field "devices"
+   end repeat
+end if
+
+Description: The device numbers taken by <auEngineCreate> and
+<auCaptureOpen> are positions in the lists this call made, so scan before
+letting someone choose a device. Device 0 always means the system's default
+and needs no scan. In a web browser there is one playback device and one
+capture device.
+*/
+public handler auDeviceScan() returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _device_scan() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many playback devices the last scan found.
+
+Returns: The count; 0 before the first <auDeviceScan>.
+*/
+public handler auPlaybackDeviceCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _playback_device_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of a playback device.
+
+pIndex: The device's number, from 1 to <auPlaybackDeviceCount>.
+
+Returns: The device's name as the system shows it, or empty if there is no
+such device.
+*/
+public handler auPlaybackDeviceName(in pIndex as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _playback_device_name(pIndex) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Reports whether a playback device is the system's default.
+
+pIndex: The device's number, from 1 to <auPlaybackDeviceCount>.
+
+Returns: True if it is the one the system plays through by default.
+*/
+public handler auPlaybackDeviceIsDefault(in pIndex as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _playback_device_is_default(pIndex) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many capture devices (microphones and other inputs) the
+last scan found.
+
+Returns: The count; 0 before the first <auDeviceScan>.
+*/
+public handler auCaptureDeviceCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _capture_device_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of a capture device.
+
+pIndex: The device's number, from 1 to <auCaptureDeviceCount>.
+
+Returns: The device's name as the system shows it, or empty if there is no
+such device.
+*/
+public handler auCaptureDeviceName(in pIndex as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _capture_device_name(pIndex) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Reports whether a capture device is the system's default.
+
+pIndex: The device's number, from 1 to <auCaptureDeviceCount>.
+
+Returns: True if it is the one the system records from by default.
+*/
+public handler auCaptureDeviceIsDefault(in pIndex as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_device_is_default(pIndex) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- =====================================================================
+-- Engines
+-- =====================================================================
+
+/**
+Summary: Opens a playback device and starts mixing sounds into it.
+
+pDevice: The device: 0 for the system's default, 1 or more for a device of
+the last <auDeviceScan>, -1 for the silent test device.
+
+pSampleRate: The sample rate in hertz (8000 to 192000), or 0 for the
+device's own.
+
+pChannels: The channel count (1 to 8), or 0 for the device's own.
+
+Returns: The engine's handle, or 0 if the device could not be opened
+(<auLastError> says why).
+
+Example:
+put auEngineCreate(0, 0, 0) into sEngine
+put auSoundLoad(sEngine, specialFolderPath("resources") & "/click.wav", false) into sClick
+auSoundStart sClick
+
+Description: An engine is one mixer playing into one device. Every sound
+belongs to an engine, and any number of them can play at once. Most stacks
+need one engine, created when the stack opens and freed with <auEngineFree>
+or <auShutDown> when it closes. Up to 16 can be open.
+
+In a web browser the sound starts with the visitor's first click, tap or
+key press on the page, which is the browser's rule; sounds started before
+that are heard from then on. A browser that gives the page no Web Audio
+refuses the device.
+
+Device -1 is a silent test device that needs no sound card: everything works
+and nothing is heard.
+*/
+public handler auEngineCreate(in pDevice as Integer, in pSampleRate as Integer, in pChannels as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _engine_create(pDevice, pSampleRate, pChannels) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Creates an engine with no device, whose mix is read as samples.
+
+pSampleRate: The sample rate in hertz, 8000 to 192000.
+
+pChannels: The channel count, 1 to 8.
+
+Returns: The engine's handle, or 0 if it was refused.
+
+Example:
+put auEngineCreateOffline(44100, 2) into tEngine
+put auSoundLoad(tEngine, tPath, false) into tSound
+auSoundStart tSound
+put auEngineRender(tEngine, 44100, "s16") into tOneSecond
+put auWAVEncode(tOneSecond, "s16", 44100, 2) into url ("binfile:" & tOut)
+auEngineFree tEngine
+
+Description: Nothing is heard. <auEngineRender> mixes the next stretch of
+sound and returns it, as fast as the computer can work: for saving a mix to
+a file, for drawing a waveform, and for tests. Everything else about the
+engine is the same as one with a device.
+*/
+public handler auEngineCreateOffline(in pSampleRate as Integer, in pChannels as Integer) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _engine_create_offline(pSampleRate, pChannels) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Closes an engine and frees every sound and group made on it.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Description: The device is closed. Handles of the engine and of its sounds
+and groups become stale, which is harmless: calls on them do nothing.
+*/
+public handler auEngineFree(in pEngine as Integer) returns nothing
+   unsafe
+      _engine_free(pEngine)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle is an open engine.
+
+pEngine: The handle to ask about.
+
+Returns: True for an engine that has not been freed.
+*/
+public handler auEngineIsValid(in pEngine as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _engine_is_valid(pEngine) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Reports whether an engine was made by <auEngineCreateOffline>.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: True for an offline engine; false for one playing into a device,
+and for a stale handle.
+*/
+public handler auEngineIsOffline(in pEngine as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _engine_is_offline(pEngine) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Resumes an engine that <auEngineStop> paused.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Description: Sounds carry on from where they were.
+*/
+public handler auEngineStart(in pEngine as Integer) returns nothing
+   unsafe
+      _engine_start(pEngine)
+   end unsafe
+end handler
+
+/**
+Summary: Pauses an engine: nothing is heard and its clock stands still.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Description: Sounds keep their places and carry on after <auEngineStart>. An
+engine is running when it is created. Pause it while a stack is hidden to
+use no processor time.
+*/
+public handler auEngineStop(in pEngine as Integer) returns nothing
+   unsafe
+      _engine_stop(pEngine)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the master volume of an engine.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pVolume: The volume: 0 is silent, 1 unchanged, up to 100.
+
+Description: Applied to everything the engine plays, on top of each sound's
+and group's own volume.
+*/
+public handler auEngineSetVolume(in pEngine as Integer, in pVolume as Number) returns nothing
+   unsafe
+      _engine_set_volume(pEngine, pVolume)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the master volume of an engine.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The volume; 1 is unchanged. 0 for a stale handle.
+*/
+public handler auEngineVolume(in pEngine as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _engine_volume(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the sample rate an engine mixes at.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The sample rate in hertz, or 0 for a stale handle.
+*/
+public handler auEngineSampleRate(in pEngine as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _engine_sample_rate(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the channel count an engine mixes to.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The channel count (2 is stereo), or 0 for a stale handle.
+*/
+public handler auEngineChannels(in pEngine as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _engine_channels(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns an engine's clock: the seconds of sound it has mixed since
+it was created.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The time in seconds.
+
+Example:
+-- four clicks, exactly half a second apart, starting a tenth of a second from now
+put auEngineTime(sEngine) + 0.1 into tWhen
+repeat with i = 0 to 3
+   auSoundStartAt auSoundClone(sClick), tWhen + i * 0.5
+end repeat
+
+Description: <auSoundStartAt> and <auSoundStopAt> are measured against this
+clock, which counts samples and so does not drift from the sound. It stands
+still while the engine is paused.
+*/
+public handler auEngineTime(in pEngine as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _engine_time(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns how many sounds an engine holds.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The number of sounds loaded or made on the engine and not yet
+freed.
+*/
+public handler auEngineSoundCount(in pEngine as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _engine_sound_count(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of the device an engine plays into.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The device's name; empty for an offline engine and for a stale
+handle.
+*/
+public handler auEngineDeviceName(in pEngine as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _engine_device_name(pEngine) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Stops every sound of an engine where it is.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Description: Each sound keeps its place, as after <auSoundStop>.
+*/
+public handler auEngineStopAll(in pEngine as Integer) returns nothing
+   unsafe
+      _engine_stop_all(pEngine)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the loudest level an engine has played since the last call,
+for a level meter.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: Text "left,right", each 0 to 1; a value above 1 means the output is
+clipping.
+
+Example:
+put auEnginePeak(sEngine) into tPeak
+set the thumbPosition of scrollbar "left" to item 1 of tPeak * 100
+set the thumbPosition of scrollbar "right" to item 2 of tPeak * 100
+
+Description: Reading resets it, so call it once per screen update. A mono
+engine gives the same value twice.
+*/
+public handler auEnginePeak(in pEngine as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _engine_peak(pEngine) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the newest sound an engine mixed as a list of points, for
+an oscilloscope display.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pPoints: How many points to return, 1 to 2048.
+
+Returns: Comma-separated numbers from -1 to 1, oldest first; empty if
+refused.
+
+Description: The points are spread evenly over the newest 2048 frames, left
+and right averaged.
+*/
+public handler auEngineWaveform(in pEngine as Integer, in pPoints as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _engine_waveform(pEngine, pPoints) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Mixes the next stretch of sound of an offline engine and returns
+its samples.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pFrames: How many frames to mix. A frame is one sample for every channel.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+Returns: The samples, as binary data of pFrames frames in pFormat; empty if
+refused.
+
+Description: Only for an engine made by <auEngineCreateOffline>. Each call
+carries on where the last one stopped and moves the engine's clock on. Wrap
+the result with <auWAVEncode> to make a sound file. The five sample formats
+are "u8" (8-bit unsigned), "s16", "s24" and "s32" (signed, little-endian)
+and "f32" (32-bit floating point, -1 to 1). Samples of several channels are
+interleaved (left, right, left, right).
+*/
+public handler auEngineRender(in pEngine as Integer, in pFrames as Integer, in pFormat as String) returns Data
+   variable tR as Integer
+   unsafe
+      put _engine_render(pEngine, pFrames, pFormat) into tR
+   end unsafe
+   return dataOf(tR)
+end handler
+
+-- =====================================================================
+-- The listener
+-- =====================================================================
+
+/**
+Summary: Sets where the listener is, for sounds that have a place in 3D.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pX: The x coordinate.
+
+pY: The y coordinate.
+
+pZ: The z coordinate.
+
+Description: Only sounds turned on with <auSoundSetSpatial> are affected.
+Distances are in whatever unit the stack uses; metres work well with the
+default settings. The listener starts at 0,0,0.
+*/
+public handler auEngineSetListenerPosition(in pEngine as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _engine_set_listener_position(pEngine, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Returns where the listener is.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: Text "x,y,z".
+*/
+public handler auEngineListenerPosition(in pEngine as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _engine_listener_position(pEngine) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Sets the way the listener faces.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pX: The x part of the direction.
+
+pY: The y part of the direction.
+
+pZ: The z part of the direction.
+
+Description: The default is 0,0,-1: looking along the negative z axis, with
+x to the right. The three numbers cannot all be 0.
+*/
+public handler auEngineSetListenerDirection(in pEngine as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _engine_set_listener_direction(pEngine, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the way the listener faces.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: Text "x,y,z".
+*/
+public handler auEngineListenerDirection(in pEngine as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _engine_listener_direction(pEngine) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Sets which way is up for the listener.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pX: The x part of the direction.
+
+pY: The y part of the direction.
+
+pZ: The z part of the direction.
+
+Description: The default is 0,1,0. The three numbers cannot all be 0.
+*/
+public handler auEngineSetListenerUp(in pEngine as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _engine_set_listener_up(pEngine, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the listener's velocity, for the Doppler effect.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pX: The x part of the velocity, in units per second.
+
+pY: The y part of the velocity.
+
+pZ: The z part of the velocity.
+
+Description: It changes the pitch of sounds moving towards or away from the
+listener, and moves nothing: the position is still set with
+<auEngineSetListenerPosition>.
+*/
+public handler auEngineSetListenerVelocity(in pEngine as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _engine_set_listener_velocity(pEngine, pX, pY, pZ)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Sounds: loading and making
+-- =====================================================================
+
+/**
+Summary: Loads a sound file: WAV, FLAC or MP3.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pPath: The full path of the file.
+
+pStream: True to decode while playing (music); false to decode it whole now
+(effects).
+
+Returns: The sound's handle, or 0 if the file could not be loaded
+(<auLastError> says why).
+
+Example:
+put auSoundLoad(sEngine, tFolder & "/theme.mp3", true) into sMusic
+auSoundSetLooping sMusic, true
+auSoundStart sMusic
+
+Description: A sound loaded whole is decoded into memory at once: right for
+short effects that must start instantly and are played often, and it can be
+cloned with <auSoundClone>. A streamed sound is decoded a little at a time
+while it plays and uses little memory: right for music. The sound does not
+play until <auSoundStart>.
+*/
+public handler auSoundLoad(in pEngine as Integer, in pPath as String, in pStream as Boolean) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_load(pEngine, pPath, asInt(pStream)) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Loads a sound from the bytes of a sound file: WAV, FLAC or MP3.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pData: The whole contents of a sound file, as binary data.
+
+pStream: True to decode while playing; false to decode it whole now.
+
+Returns: The sound's handle, or 0 if the data is not a sound file the
+library can read.
+
+Example:
+put auSoundLoadData(sEngine, the uClick of this stack, false) into sClick
+
+Description: For a sound kept in a custom property, read from a binfile: URL
+or downloaded. The bytes are copied, so the variable can be reused. At most
+256 MB.
+*/
+public handler auSoundLoadData(in pEngine as Integer, in pData as Data, in pStream as Boolean) returns Integer
+   variable tR as Integer
+   variable tBytes as Pointer
+   variable tLength as Integer
+   put the number of bytes in pData into tLength
+   unsafe
+      put MCDataGetBytePtr(pData) into tBytes
+      put _sound_load_data(pEngine, tBytes, tLength, asInt(pStream)) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a sound from raw samples.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pData: The samples, as binary data.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+pSampleRate: The sample rate of the samples in hertz, 8000 to 192000.
+
+pChannels: How many channels the samples have, 1 to 8.
+
+Returns: The sound's handle, or 0 if it was refused.
+
+Description: For sound a script computed, recorded with <auCaptureRead> or
+decoded with <auDecodeFile>. The samples are copied; bytes that do not make
+a whole frame at the end are ignored. The five sample formats are "u8"
+(8-bit unsigned), "s16", "s24" and "s32" (signed, little-endian) and "f32"
+(32-bit floating point, -1 to 1). Samples of several channels are
+interleaved (left, right, left, right).
+*/
+public handler auSoundFromPCM(in pEngine as Integer, in pData as Data, in pFormat as String, in pSampleRate as Integer, in pChannels as Integer) returns Integer
+   variable tR as Integer
+   variable tBytes as Pointer
+   variable tLength as Integer
+   put the number of bytes in pData into tLength
+   unsafe
+      put MCDataGetBytePtr(pData) into tBytes
+      put _sound_from_pcm(pEngine, tBytes, tLength, pFormat, pSampleRate, pChannels) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a tone that plays until it is stopped.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pShape: The waveform: "sine", "square", "triangle" or "sawtooth".
+
+pHertz: The frequency in hertz, 1 to 96000. Middle A is 440.
+
+pAmplitude: How loud, 0 to 1. 0.2 is a comfortable level.
+
+Returns: The sound's handle, or 0 if it was refused.
+
+Example:
+put auSoundTone(sEngine, "sine", 440, 0.2) into tBeep
+auSoundStart tBeep
+auSoundStopAt tBeep, auEngineTime(sEngine) + 0.25
+
+Description: <auSoundSetFrequency> changes the frequency while it plays.
+*/
+public handler auSoundTone(in pEngine as Integer, in pShape as String, in pHertz as Number, in pAmplitude as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_tone(pEngine, pShape, pHertz, pAmplitude) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes noise that plays until it is stopped.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+pColor: The kind of noise: "white" (a hiss) or "pink" (softer, like rain).
+
+pAmplitude: How loud, 0 to 1.
+
+Returns: The sound's handle, or 0 if it was refused.
+*/
+public handler auSoundNoise(in pEngine as Integer, in pColor as String, in pAmplitude as Number) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_noise(pEngine, pColor, pAmplitude) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes another sound over the same samples, so one loaded effect can
+play many times at once.
+
+pSound: The sound to clone.
+
+Returns: The new sound's handle, or 0 if the sound cannot be cloned.
+
+Example:
+-- every shot is its own sound, freed when it ends
+put auSoundClone(sShot) into tShot
+auSoundSetAutoFree tShot, true
+auSoundStart tShot
+
+Description: The clone has its own volume, pan, pitch, place and playing
+state, and uses no more memory for the samples. Only a sound that was loaded
+whole or made from samples can be cloned; a stream, a tone or noise cannot.
+*/
+public handler auSoundClone(in pSound as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_clone(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Frees a sound.
+
+pSound: A sound.
+
+Description: It stops if it is playing. Clones of it are not affected.
+Freeing an engine frees its sounds too.
+*/
+public handler auSoundFree(in pSound as Integer) returns nothing
+   unsafe
+      _sound_free(pSound)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle is a sound that has not been freed.
+
+pSound: The handle to ask about.
+
+Returns: True for a live sound.
+*/
+public handler auSoundIsValid(in pSound as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sound_is_valid(pSound) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the engine a sound belongs to.
+
+pSound: A sound.
+
+Returns: The engine's handle, or 0 for a stale sound.
+*/
+public handler auSoundEngine(in pSound as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_engine(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Sounds: playing
+-- =====================================================================
+
+/**
+Summary: Plays a sound.
+
+pSound: A sound.
+
+Description: It plays from where it is: from the start the first time, from
+where <auSoundStop> left it, or from the start again if it had reached its
+end. Starting a sound that is playing changes nothing; to play one effect
+several times at once, use <auSoundClone>.
+*/
+public handler auSoundStart(in pSound as Integer) returns nothing
+   unsafe
+      _sound_start(pSound)
+   end unsafe
+end handler
+
+/**
+Summary: Starts a sound at an exact time on its engine's clock.
+
+pSound: A sound.
+
+pSeconds: The time on the engine's clock, as <auEngineTime> reports it.
+
+Description: The sound begins on the exact sample, however busy the script
+is in between: how notes are placed on a beat.
+*/
+public handler auSoundStartAt(in pSound as Integer, in pSeconds as Number) returns nothing
+   unsafe
+      _sound_start_at(pSound, pSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Stops a sound where it is.
+
+pSound: A sound.
+
+Description: <auSoundStart> carries on from there. To go back to the start,
+call <auSoundSeek> with 0.
+*/
+public handler auSoundStop(in pSound as Integer) returns nothing
+   unsafe
+      _sound_stop(pSound)
+   end unsafe
+end handler
+
+/**
+Summary: Stops a sound at an exact time on its engine's clock.
+
+pSound: A sound.
+
+pSeconds: The time on the engine's clock, as <auEngineTime> reports it.
+*/
+public handler auSoundStopAt(in pSound as Integer, in pSeconds as Number) returns nothing
+   unsafe
+      _sound_stop_at(pSound, pSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Fades a sound out and then stops it.
+
+pSound: A sound.
+
+pSeconds: How long the fade takes, 0 to 3600 seconds.
+*/
+public handler auSoundStopWithFade(in pSound as Integer, in pSeconds as Number) returns nothing
+   unsafe
+      _sound_stop_with_fade(pSound, pSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Moves a sound's volume smoothly from one level to another.
+
+pSound: A sound.
+
+pFrom: The level to start from, 0 to 100, or -1 for the level the fade is at
+now.
+
+pTo: The level to end at, 0 to 100.
+
+pSeconds: How long the fade takes, 0 to 3600 seconds.
+
+Example:
+-- fade the music in over two seconds
+auSoundFade sMusic, 0, 1, 2
+auSoundStart sMusic
+
+Description: The fade starts now. It multiplies the sound's own volume
+(<auSoundSetVolume>) and does not replace it.
+*/
+public handler auSoundFade(in pSound as Integer, in pFrom as Number, in pTo as Number, in pSeconds as Number) returns nothing
+   unsafe
+      _sound_fade(pSound, pFrom, pTo, pSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a sound is playing.
+
+pSound: A sound.
+
+Returns: True while it plays; false once it is stopped or has reached its
+end.
+*/
+public handler auSoundIsPlaying(in pSound as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sound_is_playing(pSound) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Reports whether a sound has reached its end.
+
+pSound: A sound.
+
+Returns: True once it has played to its end and has not been started again.
+*/
+public handler auSoundAtEnd(in pSound as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sound_at_end(pSound) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Moves the playing position of a sound.
+
+pSound: A sound.
+
+pSeconds: The position in seconds from the start of the sound.
+
+Description: Not for a tone or noise, which have no length.
+*/
+public handler auSoundSeek(in pSound as Integer, in pSeconds as Number) returns nothing
+   unsafe
+      _sound_seek(pSound, pSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the playing position of a sound.
+
+pSound: A sound.
+
+Returns: The position in seconds from the start of the sound.
+*/
+public handler auSoundPosition(in pSound as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _sound_position(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the length of a sound.
+
+pSound: A sound.
+
+Returns: The length in seconds; 0 for a tone or noise, which have no end.
+*/
+public handler auSoundLength(in pSound as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _sound_length(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Sounds: volume, pan, pitch and loops
+-- =====================================================================
+
+/**
+Summary: Sets the volume of a sound.
+
+pSound: A sound.
+
+pVolume: The volume: 0 is silent, 1 unchanged, up to 100.
+*/
+public handler auSoundSetVolume(in pSound as Integer, in pVolume as Number) returns nothing
+   unsafe
+      _sound_set_volume(pSound, pVolume)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the volume of a sound.
+
+pSound: A sound.
+
+Returns: The volume; 1 is unchanged.
+*/
+public handler auSoundVolume(in pSound as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _sound_volume(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets where a sound sits between the left and right speakers.
+
+pSound: A sound.
+
+pPan: The pan: -1 is all the way left, 0 the middle, 1 all the way right.
+*/
+public handler auSoundSetPan(in pSound as Integer, in pPan as Number) returns nothing
+   unsafe
+      _sound_set_pan(pSound, pPan)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the pan of a sound.
+
+pSound: A sound.
+
+Returns: The pan, -1 (left) to 1 (right).
+*/
+public handler auSoundPan(in pSound as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _sound_pan(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets the pitch of a sound.
+
+pSound: A sound.
+
+pPitch: The pitch: 1 is unchanged, 2 an octave up, 0.5 an octave down (0.01
+to 100).
+
+Description: Raising the pitch also makes the sound play faster, like a
+record at the wrong speed.
+*/
+public handler auSoundSetPitch(in pSound as Integer, in pPitch as Number) returns nothing
+   unsafe
+      _sound_set_pitch(pSound, pPitch)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the pitch of a sound.
+
+pSound: A sound.
+
+Returns: The pitch; 1 is unchanged.
+*/
+public handler auSoundPitch(in pSound as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _sound_pitch(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets whether a sound starts again when it reaches its end.
+
+pSound: A sound.
+
+pFlag: True to loop.
+
+Description: A looping sound never ends, so <auPollEnded> never reports it.
+*/
+public handler auSoundSetLooping(in pSound as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _sound_set_looping(pSound, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a sound loops.
+
+pSound: A sound.
+
+Returns: True if it loops.
+*/
+public handler auSoundIsLooping(in pSound as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sound_is_looping(pSound) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets the part of a sound that a loop repeats.
+
+pSound: A sound.
+
+pStartSeconds: Where the repeated part begins, in seconds from the start of
+the sound.
+
+pEndSeconds: Where it ends, or 0 for the end of the sound.
+
+Description: For music with an introduction: the sound plays from its start,
+and each repeat goes back to the start of the range. Looping itself is
+turned on with <auSoundSetLooping>. Not for a tone or noise.
+*/
+public handler auSoundSetLoopRange(in pSound as Integer, in pStartSeconds as Number, in pEndSeconds as Number) returns nothing
+   unsafe
+      _sound_set_loop_range(pSound, pStartSeconds, pEndSeconds)
+   end unsafe
+end handler
+
+/**
+Summary: Changes the frequency of a tone while it plays.
+
+pSound: A sound made by <auSoundTone>.
+
+pHertz: The frequency in hertz, 1 to 96000.
+*/
+public handler auSoundSetFrequency(in pSound as Integer, in pHertz as Number) returns nothing
+   unsafe
+      _sound_set_frequency(pSound, pHertz)
+   end unsafe
+end handler
+
+/**
+Summary: Sets whether a sound is freed when it ends.
+
+pSound: A sound.
+
+pFlag: True to free the sound at its end.
+
+Description: Play it and forget it: the <auPollEnded> that reports the
+sound's end frees it. A stack that uses this must call <auPollEnded> now and
+then.
+*/
+public handler auSoundSetAutoFree(in pSound as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _sound_set_auto_free(pSound, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Routes a sound through a group.
+
+pSound: A sound.
+
+pGroup: A group, from <auGroupCreate>, or 0 to play straight to the engine's
+output again.
+
+Description: The group's volume, pan and pitch then apply to the sound as
+well as its own. The sound and the group must belong to the same engine.
+*/
+public handler auSoundSetGroup(in pSound as Integer, in pGroup as Integer) returns nothing
+   unsafe
+      _sound_set_group(pSound, pGroup)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the group a sound plays through.
+
+pSound: A sound.
+
+Returns: The group's handle, or 0 if it plays straight to the engine's
+output.
+*/
+public handler auSoundGroup(in pSound as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sound_group(pSound) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Sounds: a place in 3D
+-- =====================================================================
+
+/**
+Summary: Sets whether a sound has a place in 3D.
+
+pSound: A sound.
+
+pFlag: True to give the sound a place.
+
+Example:
+auSoundSetSpatial sBee, true
+auSoundSetPosition sBee, 3, 0, -1
+
+Description: A sound with a place gets quieter with distance from the
+listener and is heard from its direction. Sounds start without one, which is
+right for music and interface sounds.
+*/
+public handler auSoundSetSpatial(in pSound as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _sound_set_spatial(pSound, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a sound has a place in 3D.
+
+pSound: A sound.
+
+Returns: True if it has.
+*/
+public handler auSoundIsSpatial(in pSound as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sound_is_spatial(pSound) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets where a sound is.
+
+pSound: A sound.
+
+pX: The x coordinate.
+
+pY: The y coordinate.
+
+pZ: The z coordinate.
+
+Description: It has an effect once <auSoundSetSpatial> has turned the
+sound's place on. The listener is placed with <auEngineSetListenerPosition>.
+*/
+public handler auSoundSetPosition(in pSound as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _sound_set_position(pSound, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Returns where a sound is.
+
+pSound: A sound.
+
+Returns: Text "x,y,z".
+*/
+public handler auSoundPositionXYZ(in pSound as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _sound_position_xyz(pSound) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Sets a sound's velocity, for the Doppler effect.
+
+pSound: A sound.
+
+pX: The x part of the velocity, in units per second.
+
+pY: The y part of the velocity.
+
+pZ: The z part of the velocity.
+
+Description: It changes the pitch of a sound moving towards or away from the
+listener, and moves nothing.
+*/
+public handler auSoundSetVelocity(in pSound as Integer, in pX as Number, in pY as Number, in pZ as Number) returns nothing
+   unsafe
+      _sound_set_velocity(pSound, pX, pY, pZ)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the distances between which a sound fades.
+
+pSound: A sound.
+
+pNearest: Nearer than this, the sound is at full volume. 0.001 or more; the
+default is 1.
+
+pFarthest: Beyond this, the sound gets no quieter. Not less than pNearest.
+*/
+public handler auSoundSetDistanceRange(in pSound as Integer, in pNearest as Number, in pFarthest as Number) returns nothing
+   unsafe
+      _sound_set_distance_range(pSound, pNearest, pFarthest)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how fast a sound fades with distance.
+
+pSound: A sound.
+
+pRolloff: 1 is natural, 0 does not fade at all, larger fades faster (0 to
+100).
+*/
+public handler auSoundSetRolloff(in pSound as Integer, in pRolloff as Number) returns nothing
+   unsafe
+      _sound_set_rolloff(pSound, pRolloff)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how strong the Doppler effect is for a sound.
+
+pSound: A sound.
+
+pFactor: 1 is natural, 0 turns it off (0 to 100).
+*/
+public handler auSoundSetDoppler(in pSound as Integer, in pFactor as Number) returns nothing
+   unsafe
+      _sound_set_doppler(pSound, pFactor)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Groups
+-- =====================================================================
+
+/**
+Summary: Creates a group: one volume, pan and pitch for many sounds.
+
+pEngine: An engine, from <auEngineCreate> or <auEngineCreateOffline>.
+
+Returns: The group's handle, or 0 if it was refused.
+
+Example:
+put auGroupCreate(sEngine) into sEffects
+auSoundSetGroup sClick, sEffects
+auGroupSetVolume sEffects, 0.5   -- the effects slider
+
+Description: Typically one group for music and one for effects, each with
+its own volume slider. Sounds join with <auSoundSetGroup>. Up to 1024
+groups.
+*/
+public handler auGroupCreate(in pEngine as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _group_create(pEngine) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Frees a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+Description: Its sounds are not freed: they play straight to the engine's
+output again.
+*/
+public handler auGroupFree(in pGroup as Integer) returns nothing
+   unsafe
+      _group_free(pGroup)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle is a group that has not been freed.
+
+pGroup: The handle to ask about.
+
+Returns: True for a live group.
+*/
+public handler auGroupIsValid(in pGroup as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _group_is_valid(pGroup) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Sets the volume of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+pVolume: The volume: 0 is silent, 1 unchanged, up to 100.
+*/
+public handler auGroupSetVolume(in pGroup as Integer, in pVolume as Number) returns nothing
+   unsafe
+      _group_set_volume(pGroup, pVolume)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the volume of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+Returns: The volume; 1 is unchanged.
+*/
+public handler auGroupVolume(in pGroup as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _group_volume(pGroup) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets the pan of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+pPan: The pan: -1 is all the way left, 0 the middle, 1 all the way right.
+*/
+public handler auGroupSetPan(in pGroup as Integer, in pPan as Number) returns nothing
+   unsafe
+      _group_set_pan(pGroup, pPan)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the pan of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+Returns: The pan, -1 (left) to 1 (right).
+*/
+public handler auGroupPan(in pGroup as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _group_pan(pGroup) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets the pitch of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+pPitch: The pitch: 1 is unchanged, 2 an octave up, 0.5 an octave down (0.01
+to 100).
+*/
+public handler auGroupSetPitch(in pGroup as Integer, in pPitch as Number) returns nothing
+   unsafe
+      _group_set_pitch(pGroup, pPitch)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the pitch of a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+Returns: The pitch; 1 is unchanged.
+*/
+public handler auGroupPitch(in pGroup as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _group_pitch(pGroup) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Lets a group's sounds be heard again after <auGroupStop>.
+
+pGroup: A group, from <auGroupCreate>.
+*/
+public handler auGroupStart(in pGroup as Integer) returns nothing
+   unsafe
+      _group_start(pGroup)
+   end unsafe
+end handler
+
+/**
+Summary: Silences a group.
+
+pGroup: A group, from <auGroupCreate>.
+
+Description: Its sounds keep their own playing state and are heard again
+after <auGroupStart>.
+*/
+public handler auGroupStop(in pGroup as Integer) returns nothing
+   unsafe
+      _group_stop(pGroup)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Sounds that ended
+-- =====================================================================
+
+/**
+Summary: Finds the sounds that reached their end since the last call.
+
+Returns: How many sounds ended.
+
+Example:
+on checkSounds
+   repeat with i = 1 to auPollEnded()
+      if auEndedSound(i) is sMusic then playNextSong
+   end repeat
+   send "checkSounds" to me in 100 milliseconds
+end checkSounds
+
+Description: The library never sends a message: a stack that wants to know
+when sounds end asks, on a timer. Read each one with <auEndedSound>. Sounds
+marked with <auSoundSetAutoFree> are freed by this call. A looping sound
+never ends, and a stopped sound has not ended.
+*/
+public handler auPollEnded() returns Integer
+   variable tR as Integer
+   unsafe
+      put _poll_ended() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns one of the sounds the last <auPollEnded> found.
+
+pIndex: Which one, from 1 to the number <auPollEnded> returned.
+
+Returns: The sound's handle, or 0 if there is no such entry.
+
+Description: A sound that was freed at its end is still listed, so a script
+can tell which one it was; its handle is no longer valid.
+*/
+public handler auEndedSound(in pIndex as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _ended_sound(pIndex) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- The microphone
+-- =====================================================================
+
+/**
+Summary: Opens a microphone or another input device.
+
+pDevice: The device: 0 for the system's default, 1 or more for a capture
+device of the last <auDeviceScan>, -1 for the silent test device.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+pSampleRate: The sample rate in hertz, 8000 to 192000. 16000 suits speech,
+44100 or 48000 music.
+
+pChannels: The channel count, 1 to 8. 1 is mono.
+
+pBufferSeconds: How many seconds of sound are kept for a script that has not
+read yet, 0.1 to 600.
+
+Returns: The capture's handle, or 0 if the device could not be opened
+(<auLastError> says why).
+
+Example:
+put auCaptureOpen(0, "s16", 16000, 1, 5) into sMic
+if auCaptureStart(sMic) then
+   send "readMic" to me in 100 milliseconds
+end if
+
+Description: The samples arrive in exactly the format, sample rate and
+channel count asked for, whatever the device itself uses. Nothing is
+recorded until <auCaptureStart>. Read what has arrived with <auCaptureRead>,
+or write it straight to a file with <auCaptureRecordStart>. Up to 16
+captures can be open.
+
+The operating system may ask the person for permission the first time, and
+an application may need to declare that it uses the microphone (on Android,
+the RECORD_AUDIO permission; on macOS, a microphone usage description). In a
+web browser the visitor is asked, and a page reaches a microphone only when
+it is served over https or from the visitor's own computer: elsewhere this
+returns 0.
+Device -1 is a silent test device. The five sample formats are "u8" (8-bit
+unsigned), "s16", "s24" and "s32" (signed, little-endian) and "f32" (32-bit
+floating point, -1 to 1). Samples of several channels are interleaved (left,
+right, left, right).
+*/
+public handler auCaptureOpen(in pDevice as Integer, in pFormat as String, in pSampleRate as Integer, in pChannels as Integer, in pBufferSeconds as Number) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _capture_open(pDevice, pFormat, pSampleRate, pChannels, pBufferSeconds) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Closes a capture.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Description: A WAV file being recorded is finished and closed first.
+*/
+public handler auCaptureClose(in pCapture as Integer) returns nothing
+   unsafe
+      _capture_close(pCapture)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle is an open capture.
+
+pCapture: The handle to ask about.
+
+Returns: True for a capture that has not been closed.
+*/
+public handler auCaptureIsValid(in pCapture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_is_valid(pCapture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Starts listening.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: True if the device is now running; false if it could not be
+started.
+*/
+public handler auCaptureStart(in pCapture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_start(pCapture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Stops listening.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Description: What has arrived can still be read, and <auCaptureStart> starts
+again.
+*/
+public handler auCaptureStop(in pCapture as Integer) returns nothing
+   unsafe
+      _capture_stop(pCapture)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a capture is listening.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: True while it is.
+*/
+public handler auCaptureIsRunning(in pCapture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_is_running(pCapture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how much sound is waiting to be read.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The number of bytes <auCaptureRead> would return now.
+*/
+public handler auCaptureAvailable(in pCapture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _capture_available(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the sound that has arrived since the last read.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The samples as binary data in the capture's format, or empty when
+nothing has arrived.
+
+Example:
+on readMic
+   put auCaptureRead(sMic) after sRecording
+   send "readMic" to me in 100 milliseconds
+end readMic
+
+Description: Call it on a timer, more often than the buffer length given to
+<auCaptureOpen>; sound that arrives while the buffer is full is dropped and
+counted by <auCaptureDropped>. <auWAVEncode> turns what was read into a
+sound file, and <auSoundFromPCM> into a sound to play.
+*/
+public handler auCaptureRead(in pCapture as Integer) returns Data
+   variable tR as Integer
+   unsafe
+      put _capture_read(pCapture) into tR
+   end unsafe
+   return dataOf(tR)
+end handler
+
+/**
+Summary: Returns the sample format of a capture.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: "u8", "s16", "s24", "s32" or "f32"; empty for a stale handle.
+*/
+public handler auCaptureFormat(in pCapture as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _capture_format(pCapture) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the sample rate of a capture.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The sample rate in hertz.
+*/
+public handler auCaptureSampleRate(in pCapture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _capture_sample_rate(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the channel count of a capture.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The channel count.
+*/
+public handler auCaptureChannels(in pCapture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _capture_channels(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of the device a capture listens to.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The device's name, or empty for a stale handle.
+*/
+public handler auCaptureDeviceLabel(in pCapture as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _capture_device_label(pCapture) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns how much sound a capture has had to drop.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The number of frames dropped since the capture was opened, because
+its buffer was full.
+*/
+public handler auCaptureDropped(in pCapture as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _capture_dropped(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the loudest level a capture has heard since the last call,
+for an input meter.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The level, 0 to 1.
+
+Description: Reading resets it.
+*/
+public handler auCapturePeak(in pCapture as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _capture_peak(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Starts writing everything a capture hears to a WAV file.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+pSavePath: The full path of the WAV file to write.
+
+Returns: True if the file was created; false if not (<auLastError> says
+why).
+
+Example:
+put auCaptureOpen(0, "s16", 44100, 1, 1) into sMic
+if auCaptureStart(sMic) and auCaptureRecordStart(sMic, tFolder & "/memo.wav") then
+   -- ... later
+   put auCaptureRecordStop(sMic) into tSeconds
+end if
+
+Description: The file is written as the sound arrives, in the capture's own
+format, with no script in between, so nothing is dropped however busy the
+stack is. It goes on until <auCaptureRecordStop> or <auCaptureClose>.
+<auCaptureRead> works beside it. An existing file of that name is replaced.
+*/
+public handler auCaptureRecordStart(in pCapture as Integer, in pSavePath as String) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_record_start(pCapture, pSavePath) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Finishes the WAV file a capture is recording.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: The length of the recording in seconds; 0 if nothing was being
+recorded.
+*/
+public handler auCaptureRecordStop(in pCapture as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _capture_record_stop(pCapture) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Reports whether a capture is writing a WAV file.
+
+pCapture: A capture, from <auCaptureOpen>.
+
+Returns: True while it is.
+*/
+public handler auCaptureIsRecording(in pCapture as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _capture_is_recording(pCapture) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+-- =====================================================================
+-- Decoding and encoding
+-- =====================================================================
+
+/**
+Summary: Decodes a whole sound file (WAV, FLAC or MP3) into raw samples.
+
+pPath: The full path of the file.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+pSampleRate: The sample rate to convert to, or 0 to keep the file's own.
+
+pChannels: The channel count to convert to, or 0 to keep the file's own.
+
+Returns: The samples as binary data, or empty if the file could not be
+decoded.
+
+Example:
+put auDecodeFile(tPath, "s16", 0, 1) into tSamples
+put auOutSampleRate() into tRate
+put the number of bytes in tSamples / 2 / tRate into tSeconds
+
+Description: For a script that wants the samples themselves: to draw a
+waveform, analyse a sound or convert a file. <auOutSampleRate> and
+<auOutChannels> then say what was returned. At most 256 MB of samples. The
+five sample formats are "u8" (8-bit unsigned), "s16", "s24" and "s32"
+(signed, little-endian) and "f32" (32-bit floating point, -1 to 1). Samples
+of several channels are interleaved (left, right, left, right).
+*/
+public handler auDecodeFile(in pPath as String, in pFormat as String, in pSampleRate as Integer, in pChannels as Integer) returns Data
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _decode_file(pPath, pFormat, pSampleRate, pChannels) into tR
+   end unsafe
+   return dataOf(tR)
+end handler
+
+/**
+Summary: Decodes the bytes of a sound file (WAV, FLAC or MP3) into raw
+samples.
+
+pData: The whole contents of a sound file, as binary data.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+pSampleRate: The sample rate to convert to, or 0 to keep the file's own.
+
+pChannels: The channel count to convert to, or 0 to keep the file's own.
+
+Returns: The samples as binary data, or empty if the data could not be
+decoded.
+
+Description: The same as <auDecodeFile>, for a sound file held in a variable
+or a custom property.
+*/
+public handler auDecodeData(in pData as Data, in pFormat as String, in pSampleRate as Integer, in pChannels as Integer) returns Data
+   variable tR as Integer
+   variable tBytes as Pointer
+   variable tLength as Integer
+   checkABI()
+   put the number of bytes in pData into tLength
+   unsafe
+      put MCDataGetBytePtr(pData) into tBytes
+      put _decode_data(tBytes, tLength, pFormat, pSampleRate, pChannels) into tR
+   end unsafe
+   return dataOf(tR)
+end handler
+
+/**
+Summary: Wraps raw samples as a WAV file.
+
+pData: The samples, as binary data.
+
+pFormat: The sample format: "u8", "s16", "s24", "s32" or "f32".
+
+pSampleRate: The sample rate of the samples in hertz, 8000 to 192000.
+
+pChannels: How many channels the samples have, 1 to 8.
+
+Returns: The contents of a WAV file as binary data, or empty if refused.
+
+Example:
+put auWAVEncode(sRecording, "s16", 16000, 1) into url ("binfile:" & tPath)
+
+Description: What a script writes to disk to save a recording or a rendered
+mix.
+*/
+public handler auWAVEncode(in pData as Data, in pFormat as String, in pSampleRate as Integer, in pChannels as Integer) returns Data
+   variable tR as Integer
+   variable tBytes as Pointer
+   variable tLength as Integer
+   checkABI()
+   put the number of bytes in pData into tLength
+   unsafe
+      put MCDataGetBytePtr(pData) into tBytes
+      put _wav_encode(tBytes, tLength, pFormat, pSampleRate, pChannels) into tR
+   end unsafe
+   return dataOf(tR)
+end handler
+
+-- =====================================================================
+-- Shutting down
+-- =====================================================================
+
+/**
+Summary: Closes every capture and engine and lets the audio system go.
+
+Example:
+on closeStack
+   auShutDown
+end closeStack
+
+Description: Every sound and group is freed with its engine, and every
+handle becomes stale. Safe to call twice. The library works again
+afterwards; the next call that needs a device opens the audio system afresh.
+*/
+public handler auShutDown() returns nothing
+   unsafe
+      _shut_down()
+   end unsafe
+end handler
+
+end library

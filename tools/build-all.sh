@@ -54,7 +54,7 @@ done
 # that layer's cover) had never run here. Its Box2D comes from FetchContent,
 # so the lane costs a Box2D source build; unlike sodiumxt it copies nothing
 # back into src/code/, so it adds no second case to the NOTE at the top.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt render3dxt xlsxt)
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt xlsxt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -444,7 +444,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt render3dxt xlsxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt xlsxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too
@@ -740,6 +740,21 @@ fi
 if [ -f tools/test-android-run.py ]; then
   echo "== suite: tools/test-android-run.py =="
   python3 tools/test-android-run.py
+fi
+# Named release builds (2026-11-21). release-binaries.yml's `build: named`
+# runs only the named members' lanes, through a plan job that reads the rows
+# of the workflow's own include lists (tools/release-plan.py), so a member's
+# pull request adds its rows in place and nothing else. Like the Android
+# tests, this is held on every push because the workflow itself only runs
+# when someone dispatches it: the reader against the rows (and PyYAML's
+# reading of them, where it is installed), each member's plan against its
+# rows, and every job's `needs` and `if` against a full build that runs and
+# commits exactly as it did before and a named build that runs nothing else,
+# under both readings of a status function. Its mutants prove those checks
+# are not blind.
+if [ -f tools/test-release-plan.py ]; then
+  echo "== suite: tools/test-release-plan.py =="
+  python3 tools/test-release-plan.py
 fi
 
 if [ "$GATES_ONLY" = 1 ]; then

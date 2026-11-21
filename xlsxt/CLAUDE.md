@@ -48,7 +48,9 @@ its ancestor; read that member's CLAUDE.md for the reasons behind the shared sha
    included; libxlsxwriter's are 0-based and the shim converts at the call.
 9. **Done means:** a shim change is green in `smoke` AND `fuzz` under
    `-DXLSXT_SANITIZE=address -DCMAKE_BUILD_TYPE=Debug`; a binding change passes
-   `lc-compile -Werror` and `tests/engine-selftest.lc` on the server engine; both pass
+   `lc-compile -Werror` and `tests/engine-selftest.lc` on the server engine; a change to
+   `examples/xlsxt-demo.livecodescript` passes `tests/demo-drive.livecodescript` on the
+   desktop engine with `-ui` (its header has the command); all pass
    `bash tools/run-gates.sh`. An ABI change bumps `XLX_ABI_VERSION` and the two literals in
    `checkABI()` together. Native-library changes refresh the committed binaries through the
    suite's `release-binaries.yml`; `native-xlsxt.yml` never commits.
@@ -100,11 +102,43 @@ its ancestor; read that member's CLAUDE.md for the reasons behind the shared sha
 5. **The fuzz test writes real files** in its working directory, under names of its own
    (`xlsxt-fuzz-*`); a path argument drawn from the hostile strings is never one that could
    create a file elsewhere.
+6. **A field or tick box that names no text colour takes the system theme's**, and a dark
+   theme's is white: on Windows (2026-11-21) the demo's table and every tick box's words sat
+   white on the kit's white (engine note 5.16). The kit's `uiInput`, `uiArea` and
+   `uiCheckbox` name the kit's ink since render3dxt's pull request (#182, merged the same
+   day), and the demo's `xdDress` then names every field's, label's and tick box's text
+   colour, and every entry field's and list's background, for its dark look;
+   `tests/demo-drive.livecodescript` fails a window with one left to the theme. The demo
+   draws its own push buttons (a rounded graphic behind a transparent button, `xdButton`),
+   so no theme draws one either.
+7. **The Showcase's frames are timer messages**, so every frame handler pins the
+   defaultStack first (engine note 5.3) and is public, because `send` cannot reach a private
+   handler (3.5). A frame creates and deletes nothing: the chart's graphics are a pool made
+   with the window (5.15), shown and hidden. Each frame carries the run's number
+   (`sShowGen`), so a frame of a run that was stopped ends itself, and `xdShowStop` cancels
+   what is pending, discards a workbook the scene had not finished and closes its reader.
 
 ## Status
 
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
-library). No desktop IDE and no other platform's engine has loaded it: verified statically;
-needs an OXT pass. No file it wrote has been opened in Excel on the record. No binaries are
-committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+library). On 2026-11-21 it ran in the IDE on the maintainer's Windows PC, over the native
+lane's DLL from run 44845807163 (the engine self-test 64/0 in the IDE, the demo's checks
+39/0, before the demo was rebuilt that day), and in a browser: the committed web archive, linked into OXT-Beyond's web engine by
+that repository's pull request 605, wrote and read back one workbook in Chromium, Firefox
+and WebKit (run 44847676839). No engine on macOS or Android has loaded it, nor has any
+engine loaded a release library: verified statically; needs an OXT pass. The demo stack,
+Spreadsheet Studio (`examples/xlsxt-demo.livecodescript`, the suite UI kit dressed in
+OXT-Beyond's dark look), was rebuilt on 2026-11-21 to open playing a tour of four scenes;
+the new window is driven on the Linux desktop engine by `tests/demo-drive.livecodescript`
+(that day, headless and under xvfb) and ran the same day on the maintainer's Windows PC
+under its dark theme (the tour's four scenes, About's checks 39/0, every word readable; the
+one fault, a clipped column, fixed after and checked on Linux only). On macOS and in a
+browser it is verified statically; needs an OXT pass. Its builders read the window's fields through
+`xdTyped` and `xdTicked`, which fall back to defaults, so `xdCheckAll` is the same code with
+or without a window. No file it wrote has been opened in Excel on the record (openpyxl read
+the demo's complete workbook on 2026-11-21: its chart, picture, drop-down list, protection,
+frozen row, filter, defined name, link and note were all there). Release libraries were
+committed on 2026-11-21 (six desktop platforms, four Android ABIs; the web archive built
+separately with emsdk 6.0.12, and the one the browser run linked). Open work is in the
+suite's `docs/WORK-PLAN.md`.
