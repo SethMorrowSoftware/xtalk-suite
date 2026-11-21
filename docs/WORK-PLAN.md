@@ -879,10 +879,25 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 - Binaries: committed 2026-11-20 by its first release-binaries dispatch (run 44806507517 from
   de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
   and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
-  members' are. The `ships` row lists all eleven. No engine has loaded any of them yet: the
-  engine and IDE runs above used locally built libraries.
+  members' are. The `ships` row lists all eleven. The engine and IDE runs above used locally
+  built libraries. The web archive is the one an engine has loaded: on 2026-11-21 a web engine
+  built locally from OXT-Beyond's pull request 606 linked it from that pull request's pin
+  (this repository at 46ad996, its SHA-256 checked) and played Orb Island in Chromium. No
+  engine has loaded a desktop or Android one yet.
 - Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
   (`--adopt box3dxt`) once this member's changes are on main.
+- The b3k game Kit (2026-11-21): `src/box3dxt-kit.livecodescript`, box2dxt's b2k Kit in 3D,
+  drawing through render3dxt when it is loaded and through box3dxt's own renderer when it is
+  not, and its example game, Orb Island (`examples/box3dxt-orb-island.livecodescript`, which
+  carries the Kit verbatim). Records: `tests/engine-kit.lc` and `tests/engine-demo.lc` on the
+  headless Linux server engine over a locally built library, with box3dxt's renderer, with a
+  render3dxt built from its pull request, and (the game) with no extension at all; the native
+  lane repeats the first and last of those on every change. Orb Island has also played once
+  in a browser (2026-11-21, Chromium): a web engine built locally from OXT-Beyond's pull
+  request 606, with the committed web archives of box3dxt and render3dxt linked in, ran its
+  frame loop at about 12 pictures a second with nothing in the console; its keys were not
+  driven. No IDE has run either:
+  verified statically; needs an OXT pass (row 10).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -891,10 +906,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
-| 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 6 | DONE 2026-11-21: Orb Island, `examples/box3dxt-orb-island.livecodescript`, a game on the b3k Kit in the UI kit's look, drawn by `b3RenderWorld` when render3dxt is not loaded | - | - | a paste-and-run example in `box3dxt/examples/` |
 | 7 | The suite board at its row pitch (29 again since the band, 2026-11-20, took the members with no harness off the rows; 27 and then 25 for some hours before, as xlsxt and render3dxt joined): eleven rows clear the band and the members caption | S1 | 48 | the last row ends above the band, and the band above the caption, on an engine |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
+| 10 | Orb Island and the Kit in an IDE: the eight checks under "WHAT TO VERIFY" in the game's header (the window, walking, the orbs, the toys, falling, the mouse, the keys and buttons, the light and dark appearance), with box3dxt alone and with render3dxt, on Windows, Linux and a Mac | S1 | - | each check answers as the header says, or the Kit is fixed |
+| 11 | The Kit's engine tests with render3dxt in CI: the native lane runs `tests/engine-kit.lc` and `tests/engine-demo.lc` with box3dxt's renderer only, because it was written before render3dxt joined main (#182, 2026-11-21); both pass with render3dxt locally (2026-11-21) | coding: the lane builds render3dxt's library and module too, and the published member takes render3dxt as a gate sibling | - | a lane runs both with render3dxt's module and library |
+| 12 | The Kit shipped as a script library beside the extension: a `.lce` of its own (with row 4) and an entry in OXT-Beyond's extension list, as box2dxt's Kit has, probed by `b3kVersion()` | coding, after row 4; OXT-Beyond | - | `b3kVersion()` answers 1 in an IDE with nothing pasted |
+| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine) | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
 
 ### 2.11 render3dxt
 
