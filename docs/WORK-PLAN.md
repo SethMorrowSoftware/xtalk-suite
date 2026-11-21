@@ -905,9 +905,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   its lane on every platform it ships for (run 44840908920, 2026-11-21: the six desktop rows,
   and the Android 6.0 emulator for both x86 ABIs; the ARM ABIs built, not run); and
   `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally built
-  library (2026-11-20), which its native lane repeats on every change. No desktop IDE has
-  loaded it: for everything beyond that server run it is verified statically; needs an OXT
-  pass.
+  library (2026-11-20), which its native lane repeats on every change; and the Windows IDE
+  (2026-11-21, the maintainer's 64-bit OXT-Beyond over CI's `x86_64-win32` library): the
+  same self-test passed 64 checks and failed its 2 first-load checks, which cannot hold in a
+  process that had loaded PDFium before, as that session had (`pdfxt/README.md` has the
+  record; a fresh-session run is owed). For everything beyond those runs it is verified
+  statically; needs an OXT pass.
 - Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
   Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
   reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
@@ -928,7 +931,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
 | 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
-| 6 | A viewer demo stack (pages, zoom, search, outline; the kit's look) | coding | - | a paste-and-run example in `pdfxt/examples/` |
+| 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | the window looks right on each desktop platform, the pages draw in the right colours, and the saved BMP opens |
 | 7 | The suite board at its new row pitch (25): sixteen rows clear the members caption, and a row's buttons end one pixel above the next row's. A seventeenth member needs the harness-less members moved out of the rows, not a smaller pitch | S1 | 48 | the rows do not touch on an engine |
 | 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 

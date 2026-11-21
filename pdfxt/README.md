@@ -93,8 +93,27 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, opened both PDFs, drew pages into real images both ways, read text and
   searched it, walked the outline and links, and called every public handler once.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS or Android has run
-  it: on those it is verified statically; needs an OXT pass. No library is committed under
+- **The demo stack**, `examples/pdfxt-demo.livecodescript` (paste it into a stack's script and
+  reopen the stack): a PDF viewer, with a five-page sample built in and a locked one. Zoom and
+  scroll (only the part in view is drawn), the outline, links, search with every match marked,
+  a page's text, the word you click and the text in a box you drag, the document's information
+  and permissions, the drawing flags, a page saved as a BMP, and one button that checks all of
+  it. `tests/demo-drive.livecodescript` drives it on OXT-Beyond's Linux desktop engine with no
+  display (2026-11-21, a locally built library): its window built, the sample opened and used
+  the way a person would, the locked one unlocked, its own checks green. The native lane
+  repeats that on every change. Nobody has used the window by hand yet.
+- **In the Windows IDE**, on 2026-11-21: the maintainer's 64-bit OXT-Beyond (engine 9.7.1)
+  loaded the module, compiled there from this source, over CI's `x86_64-win32` library (run
+  44840908920), and `tests/engine-selftest.lc`, run inside the IDE as a script-only stack,
+  passed 64 checks and failed 2. The two are the first-load checks (a folder with no PDFium is
+  refused, and the reason names it), which cannot hold in a process that has loaded PDFium
+  before, and pdfxt had been used in that IDE session before the run. Loading and shutting
+  down PDFium first reproduces exactly those two on Linux, so that is the likely cause; a run
+  in a fresh IDE session is still owed. The test now reports those two as not checked when it
+  runs a second time in one session. Every drawing, text, search, outline and link check
+  passed there.
+- **Not yet:** no IDE on Linux or a Mac has loaded it, and no engine on macOS or Android has
+  run it: on those it is verified statically; needs an OXT pass. No library is committed under
   `src/code/` yet; the suite's release-binaries dispatch lands them.
 
 ## Building and testing
@@ -162,6 +181,7 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- The demo UI kit (`tools/ui-kit.livecodescript`; gate `tools/check-ui-kit-drift.py`) in `examples/pdfxt-demo.livecodescript`.
 - `tools/check-livecodescript.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

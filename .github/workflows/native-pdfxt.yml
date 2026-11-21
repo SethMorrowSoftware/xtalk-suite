@@ -16,7 +16,8 @@
 #                 instrumented; PDFium is the prebuilt library);
 #   engine        the binding compiled with OXT-Beyond's lc-compile -Werror and
 #                 tests/engine-selftest.lc RUN on its headless server engine,
-#                 over the library this job built, then the member's gates;
+#                 over the library this job built; the demo stack driven on
+#                 its desktop engine with no display; then the member's gates;
 #   build-matrix  every desktop platform the release workflow builds, tested;
 #   android       the suite's tools/build-android.sh for all four ABIs. The
 #                 tests run on an emulator for the two x86 ones: on Android
@@ -100,6 +101,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc cmake ninja-build
+          # what the desktop engine opens even with -ui (no display)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libfreetype6 libfontconfig1
       - name: Release build + tests
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPDFXT_BUILD_TESTS=ON
@@ -118,6 +122,7 @@ jobs:
           echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
             'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/LiveCode-Community' \
             'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
             'linux-x86_64-bin/modules/lci/*'
           mv "$oxt/linux-x86_64-bin" "$oxt/engine"
@@ -146,6 +151,21 @@ jobs:
             echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
+      # The demo stack, driven on the desktop engine with no display (-ui):
+      # its window built, the sample opened, the outline, zoom, scroll,
+      # search, labels, links, a word and a box chosen, a page saved, the
+      # locked sample unlocked, and its own checks run. Green needs an exit
+      # of 0 AND a last line "DRIVE <n> 0" AND the demo's "SUMMARY <n> 0".
+      - name: Drive examples/pdfxt-demo.livecodescript on the engine
+        run: |
+          set -o pipefail
+          PDFXT_LCM="$RUNNER_TEMP/lcb/pdfxt.lcm" PDFXT_LIB="$PWD/build/pdfxt" \
+          PDFXT_DEMO="$PWD/examples/pdfxt-demo.livecodescript" \
+            timeout 300 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo.log"
+          tail -n 1 "$RUNNER_TEMP/demo.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/demo.log"
+          echo "Demo stack: $(tail -n 1 "$RUNNER_TEMP/demo.log" | awk '{print $2 " drive checks passed"}'), its own $(grep '^SUMMARY ' "$RUNNER_TEMP/demo.log" | awk '{print $2 " checks passed, " $3 " failed"}')." >> "$GITHUB_STEP_SUMMARY"
       - name: The member's gates
         run: bash tools/run-gates.sh
 

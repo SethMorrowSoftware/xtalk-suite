@@ -60,13 +60,33 @@ end pixelOf
 -- ---------------------------------------------------------------------
 -- The scenes
 -- ---------------------------------------------------------------------
+-- PDFium cannot be taken out of a running program: pdfShutdown stops it and
+-- keeps its library file, and once that file is loaded pdfLoad answers true
+-- for ANY folder without looking in it (its documented contract). So the
+-- refusal below holds only in a process that has not loaded PDFium yet:
+-- always true here, where the server engine is one process per run, and
+-- true on the first run in an IDE session. Run this test a second time in
+-- one IDE session and the two refusal checks cannot hold (shown on the
+-- Linux server engine, 2026-11-21: load, shut down, then pdfLoad of a
+-- missing folder answers true with no error); the global below remembers,
+-- for the life of the process, that this test loaded PDFium, and a re-run
+-- says those two were not checked instead of failing them. Another stack
+-- that loaded PDFium first is not caught by it: the detail says why.
+global gPdxSelfTestLoaded
+
 command testLibrary
    check "ABI", pdfABIVersion() is 1, pdfABIVersion()
    check "version text", pdfLibraryVersion() begins with "pdfxt ABI 1; PDFium chromium/", pdfLibraryVersion()
    check "PDFium is not loaded until asked for", pdfIsLoaded() is false, pdfIsLoaded()
-   check "a folder with no PDFium is a refusal, as a Boolean", pdfLoad("/no/such/folder/for-pdfxt") is false, pdfLastError()
-   check "and the reason is text that names the folder", pdfLastError() contains "for-pdfxt", pdfLastError()
+   if gPdxSelfTestLoaded is true then
+      put "INFO not checked: a folder with no PDFium is refused (an earlier run in this process loaded PDFium, which stays loaded; run the test in a fresh engine for these two)" & return
+   else
+      check "a folder with no PDFium is a refusal, as a Boolean", pdfLoad("/no/such/folder/for-pdfxt") is false, \
+            "pdfLoad answered true. If PDFium was loaded earlier in this process (by another stack), the folder is not looked in and this check needs a fresh engine"
+      check "and the reason is text that names the folder", pdfLastError() contains "for-pdfxt", pdfLastError()
+   end if
    check "PDFium loads from beside the library", pdfLoad(empty) is true and pdfIsLoaded() is true, pdfLastError()
+   put true into gPdxSelfTestLoaded
 end testLibrary
 
 command testDocument

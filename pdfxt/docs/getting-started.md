@@ -2,7 +2,9 @@
 
 pdfxt opens PDF files and gives a stack three things from them: pictures of their pages, their
 text, and the ways to move around in them. This page is the handful of facts every call rests
-on; [api-reference.md](api-reference.md) lists every handler.
+on; [api-reference.md](api-reference.md) lists every handler. The demo stack,
+`examples/pdfxt-demo.livecodescript`, is all of it in one window: paste it into a stack's script
+and reopen the stack.
 
 ## How things are counted
 

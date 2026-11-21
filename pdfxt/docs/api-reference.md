@@ -69,7 +69,7 @@ Returns: True once any call has loaded it; false before that and after `pdfShutd
 
 Closes every document and shuts PDFium down.
 
-Call it when your stack closes, since nothing else tells the library that you are done. It is safe to call twice, or when nothing was ever opened. Every document handle is dead afterwards. The next `pdfOpen` starts PDFium again.
+Call it when your stack closes, since nothing else tells the library that you are done. It is safe to call twice, or when nothing was ever opened. Every document handle is dead afterwards. The next `pdfOpen` starts PDFium again. The PDFium library file itself stays loaded, since a library cannot safely be taken out of a running program: afterwards `pdfIsLoaded` is false, and `pdfLoad` answers true without looking in the folder it is given.
 
 ```
 on closeStack

@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""build-test-pdfs.py - writes the PDF files pdfxt's tests read.
+"""build-test-pdfs.py - writes the PDF files pdfxt's tests and demo read.
 
 tests/fixtures/basic.pdf and tests/fixtures/locked.pdf (and tests/fixtures.h,
-the same bytes as C arrays for the native test) are written BY THIS FILE, byte for byte, from the tables below: no PDF tool made them, so every
+the same bytes as C arrays for the native test) are written BY THIS FILE,
+byte for byte, from the tables below: no PDF tool made them, so every
 number a test asserts (a page size, where a word is, where a link leads) is
 a number written here, in one place, and a test never has to trust a file
 nobody can read. They are committed so a build needs no Python; the gate
 form refuses a committed file that this script would not write.
+
+So is the demo's sample, "A short guide to pdfxt" (five pages, described
+above sample() below), and for the same reason: the demo stack's checks and
+its headless drive assert its sizes, words, links and colours. It is not a
+file of its own. examples/pdfxt-demo.livecodescript carries it, and
+locked.pdf, as base64 text between two marker lines, so the demo stays one
+paste-and-run script; this script writes that block and only that block
+(the rest of the stack is hand-written), and the gate form refuses a block
+it would not write. tools/test-build-test-pdfs.py proves the gate fires.
 
     python3 tools/build-test-pdfs.py           # write them
     python3 tools/build-test-pdfs.py --check   # the gate: committed == built
@@ -34,12 +44,12 @@ Opening it with no password must fail; "secret" opens it.
 
 Standard library only.
 """
+import base64
 import hashlib
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "tests")
 
 PAD = bytes([0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41, 0x64, 0x00, 0x4E, 0x56,
              0xFF, 0xFA, 0x01, 0x08, 0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80,
@@ -119,8 +129,8 @@ class Builder(object):
             data = self.crypt.encrypt(num, data)
         self.add(num, b"<< /Length %d >>\nstream\n" % len(data) + data + b"\nendstream")
 
-    def build(self, root, info):
-        out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    def build(self, root, info, version=b"1.4"):
+        out = bytearray(b"%PDF-" + version + b"\n%\xe2\xe3\xcf\xd3\n")
         count = max(self.objects) + 1
         offsets = {}
         for num in sorted(self.objects):
@@ -202,6 +212,196 @@ def locked():
     return b.build(1, 6)
 
 
+# ---------------------------------------------------------------------------
+# The demo's sample: "A short guide to pdfxt", five pages, which
+# examples/pdfxt-demo.livecodescript opens without a file. It is written here
+# for the reason the fixtures are: every fact the demo's checks assert (a
+# label, a size, where a link leads, how often a word occurs, the colour at a
+# point) is a number or a word on this page of Python.
+#
+#   i    612 x 792. A band in the suite's accent colour with the title in
+#        white; three lines of text, one naming PDFium; a red, a green and a
+#        blue square; https://openxtalk.org/ as a web link.
+#   ii   612 x 792. "Contents": three lines, each a link to its page.
+#   1    612 x 792. "1 Opening a document", then "Passwords".
+#   2    A4 (595 x 842) with /Rotate 90, so it DISPLAYS 842 x 595, and its
+#        content is drawn turned the other way, so it reads upright as
+#        displayed (a viewer's landscape page): six bars and a circle.
+#   3    612 x 792. "3 Text and search": the line "needle, Needle, needles"
+#        (three matches with no flags, two when capitals must match, two as
+#        whole words, one with both), text outside ASCII, and a link back to
+#        the contents.
+#   Labels i, ii, 1, 2, 3. Outline of eight entries, two of them nested and
+#   the last a web address. All eight Information entries are set.
+# ---------------------------------------------------------------------------
+
+ACCENT = (44, 90, 160)        # the suite UI kit's kUiAccent
+ACCENT_SUB = (199, 216, 241)  # and its kUiAccentSub
+WHITE = (255, 255, 255)
+INK = (28, 34, 46)
+GREY = (138, 146, 158)
+LINK = (20, 80, 200)
+RED = (255, 0, 0)
+GREEN = (0, 160, 0)
+BLUE = (0, 0, 255)
+BARS = ((44, 90, 160), (23, 128, 63), (214, 150, 30), (176, 58, 46), (0, 128, 128), (110, 60, 150))
+
+
+def rgb(c):
+    return b"%.3f %.3f %.3f" % (c[0] / 255.0, c[1] / 255.0, c[2] / 255.0)
+
+
+def show(font, size, x, y, text, color=INK):
+    """One line of text in WinAnsi, its baseline starting at x,y (PDF space)."""
+    return (rgb(color) + b" rg\nBT\n/%s %d Tf\n%d %d Td\n" % (font, size, x, y)
+            + pdf_string(text.encode("cp1252")) + b" Tj\nET\n")
+
+
+def show_turned(font, size, x, y, text, color=INK):
+    """One line on a page the file turns a quarter clockwise, drawn turned
+    back so it reads upright: x,y is where its baseline starts on the page
+    AS DISPLAYED, from the displayed page's top left. A quarter turn
+    clockwise takes PDF x to displayed y and PDF y to displayed x."""
+    return (rgb(color) + b" rg\nBT\n/%s %d Tf\n0 1 -1 0 %d %d Tm\n" % (font, size, y, x)
+            + pdf_string(text.encode("cp1252")) + b" Tj\nET\n")
+
+
+def box(x, y, w, h, color):
+    """A filled rectangle in PDF space (x,y its bottom left)."""
+    return rgb(color) + b" rg\n%d %d %d %d re\nf\n" % (x, y, w, h)
+
+
+def box_turned(x, y, w, h, color):
+    """A filled rectangle given on the page as displayed (x,y its top left)."""
+    return box(y, x, h, w, color)
+
+
+def circle(cx, cy, r, color):
+    """A filled circle of four Bezier quarters, centre cx,cy in PDF space."""
+    k = 0.5523 * r
+    pts = ((cx + r, cy), (cx + r, cy + k, cx + k, cy + r, cx, cy + r),
+           (cx - k, cy + r, cx - r, cy + k, cx - r, cy),
+           (cx - r, cy - k, cx - k, cy - r, cx, cy - r),
+           (cx + k, cy - r, cx + r, cy - k, cx + r, cy))
+    out = rgb(color) + b" rg\n%.2f %.2f m\n" % pts[0]
+    for p in pts[1:]:
+        out += b"%.2f %.2f %.2f %.2f %.2f %.2f c\n" % p
+    return out + b"f\n"
+
+
+def body(x, y, lines, size=12, leading=16):
+    out = b""
+    for i, line in enumerate(lines):
+        out += show(b"F1", size, x, y - i * leading, line)
+    return out
+
+
+def footer(label):
+    return show(b"F1", 9, 72, 40, "A short guide to pdfxt, page " + label, GREY)
+
+
+SAMPLE_PAGES = [
+    # i: the cover
+    box(0, 642, 612, 150, ACCENT)
+    + show(b"F2", 48, 72, 700, "pdfxt", WHITE)
+    + show(b"F1", 16, 72, 668, "A short guide, and the sample the demo opens", WHITE)
+    + body(72, 600, ["pdfxt draws the pages of a PDF, reads their text, finds words in it,",
+                     "follows its outline and its links, and tells a script all of it.",
+                     "It binds PDFium, the PDF engine of the Chromium browser."])
+    + box(72, 420, 100, 100, RED) + box(222, 420, 100, 100, GREEN) + box(372, 420, 100, 100, BLUE)
+    + show(b"F1", 10, 72, 400, "Three squares, to see the colours come through.", GREY)
+    + show(b"F1", 12, 72, 340, "https://openxtalk.org/", LINK)
+    + footer("i"),
+    # ii: the contents, each line a link
+    show(b"F2", 24, 72, 700, "Contents")
+    + show(b"F1", 14, 72, 650, "1 Opening a document")
+    + show(b"F1", 14, 72, 624, "2 Drawing pages")
+    + show(b"F1", 14, 72, 598, "3 Text and search")
+    + show(b"F1", 10, 72, 560, "Each line above is a link to its page.", GREY)
+    + footer("ii"),
+    # 1
+    show(b"F2", 20, 72, 720, "1 Opening a document")
+    + body(72, 690, ["pdfOpen opens a file by its path, and PDFium reads each page only when",
+                     "it is asked for, so a long document opens at once. pdfOpenData opens a",
+                     "PDF that is already in memory: this sample is one, carried inside the",
+                     "demo stack as text and decoded before PDFium sees it."])
+    + show(b"F2", 14, 72, 600, "Passwords")
+    + body(72, 578, ["A locked PDF needs its password. pdfOpen and pdfOpenData take it as",
+                     "their second parameter and refuse without it, and pdfLastError says",
+                     "why. The demo's Locked sample opens with the word secret."])
+    + footer("1"),
+    # 2: A4 turned on its side, its content drawn to read upright
+    show_turned(b"F2", 20, 60, 70, "2 Drawing pages")
+    + b"".join(show_turned(b"F1", 12, 60, 100 + i * 16, line) for i, line in enumerate([
+        "This page is A4 turned on its side: the file says /Rotate 90, and every",
+        "size, drawing and rectangle pdfxt returns is of the page as you see it.",
+        "pdfRenderPage draws a whole page. pdfRenderPageRegion draws only the part",
+        "a zoomed-in viewer shows, so memory follows the window, not the zoom."]))
+    + b"".join(box_turned(60 + i * 80, 500 - h, 56, h, BARS[i])
+               for i, h in enumerate((80, 140, 110, 190, 160, 220)))
+    + circle(360, 680, 110, ACCENT_SUB)
+    + show_turned(b"F1", 10, 60, 530, "Shapes are drawn as curves and lines: zoom in, and their edges stay sharp.", GREY)
+    + show_turned(b"F1", 9, 60, 570, "A short guide to pdfxt, page 2", GREY),
+    # 3
+    show(b"F2", 20, 72, 720, "3 Text and search")
+    + body(72, 690, ["pdfPageText returns the text of a page in reading order, a line of the",
+                     "page to a line. pdfPageSearch finds every place a word occurs, and",
+                     "pdfPageTextRects gives the rectangles to highlight. Search this page",
+                     "for the word on the next line, with and without the two flags:"])
+    + show(b"F2", 14, 72, 610, "needle, Needle, needles")
+    + show(b"F2", 14, 72, 570, "Searching")
+    + body(72, 548, ["Capitals must match: two of the three. Whole words: two, since the",
+                     "third is longer. Both flags: one.",
+                     "Text outside ASCII comes out as itself: café, naïve, Zürich, 25 °C.",
+                     "Drag a box around words on any page to read the text inside it."])
+    + show(b"F1", 12, 72, 460, "Back to the contents", LINK)
+    + footer("3"),
+]
+
+
+def sample():
+    b = Builder()
+    fonts = b"/Resources << /Font << /F1 13 0 R /F2 14 0 R >> >>"
+    b.add(1, b"<< /Type /Catalog /Pages 2 0 R /Outlines 21 0 R /PageMode /UseOutlines "
+             b"/PageLabels << /Nums [0 << /S /r >> 2 << /S /D >>] >> >>")
+    b.add(2, b"<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 7 0 R] /Count 5 >>")
+    b.add(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R "
+             + fonts + b" /Annots [15 0 R] >>")
+    b.add(4, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R "
+             + fonts + b" /Annots [16 0 R 17 0 R 18 0 R] >>")
+    b.add(5, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R " + fonts + b" >>")
+    b.add(6, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Rotate 90 /Contents 11 0 R "
+             + fonts + b" >>")
+    b.add(7, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 12 0 R "
+             + fonts + b" /Annots [19 0 R] >>")
+    for i, page in enumerate(SAMPLE_PAGES):
+        b.stream(8 + i, page)
+    b.add(13, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    b.add(14, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
+    link = b"<< /Type /Annot /Subtype /Link /Border [0 0 0] /Rect [%d %d %d %d] "
+    b.add(15, link % (70, 335, 206, 353) + b"/A << /S /URI /URI (https://openxtalk.org/) >> >>")
+    for num, (y, target) in zip((16, 17, 18), ((650, 5), (624, 6), (598, 7))):
+        b.add(num, link % (70, y - 5, 330, y + 15) + b"/Dest [%d 0 R /Fit] >>" % target)
+    b.add(19, link % (70, 455, 196, 473) + b"/Dest [4 0 R /Fit] >>")
+    b.add(20, b"<< /Title (A short guide to pdfxt) /Author (xTalk Suite) "
+              b"/Subject (The sample PDF of the pdfxt demo stack) /Keywords (pdf, pdfium, openxtalk) "
+              b"/Creator (pdfxt tools/build-test-pdfs.py) /Producer (pdfxt tools/build-test-pdfs.py) "
+              b"/CreationDate (D:20261121000000Z) /ModDate (D:20261121000000Z) >>")
+    b.add(21, b"<< /Type /Outlines /First 22 0 R /Last 29 0 R /Count 8 >>")
+    b.add(22, b"<< /Title (Cover) /Parent 21 0 R /Next 23 0 R /Dest [3 0 R /Fit] >>")
+    b.add(23, b"<< /Title (Contents) /Parent 21 0 R /Prev 22 0 R /Next 24 0 R /Dest [4 0 R /Fit] >>")
+    b.add(24, b"<< /Title (1 Opening a document) /Parent 21 0 R /Prev 23 0 R /Next 26 0 R "
+              b"/First 25 0 R /Last 25 0 R /Count 1 /Dest [5 0 R /Fit] >>")
+    b.add(25, b"<< /Title (Passwords) /Parent 24 0 R /Dest [5 0 R /XYZ 72 620 0] >>")
+    b.add(26, b"<< /Title (2 Drawing pages) /Parent 21 0 R /Prev 24 0 R /Next 27 0 R /Dest [6 0 R /Fit] >>")
+    b.add(27, b"<< /Title (3 Text and search) /Parent 21 0 R /Prev 26 0 R /Next 29 0 R "
+              b"/First 28 0 R /Last 28 0 R /Count 1 /Dest [7 0 R /Fit] >>")
+    b.add(28, b"<< /Title (Searching) /Parent 27 0 R /Dest [7 0 R /XYZ 72 590 0] >>")
+    b.add(29, b"<< /Title (OpenXTalk on the web) /Parent 21 0 R /Prev 27 0 R "
+              b"/A << /S /URI /URI (https://openxtalk.org/) >> >>")
+    return b.build(1, 20, b"1.7")
+
+
 def header():
     """tests/fixtures.h: the same two files as C arrays, so the native smoke
     test carries them and needs no path handed to it (it runs on an Android
@@ -221,31 +421,104 @@ def header():
     return ("\n".join(out) + "\n").encode("ascii")
 
 
-FILES = {"fixtures/basic.pdf": basic, "fixtures/locked.pdf": locked, "fixtures.h": header}
+# Every file this script writes, by its path from the member root.
+FILES = {"tests/fixtures/basic.pdf": basic, "tests/fixtures/locked.pdf": locked,
+         "tests/fixtures.h": header}
+
+# The demo stack carries the sample and locked.pdf as text, so it stays one
+# paste-and-run file: a block of it, between these two marker lines, is
+# written here too. The rest of that file is hand-written.
+DEMO = "examples/pdfxt-demo.livecodescript"
+BEGIN = "-- >>> BEGIN SAMPLE PDFS"
+END = "-- <<< END SAMPLE PDFS <<<"
+# The IDE's script editor stays quick on lines of this length; the suite's
+# stacks already carry base64 constants of up to about 3,200 characters.
+CHUNK = 2000
 
 
-def main(argv):
+def demo_block():
+    """The lines between (and including) the demo's two marker lines."""
+    out = [BEGIN + " (tools/build-test-pdfs.py writes this block: change that script, then run it) >>>",
+           "-- The guide that \"The sample\" opens (5 pages, written by that script) and",
+           "-- tests/fixtures/locked.pdf (its password is secret), as base64 text cut into",
+           "-- constants of %d characters, and the one function that joins them." % CHUNK]
+    names = {}
+    for name, make in (("Sample", sample), ("Locked", locked)):
+        text = base64.b64encode(make()).decode("ascii")
+        names[name] = []
+        for i in range(0, len(text), CHUNK):
+            constant = "kPv%s%d" % (name, i // CHUNK + 1)
+            names[name].append(constant)
+            out.append('constant %s = "%s"' % (constant, text[i:i + CHUNK]))
+    out += ["",
+            "-- The base64 of a sample: pWhich is \"locked\" for the locked page, anything",
+            "-- else for the guide.",
+            "function pvSampleBase64 pWhich",
+            '   if pWhich is "locked" then',
+            "      return " + " & ".join(names["Locked"]),
+            "   end if",
+            "   return " + " & ".join(names["Sample"]),
+            "end pvSampleBase64",
+            END]
+    return "\n".join(out) + "\n"
+
+
+def with_demo_block(text):
+    """The demo's text with its block as this script writes it, or None when
+    the two marker lines are not there exactly once each, in order."""
+    lines = text.splitlines(True)
+    starts = [i for i, line in enumerate(lines) if line.startswith(BEGIN)]
+    ends = [i for i, line in enumerate(lines) if line.rstrip("\r\n") == END]
+    if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+        return None
+    return "".join(lines[:starts[0]]) + demo_block() + "".join(lines[ends[0] + 1:])
+
+
+def main(argv, root=ROOT):
     check = "--check" in argv
     bad = 0
     for name, make in sorted(FILES.items()):
         data = make()
-        path = os.path.join(OUT, name)
+        path = os.path.join(root, name)
         if check:
             try:
-                have = open(path, "rb").read()
+                with open(path, "rb") as f:
+                    have = f.read()
             except OSError:
                 have = None
             if have != data:
-                print("build-test-pdfs: tests/%s is not what this script writes "
+                print("build-test-pdfs: %s is not what this script writes "
                       "(run tools/build-test-pdfs.py)" % name)
                 bad = 1
         else:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as f:
                 f.write(data)
-            print("build-test-pdfs: wrote tests/%s (%d bytes)" % (name, len(data)))
+            print("build-test-pdfs: wrote %s (%d bytes)" % (name, len(data)))
+    path = os.path.join(root, DEMO)
+    try:
+        with open(path, encoding="ascii", newline="") as f:
+            have = f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        print("build-test-pdfs: cannot read %s (%s)" % (DEMO, e))
+        return 1
+    want = with_demo_block(have)
+    if want is None:
+        print("build-test-pdfs: %s needs one line beginning %r and, after it, one line %r"
+              % (DEMO, BEGIN, END))
+        return 1
+    if check:
+        if have != want:
+            print("build-test-pdfs: the sample block of %s is not what this script writes "
+                  "(run tools/build-test-pdfs.py)" % DEMO)
+            bad = 1
+    elif have != want:
+        with open(path, "w", encoding="ascii", newline="") as f:
+            f.write(want)
+        print("build-test-pdfs: wrote the sample block of %s" % DEMO)
     if check and not bad:
-        print("build-test-pdfs: OK (%d files match what this script writes)" % len(FILES))
+        print("build-test-pdfs: OK (%d files and the demo's sample block match what this "
+              "script writes)" % len(FILES))
     return bad
 
 

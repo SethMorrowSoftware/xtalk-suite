@@ -30,9 +30,12 @@ python3 tools/test-pdfium-pin.py
 echo "== pdfxt: tools/check-pdfium-pin.py =="
 python3 tools/check-pdfium-pin.py
 
-# The two test PDFs and tests/fixtures.h are WRITTEN by a tool; the committed
-# files must be what it writes (a fixture edited by hand, or a tool changed
-# without its output, fails here).
+# The two test PDFs, tests/fixtures.h and the demo's SAMPLE PDFS block are
+# WRITTEN by a tool; the committed files must be what it writes (a fixture
+# or the block edited by hand, or a tool changed without its output, fails
+# here). The fixture test breaks each in a scratch copy first.
+echo "== pdfxt: tools/test-build-test-pdfs.py =="
+python3 tools/test-build-test-pdfs.py
 echo "== pdfxt: tools/build-test-pdfs.py --check =="
 python3 tools/build-test-pdfs.py --check
 

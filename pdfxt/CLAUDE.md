@@ -49,8 +49,11 @@ box3dxt is the member this one was shaped on.
    `tools/test-lcb-signatures.py`).
 9. **Done means:** a shim change is green in `smoke` under `-DPDFXT_SANITIZE=address
    -DCMAKE_BUILD_TYPE=Debug`; a binding change passes `lc-compile -Werror` and
-   `tests/engine-selftest.lc` on the server engine; both pass `bash tools/run-gates.sh`. An
-   ABI change bumps `PDX_ABI_VERSION` and the two literals in `checkABI()` together.
+   `tests/engine-selftest.lc` on the server engine; a change to
+   `examples/pdfxt-demo.livecodescript` passes `tests/demo-drive.livecodescript` on the
+   desktop engine with `-ui` (its header has the command); all pass
+   `bash tools/run-gates.sh`. An ABI change bumps `PDX_ABI_VERSION` and the two literals in
+   `checkABI()` together.
    Native-library changes refresh the committed binaries through the suite's
    `release-binaries.yml`; `native-pdfxt.yml` never commits.
 
@@ -62,6 +65,7 @@ box3dxt is the member this one was shaped on.
 | `sweepEveryHandler` in `tests/engine-selftest.lc` | `tools/check-lcb-signatures.py --write` |
 | `docs/api-reference.md` | `tools/build-api-reference.py` |
 | `tests/fixtures/*.pdf` and `tests/fixtures.h` | `tools/build-test-pdfs.py` |
+| the SAMPLE PDFS block of `examples/pdfxt-demo.livecodescript` (the rest is hand-written) | `tools/build-test-pdfs.py` |
 
 ## As built
 
@@ -106,6 +110,14 @@ Verified natively (smoke, ASan/UBSan, x86_64 Linux; and the smoke test on every 
 it ships for by `native-pdfxt.yml`, run 44840908920, 2026-11-21: six desktop rows, the mac
 x86_64 slice under Rosetta, and the Android 6.0 emulator for both x86 ABIs, the ARM ABIs built,
 not run) and on the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a
-locally built library). No desktop IDE and no other
-platform's engine has loaded it: verified statically; needs an OXT pass. No binaries are
-committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+locally built library). The demo stack (`examples/pdfxt-demo.livecodescript`, the suite UI kit)
+is driven on the Linux desktop engine without a display by `tests/demo-drive.livecodescript`
+(2026-11-21), and by the native lane on every change; no person has used its window. A click
+or a drag on the page is driven through the handlers the demo's mouse handlers call
+(`pvClickAt`, `pvSelectBox`), since no pointer moves there. The Windows IDE loaded it on
+2026-11-21 (the maintainer's 64-bit OXT-Beyond, CI's `x86_64-win32` library): the engine
+self-test passed 64 checks and failed its 2 first-load checks, which cannot hold once PDFium
+has been loaded in the process (pdfxt had been used in that session first; loading and
+shutting down first reproduces the two on Linux; a fresh-session run is owed). No IDE on Linux
+or a Mac and no engine on macOS or Android has loaded it: verified statically; needs an OXT
+pass. No binaries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
