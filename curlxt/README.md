@@ -130,8 +130,9 @@ on a real engine, OXT-Beyond's headless Linux server engine: `tests/engine-selft
 `tools/run-engine-selftest.py` against the same servers, in the native lane on every change
 (2026-11-21 below). The binaries come from the suite's release-binaries dispatch (2026-11-14,
 rebuilt 2026-11-15 with the file-download fixes); since 2026-11-21 every committed library, the
-six desktop rows and the four Android ABIs, is the ABI 2 build of run 44825160471 (from ac22df8,
-commit 02b4238).
+six desktop rows and the four Android ABIs, is an ABI 2 build: run 44825160471's (from ac22df8,
+commit 02b4238), then, with the 0.2.1 shim, run 44925581646's (from eadc350, commit a336ba5), the
+build committed now.
 
 **WebSockets (2026-11-20, ABI 2).** Added on libcurl's own WebSocket support, as new handlers only:
 every handler, option, number and result that existed before is as it was, `cuPoll` never lists a
@@ -170,17 +171,17 @@ earlier shim two of the smoke test's three new checks failed, and one of the eng
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
-ran on an Android 5.0 emulator for the two x86 ids, and the ABI 2 build's tests ran there again
-in run 44825160471 (2026-11-21), whose Android rows fail unless every member's tests ran; the two
-ARM libraries are built and statically checked, not run. An OXT engine on Android first loaded
-this library on 2026-11-19, as the ABI 1 build committed before that run: an app OXT-Beyond's CI
-built with the suite's extensions ran on x86_64 emulators (Android 13, and Android 16 with 16 KB
-pages), where `cuLibraryVersion()` answered, its certificate count 149 on Android 16. That is one
-call on the ABI 1 `x86_64-android` library. No Android engine has loaded the ABI 2 files
+ran on an Android 5.0 emulator for the two x86 ids, and the ABI 2 builds' tests ran there again in
+runs 44825160471 and 44925581646 (2026-11-21), whose Android rows fail unless every member's tests
+ran; the two ARM libraries are built and statically checked, not run. An OXT engine on Android first
+loaded this library on 2026-11-19, as the ABI 1 build committed before those runs: an app
+OXT-Beyond's CI built with the suite's extensions ran on x86_64 emulators (Android 13, and Android
+16 with 16 KB pages), where `cuLibraryVersion()` answered, its certificate count 149 on Android 16.
+That is one call on the ABI 1 `x86_64-android` library. No Android engine has loaded the ABI 2 files
 committed here now, this member's selftest has not run on an Android engine, and no engine has
 loaded an `x86-android` or an ARM library: needs an OXT pass on Android. The `.lcb` declares
-Android's INTERNET permission, which OXT-Beyond's standalone builder adds to an app that
-includes this extension.
+Android's INTERNET permission, which OXT-Beyond's standalone builder adds to an app that includes
+this extension.
 
 **First engine records, Windows x86-64, on the 2026-11-14 `x86_64-win32` DLL, the one before
 the 2026-11-15 rebuild:**
@@ -204,7 +205,8 @@ sockets through the binding and through the helpers' timer: text, UTF-8, binary,
 burst messages, ping and pong, the peer's close, a dropped connection, the close timeout, the
 message cap (1009), a refused upgrade, a dead port and a refused certificate. The same day it ran
 again over the COMMITTED `x86_64-linux` library, the ABI 2 release build of run 44825160471 (the
-same version line): 138 checks, none failed.
+same version line): 138 checks, none failed; and, with the 0.2.1 shim's checks added, over run
+44925581646's: 141 checks, none failed.
 
 **The demo on an engine, Linux x86-64 (2026-11-21).** `examples/curlxt-live.livecodescript` ran
 start to finish on OXT-Beyond 0.2.7-rc.6's desktop engine (9.7.1-OXT) with no screen, over a library
@@ -213,8 +215,10 @@ native lane on every change, made 26 checks, none failed. The boot self-check wa
 started by itself and kept going; every scene reached its own verdict (all 8 messages back
 identical, over 11,000 echoes in 8.1 s every one in order, 15 of 15 local requests answered, the server's
 1001 heard and the reconnect made); closing left no request, socket or listener behind; and the
-demo opened and ran again. It ran again the same day over the committed `x86_64-linux` library:
-26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn.
+demo opened and ran again. It ran again the same day over the committed `x86_64-linux` library of
+run 44825160471: 26 checks, none failed (12,453 echoes in 8.1 s at full speed), and over run
+44925581646's: 26 checks, none failed (12,938 echoes in 8.0 s). None of these runs sees anything
+drawn.
 
 **The demo on Windows (2026-11-21).** OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 opened it over
 its built-in curlxt 0.1.0 (ABI 1, so scene 4 was the one that could run): the boot self-check was
@@ -251,8 +255,18 @@ the same session `wss://echo.websocket.org/` answered over Schannel through the 
 0.35 s; a UTF-8 text message and a 7-byte binary one back identical; a ping's pong; a close with
 1000) and through the helpers: `cuWsOpen` with a handler that sent on "open", the socket then left
 idle for 85 s and still open (each message once and in order, then "closed" once with 1000), and
-`cuWsOpenSync` with `cuWsWait` and `cuWsReadText`. The IDE answered throughout. The demo's look on
-Linux, mac and Android, and the demo in those IDEs, are verified statically; needs an OXT pass.
+`cuWsOpenSync` with `cuWsWait` and `cuWsReadText`. The IDE answered throughout. Later that day it
+all ran again over run 44925581646's `x86_64-win32` library (the 0.2.1 shim, hashed there before it
+was committed, the same bytes): the boot self-check green (28), 85 round trips at 17 ms on average,
+all 8 back identical, 1,371 echoes in 8.5 s every one in order (162 a second), 15 of 15 and the
+internet, the reconnect 3.0 s after the server went, and a close and a reopen that left nothing
+behind; the window was looked at in every scene, every label whole. Through the binding every
+WebSocket call ran, `cuWsPoll` included (a socket opened by it alone), and a loop on `cuWsWait`
+until the socket closed, with two messages unread, ended (4,795 calls in 99 ms: it moves the socket
+but never pauses, as the 0.2.1 change says), both messages still readable after; through the
+helpers, `cuWsOpenSync`, then `cuWsWatch` with its "open" once, each echo and "closed" with 1000.
+The demo's look on Linux, mac and Android, and the demo in those IDEs, are verified statically;
+needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

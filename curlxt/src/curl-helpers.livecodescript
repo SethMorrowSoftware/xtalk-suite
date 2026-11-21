@@ -28,10 +28,9 @@ script "curlHelpers"
 -- (tests/engine-selftest.lc): cuRequestSync, cuRequestAsync and its
 -- callback, cuResponse, and every WebSocket call here with the timer's
 -- events (open, text, binary, closed), ws:// and wss://. The same day
--- OXT-Beyond's IDE on Windows x86-64 ran the calls curlxt Live makes and,
--- over wss://, cuWsOpen with those events and cuWsOpenSync (README,
--- Status). The other IDEs and platforms and the rest of this file need an
--- OXT pass.
+-- OXT-Beyond's IDE on Windows x86-64 ran the calls curlxt Live makes and
+-- every WebSocket call here, over wss:// too (README, Status). The other
+-- IDEs and platforms and the rest of this file need an OXT pass.
 
 constant kCuDefaultInterval = 20
 constant kCuIntOptions = "timeout,connectTimeout,followRedirects,maxRedirects,verifyPeer,verifyHost,lowSpeedLimit,lowSpeedTime,useSsl,ftpPassive,maxBodyBytes,httpVersion,dnsCacheSeconds,createDirs,wsCloseTimeout"

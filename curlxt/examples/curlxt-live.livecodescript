@@ -70,7 +70,7 @@ script "curlxtLive"
 -- server and libcurl together; it sees nothing drawn. The same day it ran
 -- in OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (README, Status): every
 -- scene to its own verdict over curlxt ABI 2, a close and a reopen, and the
--- window seen in scenes 1 and 4. The look elsewhere, the Linux and mac IDEs,
+-- window seen in every scene. The look elsewhere, the Linux and mac IDEs,
 -- mac and Android are verified statically; needs an OXT pass.
 
 -- >>> BEGIN EMBEDDED LIBRARIES (tools/sync-demo-embeds.py) >>>
@@ -112,10 +112,9 @@ script "curlxtLive"
 -- (tests/engine-selftest.lc): cuRequestSync, cuRequestAsync and its
 -- callback, cuResponse, and every WebSocket call here with the timer's
 -- events (open, text, binary, closed), ws:// and wss://. The same day
--- OXT-Beyond's IDE on Windows x86-64 ran the calls curlxt Live makes and,
--- over wss://, cuWsOpen with those events and cuWsOpenSync (README,
--- Status). The other IDEs and platforms and the rest of this file need an
--- OXT pass.
+-- OXT-Beyond's IDE on Windows x86-64 ran the calls curlxt Live makes and
+-- every WebSocket call here, over wss:// too (README, Status). The other
+-- IDEs and platforms and the rest of this file need an OXT pass.
 
 constant kCuDefaultInterval = 20
 constant kCuIntOptions = "timeout,connectTimeout,followRedirects,maxRedirects,verifyPeer,verifyHost,lowSpeedLimit,lowSpeedTime,useSsl,ftpPassive,maxBodyBytes,httpVersion,dnsCacheSeconds,createDirs,wsCloseTimeout"
