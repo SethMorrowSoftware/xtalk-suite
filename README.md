@@ -191,8 +191,12 @@ library is checked as an Android library (ABI, API 21, Android's own libraries o
 alignment). Every member's own tests ran on an Android 5.0 emulator for the two x86 ABIs on
 2026-11-18, in the release workflow's first Android run; the ARM libraries are built and checked,
 not run. The twenty-eight libraries were committed the same day by a second release run (each
-member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
-on Android.
+member's `src/code/<abi>-android/`). On 2026-11-19 an OXT engine on Android first loaded them:
+OXT-Beyond pinned the twenty-eight and its CI ran an app with all seven extensions on x86_64
+emulators (Android 13, and Android 16 with 16 KB pages), where each library loaded and answered
+one call. No member's selftest has run on an Android engine, and no `x86-android` or ARM library
+has been loaded by one: needs an OXT pass on Android. curlxt's four were rebuilt at ABI 2 on
+2026-11-21 and tested on the emulator again; the engine load was of its ABI 1 files.
 box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
 render3dxt and xlsxt joined the same day and are in the recipe; none of their Android libraries
