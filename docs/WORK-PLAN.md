@@ -893,7 +893,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   every change. EVERY one of those drives SDL's virtual pads: no real controller has been
   read through it, and no desktop IDE has loaded it. For everything beyond that server run
   it is verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+- Binaries: none committed when it joined. The web archive was committed on 2026-11-21
+  (built with Emscripten 6.0.12, its tests run under node; no browser has run it); the
+  first release-binaries dispatch lands the desktop libraries
   (six desktop rows in `cmake-members`; no Android ids, `docs/ANDROID.md`), and the change
   after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
