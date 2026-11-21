@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Seventeen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -17,13 +17,15 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
   software renderer, plus the pure-script b3k game Kit; joined 2026-11-20, its libraries
-  committed that day), render3dxt (this suite's own software 3D renderer, textured and lit,
-  into an image's imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside
-  box3dxt, whose transform, move and camera texts it reads, with only its web archive committed
-  yet), pdfxt (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no
-  committed library yet; the one member that ships a SECOND library, a pinned prebuilt PDFium
-  its shim loads from beside itself, see Building) and xlsxt (libxlsxwriter + zlib + Expat:
-  Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet).
+  committed that day), audioxt (miniaudio: mixing, streaming, 3D sound and microphone capture,
+  beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
+  render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
+  imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
+  transform, move and camera texts it reads, with only its web archive committed yet), pdfxt
+  (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
+  yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
+  beside itself, see Building) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files
+  written and read; joined 2026-11-20 with no committed library yet).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -213,11 +215,11 @@ because a harness once ran against a stale in-memory library and reported failur
   member with an in-engine harness plus a cross-member row (a pill, its counts, a scoped **Run**,
   **Show**), a results filter and the boot self-check. The members in the generator's
   `NO_HARNESS` (it refuses a registry member with neither a harness nor such a reason) have no
-  row: since 2026-11-21, when pdfxt, the sixteenth member, made a seventeenth row that no pitch
-  could fit, they are names in a band under the rows, and the boot self-check (`suBoardFits`)
-  and `check-suite-ui-boot.py` fail a board whose rows or band overrun the members caption. A
-  row's Run is a subsequence of Run all, never a reordering, and every block tallies into its
-  row. The kit builds the scaffold's four report controls under their own
+  row: since 2026-11-21, when a seventeenth row would have fitted at no pitch, they are names in
+  a band under the rows, three to a line with room for twelve, and the boot self-check
+  (`suRowsFit`) fails a board whose rows or names reach the members caption. A row's Run is a
+  subsequence of Run all, never a reordering, and every block tallies into its row. The kit
+  builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
@@ -336,7 +338,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, render3dxt, pdfxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

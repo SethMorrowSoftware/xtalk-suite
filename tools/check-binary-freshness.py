@@ -386,6 +386,32 @@ MEMBERS = [
                     "wasm": WASM_CLOSURE_REASON},
     },
     {
+        "name": "audioxt",
+        "lib": "audioxt",
+        "lcb": ["audioxt/src/audioxt.lcb"],
+        # The six desktop and four Android libraries came from the first
+        # release-binaries dispatch (run 44847619287 from 7dcbb41, commit
+        # 78223d8, 2026-11-21). The web archive is built outside that workflow
+        # (Emscripten 6.0.12, byte for byte the same from two build folders),
+        # as every member's is, and was committed the same day for
+        # OXT-Beyond's web engine.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android", "wasm32-emscripten"],
+        "shim": "audioxt/src/audio_shim.c",
+        "prefix": "aux_",
+        "abi_header": "audioxt/src/audio_shim.c",
+        "abi_define": "AUX_ABI_VERSION",
+        "abi_symbol": "aux_abi_version",
+        # src/audioxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export aux_* and nothing else; miniaudio is compiled into
+        # the shim's one translation unit with hidden visibility (measured
+        # on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
         "name": "render3dxt",
         "lib": "render3dxt",
         "lcb": ["render3dxt/src/render3dxt.lcb"],
