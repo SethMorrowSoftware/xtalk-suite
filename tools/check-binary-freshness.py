@@ -412,13 +412,17 @@ MEMBERS = [
         "name": "xlsxt",
         "lib": "xlsxt",
         "lcb": ["xlsxt/src/xlsxt.lcb"],
-        # The web archive is built outside release-binaries.yml (Emscripten
-        # 6.0.12, OXT-Beyond's config/emscripten-version) and committed with
-        # its MANIFEST line, as b0e77e6 did for the first three. The desktop
-        # and Android ids join when the first release-binaries dispatch lands
-        # them: that run's --installing tolerates each gained platform, and
-        # the change after it lists them here.
-        "ships": ["wasm32-emscripten"],
+        # Its first release-binaries dispatch (run 44838679488, commit
+        # 0be6db1, 2026-11-21) landed the six desktop and four Android
+        # libraries. The web archive is built outside that workflow
+        # (Emscripten 6.0.12, OXT-Beyond's config/emscripten-version) and was
+        # committed with its MANIFEST line before them, as b0e77e6 did for
+        # the first three.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "xlsxt/src/xlsx_shim.c",
         "prefix": "xlx_",
         # Like box3dxt, the ABI define lives in the shim itself.

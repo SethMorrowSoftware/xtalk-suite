@@ -79,18 +79,53 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, wrote a workbook with formats, a table, a chart and a picture, read it
   back (text outside ASCII included) and called every public handler once.
-- **The demo stack**, `examples/xlsxt-demo.livecodescript` (paste it into a stack's script
-  and reopen the stack): a tab each for a table in one call, formats, formulas and dates,
-  charts, page setup and pictures, a reader for any `.xlsx`, and one button that checks all
-  of it. `tests/demo-drive.livecodescript` drives it on OXT-Beyond's Linux desktop engine
-  with no display (2026-11-21, a locally built library): its window built, every tab's
-  workbook made and read back, a tick box and a cell clicked, its own checks green. The
-  native lane repeats that on every change. Nobody has used the window by hand yet.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. No file it wrote has
-  been opened in Excel itself on the record: what is checked is that the library's own reader
-  reads them and that their parts are the ones libxlsxwriter writes. No library is committed
-  under `src/code/` yet; the suite's release-binaries dispatch lands them.
+- **In the IDE on Windows**, 2026-11-21, on the maintainer's PC (64-bit OXT-Beyond, its
+  version not recorded): the binding compiled by the IDE's own lc-compile, over the
+  `x86_64-win32` DLL of the native lane's run 44845807163 (not the release library). It
+  loaded and named its versions; the engine self-test, run in the IDE as a script-only stack,
+  passed 64 and failed 0; the demo's window built and its own checks passed 39/0. Under
+  Windows' dark theme the demo's table and every tick box's words were white on white. The
+  demo was rebuilt the same day, and the new window ran on that PC readable throughout
+  (below).
+- **In a browser**, 2026-11-21: the committed web archive, linked into OXT-Beyond's web
+  engine by that repository's pull request 605 (not merged yet), ran the `xlsx` step of its
+  web IDE check (run 44847676839) in headless Chromium, Firefox and WebKit.
+  `xlLibraryVersion()` answered; a workbook with a table, a formula, a date, a boolean, text
+  outside ASCII and a chart was written to the engine's in-memory file system and read back;
+  a file that is no workbook was refused; nothing was left open. The other handlers have not
+  run in a browser.
+- **The demo stack, Spreadsheet Studio**, `examples/xlsxt-demo.livecodescript` (paste it
+  into a stack's script and reopen the stack; `examples/build-demo-stack.livecodescript`
+  saves it as a stack file). It opens playing a tour of four scenes that write real
+  workbooks and read them back while you watch: a sheet that fills itself and gets its
+  colours, money format, frozen heading and chart; formulas, today's date and a true-or-false
+  cell; all fifteen kinds of chart; ten thousand cells, timed. Each scene ends by saying
+  whether every cell came back the same. Its other tabs are the workbench: a table in one
+  call, formats, formulas and dates, charts, page setup and pictures, a reader for any
+  `.xlsx`, and one button that checks all of it. It wears OXT-Beyond's dark look, with every
+  colour named by the stack, so no system theme can leave its words white on white (the
+  Windows fault above). It was rebuilt so on 2026-11-21, after the Windows run, and
+  `tests/demo-drive.livecodescript` drives the new window on OXT-Beyond's Linux desktop
+  engine (that day, a locally built library, headless and under xvfb): it opens playing,
+  each scene and the whole tour ends with every cell matched and nothing left open, leaving
+  mid-scene stops it cleanly, every tab's workbook is made and read back, a tick box and a
+  cell are clicked, and its own checks are green. The native lane repeats that on every
+  change. The same day the new window ran on the maintainer's Windows PC (64-bit
+  OXT-Beyond under its dark theme, the saved stack file, over the lane-built DLL above): it
+  opened at 960 x 640 already playing, the tour played all four scenes, About's checks
+  passed 39/0, and every word was readable. The one fault it showed, the ten-thousand-cell
+  scene's last column cutting a five-digit number to four, was fixed that day; the drive
+  now measures every cell a scene shows against its column, and the fix is checked on
+  Linux only. On macOS and in a browser the new window is verified statically; needs an
+  OXT pass.
+- **Not yet:** no engine on macOS or Android has run it, and no desktop IDE but the Windows
+  one above: on macOS and Android, and in an IDE on Linux, it is verified statically; needs
+  an OXT pass. No file it wrote has been opened in Excel itself on the record: what is
+  checked is that the library's own reader reads them and that their parts are the ones
+  libxlsxwriter writes. The release libraries
+  committed under `src/code/` on 2026-11-21 (six desktop platforms, four Android ABIs) were
+  tested where they were built; no engine has loaded one of them yet. The Windows run used
+  the native lane's DLL, and the browser run the web archive committed beside them.
 
 ## Building and testing
 
