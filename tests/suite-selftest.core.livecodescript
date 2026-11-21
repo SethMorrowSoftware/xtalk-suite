@@ -280,15 +280,15 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-0332e1ed6dca"
+constant kSuUiVersion = "suite-board-5b7930168975"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,gamepadxt,coinxt,xlsxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,gamepadxt,CoinXT,xlsxt,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,render3dxt,gamepadxt,coinxt,xlsxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,render3dxt,gamepadxt,CoinXT,xlsxt,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a row with a caption, and no pill or Run.
-constant kSuNoHarness = "box3dxt,curlxt,gamepadxt,nocloud,xlsxt"
+constant kSuNoHarness = "box3dxt,curlxt,gamepadxt,nocloud,render3dxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
@@ -297,15 +297,20 @@ constant kSuNoHarness = "box3dxt,curlxt,gamepadxt,nocloud,xlsxt"
 -- row's controls still clear the next row's (+34), and the last row ends at
 -- 543. xlsxt made the fifteenth the same day: at 29 its last row ended at
 -- 572; at 27 a row's controls still clear the next row's (+32), and the last
--- row ends at 544. Verified statically; the board at this pitch needs an OXT
--- pass. gamepadxt made the sixteenth, with more members on their way, so the
--- pitch stopped being a number somebody lowers by hand: kSuRowStep is now the
+-- row ends at 544. render3dxt and gamepadxt made the sixteenth and the
+-- seventeenth the same day, with more members on their way, so the pitch
+-- stopped being a number somebody lowers by hand: kSuRowStep is now the
 -- WIDEST pitch, and suRowStep() narrows it to what the row count leaves
--- between the first row and the members caption (kSuRowsBottom). Fifteen
--- rows still get 27 and the controls they had; sixteen get 25, and
--- suRowHeight() shortens a row's controls with the pitch (23 tall at 25, so
--- a row's +5 to +28 clears the next row's +30 and the last row ends at 539).
--- Verified statically; the board at 25 needs an OXT pass.
+-- between the first row and the members caption (kSuRowsBottom): fifteen
+-- rows get 27, sixteen 25, seventeen 23. The buttons shorten with the pitch
+-- (suRowHeight), and every field keeps the height its words need, centred
+-- on the buttons (suRowY), so at 23 a row takes +5 to +25, the next row
+-- begins at +28 and the last row ends at 529. Measured on OXT-Beyond's Linux
+-- desktop engine with no display, 2026-11-21, the board built alone and read
+-- back: no row reaches the next and no field is shorter than its words. Each
+-- new row shortens the buttons again: the rows of the members with no
+-- harness are to move into a band of their own (work plan 2.11, render3dxt,
+-- #10). Seen by nobody at a screen yet: the board at 23 needs an OXT pass.
 constant kSuRowTop = 136
 constant kSuRowStep = 27
 constant kSuRowsBottom = 546
@@ -868,6 +873,10 @@ command uiInput pName, pRect
    set the borderWidth of field pName to 1
    set the borderColor of field pName to kUiFieldLine
    set the opaque of field pName to true
+   -- SAY THE TEXT COLOUR. Left unset it is the system theme's, and a dark
+   -- theme's is white: white words on the white this builder paints (seen on
+   -- Windows, 2026-11-20, in a log and under two checkboxes).
+   set the foregroundColor of field pName to kUiInk
    set the backgroundColor of field pName to kUiCard
    -- 4-item margins form ONLY: OXT ignored the single-number form on a
    -- real engine pass
@@ -890,6 +899,8 @@ command uiArea pName, pRect
    set the borderColor of field pName to kUiCardLine
    set the opaque of field pName to true
    set the backgroundColor of field pName to kUiCard
+   -- and its words, for uiInput's reason: never the theme's
+   set the foregroundColor of field pName to kUiInk
    set the margins of field pName to "6,6,6,6"
    set the vScrollbar of field pName to true
    set the textSize of field pName to 10
@@ -924,6 +935,9 @@ command uiCheckbox pName, pLabel, pRect
    uiButton pName, pLabel, pRect
    set the style of button pName to "checkbox"
    set the autoHilite of button pName to false
+   -- its label sits on the adopter's card, which the kit paints white: the
+   -- theme's text colour (white, under a dark theme) must not reach it
+   set the foregroundColor of button pName to kUiInk
 end uiCheckbox
 
 -- Create-or-reuse a named graphic: the chrome layer (cards, pills,
@@ -1487,10 +1501,23 @@ function suRowStep
 end suRowStep
 
 -- How tall a row's controls may be at that pitch: 25 (the height every
--- control was drawn for) down to the pitch less a 2 pixel gap.
+-- control was drawn for) down to the pitch less a 2 pixel gap. The buttons
+-- take it all, one pixel short, from the row's top + 5.
 function suRowHeight
    return min(25, suRowStep() - 2)
 end suRowHeight
+
+-- Where a field of a row goes: its top, for a field pNeed tall, centred on
+-- the buttons' band. A field keeps the height its words need at any pitch
+-- (a member's name in 12 point bold needs 20, a pill's word and the counts
+-- in 10 point 17, with the kit's 8 pixel margins: measured on OXT-Beyond's
+-- Linux desktop engine, 2026-11-21; a pill keeps the 20 it was drawn at),
+-- because a box shorter than its words cuts them: shrunk with the pitch to
+-- 16, the names lost their lowest 4 pixels. Only the gaps between rows
+-- narrow, down to 1 pixel at a pitch of 21.
+function suRowY pTop, pNeed
+   return pTop + 5 + (suRowHeight() - 1 - pNeed) div 2
+end suRowY
 
 -- A member with no in-engine harness: a row with a caption instead of a pill
 -- and a Run. kSuNoHarness is a LIST, so it is asked as one - `is` would match
@@ -1744,13 +1771,12 @@ end suPresent
 -- same rects every time, pins first (it is reached from the pump's timer), and
 -- does nothing before the board exists.
 command suPaintRows
-   local tKeys, tKey, tI, tOld, tTop, tState, tCounts, tStep, tTall
+   local tKeys, tKey, tI, tOld, tTop, tState, tCounts, tStep
    set the defaultStack to the short name of this stack
    if there is no field "suView" then
       exit suPaintRows
    end if
    put suRowStep() into tStep
-   put suRowHeight() into tTall
    put kSuKeys into tKeys
    put the itemDelimiter into tOld
    set the itemDelimiter to comma
@@ -1759,13 +1785,13 @@ command suPaintRows
       if not suNoHarness(tKey) then
          put kSuRowTop + tStep * (tI - 1) into tTop
          put suRowState(tKey, false) into tState
-         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 2 + tTall)), (line 1 of tState)
+         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & suRowY(tTop, 20) & ",296," & (suRowY(tTop, 20) + 20)), (line 1 of tState)
          if suInScope(tKey) then
             put suNum(sSuP[tKey]) && "/" && suNum(sSuF[tKey]) && "/" && suNum(sSuS[tKey]) into tCounts
          else
             put "-" into tCounts
          end if
-         uiLabel ("suCount" & tKey), tCounts, ("300," & (tTop + 9) & ",376," & (tTop + tTall)), 10
+         uiLabel ("suCount" & tKey), tCounts, ("300," & suRowY(tTop, 17) & ",376," & (suRowY(tTop, 17) + 17)), 10
          set the textFont of field ("suCount" & tKey) to uiMonoFont()
          set the foregroundColor of field ("suCount" & tKey) to kUiInkSoft
       end if
@@ -1900,10 +1926,10 @@ command suBuildAll
    repeat with tI = 1 to the number of items of tKeys
       put item tI of tKeys into tKey
       put kSuRowTop + tStep * (tI - 1) into tTop
-      uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 2 + tTall)), 12
+      uiLabel ("suName" & tKey), (item tI of tNames), ("20," & suRowY(tTop, 20) & ",196," & (suRowY(tTop, 20) + 20)), 12
       set the textStyle of field ("suName" & tKey) to "bold"
       if suNoHarness(tKey) then
-         put "200," & (tTop + 6) & ",488," & (tTop + 5 + tTall) into tRect
+         put "200," & suRowY(tTop, 17) & ",488," & (suRowY(tTop, 17) + 17) into tRect
          uiCap ("suNote" & tKey), "no in-engine harness: its tests run headlessly in the gates", tRect
       else
          uiButton ("suRun" & tKey), "Run", ("380," & (tTop + 5) & ",432," & (tTop + 4 + tTall))

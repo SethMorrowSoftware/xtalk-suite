@@ -9,16 +9,19 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Fifteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
-  software renderer; joined 2026-11-20, its libraries committed that day), xlsxt (libxlsxwriter + zlib + Expat: Excel
-  .xlsx files written and read; joined 2026-11-20 with no committed library yet) and gamepadxt
-  (SDL 3's gamepad subsystem: game controllers; joined 2026-11-20; only its web
+  software renderer; joined 2026-11-20, its libraries committed that day), render3dxt (this
+  suite's own software 3D renderer, textured and lit, into an image's imageData, with stb_image
+  and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose transform, move and camera
+  texts it reads, with only its web archive committed yet), xlsxt (libxlsxwriter + zlib +
+  Expat: Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet) and
+  gamepadxt (SDL 3's gamepad subsystem: game controllers; joined 2026-11-20; only its web
   archive is committed yet; desktop and web only).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
@@ -328,7 +331,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, render3dxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

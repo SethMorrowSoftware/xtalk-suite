@@ -118,6 +118,12 @@ costs 45 s on the model's clock):
      the board's paint, since a slow native poll inside the first tick fits
      the Windows record as well as a slow render does.
 
+And one for the seventeenth row (2026-11-21):
+
+  ab a member's name is drawn as tall as the pitch leaves (16 at 23), not as
+     tall as its words need (20): on the Linux engine its lowest 4 pixels
+     were cut.
+
 The mutants run concurrently, at most one gate run per core.
 
 THE --full MUTANTS (python3 tools/test-suite-ui-boot.py --full)
@@ -367,6 +373,13 @@ MUTANTS = [
            "a slow tick with no part to blame",
      DC_POLL_TIMED, '',
      "the notes put the slow tick in datachannel's poll"),
+    # And one from the seventeenth row (2026-11-21): a member's name shrunk
+    # with the pitch, as the first derived pitch drew it (16 tall at 23).
+    ("ab", "a member's name is drawn as tall as the pitch leaves, not as tall "
+           "as its words need",
+     '   uiLabel ("suName" & tKey), (item tI of tNames), ("20," & suRowY(tTop, 20) & ",196," & (suRowY(tTop, 20) + 20)), 12\n',
+     '   uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 2 + tTall)), 12\n',
+     "no row field is shorter than its words need"),
 ]
 
 

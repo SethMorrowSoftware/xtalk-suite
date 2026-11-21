@@ -61,6 +61,9 @@ licenses, reproduced with their sources:
                   and relays you choose; published test vectors are
                   transcribed into tools/ with source URLs)
   box3dxt         Box3D (pinned commit)         MIT
+  render3dxt      stb_image (pinned commit)     MIT (offered as MIT or
+                                                public domain)
+                  fast_obj v1.3                 MIT
   gamepadxt       SDL 3.4.20                    Zlib
                   HIDAPI (inside SDL)           BSD-3-Clause
   box2dxt         Box2D v3.1.0                  MIT
@@ -100,7 +103,7 @@ redistribution, and coinxt commits built libraries. The list is per-file in
 coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
-in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, gamepadxt), in a THIRD-PARTY-LICENSES.md next to
+in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, render3dxt, gamepadxt), in a THIRD-PARTY-LICENSES.md next to
 the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, xlsxt), or
 alongside the vendored sources (coinxt/native/vendor/LICENSE, for the MIT
 parts). OpenSSL's licence is in an OpenSSL-LICENSE.txt next to the LICENSE of

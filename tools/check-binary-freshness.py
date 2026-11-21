@@ -385,6 +385,30 @@ MEMBERS = [
                     "wasm": WASM_CLOSURE_REASON},
     },
     {
+        "name": "render3dxt",
+        "lib": "render3dxt",
+        "lcb": ["render3dxt/src/render3dxt.lcb"],
+        # Only the web archive, committed by hand on 2026-11-20 (built with
+        # emsdk 6.0.12 as native-render3dxt.yml's wasm lane builds it) so
+        # OXT-Beyond's web engine can pin it. The desktop and Android rows
+        # wait for the first release-binaries dispatch that lands render3dxt's
+        # libraries: that run's --installing tolerates each gained platform,
+        # and the change after it lists them here.
+        "ships": ["wasm32-emscripten"],
+        "shim": "render3dxt/src/render3d_shim.c",
+        "prefix": "r3x_",
+        # Like box2dxt and box3dxt, the ABI define lives in the shim itself.
+        "abi_header": "render3dxt/src/render3d_shim.c",
+        "abi_define": "R3X_ABI_VERSION",
+        "abi_symbol": "r3x_abi_version",
+        # src/render3dxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export r3x_* and nothing else; stb_image and fast_obj are
+        # compiled in with hidden visibility (measured on the x86_64-linux
+        # build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
         "name": "gamepadxt",
         "lib": "gamepadxt",
         "lcb": ["gamepadxt/src/gamepadxt.lcb"],
