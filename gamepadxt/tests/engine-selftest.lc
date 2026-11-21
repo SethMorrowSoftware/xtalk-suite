@@ -358,6 +358,14 @@ try
       sweepEveryHandler
       check "the sweep left nothing started", gpIsStarted() is false, gpIsStarted()
       check "nothing above tripped an SDL assertion", gpAssertCount() is 0, gpAssertCount()
+      -- The dead zone outlives a stop (it belongs to the engine), and the
+      -- sweep set it to 0 and left a refusal in gpLastError. Both are put
+      -- back, so that a second run in the same engine (an IDE keeps its
+      -- engine, and the library loaded in it) starts as this one did.
+      gpSetDeadZone 0.15
+      gpStop
+      check "the run leaves the library as it found it", near(gpDeadZone(), 0.15, 0.000001) and gpLastError() is empty, \
+            gpDeadZone() && gpLastError()
    end if
 catch tError
    check "the run finished", false, oneLine(tError)

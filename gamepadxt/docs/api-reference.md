@@ -181,7 +181,7 @@ Turns events for sticks and triggers on or off.
 
 - pStep: 0 for no axis events (how it starts), or 0.01 to 1: how far an axis must move, as a part of its full travel, before it is reported again.
 
-Stick and trigger events are off to begin with, because a stick in motion would queue an event at every poll and most stacks read sticks with `gpPadStick` instead. With a step set, an axis is reported in `gpEvents` when it has moved at least that far since its last report, and always when it comes to rest at 0 or at an end. A value out of range is refused.
+Stick and trigger events are off to begin with, because a stick in motion would queue an event at every poll and most stacks read sticks with `gpPadStick` instead. With a step set, an axis is reported in `gpEvents` when it has moved at least that far since its last report, and always when it comes to rest at 0 or at an end. Like the dead zone, the step keeps its value through `gpStop` and `gpStart` until it is set again. A value out of range is refused.
 
 ```
 gpSetAxisEvents 0.1
@@ -581,7 +581,7 @@ Sets the dead zone `gpPadStick` removes.
 
 - pZone: How much of a stick's travel around its centre reads as 0, from 0 to 0.9. It starts at 0.15.
 
-Raise it if a character drifts with the stick untouched (an old or worn pad); lower it for finer control. It applies to every pad. A value out of range is refused.
+Raise it if a character drifts with the stick untouched (an old or worn pad); lower it for finer control. It applies to every pad, and it belongs to the engine, not to a start: it keeps its value through `gpStop` and `gpStart` until it is set again. A value out of range is refused.
 
 ```
 gpSetDeadZone 0.2
