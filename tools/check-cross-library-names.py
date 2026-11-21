@@ -104,6 +104,8 @@ LCB_LIBS = {
     # physics bindings stay disjoint by prefix.
     "box3dxt/src/box3dxt.lcb": ("b3",),
     "curlxt/src/curl.lcb": ("cu",),
+    # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
+    "xlsxt/src/xlsxt.lcb": ("xl",),
     # barcodext and webpxt joined 2026-11-20. No other prefix begins with
     # "bc" or "wp", and neither begins another.
     "barcodext/src/barcodext.lcb": ("bc",),

@@ -37,6 +37,7 @@ it is developed here, and each member is also published into its own repository
 | [nostrxt](nostrxt/) | `nx*` / `nxr*` | pure script over coinxt + sodiumxt | NIP-01 events with an owned canonical serializer and BIP-340 signatures, NIP-19 entities, NIP-44 v2 encryption, filters, and a websocket relay client that verifies before it delivers |
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
 | [box3dxt](box3dxt/) | `b3*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling |
+| [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [webpxt](webpxt/) | `wp*` | libwebp 1.6.0 | WebP pictures: decode a file to an image's `imageData` and `alphaData` and encode them back, lossy or lossless, with the file's facts, its ICC, EXIF and XMP chunks, and animations read and written frame by frame |
 | [barcodext](barcodext/) | `bc*` | zxing-cpp 3.1.1 | barcodes: read every symbol in an image's `imageData` (QR Code, Data Matrix, Aztec, PDF417, EAN/UPC, Code 128 and the other linear kinds) with its text, bytes, kind and position, and create one as pixels, SVG or a module matrix |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
@@ -64,6 +65,10 @@ Design facts that decide how you use them (each member's own docs have the rest)
 - **box3dxt** simulates and reports; drawing is the stack's. Box3D is young (no tagged
   release) and trusts its caller, so the shim holds every argument to stated limits and removes
   a body whose motion stops being a number (`box3dxt/docs/getting-started.md`).
+- **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
+  number formats), not its looks. It does not edit a file in place or calculate formulas, and the
+  reader treats every file as a stranger's: every size in one is bounded
+  (`xlsxt/docs/getting-started.md`).
 - **webpxt** and **barcodext** speak the engine's own pixel layout: a script hands over
   `the imageData of image` and gets one back, reordering nothing. Both treat a file or a
   picture as untrusted, hold sizes to stated caps, and never leave the caller's thread
@@ -130,6 +135,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | datachannelxt | 5 platforms, ABI 1 | folded 39 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5); standalone async loopback, 2026-08-15; a DHT-signalled chat reported working across two machines on one LAN, 2026-08-27 | the standalone selftest's own async loopback on the 2026-09-12 builds (the paste's own completed on Linux); browser interop; a call across two networks; the loopback demo's itemised record (on 2026-09-26 it "seems to work as intended", by the maintainer's account) |
 | curlxt | 6 platforms, ABI 1 | Windows x86-64 only, on the 2026-11-14 DLL: the three extensions loaded and probed in OXT-Beyond's Windows CI, 2026-11-14; `tsNetGetSync`, an async `tsNetGet`, a refused expired certificate and five concurrent `cuRequestAsync` calls on the maintainer's PC through the MCP bridge, 2026-11-15 | the 2026-11-15 rebuild; SFTP, SCP, SMTP, FTP and uploads on an engine; Linux and mac on an engine |
 | box3dxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a committed library; a row in the suite paste |
+| xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
 | webpxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`webpxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a committed library; a harness in the suite paste |
 | barcodext | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`barcodext/tests/engine-selftest.lc`, run again by its native lane on every change); every picture it read was drawn by its own writer | any desktop IDE; a photograph from a camera; Windows, macOS, Android and the web; a committed library; a harness in the suite paste |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
@@ -171,8 +177,8 @@ alignment). Every member's own tests ran on an Android 5.0 emulator for the two 
 not run. The twenty-eight libraries were committed the same day by a second release run (each
 member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
 on Android.
-box3dxt, webpxt and barcodext joined on 2026-11-20 and are in the recipe; none of their Android
-libraries is committed yet.
+box3dxt, xlsxt, webpxt and barcodext joined on 2026-11-20 and are in the recipe; none of their
+Android libraries is committed yet.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -246,6 +252,7 @@ put b2Version()          -- box2dxt: prints 4
 put cxKeccak256Len()     -- coinxt: prints 32
 put cuLibraryVersion()   -- curlxt
 put b3LibraryVersion()   -- box3dxt
+put xlLibraryVersion()   -- xlsxt
 put wpLibraryVersion()   -- webpxt
 put bcLibraryVersion()   -- barcodext
 put oxVersion()          -- onionxt (its library in use)

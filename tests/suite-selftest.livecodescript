@@ -280,15 +280,15 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-315bb233614e"
+constant kSuUiVersion = "suite-board-c9efbccf7efd"
 -- One entry per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,coinxt,curlxt,barcodext,webpxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,CoinXT,curlxt,barcodext,webpxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,coinxt,xlsxt,curlxt,barcodext,webpxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,CoinXT,xlsxt,curlxt,barcodext,webpxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a name in the band under the rows, and no pill or Run.
-constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,webpxt"
+constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,webpxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
@@ -297,7 +297,8 @@ constant kSuNoHarness = "barcodext,box3dxt,curlxt,nocloud,webpxt"
 -- row's controls still clear the next row's (+34), and the last row ends at
 -- 543. Verified statically; the board at this pitch needs an OXT pass.
 --
--- THE BAND (2026-11-20, with barcodext and webpxt). Shrinking the pitch for
+-- THE BAND (2026-11-20, with barcodext and webpxt). xlsxt had landed that
+-- day as a fifteenth row at a pitch of 27; the band put the pitch back to 29. Shrinking the pitch for
 -- every new member had a floor, and five members were being added in one day.
 -- A member with no in-engine harness has nothing to press, so it no longer
 -- takes a row: the rows are the members that have a Run (and the cross row),

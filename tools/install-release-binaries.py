@@ -131,11 +131,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # src/code/MANIFEST.sha256 entries through the leg below.
 #
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
-# library committed, its manifest created by its first dispatch.
-#
-# BARCODEXT AND WEBPXT JOINED 2026-11-20 the same way.
+# library committed, its manifest created by its first dispatch. XLSXT,
+# BARCODEXT AND WEBPXT JOINED 2026-11-20 too, the same way.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt", "barcodext", "webpxt")
+           "curlxt", "box3dxt", "xlsxt", "barcodext", "webpxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 

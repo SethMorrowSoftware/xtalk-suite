@@ -99,6 +99,7 @@ CORPUS = [
     "nostrxt/src/nostrxt.livecodescript",
     "nostrxt/src/nostr-relay.livecodescript",
     "box3dxt/src/box3dxt.lcb",
+    "xlsxt/src/xlsxt.lcb",
     "barcodext/src/barcodext.lcb",
     "webpxt/src/webpxt.lcb",
     "curlxt/src/curl.lcb",

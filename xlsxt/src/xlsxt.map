@@ -1,0 +1,17 @@
+/* xlsxt.map - the linker version script for the shipped shared library.
+ *
+ * xlsxt statically links libxlsxwriter, zlib (with its minizip) and Expat.
+ * All three are compiled with hidden visibility, so their functions would
+ * not be exported anyway; this script makes that a decision instead of a
+ * default (the enetxt lesson, release run 10, 2026-08-26: a vendored
+ * library's symbols leaked from a dylib and could interpose on another
+ * extension's copy). Here the stake is plain: the engine that loads this
+ * library has a zlib of its own. It keeps only xlx_*, which is all the .lcb
+ * binds by name; CMakeLists.txt gives ld64 the same pattern.
+ */
+{
+    global:
+        xlx_*;
+    local:
+        *;
+};
