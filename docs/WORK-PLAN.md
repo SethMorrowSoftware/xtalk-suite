@@ -1148,7 +1148,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | The first release-binaries dispatch with `members: oscxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `oscxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
-| 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
@@ -1192,7 +1192,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | The first release-binaries dispatch with `members: midixt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `midixt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
-| 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
 | 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
@@ -1238,7 +1238,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | The first IDE pass: install the extension, then `examples/artnet-selftest.livecodescript` on Windows, Linux and a Mac | S1 | - | the self-test is green on each |
 | 2 | A real node or desk: ArtPoll discovery finds it and a DMX universe drives a fixture (or a node's own monitor), and a desk's ArtDmx arrives in script | S1 + Art-Net gear | - | the fixture follows the faders, and the desk's levels read back |
-| 3 | An lce package (a pure-LCB row) and a place on the extensions site | coding | - | the package installs from the site |
+| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day | S1, after the merge | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
