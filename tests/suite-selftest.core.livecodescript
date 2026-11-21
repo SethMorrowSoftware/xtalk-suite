@@ -295,16 +295,16 @@ constant kSuNoHarness = "artnetxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt
 -- curlxt made the thirteenth row (2026-11-14), 31 until box3dxt made the
 -- fourteenth (2026-11-20), and 25 once xlsxt and render3dxt joined the same
 -- day: sixteen rows at 25 touched one another, and a seventeenth fitted at no
--- pitch. Since the seventeenth member (2026-11-21, work plan 2.11 #10) only
--- the members WITH an in-engine harness have a row (the cross row last); the
--- others are names in the band below the rows, kSuBandCols to a line, under
--- one caption. With eleven rows at 29 a row's controls (+5 to +29) clear the
--- next row's (+34) by five pixels and the last row ends at 455; the band's
--- caption starts four below it and its three lines of names end at 535,
--- eleven above the members caption at 546. Nine names fit, so the band holds
--- one more member than it has; one more ROW moves the band down by a pitch,
--- past the caption, and suBoardFits fails the boot check (and
--- tools/check-suite-ui-boot.py) before an engine session would draw it.
+-- pitch. Since the sixteenth member made the seventeenth row (2026-11-21, work
+-- plan 2.11 #10) only the members WITH an in-engine harness have a row (the
+-- cross row last); the others are names in the band below the rows,
+-- kSuBandCols to a line, under one caption. With eleven rows at 29 a row's
+-- controls (+5 to +29) clear the next row's (+34) by five pixels and the last
+-- row ends at 455; the band's caption starts four below it and its three lines
+-- of names end at 535, eleven above the members caption at 546. Nine names
+-- fit, so the band holds one more member than it has; one more ROW moves the
+-- band down by a pitch, past the caption, and suBoardFits fails the boot check
+-- (and tools/check-suite-ui-boot.py) before an engine session would draw it.
 -- Built, and Run all run, on the Linux engine on 2026-11-21 (runbook section
 -- 8); a row's Run and Show in this shape need an OXT pass.
 constant kSuRowTop = 136
@@ -1327,9 +1327,9 @@ end scFinish
 -- member (a status pill, its pass / fail / skip counts, Run and Show), a
 -- results pane with a filter (All, Failures, Skips, Boot check, and one
 -- member's lines), Run all and Copy results; and the demo boot self-check
--- above checks that window every time it opens. Since 2026-11-21, when a
--- seventeenth member made a row that fitted at no pitch, only the members
--- with an in-engine harness keep a row; the rest are names in a
+-- above checks that window every time it opens. Since 2026-11-21, when the
+-- sixteenth member made a seventeenth row that fitted at no pitch, only the
+-- members with an in-engine harness keep a row; the rest are names in a
 -- band under the rows (kSuBandCols to a line, under one caption), and the
 -- boot self-check's suBoardFits fails a board whose rows or band overrun.
 --

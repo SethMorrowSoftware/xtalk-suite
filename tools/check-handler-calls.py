@@ -68,6 +68,9 @@ KNOWN_MISSING = {
 # NOTE the ORDER rule above applies to b2k too - it must precede nothing here
 # (no other prefix is a prefix of it), but keep it out of the middle of the
 # oxh/ox pair.
+# b3k is box3dxt's Kit layer, added 2026-11-21 in the same change as the Kit,
+# so the gate looks at its example game and engine tests from their first day
+# (the b2k lesson above). No other prefix is a prefix of it.
 # nxr is the nostrxt relay layer and nx its core; nxr must precede nx (the
 # oxh/ox rule) or every nxr* call would be checked against the nx* surface.
 # osc, midi and artnet are the three ShowControl members (2026-11-21), whose
@@ -78,7 +81,7 @@ KNOWN_MISSING = {
 # fails here instead of on its first click. None of the four is a prefix of
 # another entry, nor another entry of it.
 PREFIXES = ("oxh", "nxr", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he",
-            "b2k", "nx", "cw", "ax", "osc", "midi", "artnet", "sc")
+            "b2k", "b3k", "nx", "cw", "ax", "osc", "midi", "artnet", "sc")
 
 # A family-prefixed identifier: prefix + an uppercase letter + more word chars.
 # The uppercase letter is what keeps ordinary words (an "enough" in a comment,
@@ -88,7 +91,7 @@ PREFIXES = ("oxh", "nxr", "sx", "bt", "en", "dc", "ox", "cx", "rs", "he",
 # prefix classification ever ran, and the gate reported OK over a surface it
 # had not looked at. A prefix in one and not the other is a silent hole, which
 # is why the two are now checked against each other below.
-CALL_RE = re.compile(r"\b((?:oxh|nxr|b2k|sx|bt|en|dc|ox|cx|rs|he|nx|cw|ax|osc|midi|artnet|sc)[A-Z]\w*)\b")
+CALL_RE = re.compile(r"\b((?:oxh|nxr|b2k|b3k|sx|bt|en|dc|ox|cx|rs|he|nx|cw|ax|osc|midi|artnet|sc)[A-Z]\w*)\b")
 
 _in_call_re = set(re.findall(r"[a-z0-9]+", CALL_RE.pattern.split("(?:")[1].split(")")[0]))
 if _in_call_re != set(PREFIXES):

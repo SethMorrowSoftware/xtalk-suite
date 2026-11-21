@@ -119,7 +119,7 @@ costs 45 s on the model's clock):
      the Windows record as well as a slow render does.
 
 And two for the band of the members with no harness (2026-11-21, when the
-seventeenth member made a seventeenth ROW that fitted at no pitch; work
+sixteenth member made a seventeenth ROW that fitted at no pitch; work
 plan 2.11 #10):
 
   ab suBandTop forgets the rows above it, so the band and its names are
