@@ -962,8 +962,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   OXT-Beyond's web engine can pin it (#4), and rebuilt the same way with the leak fix on
   2026-11-21 (the tree before the fix first rebuilt the committed archive byte for byte). The six desktop and four Android libraries were
   committed on 2026-11-21 by its first release-binaries dispatch (run 44874931964 from 457c244, commit
-  f6c0b1a), and the `ships` row lists all eleven. No engine has loaded a committed desktop or
-  Android library yet: the engine and IDE runs above used locally built ones.
+  f6c0b1a), and the `ships` row lists all eleven. Of them only the x86_64-linux library has met
+  an engine: on 2026-11-21 OXT-Beyond 0.2.8-dp.1's Linux server engine loaded it, under a binding
+  compiled from f6c0b1a, and passed OXT-Beyond's Android functional test for render3dxt with it (a
+  box, and a model read from an OBJ, its MTL and a TGA on disk, drawn, clicked and freed, nothing
+  left). The engine and IDE runs above used locally built ones.
 - Publishing: `SethMorrowSoftware/render3dxt` exists (created empty by the owner on
   2026-11-20); a publish-members run adopts it (`--adopt render3dxt`) now that the member is
   on main.

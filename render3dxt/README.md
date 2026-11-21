@@ -117,8 +117,10 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **Not yet:** no engine on macOS or Android, and no released web engine, has run it: on
   those it is verified statically; needs an OXT pass. The libraries under `src/code/` (six
   desktop platforms and four Android ABIs from the suite's release-binaries dispatch,
-  2026-11-21, and the web archive) were tested where they were built; no engine has loaded a
-  committed desktop or Android library yet.
+  2026-11-21, and the web archive) were tested where they were built; of them only the
+  x86_64-linux library has met an engine: OXT-Beyond 0.2.8-dp.1's Linux server engine loaded
+  it on 2026-11-21 and passed OXT-Beyond's Android functional test for render3dxt with it (a
+  model, its MTL and a TGA read from disk, drawn, clicked and freed).
 
 How fast it is depends on the machine. As one measure: a 624 by 468 picture of the demo's
 scene with smooth edges took about 8 ms on four threads of a 2.1 GHz virtual machine, and a
