@@ -57,7 +57,7 @@ script "RenderThreeDDemo"
 -- ==========================================================================
 
 -- Bumped whenever the generated UI changes so a saved stack rebuilds.
-constant kRdUiVersion = "render3d-kit2-1"
+constant kRdUiVersion = "render3d-kit2-2"
 constant kRdWinW = 980
 constant kRdWinH = 620
 -- The picture: 4 by 3, and small enough that a frame with smooth edges
@@ -843,6 +843,11 @@ command rdBuild
    uiSection "rdLookCap", "The picture", "668,144,958,162"
    uiCheckbox "rdSmooth", "Smooth edges", "668,166,810,188"
    uiCheckbox "rdTextures", "Textures", "816,166,958,188"
+   -- a checkbox's label takes the theme's text colour, which under a dark
+   -- theme is white, on a panel the kit paints white (seen on Windows,
+   -- 2026-11-20): these two say their own
+   set the foregroundColor of button "rdSmooth" to kUiInk
+   set the foregroundColor of button "rdTextures" to kUiInk
    uiButton "rdPause", "Pause", "668,194,760,218"
    uiCap "rdStats", empty, "668,224,958,256"
    uiCap "rdHelp", "Drag the picture to walk round the scene. Click a crate, a ball or the gem to kick it.", "668,260,958,292"

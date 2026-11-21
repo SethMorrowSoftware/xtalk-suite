@@ -132,6 +132,9 @@ command testWithBoth pPath
    set the paintCompression to "png"
    openDemo pPath
    check "the window is the size the kit's 720p rule allows", the width of stack "rdDemo" is 980 and the height of stack "rdDemo" is 620, the rect of stack "rdDemo"
+   check "the two checkboxes say their own text colour (a dark theme's is white, on a white panel)", \
+         the foregroundColor of button "rdSmooth" of stack "rdDemo" is "28,34,46" and the foregroundColor of button "rdTextures" of stack "rdDemo" is "28,34,46", \
+         the foregroundColor of button "rdSmooth" of stack "rdDemo" && "/" && the foregroundColor of button "rdTextures" of stack "rdDemo"
    check "the status line says it is running", field "uiStatus" of stack "rdDemo" begins with "Running - render3dxt", field "uiStatus" of stack "rdDemo"
    put picture() into tBefore
    check "the first picture is in the image before any timer ran", the number of bytes of tBefore is 624 * 468 * 4 \
