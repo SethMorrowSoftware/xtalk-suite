@@ -191,6 +191,12 @@ one clock read per pass; UI text at most about 4 Hz and only on change.
 - **A new binding joins the suite** by the departure list in
   `docs/MEMBER-REPO-SPLIT.md` section 8 run in reverse, plus the native tables
   (the three gates above, a root `native-<member>.yml`, `release-binaries.yml`).
+  Its `.lce` package row is part of joining: every extension the suite makes is
+  on the extensions site for HyperXTalk and LiveCode Community (the owner's
+  rule, 2026-11-21), and `tools/build-lce-packages.py table` refuses an
+  extension member without one. Until its libraries are committed the row
+  waits; the first build after they land publishes it. A module that binds
+  no library of its own says `native=False` and is packaged without one.
 - **Static gates run anywhere; the OXT pass cannot be skipped.** A `.lcb` cannot
   be compiled or run headlessly, so a self-test stack on a real engine is the
   only validation of the BINDING: until then, "verified statically; needs an OXT

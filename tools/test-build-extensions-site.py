@@ -215,6 +215,31 @@ def refuses(tmp, label, needle, **kw):
     expect('refuses %s' % label, code == 1 and needle in err and page == 'LAST GOOD', 'code %r err %r' % (code, err))
 
 
+def test_pure_lcb(tmp):
+    """A pure LCB library (native=False in tools/build-lce-packages.py, such
+    as showcontrol's Art-Net, 2026-11-21) has module.lcm and no code/: the
+    page calls it an LCB library that runs everywhere, not a script library
+    and not a native one."""
+    files = dict(PACKAGES)
+    files['gammaxt-0.1.0.lce'] = lce([
+        ('manifest.xml', manifest('org.example.gamma', 'GammaXT', '0.1.0', ['com.livecode.foreign'])),
+        ('api.lcdoc', 'Library: org.example.gamma\n\nType: library\n\nSummary:\nPackets in pure LCB.\n'),
+        ('licenses/LICENSE', b'MIT'), ('module.lcm', b'LC\x00\x00'), ('gamma.lcb', b'library org.example.gamma')])
+    rel = release(assets=[{'name': n, 'browser_download_url': BASE + n,
+                           'digest': 'sha256:' + hashlib.sha256(d).hexdigest()} for n, d in sorted(files.items())]
+                  + [{'name': 'SHA256SUMS', 'browser_download_url': BASE + 'SHA256SUMS'}])
+    code, page, err = build(tmp, rel, files)
+    expect('a release with a pure LCB library builds', code == 0 and page is not None, err)
+    if page is None:
+        return
+    g = card(page, 'gammaxt-0.1.0.lce')
+    expect('a pure LCB library is an LCB library', '<span class="kind">LCB library</span>' in g, g[:300])
+    expect('...that runs on every platform', site.LCB_PLATFORMS in g and 'Any platform' in g, g)
+    h = card(page, 'alphaxt-helpers-1.0.0.lce')
+    expect('a script library is still a script library',
+           '<span class="kind">script library</span>' in h and site.SCRIPT_PLATFORMS in h, h[:300])
+
+
 def test_refusals(tmp):
     good = release()
     bad_sums = ''.join('%s  %s\n' % ('0' * 64 if n.startswith('beta') else hashlib.sha256(d).hexdigest(), n)
@@ -305,6 +330,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix='test-extensions-site-')
     try:
         test_good(tmp)
+        test_pure_lcb(tmp)
         test_refusals(tmp)
         test_links(tmp)
         test_pick_release()

@@ -27,7 +27,8 @@ WHY THIS EXISTS
            every committed platform (the IDE maps the one for its platform
            into revLibraryMapping, the standalone builder copies the one for
            the target), the Visual C++ runtime DLLs a Windows library
-           imports (enetxt, box2dxt; below), licenses/.
+           imports (enetxt, box2dxt; below), licenses/. A pure LCB module
+           (native=False: it binds no library of its own) has no code/.
       LCS  <stack>.livecodescript (a `script "<stack>"` first line added
            where the file has none, and an extensionInitialize /
            extensionFinalize pair appended, because the IDE loads a script
@@ -56,11 +57,47 @@ THE VISUAL C++ RUNTIME
     --vc-runtime the packages are built WITHOUT the runtime and say so
     loudly; --release refuses that, and refuses an unpinned copy.
 
+EVERY EXTENSION HAS A PACKAGE (2026-11-21)
+    The owner's standing rule: every extension the suite makes is published
+    on the extensions site for HyperXTalk and LiveCode Community too, not
+    only built into OXT-Beyond. Until this date nothing held the table
+    below to the suite: box3dxt and xlsxt joined on 2026-11-20 with no row,
+    so the site would have gone on without them until someone remembered,
+    and the workflow's `paths:` had never named curlxt/src/** (a change to
+    curlxt alone rebuilt no package). So `table` now also holds:
+
+      - every `extension` of tools/member-registry.py has a row here, or a
+        NOT_PACKAGED entry that says why not, and every row's member is an
+        extension of the registry;
+      - .github/workflows/lce-packages.yml's `paths:` take in every file a
+        package is made of (its source, libraries and licences), so a
+        change to one rebuilds the packages;
+      - a native member that has committed NO library yet for a platform a
+        package carries (its `ships` row in tools/check-binary-freshness.py
+        names none, as a member's names none from the day it joins until its
+        first release-binaries dispatch; a web archive alone, which no
+        package carries, does not count) keeps its row, which WAITS: stage,
+        pack and list leave it out, and the first build after its libraries
+        land makes its package. A member that ships even one desktop or
+        Android platform never waits: a lost library is the refusal it
+        always was;
+      - a PURE LCB row (native=False: a module that binds no library of its
+        own, such as showcontrol's Art-Net) has no code/ folder, no `ships`
+        row to consult, and never waits; a committed library under it is
+        refused, since the package would leave it out. Its package passes
+        `check` without code/, and the engine check loads it with nothing
+        mapped.
+
+    A push to main whose packages differ in any way from the newest
+    published release's (`plan` below) is published by the workflow
+    itself, so the site follows main.
+
 USAGE
     python3 tools/build-lce-packages.py table
         the gate: every PACKAGES row matches the tree (files present,
         versions read, script headers agree, every Windows library's
-        non-system imports known). No compiler, no network.
+        non-system imports known), every extension member is packaged and
+        the workflow's paths cover them. No compiler, no network.
     python3 tools/build-lce-packages.py stage --bin DIR --out STAGE
             [--vc-runtime DIR] [--openssl-licence FILE] [--release]
         one folder per package in STAGE; DIR holds lc-compile and
@@ -72,15 +109,26 @@ USAGE
         each package as the Extension Manager checks it, plus the layout
         rules above.
     python3 tools/build-lce-packages.py list
-        the packages, one per line.
+        the packages, one per line (a row that waits is not one).
+    python3 tools/build-lce-packages.py plan DIR [--repo OWNER/NAME]
+            [--release-json FILE --lce-dir DIR2] [--notes FILE]
+            [--github-output FILE]
+        how DIR's packages (pack's output) differ from the newest published
+        release's: NEW, VERSION, PLATFORMS, REBUILT and GONE lines. Writes
+        the release notes, and release=true when any package differs. Reads the release from GitHub (GITHUB_TOKEN is
+        used when set), or offline from FILE and DIR2 as
+        tools/build-extensions-site.py does.
 
-    tools/test-build-lce-packages.py fixture-proves `table` and `check`.
+    tools/test-build-lce-packages.py fixture-proves `table`, `check` and
+    `plan`.
 """
 
 import argparse
 import collections
 import hashlib
+import importlib.util
 import io
+import json
 import os
 import re
 import shutil
@@ -88,6 +136,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -108,10 +157,16 @@ WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win3
 # DLLs every supported Windows has (Beyond's builder's SYSTEM_DLLS):
 # api-ms-win-crt-* is the Universal CRT, part of Windows 10 and later;
 # msvcrt.dll is the system C runtime MinGW builds (coinxt) use;
-# secur32.dll is SSPI, through which curlxt's Schannel TLS works
+# secur32.dll is SSPI, through which curlxt's Schannel TLS works;
+# setupapi.dll, ole32.dll and shell32.dll are what SDL, inside gamepadxt,
+# imports besides those (SetupAPI lists the controllers plugged in, ole32 is
+# COM), all three in every Windows since 2000. Beyond's list gained the same
+# three for gamepadxt (its pull requests 612 and 620); gdi32.dll is GDI,
+# which PDFium's prebuilt pdfium.dll (pdfxt ships it beside its own library)
+# imports besides kernel32, user32 and advapi32, in every Windows there is
 SYSTEM_DLLS = frozenset(('kernel32.dll', 'user32.dll', 'advapi32.dll', 'ws2_32.dll', 'winmm.dll',
                          'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll',
-                         'secur32.dll'))
+                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll', 'gdi32.dll'))
 SYSTEM_DLL_PREFIXES = ('api-ms-win-crt-',)
 
 # The runtime DLLs copied next to the libraries that import them, as
@@ -155,6 +210,12 @@ VERSION_FROM = {
     'box2dxt': ('src/box2dxt.lcb', LCB_VERSION),
     'coinxt': ('src/coinxt.lcb', LCB_VERSION),
     'curlxt': ('src/curl.lcb', LCB_VERSION),
+    'box3dxt': ('src/box3dxt.lcb', LCB_VERSION),
+    'audioxt': ('src/audioxt.lcb', LCB_VERSION),
+    'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
+    'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
+    'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
+    'pdfxt': ('src/pdfxt.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -178,6 +239,22 @@ LICENCES = {
                ('native/vendor/hasher.c', 'trezor-crypto-hasher-NOTICE.txt', 'leading-comment')],
     'curlxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None),
                (OPENSSL, 'OpenSSL-LICENSE.txt', None)],
+    # Box3D's MIT text is in the member's LICENSE, below its own
+    'box3dxt': [('LICENSE', None, None)],
+    # miniaudio's terms (the public domain or MIT No Attribution, its
+    # author's choice of two) are in the member's LICENSE, below its own
+    'audioxt': [('LICENSE', None, None)],
+    # stb_image's and fast_obj's MIT texts are in the member's LICENSE too
+    'render3dxt': [('LICENSE', None, None)],
+    # libxlsxwriter (and the FreeBSD, tmpfileplus and MD5 code it carries),
+    # zlib with its minizip, and Expat: each one's terms are in this file
+    'xlsxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    # SDL 3's zlib terms, and the BSD terms of the HIDAPI copy SDL carries,
+    # are in the member's LICENSE, below its own
+    'gamepadxt': [('LICENSE', None, None)],
+    # PDFium's own licence and those of what it compiles in, from the
+    # licenses/ folder of the pinned archives
+    'pdfxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -191,7 +268,9 @@ def P(kind, member, ident, main, file, probe, expect, **extra):
 
 
 # THE TABLE: one row per package, in load order (a package after the ones it
-# requires). id, main, stack, title, author, requires, probe and expect are
+# requires). An 'lcb' row carries its member's committed libraries unless it
+# says native=False (a pure LCB module, which needs none on any platform).
+# id, main, stack, title, author, requires, probe and expect are
 # Beyond's builder's, so a package and the built-in copy are one extension;
 # "file" names the .lce (the Extension Manager reads the id and version from
 # the manifest and of the file name only that it ends in .lce). A probe is an
@@ -237,6 +316,60 @@ PACKAGES = [
     P('lcs', 'curlxt', 'tsNetCompat', 'src/tsnet.livecodescript', 'curlxt-tsnet',
       'tsNetVersion()', r'^1\.4\.5$', stack='tsNetCompat', title='tsNet calls (curlxt)',
       author='Seth Morrow Software', requires=['curlHelpers']),
+    # box3dxt (2026-11-21, the day after it joined with its libraries): 3-D
+    # rigid bodies and the software renderer. b3LibraryVersion() checks the
+    # ABI first, so a library of another release fails the probe by name.
+    # Its module id spells the digit out (boxthreed): lc-compile warns on a
+    # digit in a namespace component, and the Extension Builder runs -Werror
+    # (the header of box3dxt.lcb).
+    P('lcb', 'box3dxt', 'org.openxtalk.library.boxthreed', 'src/box3dxt.lcb', 'box3dxt',
+      'b3LibraryVersion()', '^box3dxt ABI [0-9]+; Box3D [0-9]+\\.[0-9]+'),
+    # The b3k game Kit (2026-11-21, #193): box2dxt's b2k Kit in 3D, one
+    # script-only stack over box3dxt's extension (and render3dxt's when that
+    # is loaded, which it asks for at run time, so it requires only box3dxt).
+    # Its author is the Kit's own doc block's.
+    P('lcs', 'box3dxt', 'box3dxt-kit', 'src/box3dxt-kit.livecodescript', 'box3dxt-kit',
+      'b3kVersion()', '^1$', stack='box3dxt-kit', title='Box3Dxt Kit', author='Seth Morrow',
+      requires=['org.openxtalk.library.boxthreed']),
+    # audioxt (2026-11-21, the day its libraries were committed, #198):
+    # miniaudio's mixing, streaming, 3-D sound and microphone capture,
+    # beside the engine's own play. auLibraryVersion() checks the ABI first,
+    # so a library of another release fails the probe by name, and it opens
+    # no device, so the probe needs no sound card.
+    P('lcb', 'audioxt', 'org.openxtalk.library.audioxt', 'src/audioxt.lcb', 'audioxt',
+      'auLibraryVersion()', '^audioxt ABI [0-9]+; miniaudio [0-9]+\\.[0-9]+'),
+    # render3dxt (2026-11-21, the day after it joined): the textured software
+    # renderer that draws what box3dxt simulates. Only its web archive is
+    # committed, which no package carries, so this row waits like xlsxt's
+    # until its first release-binaries dispatch. r3LibraryVersion() checks
+    # the ABI first; its module id spells the digit out as box3dxt's does.
+    P('lcb', 'render3dxt', 'org.openxtalk.library.renderthreed', 'src/render3dxt.lcb',
+      'render3dxt', 'r3LibraryVersion()', '^render3dxt [0-9.]+ ABI [0-9]+;'),
+    # xlsxt (2026-11-21): joined 2026-11-20 with no library committed, so
+    # this row waited (EVERY EXTENSION HAS A PACKAGE, above) until its first
+    # release-binaries dispatch landed them the next day (#196: the six
+    # desktop rows and the four Android ids); nobody had to come back to it.
+    # xlLibraryVersion() checks the ABI first.
+    P('lcb', 'xlsxt', 'org.openxtalk.library.xlsxt', 'src/xlsxt.lcb', 'xlsxt',
+      'xlLibraryVersion()', '^xlsxt ABI [0-9]+; libxlsxwriter [0-9]'),
+    # gamepadxt (2026-11-21, landed with its libraries, #185): game
+    # controllers through SDL 3's gamepad subsystem. Desktop only: it has no
+    # Android libraries on purpose (SDL reaches controllers there through its
+    # own Java layer, which an OXT app has not got; tools/test-build-android.py,
+    # NO_ANDROID), and Android is all four or none here. gpLibraryVersion()
+    # checks the ABI first and asks SDL only its version, so the probe opens
+    # no device and needs no controller.
+    P('lcb', 'gamepadxt', 'org.openxtalk.library.gamepadxt', 'src/gamepadxt.lcb', 'gamepadxt',
+      'gpLibraryVersion()', '^SDL 3\\.[0-9]+\\.[0-9]+$'),
+    # pdfxt (#191): read-only PDF through PDFium. Two files a platform: its
+    # own library and the pinned prebuilt PDFium beside it, which the shim
+    # loads from its own folder at run time (so no import names it); a
+    # package carries every file of a platform's folder, so both go in. It
+    # joined with no library committed, so the row waits for its first
+    # release-binaries dispatch. pdfLibraryVersion() checks the ABI first
+    # and does not load PDFium.
+    P('lcb', 'pdfxt', 'org.openxtalk.library.pdfxt', 'src/pdfxt.lcb', 'pdfxt',
+      'pdfLibraryVersion()', '^pdfxt ABI [0-9]+; PDFium chromium/[0-9]+'),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),
@@ -252,6 +385,84 @@ PACKAGES = [
       'nxrVersion()', '^NostrXT relay NostrXT [0-9]', stack='nostr-relay', title='NostrXT relay client',
       author='Seth Morrow Software', requires=['nostrxt']),
 ]
+
+# An extension member of tools/member-registry.py that has NO package, and
+# why: {member: reason}. Empty, and meant to stay so (the owner's rule,
+# 2026-11-21: every extension is on the site). A member whose libraries are
+# not committed yet does not belong here: give it its row, which waits for
+# them by itself. An entry for a member that has a row, or that is not an
+# extension of the registry, is refused as stale.
+NOT_PACKAGED = {}
+
+# The workflow that builds and publishes the packages: its `paths:` list
+# must take in every file a package is made of
+WORKFLOW = os.path.join(ROOT, '.github', 'workflows', 'lce-packages.yml')
+
+
+def load_tool(name):
+    """A neighbouring tool, exec-loaded by path (tools/ is no package)."""
+    path = os.path.join(ROOT, 'tools', name)
+    spec = importlib.util.spec_from_file_location(name.replace('-', '_')[:-3], path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_TABLES = {}
+
+
+def suite_tables():
+    """(extension member names in registry order, {member: ships list}) from
+    tools/member-registry.py and tools/check-binary-freshness.py, the suite's
+    own tables: what a member IS, and which platforms it has committed
+    libraries for. Read once."""
+    if not _TABLES:
+        reg = load_tool('member-registry.py')
+        fresh = load_tool('check-binary-freshness.py')
+        _TABLES['extensions'] = [m.name for m in reg.MEMBERS if m.kind == 'extension']
+        _TABLES['ships'] = {m['name']: list(m['ships']) for m in fresh.MEMBERS}
+    return _TABLES['extensions'], _TABLES['ships']
+
+
+def waiting():
+    """{row id: why} for the rows that wait (EVERY EXTENSION HAS A PACKAGE):
+    an LCB row whose member ships no platform a package carries yet and has
+    committed no library for one, and any row that requires a waiting one (a
+    helper without its library would install and then fail on its first
+    call). Only the package's platforms count: no package carries the web
+    archive (wasm32-emscripten), which OXT-Beyond links into its web engine
+    and which can land before a member's other libraries."""
+    _, ships = suite_tables()
+    out = collections.OrderedDict()
+    for row in PACKAGES:
+        if row['kind'] == 'lcb':
+            if not native(row):
+                continue  # a pure LCB module owes no library, so never waits
+            shipped = ships.get(row['member'])
+            if shipped is None:
+                continue  # no freshness row: check_table refuses it
+            if not [p for p in shipped if p in PLATFORMS + ANDROID] and not libraries(row):
+                out[row['id']] = ('%s has committed no library yet for a platform a package '
+                                  'carries (its `ships` row in tools/check-binary-freshness.py '
+                                  'names none)' % row['member'])
+        else:
+            for r in row['requires']:
+                if r in out:
+                    out[row['id']] = 'it requires %s, which waits' % r
+                    break
+    return out
+
+
+def native(row):
+    """Whether an LCB row carries native libraries (every 'lcb' row does
+    unless it says native=False)."""
+    return row['kind'] == 'lcb' and row.get('native', True) is not False
+
+
+def active():
+    """The rows that are packaged today, in table order."""
+    wait = waiting()
+    return [row for row in PACKAGES if row['id'] not in wait]
 
 # Appended to a script library that handles neither message itself:
 # Beyond's builder's LCS_WRAPPER, with this tool named instead. The guard
@@ -405,6 +616,8 @@ def check_table():
     """Problems with PACKAGES against the tree; [] when it holds."""
     problems = []
     seen_ids, seen_files, loaded = set(), set(), set()
+    _, ships = suite_tables()
+    wait = waiting()
     for row in PACKAGES:
         where = '%s %s' % (row['member'], row['id'])
         try:
@@ -419,22 +632,28 @@ def check_table():
                 ident = lcb_module_id(data.decode('utf-8', 'replace'))
                 if ident != row['id']:
                     raise Problem('%s: the .lcb declares %r' % (where, ident))
-                libs = libraries(row)
-                have = {p for p, _ in libs}
-                missing = [p for p in PLATFORMS if p not in have]
-                if missing:
-                    raise Problem('%s: no committed library for %s' % (where, ', '.join(missing)))
-                missing = [p for p in ANDROID if p not in have]
-                if missing and len(missing) != len(ANDROID):
-                    raise Problem('%s: Android libraries for some ABIs only, none for %s (all four, or none)'
-                                  % (where, ', '.join(missing)))
-                for platform, lib in libs:
-                    if platform in WINDOWS:
-                        for dll in runtime_needs(platform, lib):
-                            if dll not in VC_RUNTIME_PINS[platform]:
-                                raise Problem('%s: %s imports %s, which is neither a system DLL nor a pinned '
-                                              'runtime DLL' % (where, os.path.relpath(lib, ROOT), dll))
+                if row.get('native', True) not in (True, False):
+                    raise Problem('%s: native=%r (True or False)' % (where, row['native']))
+                if not native(row):
+                    # a pure module: the package would leave out a library
+                    # committed under it, so one there is a mistake
+                    if libraries(row):
+                        raise Problem('%s: native=False, but %s has committed libraries (%s): drop '
+                                      'native=False' % (where, row['member'],
+                                                        ', '.join(sorted({p for p, _ in libraries(row)}))))
+                else:
+                    # Whether its libraries are owed is the freshness gate's
+                    # `ships` row: without one, a member with none would wait
+                    # forever instead of failing
+                    if row['member'] not in ships:
+                        raise Problem('%s: %s has no row in tools/check-binary-freshness.py MEMBERS, so '
+                                      'nothing says which libraries it owes (a module that binds no '
+                                      'library of its own says native=False)' % (where, row['member']))
+                    if row['id'] not in wait:   # a row that waits owes nothing yet
+                        check_libraries(where, libraries(row))
             elif row['kind'] == 'lcs':
+                if 'native' in row:
+                    raise Problem('%s: native= is for an lcb row' % where)
                 if not re.match(r'^[A-Za-z][A-Za-z0-9-]*$', row['stack']):
                     raise Problem('%s: stack %r must be a name without dots (the IDE loads a script '
                                   'library under the part of its file name before the first dot)'
@@ -457,6 +676,136 @@ def check_table():
             loaded.add(row['id'])
         except Problem as err:
             problems.append(str(err))
+    return problems + check_registry() + check_workflow_paths()
+
+
+def check_libraries(where, libs):
+    """An active LCB row's committed libraries: every desktop platform,
+    Android all or none, and no Windows import nobody bundles."""
+    have = {p for p, _ in libs}
+    missing = [p for p in PLATFORMS if p not in have]
+    if missing:
+        raise Problem('%s: no committed library for %s' % (where, ', '.join(missing)))
+    missing = [p for p in ANDROID if p not in have]
+    if missing and len(missing) != len(ANDROID):
+        raise Problem('%s: Android libraries for some ABIs only, none for %s (all four, or none)'
+                      % (where, ', '.join(missing)))
+    for platform, lib in libs:
+        if platform in WINDOWS:
+            for dll in runtime_needs(platform, lib):
+                if dll not in VC_RUNTIME_PINS[platform]:
+                    raise Problem('%s: %s imports %s, which is neither a system DLL nor a pinned '
+                                  'runtime DLL' % (where, os.path.relpath(lib, ROOT), dll))
+
+
+def check_registry():
+    """Every extension of tools/member-registry.py has a package (or a
+    NOT_PACKAGED reason), and every package is an extension's."""
+    extensions, _ = suite_tables()
+    packaged = []
+    for row in PACKAGES:
+        if row['member'] not in packaged:
+            packaged.append(row['member'])
+    problems = []
+    for m in extensions:
+        if m not in packaged and m not in NOT_PACKAGED:
+            problems.append('%s is an extension (tools/member-registry.py) with no package, so it would never '
+                            'reach the extensions site: give it a PACKAGES row (one for a member with no library '
+                            'yet waits for them), or name it in NOT_PACKAGED with the reason' % m)
+    for m in packaged:
+        if m not in extensions:
+            problems.append('%s has a package but is not an extension of tools/member-registry.py' % m)
+    for m, why in sorted(NOT_PACKAGED.items()):
+        if m in packaged:
+            problems.append('NOT_PACKAGED names %s, which has a package: drop the stale entry' % m)
+        elif m not in extensions:
+            problems.append('NOT_PACKAGED names %s, which is not an extension of tools/member-registry.py' % m)
+        elif not (why or '').strip():
+            problems.append('NOT_PACKAGED names %s without a reason' % m)
+    return problems
+
+
+# --- the workflow's path filter ------------------------------------------------
+
+def glob_re(pattern):
+    """A GitHub Actions filter glob: `**` any characters, `*` any but `/`
+    (tools/test-native-lane-paths.py reads the native lanes the same way)."""
+    out, i = '', 0
+    while i < len(pattern):
+        if pattern.startswith('**/', i):
+            out += '(?:.*/)?'
+            i += 3
+        elif pattern.startswith('**', i):
+            out += '.*'
+            i += 2
+        elif pattern[i] == '*':
+            out += '[^/]*'
+            i += 1
+        else:
+            out += re.escape(pattern[i])
+            i += 1
+    return re.compile('^' + out + '$')
+
+
+def filter_takes(patterns, path):
+    """Whether a change to `path` starts a workflow with these `paths:`
+    (the LAST pattern that matches decides; a `!` pattern excludes)."""
+    verdict = False
+    for p in patterns:
+        neg = p.startswith('!')
+        if glob_re(p[1:] if neg else p).match(path):
+            verdict = not neg
+    return verdict
+
+
+def workflow_paths(text):
+    """The `paths:` list of lce-packages.yml's push trigger, as written (the
+    pull_request trigger reuses it through the &lce-paths anchor)."""
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        if re.match(r'^\s+paths:\s*&lce-paths\s*$', line):
+            out = []
+            for item in lines[i + 1:]:
+                m = re.match(r"""^\s+-\s+(['"])(.*)\1\s*$""", item)
+                if not m:
+                    break
+                out.append(m.group(2))
+            return out
+    return None
+
+
+def package_inputs(row):
+    """The tree paths (suite-relative) a package is made of: its source, its
+    licence files and, for an LCB row, its libraries (a hypothetical one on
+    the first platform when none is committed yet, so a row that waits is
+    held too: its libraries landing must start the build that packages it)."""
+    m = row['member']
+    paths = ['%s/%s' % (m, row['main'])]
+    paths += ['%s/%s' % (m, rel) for rel, _, _ in LICENCES.get(m, []) if rel != OPENSSL]
+    if native(row):
+        libs = libraries(row) or [(PLATFORMS[2], m + '.so')]
+        paths += ['%s/src/code/%s/%s' % (m, platform, os.path.basename(lib)) for platform, lib in libs]
+    return paths
+
+
+def check_workflow_paths(text=None):
+    """Every file a package is made of starts lce-packages.yml when it
+    changes."""
+    if text is None:
+        if not os.path.isfile(WORKFLOW):
+            return ['%s is missing' % os.path.relpath(WORKFLOW, ROOT)]
+        with open(WORKFLOW, encoding='utf-8') as f:
+            text = f.read()
+    patterns = workflow_paths(text)
+    if not patterns:
+        return ['lce-packages.yml: no `paths: &lce-paths` list under its push trigger']
+    problems = []
+    for row in PACKAGES:
+        missed = [p for p in package_inputs(row) if not filter_takes(patterns, p)]
+        if missed:
+            named = ', '.join(missed[:3]) + (' and %d more' % (len(missed) - 3) if len(missed) > 3 else '')
+            problems.append('%s %s: lce-packages.yml\'s paths do not take in %s, so a change there would build '
+                            'no package' % (row['member'], row['id'], named))
     return problems
 
 
@@ -630,9 +979,12 @@ def cmd_stage(args):
         shutil.rmtree(out)
     os.makedirs(out)
     warnings = []
+    for ident, why in waiting().items():
+        log('%s waits: %s' % (ident, why))
+    rows = active()
     scratch = tempfile.mkdtemp(prefix='lce-lci-')
     try:
-        for row in PACKAGES:
+        for row in rows:
             version = member_version(row['member'])
             log('%s (%s, %s %s)' % (row['id'], row['kind'], row['member'], version))
             folder = os.path.join(out, row['file'])
@@ -643,7 +995,7 @@ def cmd_stage(args):
                 with open(os.path.join(folder, name), 'wb') as f:
                     f.write(data)
                 compile_lcb(row, folder, name, lc_compile, lci_dir, scratch, version)
-                for platform, lib in libraries(row):
+                for platform, lib in (libraries(row) if native(row) else []):
                     dest = os.path.join(folder, 'code', platform)
                     os.makedirs(dest, exist_ok=True)
                     shutil.copyfile(lib, os.path.join(dest, os.path.basename(lib)))
@@ -668,7 +1020,7 @@ def cmd_stage(args):
         log('WARNING: ' + w)
         if os.environ.get('GITHUB_ACTIONS'):
             log('::warning title=lce packages::' + w)
-    log('staged %d packages in %s' % (len(PACKAGES), out))
+    log('staged %d packages in %s' % (len(rows), out))
 
 
 # --- pack and check -----------------------------------------------------------
@@ -698,7 +1050,7 @@ def cmd_pack(args):
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     made, lines, sums = [], [], []
-    for row in PACKAGES:
+    for row in active():
         folder = os.path.join(stage, row['file'])
         if not os.path.isdir(folder):
             raise Problem('%s: not staged (%s)' % (row['id'], folder))
@@ -711,7 +1063,10 @@ def cmd_pack(args):
         made.append(target)
         sums.append('%s  %s' % (sha256_file(target), name))
         main = row['stack'] if row['kind'] == 'lcs' else row['id']
-        lines.append('\t'.join([row['kind'], name, main, row['probe'], row['expect']]))
+        # the sixth column tells the engine check whether an LCB package
+        # must map a library for its platform ("native") or carries none
+        code = '' if row['kind'] == 'lcs' else ('native' if native(row) else 'pure')
+        lines.append('\t'.join([row['kind'], name, main, row['probe'], row['expect'], code]))
         log('%s  %d bytes' % (name, os.path.getsize(target)))
     problems = check_packages(made)
     if problems:
@@ -721,6 +1076,12 @@ def cmd_pack(args):
     with open(os.path.join(out, 'packages.tsv'), 'w', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     log('packed %d packages into %s' % (len(made), out))
+
+
+def rows_by_id():
+    """{package id: row} of the table, for `check`, which reads packages
+    by their manifests."""
+    return {row['id']: row for row in PACKAGES}
 
 
 def check_packages(paths):
@@ -754,7 +1115,11 @@ def check_packages(paths):
                 if lcb or 'module.lcm' in top:
                     if not (lcb and 'module.lcm' in top):
                         raise Problem('%s: an LCB package needs its .lcb and module.lcm at the root' % where)
-                    if not any(n.startswith('code/') for n in names):
+                    row = rows_by_id().get(root.findtext('name'))
+                    if row is not None and not native(row):
+                        if any(n.startswith('code/') for n in names):
+                            raise Problem('%s: a pure LCB package (native=False) with code/' % where)
+                    elif not any(n.startswith('code/') for n in names):
                         raise Problem('%s: an LCB package without code/' % where)
                     for n in names:
                         if n.startswith('code/'):
@@ -785,6 +1150,202 @@ def check_packages(paths):
     return problems
 
 
+# --- plan: what a release would bring to the site -------------------------------
+#
+# Since 2026-11-21 a push to main publishes its packages itself when they
+# differ from the site's release (.github/workflows/lce-packages.yml, the
+# publish job): the owner's rule is that every extension is on the site,
+# and a release that waits for someone to remember is how box3dxt nearly
+# went unlisted. Each difference is named as a visitor would see it:
+#
+#   NEW        a package the release does not have (a new member, a new
+#              helper or script layer)
+#   VERSION    a package whose version changed (the file name says it)
+#   PLATFORMS  the same version for more or fewer platforms (Android, a
+#              member's first Mac library, ...)
+#   REBUILT    the same version and platforms, other bytes: a fix or new
+#              handlers without a version bump (the members rarely bump
+#              one), a refreshed library, a newer OXT-Beyond compiling it
+#   GONE       a package the release has and main no longer builds
+#
+# and every one of them publishes, REBUILT included: otherwise a fix would
+# reach OXT-Beyond and never the site. That is safe because a build is
+# deterministic, the same inputs giving the same bytes (built twice from one
+# tree on 2026-11-21, every package identical), so other bytes always mean
+# main changed something a user installs. Lately that is a release or two a
+# day.
+
+PACKAGE_NAME = re.compile(r'^(.+)-([0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?)\.lce$')
+PUBLISHING = ('NEW', 'VERSION', 'PLATFORMS', 'REBUILT', 'GONE')
+SITE_URL = 'https://sethmorrowsoftware.github.io/xtalk-suite/'
+
+
+def split_name(name):
+    """('curlxt-tsnet', '0.1.0') of curlxt-tsnet-0.1.0.lce; (name, '') when
+    the name carries no version."""
+    m = PACKAGE_NAME.match(name)
+    return (m.group(1), m.group(2)) if m else (name[:-len('.lce')] if name.endswith('.lce') else name, '')
+
+
+def platform_words(ids):
+    """The site's own short labels: Android ARM64, Linux 64, ..."""
+    site = load_tool('build-extensions-site.py')
+    return ', '.join(short for _, short in site.platforms_of(ids))
+
+
+def read_local(folder):
+    """{stem: package} of pack's output, each checked against its SHA256SUMS."""
+    site = load_tool('build-extensions-site.py')
+    sums_path = os.path.join(folder, 'SHA256SUMS')
+    if not os.path.isfile(sums_path):
+        raise Problem('%s has no SHA256SUMS' % folder)
+    with open(sums_path, encoding='utf-8') as f:
+        sums = site.parse_sums(f.read())
+    names = sorted(n for n in os.listdir(folder) if n.endswith('.lce'))
+    if not names:
+        raise Problem('%s holds no .lce package' % folder)
+    out = collections.OrderedDict()
+    for name in names:
+        data = read(os.path.join(folder, name))
+        digest = hashlib.sha256(data).hexdigest()
+        if sums.get(name) != digest:
+            raise Problem('%s: SHA-256 %s does not match its SHA256SUMS (%s)' % (name, digest, sums.get(name)))
+        pkg = site.read_package(name, data)
+        pkg['sha256'] = digest
+        out[split_name(name)[0]] = pkg
+    return out
+
+
+def plan(mine, release, fetch):
+    """[(kind, package file, words)] that publishing `mine` (read_local's
+    answer) would change on a site built from `release` (a GitHub release
+    object, or None when no published release has packages). fetch(asset)
+    returns an asset's bytes; only a package whose bytes differ at the same
+    version is fetched, and every fetched one is checked against the
+    release's SHA256SUMS."""
+    site = load_tool('build-extensions-site.py')
+    if release is None:
+        return [('NEW', p['file'], '%s %s: no release has packages yet' % (p['title'], p['version']))
+                for p in mine.values()]
+    assets = {a['name']: a for a in release.get('assets', [])}
+    if 'SHA256SUMS' not in assets:
+        raise Problem('release %s has no SHA256SUMS' % release.get('tag_name'))
+    sums = site.parse_sums(fetch(assets['SHA256SUMS']).decode('utf-8', 'replace'))
+    theirs = collections.OrderedDict()
+    for name in sorted(a['name'] for a in site.lce_assets(release)):
+        if name not in sums:
+            raise Problem('release %s: %s is not in its SHA256SUMS' % (release.get('tag_name'), name))
+        theirs[split_name(name)[0]] = name
+    out = []
+    for stem, p in mine.items():
+        old = theirs.get(stem)
+        if old is None:
+            out.append(('NEW', p['file'], '%s %s: a package the site does not have' % (p['title'], p['version'])))
+            continue
+        old_version = split_name(old)[1]
+        if old_version != p['version']:
+            out.append(('VERSION', p['file'], '%s %s (the site has %s)' % (p['title'], p['version'],
+                                                                         old_version or old)))
+            continue
+        if sums[old] == p['sha256']:
+            continue
+        data = fetch(assets[old])
+        if hashlib.sha256(data).hexdigest() != sums[old]:
+            raise Problem('release %s: %s does not match its SHA256SUMS' % (release.get('tag_name'), old))
+        had = set(site.read_package(old, data)['platforms'])
+        now = set(p['platforms'])
+        if had != now:
+            words = []
+            if now - had:
+                words.append('now also for ' + platform_words(now - had))
+            if had - now:
+                words.append('no longer for ' + platform_words(had - now))
+            out.append(('PLATFORMS', p['file'], '%s %s: %s' % (p['title'], p['version'], '; '.join(words))))
+        else:
+            out.append(('REBUILT', p['file'], '%s %s: the same version and platforms, other bytes'
+                        % (p['title'], p['version'])))
+    for stem, name in theirs.items():
+        if stem not in mine:
+            out.append(('GONE', name, 'the site offers it; main no longer builds it'))
+    return out
+
+
+def plan_notes(changes, baseline, commit='', run=''):
+    """The release notes of a release published for `changes`."""
+    built = ' built from %s' % commit if commit else ''
+    if run:
+        built += ' by run %s' % run
+    lines = ['The xTalk Suite extensions by Seth Morrow, as .lce packages%s.' % built, '']
+    shown = [c for c in changes if c[0] in PUBLISHING and c[0] != 'REBUILT']
+    if shown:
+        lines.append('New since %s:' % baseline if baseline else 'In this first release:')
+        lines.append('')
+        for kind, name, words in shown:
+            if kind == 'GONE':
+                lines.append('- `%s` is no longer offered' % name)
+            else:
+                lines.append('- `%s`: %s' % (name, words))
+        lines.append('')
+    rebuilt = [c for c in changes if c[0] == 'REBUILT']
+    if rebuilt:
+        lines += ['Changed at the same version (rebuilt from this commit): %s.'
+                  % ', '.join('`%s`' % c[1] for c in rebuilt), '']
+    lines += [
+        'Install one in any IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,',
+        'HyperXTalk, OXT-Beyond): Tools > Extension Manager > + , then choose the .lce file.',
+        'Install a library before its helpers or script layer (for example torrentxt before',
+        'torrentxt-helpers). SHA256SUMS lists every file\'s SHA-256. The extensions site,',
+        SITE_URL + ', says what each one is.',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def cmd_plan(args):
+    site = load_tool('build-extensions-site.py')
+    mine = read_local(os.path.abspath(args.dir))
+    if args.release_json:
+        with open(args.release_json, encoding='utf-8') as f:
+            releases = json.load(f)
+
+        def fetch(asset):
+            path = os.path.join(args.lce_dir, asset['name'])
+            if not os.path.isfile(path):
+                raise Problem('%s: not in %s' % (asset['name'], args.lce_dir))
+            return read(path)
+    else:
+        # a network failure is a refusal, never "nothing to publish"
+        def get(url, **kw):
+            try:
+                return site.http_get(url, **kw)
+            except (urllib.error.URLError, OSError) as err:
+                raise Problem('%s: %s' % (url, err))
+
+        releases = json.loads(get('%s/repos/%s/releases?per_page=30' % (site.API, args.repo)))
+
+        def fetch(asset):
+            return get(asset['browser_download_url'], accept='application/octet-stream')
+    if isinstance(releases, dict):
+        releases = [releases]
+    usable = [r for r in releases if not r.get('draft') and site.lce_assets(r)]
+    release = max(usable, key=lambda r: r.get('published_at') or '') if usable else None
+    baseline = release.get('tag_name', '') if release else ''
+    changes = plan(mine, release, fetch)
+    publish = any(kind in PUBLISHING for kind, _, _ in changes)
+    log('Compared with %s:' % (('release ' + baseline) if baseline else 'no published release (none has packages)'))
+    for kind, name, words in changes:
+        log('  %-9s %s  %s' % (kind, name, words))
+    log('%d packages; %s' % (len(mine), 'publish: the site differs as above' if publish else
+                             'nothing to publish: the site has these packages, byte for byte'))
+    if args.notes:
+        with open(args.notes, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(plan_notes(changes, baseline, os.environ.get('GITHUB_SHA', ''),
+                               os.environ.get('GITHUB_RUN_ID', '')))
+    if args.github_output:
+        with open(args.github_output, 'a', encoding='utf-8', newline='\n') as f:
+            f.write('release=%s\nbaseline=%s\n' % ('true' if publish else 'false', baseline))
+    return changes, publish
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     sub = ap.add_subparsers(dest='cmd')
@@ -802,16 +1363,29 @@ def main(argv=None):
     p.add_argument('--release', action='store_true')
     c = sub.add_parser('check')
     c.add_argument('packages', nargs='+')
+    pl = sub.add_parser('plan')
+    pl.add_argument('dir')
+    pl.add_argument('--repo', default='SethMorrowSoftware/xtalk-suite')
+    pl.add_argument('--release-json')
+    pl.add_argument('--lce-dir')
+    pl.add_argument('--notes')
+    pl.add_argument('--github-output')
     args = ap.parse_args(argv)
+    if args.cmd == 'plan' and bool(args.release_json) != bool(args.lce_dir):
+        ap.error('--release-json and --lce-dir go together')
     try:
         if args.cmd == 'table':
             problems = check_table()
             for prob in problems:
                 log('FAIL ' + prob)
-            log('%s: %d packages, %d problems' % ('OK' if not problems else 'FAIL', len(PACKAGES), len(problems)))
+            wait = waiting()
+            for ident, why in wait.items():
+                log('WAIT %s: %s; the first build after its libraries land packages it' % (ident, why))
+            log('%s: %d packages, %d waiting, %d problems'
+                % ('OK' if not problems else 'FAIL', len(PACKAGES) - len(wait), len(wait), len(problems)))
             return 1 if problems else 0
         if args.cmd == 'list':
-            for row in PACKAGES:
+            for row in active():
                 log('%s\t%s\t%s' % (package_name(row, member_version(row['member'])), row['kind'], row['id']))
             return 0
         if args.cmd == 'stage':
@@ -822,6 +1396,9 @@ def main(argv=None):
             return 0
         if args.cmd == 'pack':
             cmd_pack(args)
+            return 0
+        if args.cmd == 'plan':
+            cmd_plan(args)
             return 0
         if args.cmd == 'check':
             problems = check_packages(args.packages)

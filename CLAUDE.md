@@ -54,7 +54,8 @@ tests/                     suite-selftest.core.livecodescript (hand-written), th
                            cross-member-test.py (native invariants over the built shims)
 tools/                     suite gates, their fixture tests, generators, carried-block masters,
                            member-registry.py, publish-members.py
-.github/workflows/         suite-gates, native-<member>, release-binaries, publish-members
+.github/workflows/         suite-gates, native-<member>, release-binaries, publish-members,
+                           lce-packages, pages (the extensions site)
 <member>/                  each self-contained: CMakeLists.txt or build.sh, src/, tests/, docs/,
                            tools/run-gates.sh (its gate list), src/code/<arch>-<platform>/ + MANIFEST
 ```
@@ -369,6 +370,16 @@ worse than no gate, because it answers the question nobody asks twice.
   `build: all` stays the default and runs as before. Rows are still added in place; a new JOB
   needs a place in the plan and in `tools/test-release-plan.py`, which evaluates every job's
   `if` against the conditions a full build had before.
+- **The extensions site (the owner's rule, 2026-11-21): every extension the suite makes is on it**,
+  for HyperXTalk and LiveCode Community 9 as well as OXT-Beyond. `lce-packages.yml` builds one
+  `.lce` per extension (`tools/build-lce-packages.py`) and loads and probes each on OXT-Beyond's
+  Linux server engine; on a push to main that changes any package (the build is deterministic,
+  so only a real change does), its `publish` job publishes a dated pre-release (crediting Seth
+  Morrow) and starts `pages.yml`, which writes the site from it. `build-lce-packages.py table`
+  (a gate) refuses an extension member of the registry with no package and no `NOT_PACKAGED`
+  reason, and package files the workflow's `paths:` would not notice; a member with no committed
+  library yet WAITs, and a pure LCB module (`native=False`) needs none. A new extension member
+  is not done until its package row is in.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
@@ -380,8 +391,14 @@ worse than no gate, because it answers the question nobody asks twice.
   the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
   macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
 - **Android (2026-11-18).** `tools/build-android.sh <member> <abi>-android` is the WHOLE recipe
-  for the native members (bar gamepadxt, which is not built for Android) on `arm64-android`, `armv7-android`, `x86_64-android` and
-  `x86-android`: the NDK revision OXT-Beyond pins, API 21, libc++ inside each library, the desktop
+  for the native members (bar gamepadxt, which is not built for Android) on `arm64-android`,
+  `armv7-android`, `x86_64-android` and
+  `x86-android`: the NDK revision OXT-Beyond pins, API 21 (torrentxt alone API 24 since
+  2026-11-21: below it libtorrent uses a netlink socket Android 11 refuses an app, and a session
+  starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
+  it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its four
+  were rebuilt at API 24 that day, run 44914897842, commit d47060f, tests run on the Android 7.0
+  emulator for the two x86 ABIs, and no app has run them yet), libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
   leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each

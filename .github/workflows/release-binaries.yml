@@ -1628,27 +1628,56 @@ jobs:
             echo "XTALK_ANDROID_WORK=$RUNNER_TEMP/android-work"
           } >> "$GITHUB_ENV"
 
+      # The suite's floor first (API 21, Android 5.0): every member but one
+      # is built for it and tested on it. The level is build-android.sh's
+      # pin, read from the script.
       - name: Boot the Android 5.0 emulator (the x86 ABIs)
         if: matrix.emulator
         shell: bash
         timeout-minutes: 25
         run: |
           set -euo pipefail
-          bash tools/android-emulator.sh start | tee "$RUNNER_TEMP/emulator.txt"
+          floor=$(bash tools/build-android.sh --pins | sed -n 's/^api //p')
+          [ -n "$floor" ] || { echo "::error::build-android.sh --pins names no API level"; exit 1; }
+          bash tools/android-emulator.sh start "$floor" | tee "$RUNNER_TEMP/emulator.txt"
           serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
           [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
-          echo "XTALK_ANDROID_SERIAL=$serial" >> "$GITHUB_ENV"
+          {
+            echo "XTALK_ANDROID_SERIAL=$serial"
+            echo "XTALK_ANDROID_BOOTED=$floor"
+          } >> "$GITHUB_ENV"
 
       # Every chosen member, in the script's own order (its --list): the
       # light ones first, so a toolchain problem shows in the first minute
       # and not after OpenSSL. A member that fails stops the row; the commit
       # job needs every row green.
+      #
+      # A member built for a later Android than the emulator that is up
+      # (torrentxt: API 24, build-android.sh says why) has its tests run on
+      # ITS floor: the emulator is stopped and the one for that level booted,
+      # where the member comes up in the list. Without this the script
+      # refuses the member before it builds it, so the row cannot go green
+      # on a test that never loaded.
       - name: Build every member (and run its tests on the emulator rows)
         shell: bash
         run: |
           set -euo pipefail
           : > "$RUNNER_TEMP/android-summary.txt"
+          booted="${XTALK_ANDROID_BOOTED:-}"
           for member in $ANDROID_MEMBERS; do
+            if [ -n "$booted" ]; then
+              want=$(bash tools/build-android.sh --api "$member")
+              if [ "$want" != "$booted" ]; then
+                echo "::group::the Android API $want emulator ($member is built for it)"
+                bash tools/android-emulator.sh stop
+                bash tools/android-emulator.sh start "$want" | tee "$RUNNER_TEMP/emulator.txt"
+                serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
+                [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
+                export XTALK_ANDROID_SERIAL="$serial"
+                booted="$want"
+                echo "::endgroup::"
+              fi
+            fi
             echo "::group::$member ${{ matrix.platform_id }}"
             bash tools/build-android.sh "$member" "${{ matrix.platform_id }}" 2>&1 | tee "$RUNNER_TEMP/android-$member.log"
             echo "::endgroup::"

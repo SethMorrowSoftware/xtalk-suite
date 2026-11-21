@@ -312,7 +312,9 @@ jobs:
   # pinned PDFium needs it, so that is the oldest Android on which the tests
   # can open a PDF. The last row boots 5.0 as the release job does: there the
   # shim must load, and if PDFium does not, refuse with a reason and report
-  # the run as IN PART.
+  # the run as IN PART. Each level is read from build-android.sh --pins
+  # (`companion-api-pdfxt`, `api`), never copied: the emulator script boots
+  # only the levels the pins name.
   android:
     name: android ${{ matrix.platform_id }} ${{ matrix.note }}
     if: github.repository == 'SethMorrowSoftware/xtalk-suite'
@@ -323,13 +325,13 @@ jobs:
           - platform_id: arm64-android
           - platform_id: armv7-android
           - platform_id: x86_64-android
-            emulator: "23"
+            emulator: companion
             note: "(Android 6.0)"
           - platform_id: x86-android
-            emulator: "23"
+            emulator: companion
             note: "(Android 6.0)"
           - platform_id: x86_64-android
-            emulator: "21"
+            emulator: floor
             note: "(Android 5.0, the suite floor)"
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -366,11 +368,15 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}
         timeout-minutes: 25
-        env:
-          XTALK_ANDROID_EMULATOR_API: ${{ matrix.emulator }}
         run: |
           set -euo pipefail
-          bash tools/android-emulator.sh start | tee "$RUNNER_TEMP/emulator.txt"
+          case "${{ matrix.emulator }}" in
+            companion) api=$(bash tools/build-android.sh --pins | sed -n 's/^companion-api-pdfxt //p') ;;
+            floor)     api=$(bash tools/build-android.sh --pins | sed -n 's/^api //p') ;;
+            *)         api="" ;;
+          esac
+          [ -n "$api" ] || { echo "::error::build-android.sh --pins names no level for '${{ matrix.emulator }}'"; exit 1; }
+          bash tools/android-emulator.sh start "$api" | tee "$RUNNER_TEMP/emulator.txt"
           serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
           [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
           echo "XTALK_ANDROID_SERIAL=$serial" >> "$GITHUB_ENV"
@@ -392,5 +398,5 @@ jobs:
           # on any Android; and on Android 6.0 it must not have happened.
           if grep -q '^pdfxt smoke: SKIPPED' "$RUNNER_TEMP/android.log"; then
             echo "$last" | grep -q 'passed IN PART' || { echo "::error::the test skipped its PDFium checks and the summary line does not say so"; exit 1; }
-            if [ "${{ matrix.emulator }}" = "23" ]; then echo "::error::PDFium did not load on Android 6.0"; exit 1; fi
+            if [ "${{ matrix.emulator }}" = "companion" ]; then echo "::error::PDFium did not load on the Android it was built for"; exit 1; fi
           fi
