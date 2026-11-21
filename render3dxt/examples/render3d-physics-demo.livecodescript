@@ -5,8 +5,9 @@ script "RenderThreeDDemo"
 -- WHAT THIS IS. A window with one picture in it. box3dxt (Box3D) simulates
 -- crates, balls and a faceted gem falling onto a floor; render3dxt draws
 -- them, textured and lit, into an ordinary image control sixty times a
--- second. Drag the picture to walk the camera round the scene, click a
--- thing to kick it, and use the buttons to drop more.
+-- second. Drag the picture to walk the camera round the scene, turn the
+-- wheel to come closer, click a thing to kick it, and use the buttons to
+-- drop more.
 --
 -- WHAT TO LOOK AT AS A TEMPLATE. rdFrame is the whole join between the two
 -- extensions, and it is five lines:
@@ -49,7 +50,12 @@ script "RenderThreeDDemo"
 -- THE LOOK. This stack adopts the suite UI kit v2 verbatim (the marked
 -- block below); the kit block is never edited here - a look change edits
 -- tools/ui-kit.livecodescript and re-carries. The picture is the one
--- control the kit does not build: an image, created in rdBuild.
+-- control the kit does not build: an image, created in rdBuild. The
+-- buttons are painted by this stack (rdButton) and the log, the small print
+-- and the footer say their own colours, because what is left to the system
+-- comes out white on white under a dark theme (Windows, 2026-11-20). The
+-- look as rebuilt that day (the buttons, the sky, the wheel, the corner's
+-- pictures-a-second) is verified statically; needs an OXT pass.
 
 
 -- ==========================================================================
@@ -57,7 +63,7 @@ script "RenderThreeDDemo"
 -- ==========================================================================
 
 -- Bumped whenever the generated UI changes so a saved stack rebuilds.
-constant kRdUiVersion = "render3d-kit2-2"
+constant kRdUiVersion = "render3d-kit2-3"
 constant kRdWinW = 980
 constant kRdWinH = 620
 -- The picture: 4 by 3, and small enough that a frame with smooth edges
@@ -67,12 +73,29 @@ constant kRdViewW = 624
 constant kRdStepMs = 16.6667 -- one physics step: a sixtieth of a second
 constant kRdViewH = 468
 constant kRdViewLeft = 16
-constant kRdViewTop = 52
+constant kRdViewTop = 64
 -- At most this many falling things: the oldest goes when a new one comes.
 constant kRdMaxThings = 60
 -- What the camera looks at, and how far away it stands.
 constant kRdTarget = "0,1.2,0"
-constant kRdDistance = 13
+constant kRdDistance = 10.5 -- the camera's first distance from kRdTarget, metres
+constant kRdNear = 4.5       -- and how near and how far the wheel takes it
+constant kRdFar = 26
+-- The look of this stack's own buttons, which are painted here and not by
+-- the system (rdButton says why). Three shades each: at rest, under the
+-- pointer, pressed.
+constant kRdFill = "44,90,160"
+constant kRdFillOver = "58,108,186"
+constant kRdFillDown = "30,68,126"
+constant kRdLine = "255,255,255"
+constant kRdLineOver = "234,240,250"
+constant kRdLineDown = "214,225,244"
+constant kRdOn = "224,234,250"
+constant kRdEdge = "164,184,218"
+constant kRdQuiet = "90,98,110"   -- small print: darker than the kit's muted grey
+constant kRdConsole = "28,34,46"  -- the log: a dark page with light words
+constant kRdConsoleInk = "214,222,236"
+constant kRdButtons = "rdCrate,rdBall,rdGem,rdRain,rdReset,rdPause,rdSmooth,rdTextures,rdTurn"
 
 local sRdHaveRender          -- capability flags from the boot probe
 local sRdHavePhysics
@@ -99,7 +122,12 @@ local sRdYaw, sRdPitch       -- the camera's place on its orbit, radians
 local sRdDragging            -- true between a mouseDown on the picture and its end
 local sRdDragX, sRdDragY     -- where the mouse was at the last drag step
 local sRdDragMoved           -- how far the mouse has gone since mouseDown, pixels
-local sRdSmooth, sRdTextured -- the two checkboxes' state (script-managed)
+local sRdSmooth, sRdTextured -- the toggles' state (script-managed)
+local sRdTurning             -- true while the camera walks slowly round by itself
+local sRdDistance            -- the camera's distance from kRdTarget, metres
+local sRdShown               -- pictures shown since the stats were last written
+local sRdStatsAt             -- the milliseconds when they were
+local sRdPressed             -- the button the mouse went down on, or empty
 
 -- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
 -- The family look as one carried block: the kit owns colors, chrome, and
@@ -292,6 +320,10 @@ command uiInput pName, pRect
    set the borderWidth of field pName to 1
    set the borderColor of field pName to kUiFieldLine
    set the opaque of field pName to true
+   -- SAY THE TEXT COLOUR. Left unset it is the system theme's, and a dark
+   -- theme's is white: white words on the white this builder paints (seen on
+   -- Windows, 2026-11-20, in a log and under two checkboxes).
+   set the foregroundColor of field pName to kUiInk
    set the backgroundColor of field pName to kUiCard
    -- 4-item margins form ONLY: OXT ignored the single-number form on a
    -- real engine pass
@@ -314,6 +346,8 @@ command uiArea pName, pRect
    set the borderColor of field pName to kUiCardLine
    set the opaque of field pName to true
    set the backgroundColor of field pName to kUiCard
+   -- and its words, for uiInput's reason: never the theme's
+   set the foregroundColor of field pName to kUiInk
    set the margins of field pName to "6,6,6,6"
    set the vScrollbar of field pName to true
    set the textSize of field pName to 10
@@ -348,6 +382,9 @@ command uiCheckbox pName, pLabel, pRect
    uiButton pName, pLabel, pRect
    set the style of button pName to "checkbox"
    set the autoHilite of button pName to false
+   -- its label sits on the adopter's card, which the kit paints white: the
+   -- theme's text colour (white, under a dark theme) must not reach it
+   set the foregroundColor of button pName to kUiInk
 end uiCheckbox
 
 -- Create-or-reuse a named graphic: the chrome layer (cards, pills,
@@ -773,14 +810,72 @@ on mouseUp
       case "rdTextures"
          rdSetTextured (sRdTextured is not true)
          break
+      case "rdTurn"
+         rdSetTurning (sRdTurning is not true)
+         break
       default
+         rdPressEnd
          pass mouseUp
    end switch
+   rdPressEnd
 end mouseUp
+
+-- The pointer over one of this stack's buttons lightens it, and a press
+-- darkens it: the feedback a system button gives, which these paint
+-- themselves.
+on mouseEnter
+   if the short name of the target is among the items of kRdButtons then
+      rdPaintButton the short name of the target, "over"
+   end if
+   pass mouseEnter
+end mouseEnter
+
+on mouseLeave
+   if the short name of the target is among the items of kRdButtons then
+      rdPaintButton the short name of the target, "rest"
+   end if
+   pass mouseLeave
+end mouseLeave
+
+command rdPressEnd
+   local tWas
+   put sRdPressed into tWas
+   put empty into sRdPressed
+   if tWas is empty then
+      exit rdPressEnd
+   end if
+   set the defaultStack to the short name of this stack
+   if there is a button tWas and the mouseLoc is within the rect of button tWas then
+      rdPaintButton tWas, "over"
+   else
+      rdPaintButton tWas, "rest"
+   end if
+end rdPressEnd
+
+-- The wheel over the picture brings the camera closer or takes it away. A
+-- turn of the wheel reaches a stack as a rawKeyDown: 65309 away from the
+-- hand, 65308 towards it.
+on rawKeyDown pKey
+   if pKey is not 65309 and pKey is not 65308 then
+      pass rawKeyDown
+   end if
+   if there is no image "rdView" or the mouseLoc is not within the rect of image "rdView" then
+      pass rawKeyDown
+   end if
+   if pKey is 65309 then
+      rdZoom -1
+   else
+      rdZoom 1
+   end if
+end rawKeyDown
 
 -- The picture is dragged to orbit and clicked to kick; which of the two a
 -- press was is decided when it ends, by how far the mouse went.
 on mouseDown
+   if the short name of the target is among the items of kRdButtons then
+      put the short name of the target into sRdPressed
+      rdPaintButton sRdPressed, "down"
+   end if
    if the short name of the target is not "rdView" then
       pass mouseDown
    end if
@@ -803,6 +898,7 @@ end mouseMove
 -- The button came up outside the picture: the drag ends, and nothing is
 -- kicked.
 on mouseRelease
+   rdPressEnd
    rdDragEnd false
 end mouseRelease
 
@@ -827,33 +923,48 @@ command rdBuild
    lock screen
    rdClearGeneratedUI
    uiChrome "render3dxt + box3dxt: a simulation, drawn", kRdWinW, kRdWinH
-   -- Panels first, for z-order (the kit rule).
-   uiPanel "rdViewPanel", "10,46,646,526"
-   uiPanel "rdSidePanel", "656,46,970,526"
+   -- Panels first, for z-order (the kit rule). They start below the status
+   -- line, which the kit ends at y 52.
+   uiPanel "rdViewPanel", "10,58,646,538"
+   uiPanel "rdSidePanel", "656,58,970,538"
    -- The picture. The kit builds no image, so this one is made here; its
    -- size is the picture's, exactly, because imageData is not scaled.
    rdImage "rdView", kRdViewLeft & comma & kRdViewTop & comma & (kRdViewLeft + kRdViewW) & comma & (kRdViewTop + kRdViewH)
+   -- How fast it is going, where nobody can miss it: on the picture's corner.
+   uiLabel "rdFps", empty, "24,72,176,100", 13
+   set the textStyle of field "rdFps" to "bold"
+   set the textAlign of field "rdFps" to "center"
+   set the opaque of field "rdFps" to true
+   set the backgroundColor of field "rdFps" to kRdConsole
+   set the foregroundColor of field "rdFps" to "255,255,255"
+   set the blendLevel of field "rdFps" to 18
+   set the margins of field "rdFps" to "6,6,6,6"
    -- The side column.
-   uiSection "rdDropCap", "Drop something", "668,54,958,72"
-   uiButton "rdCrate", "A crate", "668,78,760,102"
-   uiButton "rdBall", "A ball", "766,78,858,102"
-   uiButton "rdGem", "A gem", "864,78,958,102"
-   uiButton "rdRain", "Ten at once", "668,108,810,132"
-   uiButton "rdReset", "Start again", "816,108,958,132"
-   uiSection "rdLookCap", "The picture", "668,144,958,162"
-   uiCheckbox "rdSmooth", "Smooth edges", "668,166,810,188"
-   uiCheckbox "rdTextures", "Textures", "816,166,958,188"
-   -- a checkbox's label takes the theme's text colour, which under a dark
-   -- theme is white, on a panel the kit paints white (seen on Windows,
-   -- 2026-11-20): these two say their own
-   set the foregroundColor of button "rdSmooth" to kUiInk
-   set the foregroundColor of button "rdTextures" to kUiInk
-   uiButton "rdPause", "Pause", "668,194,760,218"
-   uiCap "rdStats", empty, "668,224,958,256"
-   uiCap "rdHelp", "Drag the picture to walk round the scene. Click a crate, a ball or the gem to kick it.", "668,260,958,292"
-   uiSection "rdLogCap", "Boot self-check", "668,300,958,318"
-   uiArea "rdLog", "668,322,958,516"
-   uiFooter "This stack shows render3dxt drawing what box3dxt simulates; it reads and writes no file and uses no network. It has run on the headless Linux server engine and in a desktop IDE on Linux (OXT-Beyond 0.2.8-dp.2, 2026-11-20: seen, dragged, kicked, every button). On Windows and macOS it is verified statically; needs an OXT pass.", "16,534,964,604"
+   uiSection "rdDropCap", "Drop something", "668,68,958,86"
+   rdButton "rdCrate", "A crate", "668,100,761,128", "fill"
+   rdButton "rdBall", "A ball", "767,100,860,128", "fill"
+   rdButton "rdGem", "A gem", "866,100,958,128", "fill"
+   rdButton "rdRain", "Ten at once", "668,134,810,162", "fill"
+   rdButton "rdReset", "Start again", "816,134,958,162", "line"
+   uiSection "rdLookCap", "The picture", "668,176,958,194"
+   rdButton "rdSmooth", "Smooth edges", "668,208,810,236", "line"
+   rdButton "rdTextures", "Textures", "816,208,958,236", "line"
+   rdButton "rdPause", "Pause", "668,242,810,270", "line"
+   rdButton "rdTurn", "Turn slowly", "816,242,958,270", "line"
+   uiCap "rdHelp", "Drag the picture to look round, turn the wheel to come closer, and click a thing to kick it.", "668,280,958,314"
+   rdQuiet "rdHelp"
+   uiSection "rdLogCap", "Boot self-check", "668,322,958,340"
+   uiArea "rdLog", "668,354,958,528"
+   -- the log is a dark page with light words, said outright: left to the
+   -- system, its words are the theme's, and a dark theme's are white on the
+   -- white the kit paints (seen on Windows, 2026-11-20)
+   set the backgroundColor of field "rdLog" to kRdConsole
+   set the foregroundColor of field "rdLog" to kRdConsoleInk
+   set the borderColor of field "rdLog" to kRdConsole
+   uiCap "rdStats", empty, "16,546,964,564"
+   rdQuiet "rdStats"
+   uiFooter "render3dxt draws, in an ordinary image, what box3dxt simulates. This stack reads and writes no file and uses no network; where it has run is at the top of its script.", "16,568,964,604"
+   set the foregroundColor of field "uiFooter" to kRdQuiet
    set the uRdUiVersion of this stack to kRdUiVersion
    unlock screen
 end rdBuild
@@ -867,6 +978,103 @@ command rdImage pName, pRect
    set the lockLocation of image pName to true
    set the rect of image pName to pRect
 end rdImage
+
+-- Small print a person can read: the kit's captions are 10 point in a
+-- pale grey, which on a real screen was too faint (Windows, 2026-11-20).
+command rdQuiet pName
+   set the textSize of field pName to 11
+   set the foregroundColor of field pName to kRdQuiet
+end rdQuiet
+
+-- A button this stack paints itself: a rounded graphic (pName & "Bg") and,
+-- over it, a transparent button that carries the label and takes the
+-- clicks. A system button takes its colours from the system's theme, and
+-- under a dark one it came out as a black slab on the kit's white panel,
+-- with tick boxes whose words were white on white (Windows, 2026-11-20).
+-- These say every colour they use, so they look the same anywhere. pKind
+-- is "fill" (something happens: the accent, white words) or "line" (a
+-- quieter one, and every toggle: white with an edge).
+command rdButton pName, pLabel, pRect, pKind
+   uiGfx (pName & "Bg"), pRect
+   set the roundRadius of graphic (pName & "Bg") to 10
+   set the filled of graphic (pName & "Bg") to true
+   uiButton pName, pLabel, pRect
+   set the style of button pName to "transparent"
+   set the opaque of button pName to false
+   set the showBorder of button pName to false
+   set the threeD of button pName to false
+   set the shadow of button pName to false
+   set the autoHilite of button pName to false
+   set the traversalOn of button pName to false
+   set the textSize of button pName to 12
+   set the textStyle of button pName to "bold"
+   set the uRdKind of button pName to pKind
+   rdPaintButton pName, "rest"
+end rdButton
+
+-- Paints one of them for a state: "rest", "over" (the pointer is on it) or
+-- "down" (pressed). A toggle that is on (its uRdOn) is tinted with the
+-- accent, so on and off never look alike.
+command rdPaintButton pName, pState
+   local tBack, tInk, tEdge
+   set the defaultStack to the short name of this stack
+   if there is no button pName or there is no graphic (pName & "Bg") then
+      exit rdPaintButton
+   end if
+   if the uRdKind of button pName is "fill" then
+      put kUiAccentText into tInk
+      put empty into tEdge
+      switch pState
+         case "over"
+            put kRdFillOver into tBack
+            break
+         case "down"
+            put kRdFillDown into tBack
+            break
+         default
+            put kRdFill into tBack
+      end switch
+   else
+      put kRdEdge into tEdge
+      if the uRdOn of button pName is true then
+         put kRdFill into tInk
+         put kRdOn into tBack
+         put kRdFill into tEdge
+      else
+         put kUiInk into tInk
+         put kRdLine into tBack
+      end if
+      if pState is "over" and the uRdOn of button pName is not true then
+         put kRdLineOver into tBack
+      else if pState is "down" then
+         put kRdLineDown into tBack
+      end if
+   end if
+   set the backgroundColor of graphic (pName & "Bg") to tBack
+   if tEdge is empty then
+      set the lineSize of graphic (pName & "Bg") to 0
+   else
+      set the lineSize of graphic (pName & "Bg") to 1
+      set the foregroundColor of graphic (pName & "Bg") to tEdge
+   end if
+   set the foregroundColor of button pName to tInk
+end rdPaintButton
+
+-- Sets a toggle on or off: its look, and a word in its label, so that
+-- nothing rests on a colour alone.
+command rdShowToggle pName, pLabel, pOn
+   set the defaultStack to the short name of this stack
+   if there is no button pName then
+      exit rdShowToggle
+   end if
+   set the uRdOn of button pName to (pOn is true)
+   if pOn is true then
+      set the label of button pName to pLabel & ": on"
+   else
+      set the label of button pName to pLabel & ": off"
+   end if
+   rdPaintButton pName, "rest"
+end rdShowToggle
 
 command rdClearGeneratedUI
    -- Rebuild-proof: drop every control on the card, then let rdBuild remake
@@ -904,8 +1112,16 @@ command rdStart
    put false into sRdStale
    put the milliseconds into sRdClock
    put 0 into sRdOwed
+   put 0 into sRdShown
+   put sRdClock into sRdStatsAt
+   put empty into sRdPressed
+   put kRdDistance into sRdDistance
    put empty into sRdFrameMsg
    set the label of button "rdPause" to "Pause"
+   put empty into field "rdFps"
+   rdShowToggle "rdSmooth", "Smooth edges", false
+   rdShowToggle "rdTextures", "Textures", false
+   rdShowToggle "rdTurn", "Turn slowly", false
    if sRdHaveRender is not true and sRdHavePhysics is not true then
       uiStatus "The render3dxt and box3dxt extensions are not installed: nothing can be drawn or simulated", "bad"
       exit rdStart
@@ -921,6 +1137,7 @@ command rdStart
    rdMakeScene
    rdSetSmooth true
    rdSetTextured true
+   rdSetTurning true
    rdFirstThings
    rdDraw
    uiStatus "Running - " & r3LibraryVersion(), "ok"
@@ -1000,8 +1217,33 @@ function rdCheckerMaterial pCells, pR1, pG1, pB1, pR2, pG2, pB2
    return tMaterial
 end rdCheckerMaterial
 
+-- The sky's picture, as imageData: 4 pixels wide and 64 high, four bytes
+-- a pixel with the first unused. Its top row is straight overhead and its
+-- middle row is the horizon; below that it darkens again, for the depths
+-- under the floor.
+function rdSkyData
+   local tData, tRow, tT, tR, tG, tB, tPixel
+   repeat with tRow = 0 to 63
+      if tRow < 32 then
+         -- overhead to horizon, quickening as it comes down
+         put (tRow / 31) ^ 3 into tT
+         put 22 + (176 - 22) * tT into tR
+         put 34 + (192 - 34) * tT into tG
+         put 78 + (218 - 78) * tT into tB
+      else
+         put ((tRow - 32) / 31) ^ 0.6 into tT
+         put 176 + (40 - 176) * tT into tR
+         put 192 + (48 - 192) * tT into tG
+         put 218 + (72 - 218) * tT into tB
+      end if
+      put numToByte(255) & numToByte(round(tR)) & numToByte(round(tG)) & numToByte(round(tB)) into tPixel
+      put tPixel & tPixel & tPixel & tPixel after tData
+   end repeat
+   return tData
+end rdSkyData
+
 command rdMakeScene
-   local tFloorMat, tNode, tMaterial, tGemMat
+   local tFloorMat, tNode, tMaterial, tGemMat, tTexture, tSkyMat
    -- the simulation: gravity down the y axis, one worker thread
    put b3WorldCreate(0, -10, 0, 1) into sRdWorld
    put b3BodyCreate(sRdWorld, 0, 0, -0.5, 0) into sRdFloorBody
@@ -1011,10 +1253,12 @@ command rdMakeScene
    put r3SceneCreate() into sRdScene
    r3SceneSetBackground sRdScene, 26, 30, 44
    r3SceneSetAmbient sRdScene, 70, 74, 90
-   r3SceneSetFog sRdScene, 26, 30, 44, 18, 60
+   -- the haze begins beyond everything that falls: it is there for the sky
+   r3SceneSetFog sRdScene, 150, 170, 204, 70, 400
+   r3SceneSetClip sRdScene, 0.05, 200
    get r3LightCreatePoint(sRdScene, -5, 6, 4, 255, 214, 170, 1.2, 30)
    put 0.6 into sRdYaw
-   put 0.42 into sRdPitch
+   put 0.3 into sRdPitch
    rdAimCamera
 
    put empty into sRdMeshes
@@ -1022,6 +1266,7 @@ command rdMakeScene
    put empty into sRdTextures
    put empty into sRdTexOfMat
    put r3MeshBox(8, 0.5, 8) into sRdMeshes["floor"]
+   put r3MeshSphere(1, 24, 16) into sRdMeshes["sky"]
    put r3MeshBox(0.5, 0.5, 0.5) into sRdMeshes["crate"]
    put r3MeshSphere(0.5, 28, 16) into sRdMeshes["ball"]
    put r3MeshParseObj(rdGemObj(), rdGemMtl()) into sRdMeshes["gem"]
@@ -1031,11 +1276,34 @@ command rdMakeScene
    r3MaterialSetFlat tGemMat, true
    r3MaterialSetSpecular tGemMat, 0.9, 60
 
-   put rdCheckerMaterial(8, 214, 218, 226, 120, 130, 150) into tFloorMat
+   -- the floor: a square a metre for each tile, in a picture big enough
+   -- that the near tiles keep their edges
+   put r3TextureChecker(256, 16, 222, 226, 234, 128, 138, 160) into tTexture
+   put r3MaterialCreate(255, 255, 255) into tFloorMat
+   put tTexture & comma after sRdTextures
+   put tFloorMat & comma after sRdMaterials
+   put tTexture into sRdTexOfMat[tFloorMat]
    put r3NodeCreate(sRdScene, sRdMeshes["floor"]) into tNode
    r3NodeSetMaterial tNode, tFloorMat
    r3NodeSetTransformText tNode, b3BodyTransform(sRdFloorBody)
    r3NodeSetTag tNode, sRdFloorBody
+
+   -- the sky: the renderer clears to one colour, so the sky is a thing in
+   -- the scene like any other: a great ball seen from inside, wearing a
+   -- picture that runs from deep blue overhead to a pale horizon. It is
+   -- unlit (no lamp reaches the sky) and tagged with nothing, so a click on
+   -- it finds no body.
+   put r3TextureFromImageData(rdSkyData(), 4, 64) into tTexture
+   r3TextureSetRepeat tTexture, false
+   put r3MaterialCreate(255, 255, 255) into tSkyMat
+   r3MaterialSetTexture tSkyMat, tTexture
+   r3MaterialSetUnlit tSkyMat, true
+   r3MaterialSetDoubleSided tSkyMat, true
+   put tTexture & comma after sRdTextures
+   put tSkyMat & comma after sRdMaterials
+   put r3NodeCreate(sRdScene, sRdMeshes["sky"]) into tNode
+   r3NodeSetMaterial tNode, tSkyMat
+   r3NodeSetScale tNode, 60, 60, 60
 
    put empty into sRdCrateMats
    put rdCheckerMaterial(2, 196, 148, 92, 150, 106, 60) & comma after sRdCrateMats
@@ -1056,9 +1324,9 @@ end rdMakeScene
 -- The camera stands on a sphere round kRdTarget; dragging moves it there.
 command rdAimCamera
    local tX, tY, tZ
-   put item 1 of kRdTarget + kRdDistance * cos(sRdPitch) * sin(sRdYaw) into tX
-   put item 2 of kRdTarget + kRdDistance * sin(sRdPitch) into tY
-   put item 3 of kRdTarget + kRdDistance * cos(sRdPitch) * cos(sRdYaw) into tZ
+   put item 1 of kRdTarget + sRdDistance * cos(sRdPitch) * sin(sRdYaw) into tX
+   put item 2 of kRdTarget + sRdDistance * sin(sRdPitch) into tY
+   put item 3 of kRdTarget + sRdDistance * cos(sRdPitch) * cos(sRdYaw) into tZ
    r3SceneSetCamera sRdScene, tX, tY, tZ, item 1 of kRdTarget, item 2 of kRdTarget, item 3 of kRdTarget, 50
 end rdAimCamera
 
@@ -1077,6 +1345,30 @@ command rdOrbitBy pDx, pDy
       put true into sRdStale
    end if
 end rdOrbitBy
+
+-- Where the camera is, as render3dxt's camera text ("ex,ey,ez,tx,ty,tz,fov"),
+-- or empty when there is no scene: for a test, or a script that is curious.
+function rdCamera
+   if sRdScene is empty then
+      return empty
+   end if
+   return r3SceneCamera(sRdScene)
+end rdCamera
+
+-- A step of the wheel: a tenth nearer (pSteps below zero) or further,
+-- between kRdNear and kRdFar metres.
+command rdZoom pSteps
+   if sRdScene is empty or pSteps is not a number then
+      exit rdZoom
+   end if
+   put max(kRdNear, min(kRdFar, sRdDistance * (1.1 ^ pSteps))) into sRdDistance
+   rdAimCamera
+   if sRdPaused is true then
+      rdDraw
+   else
+      put true into sRdStale
+   end if
+end rdZoom
 
 -- One falling thing: a body with a shape in the world, a node with a mesh
 -- in the scene, and the body's handle as the node's tag, which is the
@@ -1135,18 +1427,18 @@ command rdRemoveThing pLine
    delete line pLine of sRdThings
 end rdRemoveThing
 
--- What is there when the window opens: a small wall of crates and
--- something on its way down to knock it over.
+-- What is there when the window opens: a small wall of crates, and ten
+-- things on their way down to knock it over (sixteen in all).
 command rdFirstThings
-   local tRow, tColumn
+   local tRow, tColumn, tIndex
    repeat with tRow = 0 to 2
       repeat with tColumn = 0 to 2 - tRow
          rdAddThing "crate", (tColumn - (2 - tRow) / 2) * 1.05, 0.5 + tRow * 1.0, 0
       end repeat
    end repeat
-   rdAddThing "ball", 0.3, 7, 0.2
-   rdAddThing "gem", -2.5, 4, 1.5
-   rdAddThing "ball", 2.6, 5, -1
+   repeat with tIndex = 1 to 10
+      rdAddThing item (tIndex mod 3) + 1 of "ball,gem,crate", ((tIndex * 7) mod 9) * 0.55 - 2.2, 4 + tIndex * 1.1, ((tIndex * 5) mod 7) * 0.5 - 1.5
+   end repeat
 end rdFirstThings
 
 -- ==========================================================================
@@ -1169,10 +1461,13 @@ on rdFrame
       put false into sRdBegun
       rdShow r3SceneFrame(sRdScene)
       add 1 to sRdFrames
-      if sRdFrames mod 30 is 0 then
-         rdSweepFallen
-         rdShowStats
-      end if
+      add 1 to sRdShown
+   end if
+   -- twice a second, by the clock (a scene at rest shows no pictures to
+   -- count by): what fell off the floor is removed and the numbers written
+   if tStarted - sRdStatsAt >= 500 then
+      rdSweepFallen
+      rdShowStats tStarted
    end if
    -- 2. physics by the clock: as many sixtieths as have really gone by (at
    -- most four a frame; a longer stall is forgiven, not caught up)
@@ -1190,6 +1485,13 @@ on rdFrame
          add r3SceneApplyMoves(sRdScene, b3MovesText()) to tMoved
       end repeat
       if tMoved > 0 then
+         put true into sRdStale
+      end if
+      -- the camera's own slow walk round, by the clock too: a turn takes
+      -- about a minute and a half. A hand on the picture stops it.
+      if sRdTurning is true and sRdDragging is not true then
+         add (tStarted - sRdClock) * 0.00007 to sRdYaw
+         rdAimCamera
          put true into sRdStale
       end if
    end if
@@ -1243,10 +1545,25 @@ command rdSweepFallen
    end repeat
 end rdSweepFallen
 
-command rdShowStats
-   local tStats
+-- The numbers under the picture, and the two that matter most on its
+-- corner: pictures shown a second since the last time, and what the last
+-- one cost to draw.
+command rdShowStats pNow
+   local tStats, tSpan
    set the defaultStack to the short name of this stack
    put r3SceneStats(sRdScene) into tStats
+   if pNow is not a number then
+      put the milliseconds into pNow
+   end if
+   put pNow - sRdStatsAt into tSpan
+   if sRdShown is 0 or tSpan <= 0 then
+      -- nothing moved, so nothing was drawn: that is the design, not a stall
+      put "at rest" into field "rdFps"
+   else
+      put round(sRdShown * 1000 / tSpan) && "fps   " & format("%.1f", item 3 of tStats) && "ms" into field "rdFps"
+   end if
+   put 0 into sRdShown
+   put pNow into sRdStatsAt
    put the number of lines of sRdThings && "things," && item 1 of tStats && "triangles;" \
          && "the last picture took" && format("%.1f", item 3 of tStats) && "ms on" && r3ThreadCount() && "threads;" \
          && b3WorldAwakeBodyCount(sRdWorld) && "bodies awake" into field "rdStats"
@@ -1320,7 +1637,7 @@ end rdTogglePause
 command rdSetSmooth pOn
    set the defaultStack to the short name of this stack
    put (pOn is true) into sRdSmooth
-   set the hilite of button "rdSmooth" to sRdSmooth
+   rdShowToggle "rdSmooth", "Smooth edges", sRdSmooth
    if sRdScene is empty then
       exit rdSetSmooth
    end if
@@ -1342,7 +1659,7 @@ command rdSetTextured pOn
    local tMaterial
    set the defaultStack to the short name of this stack
    put (pOn is true) into sRdTextured
-   set the hilite of button "rdTextures" to sRdTextured
+   rdShowToggle "rdTextures", "Textures", sRdTextured
    if sRdScene is empty then
       exit rdSetTextured
    end if
@@ -1362,6 +1679,14 @@ command rdSetTextured pOn
    end if
 end rdSetTextured
 
+-- Turn slowly: the camera walks round the scene by itself, so every side
+-- of it is seen without a hand. Off, a scene at rest costs nothing: no
+-- picture is drawn until something moves.
+command rdSetTurning pOn
+   put (pOn is true) into sRdTurning
+   rdShowToggle "rdTurn", "Turn slowly", sRdTurning
+end rdSetTurning
+
 -- A click on the picture: the node under it, the body that node is tagged
 -- with, and a push at the very point that was clicked, away from the
 -- camera and up.
@@ -1375,7 +1700,8 @@ command rdKick pPx, pPy
       exit rdKick
    end if
    put r3NodeTag(tNode) into tBody
-   if tBody is sRdFloorBody then
+   -- the sky has no body, and the floor's is not to be kicked
+   if tBody is 0 or tBody is sRdFloorBody then
       exit rdKick
    end if
    put r3HitText() into tHit
@@ -1391,7 +1717,7 @@ end rdKick
 -- person. The control list is derived (tools/check-demo-control-lists.py).
 -- ==========================================================================
 
-constant kRdScControls = "rdBall,rdCrate,rdDropCap,rdGem,rdHelp,rdLog,rdLogCap,rdLookCap,rdPause,rdRain,rdReset,rdSidePanel,rdSmooth,rdStats,rdTextures,rdView,rdViewPanel,uiFooter,uiStatus,uiTitle"
+constant kRdScControls = "rdDropCap,rdFps,rdHelp,rdLog,rdLogCap,rdLookCap,rdPause,rdSidePanel,rdStats,rdView,rdViewPanel,uiFooter,uiStatus,uiTitle"
 
 -- Two comma lists of numbers, item for item, within a ten-thousandth.
 function rdSameNumbers pA, pB
@@ -1410,20 +1736,45 @@ function rdSameNumbers pA, pB
    return true
 end rdSameNumbers
 
+-- The controls whose colours are the system's to choose, which under a
+-- dark theme means white words on a white panel: there should be none.
+function rdThemed
+   local tName, tList
+   repeat for each item tName in kRdButtons
+      if there is no button tName or there is no graphic (tName & "Bg") then
+         put tName & "(missing)" & space after tList
+      else if the foregroundColor of button tName is empty or the style of button tName is not "transparent" \
+            or the backgroundColor of graphic (tName & "Bg") is empty then
+         put tName & space after tList
+      end if
+   end repeat
+   repeat for each item tName in "rdLog,rdFps,rdStats,rdHelp,uiFooter,uiStatus,uiTitle"
+      if the foregroundColor of field tName is empty then
+         put tName & space after tList
+      end if
+   end repeat
+   if the backgroundColor of field "rdLog" is empty then
+      put "rdLog(ground)" & space after tList
+   end if
+   return word 1 to -1 of tList
+end rdThemed
+
 command rdScRun
    local tMissing, tFirst, tSpot
    scBegin "rdLog"
    put scMissing(kRdScControls) into tMissing
-   scAssert "all 20 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
+   scAssert "all 14 controls this script names exist (missing: " & scShow(tMissing) & ")", tMissing is empty
    scAssert "the picture's image is the picture's size", the width of image "rdView" is kRdViewW and the height of image "rdView" is kRdViewH
+   -- no control leaves its words or its ground to the system's theme
+   scAssert "every button and the log say their own colours (" & scShow(rdThemed()) & ")", rdThemed() is empty
    if sRdHaveRender is true and sRdHavePhysics is true then
       scAssert "render3dxt answers at ABI 1 (" & scShow(r3ABIVersion()) & ")", r3ABIVersion() is 1
       scAssert "box3dxt answers (" & scShow(b3LibraryVersion()) & ")", b3LibraryVersion() is not empty
       scAssert "the first picture is width x height x 4 bytes (" & scShow(r3SceneFrameLength(sRdScene)) & ")", \
             r3SceneFrameLength(sRdScene) is kRdViewW * kRdViewH * 4
       scAssert "the image holds a picture of that size", the number of bytes of the imageData of image "rdView" is kRdViewW * kRdViewH * 4
-      scAssert "one node for the floor and one for every body (" & scShow(r3SceneNodeCount(sRdScene)) & ")", \
-            r3SceneNodeCount(sRdScene) is the number of lines of sRdThings + 1
+      scAssert "one node for the floor, one for the sky and one for every body (" & scShow(r3SceneNodeCount(sRdScene)) & ")", \
+            r3SceneNodeCount(sRdScene) is the number of lines of sRdThings + 2
       put item 1 of line 1 of sRdThings into tFirst
       scAssert "a body's transform is its node's transform", \
             rdSameNumbers(r3NodeTransform(r3SceneNodeByTag(sRdScene, tFirst)), b3BodyTransform(tFirst))

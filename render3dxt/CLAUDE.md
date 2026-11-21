@@ -135,6 +135,6 @@ with box3dxt, `engine-demo.lc`; 2026-11-20, locally built libraries). One deskto
 run it (OXT-Beyond 0.2.8-dp.2 on Linux x86_64, 2026-11-20, locally built libraries
 installed as extensions): the demo's window was built, its boot self-check read 11 passed,
 the picture was seen and recorded, and a real pointer dragged, kicked and pressed every
-button; 57 pictures a second with nine things, 50 to 52 with about fifty. No engine on
-Windows, macOS, Android or the web has loaded it: there it is verified statically; needs
+button; 57 pictures a second with nine things, 50 to 52 with about fifty. The demo's look was rebuilt on 2026-11-21 (its own painted buttons and toggles, a dark log, a sky, the wheel, pictures a second on the picture's corner) after a Windows pass under a dark theme showed white words on white: that look has run on the server engine only (`tests/engine-demo.lc`) and been seen offscreen on the Linux desktop engine; verified statically on Windows, needs an OXT pass. One Windows engine has opened the demo (OXT-Beyond 0.2.8-dp.1, 64-bit, dark system appearance, 2026-11-20, a screenshot: the scene drawn, nine things, 7.8 ms a picture on 6 threads, and the white words that the rebuilt look answers). No engine on
+macOS, Android or the web has loaded it: there, and for everything on Windows that screenshot does not show, it is verified statically; needs
 an OXT pass. The web archive (`src/code/wasm32-emscripten/render3dxt.a`, built with emsdk 6.0.12) is the one committed binary; the desktop and Android libraries wait for the first release dispatch. Open work is in the suite's `docs/WORK-PLAN.md`.

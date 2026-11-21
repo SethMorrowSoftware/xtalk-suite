@@ -74,6 +74,13 @@ function linesStarting pLog, pWord
    return tCount
 end linesStarting
 
+-- how far the camera stands from what it looks at, metres
+function eyeDistance
+   local tCam
+   put value("rdCamera()", stack "rdDemo") into tCam
+   return sqrt((item 1 of tCam - item 4 of tCam) ^ 2 + (item 2 of tCam - item 5 of tCam) ^ 2 + (item 3 of tCam - item 6 of tCam) ^ 2)
+end eyeDistance
+
 -- how many things the stats line says there are
 function thingCount
    return word 1 of field "rdStats" of stack "rdDemo"
@@ -112,6 +119,12 @@ function logCloses
    return field "rdLog" of stack "rdDemo"
 end logCloses
 
+-- the sky is a blue that is not the scene's clearing colour: more blue
+-- than red, and not 26,30,44
+function isSky pPixel
+   return pPixel is not "26,30,44" and item 3 of pPixel > item 1 of pPixel + 20
+end isSky
+
 command press pButton
    send "mouseUp" to button pButton of stack "rdDemo"
 end press
@@ -126,19 +139,36 @@ command openDemo pPath
 end openDemo
 
 command testWithBoth pPath
-   local tLog, tBefore, tCount, tLine
+   local tLog, tBefore, tCount, tLine, tName, tFar
    -- a desktop engine starts with "png", and the demo must hand its pictures
    -- over as "rle" without leaving the property changed
    set the paintCompression to "png"
    openDemo pPath
    check "the window is the size the kit's 720p rule allows", the width of stack "rdDemo" is 980 and the height of stack "rdDemo" is 620, the rect of stack "rdDemo"
-   check "the two checkboxes say their own text colour (a dark theme's is white, on a white panel)", \
-         the foregroundColor of button "rdSmooth" of stack "rdDemo" is "28,34,46" and the foregroundColor of button "rdTextures" of stack "rdDemo" is "28,34,46", \
-         the foregroundColor of button "rdSmooth" of stack "rdDemo" && "/" && the foregroundColor of button "rdTextures" of stack "rdDemo"
+   -- nothing is left to the system's theme, whose words are white under a
+   -- dark one, on a panel the kit paints white (seen on Windows, 2026-11-20)
+   repeat for each item tName in "rdCrate,rdBall,rdGem,rdRain,rdReset,rdPause,rdSmooth,rdTextures,rdTurn"
+      check "button" && tName && "is painted by the stack, in its own colours", \
+            the style of button tName of stack "rdDemo" is "transparent" and the foregroundColor of button tName of stack "rdDemo" is not empty \
+            and the backgroundColor of graphic (tName & "Bg") of stack "rdDemo" is not empty \
+            and the foregroundColor of button tName of stack "rdDemo" is not the backgroundColor of graphic (tName & "Bg") of stack "rdDemo", \
+            the foregroundColor of button tName of stack "rdDemo" && "on" && the backgroundColor of graphic (tName & "Bg") of stack "rdDemo"
+   end repeat
+   check "the log is a dark page with light words", the backgroundColor of field "rdLog" of stack "rdDemo" is "28,34,46" \
+         and the foregroundColor of field "rdLog" of stack "rdDemo" is "214,222,236", the foregroundColor of field "rdLog" of stack "rdDemo"
+   check "the small print is 11 point and dark enough to read", the textSize of field "rdStats" of stack "rdDemo" is 11 \
+         and the foregroundColor of field "rdStats" of stack "rdDemo" is "90,98,110" and the foregroundColor of field "rdHelp" of stack "rdDemo" is "90,98,110" \
+         and the foregroundColor of field "uiFooter" of stack "rdDemo" is "90,98,110", the foregroundColor of field "rdStats" of stack "rdDemo"
+   check "the panels begin below the status line", the top of graphic "rdViewPanel" of stack "rdDemo" >= the bottom of field "uiStatus" of stack "rdDemo" \
+         and the top of field "rdLog" of stack "rdDemo" - the bottom of graphic "rdLogCapLine" of stack "rdDemo" >= 6 \
+         and the top of button "rdSmooth" of stack "rdDemo" - the bottom of graphic "rdLookCapLine" of stack "rdDemo" >= 6, \
+         the top of graphic "rdViewPanel" of stack "rdDemo" && the bottom of graphic "rdLogCapLine" of stack "rdDemo" && the bottom of graphic "rdLookCapLine" of stack "rdDemo"
+   check "the three toggles start on, and say so in words", the uRdOn of button "rdSmooth" of stack "rdDemo" and the uRdOn of button "rdTextures" of stack "rdDemo" \
+         and the uRdOn of button "rdTurn" of stack "rdDemo" and the label of button "rdSmooth" of stack "rdDemo" is "Smooth edges: on", the label of button "rdSmooth" of stack "rdDemo"
    check "the status line says it is running", field "uiStatus" of stack "rdDemo" begins with "Running - render3dxt", field "uiStatus" of stack "rdDemo"
    put picture() into tBefore
    check "the first picture is in the image before any timer ran", the number of bytes of tBefore is 624 * 468 * 4 \
-         and pixelOf(tBefore, 2, 2) is "26,30,44" and pixelOf(tBefore, 312, 300) is not "26,30,44", pixelOf(tBefore, 2, 2) && pixelOf(tBefore, 312, 300)
+         and isSky(pixelOf(tBefore, 2, 2)) and pixelOf(tBefore, 312, 300) is not pixelOf(tBefore, 2, 2), pixelOf(tBefore, 2, 2) && pixelOf(tBefore, 312, 300)
 
    -- the boot self-check: its delayed probe lands at 400 ms
    put logCloses() into tLog
@@ -146,36 +176,43 @@ command testWithBoth pPath
       if tLine is not empty then put "INFO   " & tLine & return
    end repeat
    check "the boot self-check finished GREEN", tLog contains "boot self-check GREEN" and tLog contains " 0 failed" and linesStarting(tLog, "FAIL") is 0, oneLine(tLog)
-   check "it checked the join, not skipped it", linesStarting(tLog, "SKIP") is 0 and linesStarting(tLog, "PASS") >= 11, oneLine(tLog)
+   check "it checked the join, not skipped it", linesStarting(tLog, "SKIP") is 0 and linesStarting(tLog, "PASS") >= 12, oneLine(tLog)
 
    -- the frame timer: the picture moves, and the stats line fills
    check "frames ran on the timer: the picture changed", pictureLeaves(tBefore), "the picture is still the first picture after ten seconds"
-   check "the stats line fills in", thingsBecome(9) and field "rdStats" of stack "rdDemo" contains "triangles", field "rdStats" of stack "rdDemo"
+   check "the stats line fills in", thingsBecome(16) and field "rdStats" of stack "rdDemo" contains "triangles", field "rdStats" of stack "rdDemo"
    put "INFO   " & field "rdStats" of stack "rdDemo" & return
+   check "the picture's corner says how fast it is going", field "rdFps" of stack "rdDemo" contains "fps" and field "rdFps" of stack "rdDemo" contains "ms" \
+         and word 1 of field "rdFps" of stack "rdDemo" > 0, field "rdFps" of stack "rdDemo"
+   put "INFO   " & field "rdFps" of stack "rdDemo" & return
    check "the paintCompression is left as it was found", the paintCompression is "png", the paintCompression
 
    -- the buttons, by message
    press "rdCrate"
    press "rdBall"
    press "rdGem"
-   check "three drops make three more things", thingsBecome(12), field "rdStats" of stack "rdDemo"
+   check "three drops make three more things", thingsBecome(19), field "rdStats" of stack "rdDemo"
    press "rdRain"
-   check "Ten at once makes ten more", thingsBecome(22), field "rdStats" of stack "rdDemo"
-   repeat 5 times
+   check "Ten at once makes ten more", thingsBecome(29), field "rdStats" of stack "rdDemo"
+   repeat 4 times
       press "rdRain"
    end repeat
    check "the oldest go when there are sixty", thingsBecome(60), field "rdStats" of stack "rdDemo"
    put "INFO   " & field "rdStats" of stack "rdDemo" & return
 
    press "rdSmooth"
-   check "Smooth edges unticks", the hilite of button "rdSmooth" of stack "rdDemo" is false, the hilite of button "rdSmooth" of stack "rdDemo"
+   check "Smooth edges goes off", the uRdOn of button "rdSmooth" of stack "rdDemo" is false and the label of button "rdSmooth" of stack "rdDemo" is "Smooth edges: off", the label of button "rdSmooth" of stack "rdDemo"
    press "rdTextures"
-   check "Textures unticks", the hilite of button "rdTextures" of stack "rdDemo" is false, the hilite of button "rdTextures" of stack "rdDemo"
+   check "Textures goes off", the uRdOn of button "rdTextures" of stack "rdDemo" is false and the label of button "rdTextures" of stack "rdDemo" is "Textures: off", the label of button "rdTextures" of stack "rdDemo"
    wait 200 milliseconds with messages
-   check "the picture is still drawn with both off", the number of bytes of picture() is 624 * 468 * 4 and pixelOf(picture(), 2, 2) is "26,30,44", pixelOf(picture(), 2, 2)
+   check "the picture is still drawn with both off", the number of bytes of picture() is 624 * 468 * 4 and isSky(pixelOf(picture(), 2, 2)), pixelOf(picture(), 2, 2)
    press "rdSmooth"
    press "rdTextures"
-   check "and tick again", the hilite of button "rdSmooth" of stack "rdDemo" and the hilite of button "rdTextures" of stack "rdDemo", "a box stayed unticked"
+   check "and both go on again", the uRdOn of button "rdSmooth" of stack "rdDemo" and the uRdOn of button "rdTextures" of stack "rdDemo", "one stayed off"
+
+   -- Turn slowly off: the camera stays where a hand leaves it
+   press "rdTurn"
+   check "Turn slowly goes off", the uRdOn of button "rdTurn" of stack "rdDemo" is false and the label of button "rdTurn" of stack "rdDemo" is "Turn slowly: off", the label of button "rdTurn" of stack "rdDemo"
 
    -- Pause holds the picture still; a drag still turns the camera
    press "rdPause"
@@ -185,6 +222,17 @@ command testWithBoth pPath
    check "Pause holds the picture", picture() is tBefore and the label of button "rdPause" of stack "rdDemo" is "Go on", the label of button "rdPause" of stack "rdDemo"
    dispatch "rdOrbitBy" to stack "rdDemo" with 60, -20
    check "a drag turns the camera while paused", picture() is not tBefore, "the picture did not change"
+   -- the wheel: three steps nearer, then as far away as it will go and as
+   -- near, which stop at the two ends
+   put picture() into tBefore
+   dispatch "rdZoom" to stack "rdDemo" with -3
+   check "the wheel brings the camera closer", picture() is not tBefore and eyeDistance() < 10.5 * 0.76 and eyeDistance() > 10.5 * 0.74, eyeDistance()
+   dispatch "rdZoom" to stack "rdDemo" with 40
+   put eyeDistance() into tFar
+   dispatch "rdZoom" to stack "rdDemo" with -80
+   check "and stops at its two ends", abs(tFar - 26) < 0.001 and abs(eyeDistance() - 4.5) < 0.001, tFar && eyeDistance()
+   dispatch "rdZoom" to stack "rdDemo" with "x"
+   dispatch "rdZoom" to stack "rdDemo" with 9
    -- a click in the middle of the picture: whatever is there is kicked, and
    -- nothing throws if it is the floor or the sky
    dispatch "rdKick" to stack "rdDemo" with 312, 300
@@ -202,7 +250,7 @@ command testWithBoth pPath
    check "and the paintCompression is still as it was found", the paintCompression is "png", the paintCompression
 
    press "rdReset"
-   check "Start again puts the first nine back", thingsBecome(9), field "rdStats" of stack "rdDemo"
+   check "Start again puts the first sixteen back", thingsBecome(16), field "rdStats" of stack "rdDemo"
 
    -- closing gives everything back and leaves no timer behind
    send "closeStack" to stack "rdDemo"
