@@ -1,0 +1,2662 @@
+/*
+xlsxt.lcb - xTalk Builder (LCB) binding library for Excel .xlsx files, via
+            the xlsx_shim C shim. Part of xlsxt for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    put xlWorkbookNew(specialFolderPath("documents") & "/report.xlsx") into sBook
+
+Conventions (the shim, src/xlsx_shim.c, is where each is enforced):
+  * Handles are integers (0 = invalid). Every handler tolerates a stale or 0
+    handle: getters return 0 or empty, actions do nothing. A handle of one
+    kind (a sheet) is refused where another kind (a format) is expected.
+  * NAMES ARE MECHANICAL: the handler for the shim's xlx_sheet_write_number
+    is xlSheetWriteNumber; nothing is renamed by hand.
+    tools/check-lcb-signatures.py holds the bijection (every export bound
+    once, every binding wrapped by the one public handler of that name).
+  * Rows, columns, sheets and series are 1-BASED, as chunks are in xTalk:
+    row 1, column 1 is cell A1.
+  * Text goes IN as UTF-8 (ZStringUTF8) and comes OUT as a Pointer that
+    textOf() copies, never as ZStringNative.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Nothing here throws, bar the ABI check: a refused call returns 0 or empty
+    and xlLastError() says why. A loop writing ten thousand rows must not be
+    stopped by one bad cell; xlWorkbookErrorCount says afterwards whether
+    every call was taken.
+
+The foreign handlers bind to the shared library "xlsxt" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time.
+*/
+
+/**
+Reads and writes Excel workbooks (.xlsx files), with no copy of Excel and
+no other program needed.
+
+To WRITE a file, make a workbook with <xlWorkbookNew>, give it sheets with
+<xlWorkbookAddSheet>, put values into cells with <xlSheetWriteText>,
+<xlSheetWriteNumber>, <xlSheetWriteFormula> and the rest (or a whole table
+at once with <xlSheetWriteGrid>), and finish with <xlWorkbookClose>, which
+is the call that writes the file. Formats from <xlWorkbookAddFormat> give
+cells their fonts, colours, borders and number formats; charts from
+<xlWorkbookAddChart> draw the numbers.
+
+To READ a file, open it with <xlReadOpen>, ask what it holds with
+<xlReadSheetCount> and <xlReadSheetName>, read cells with <xlReadCell> or a
+whole block with <xlReadGrid>, and finish with <xlReadClose>. Files written
+by Excel, LibreOffice, Numbers and Google Sheets can be read.
+
+A workbook that is being written cannot be read back or changed until it is
+closed, and an existing file cannot be edited in place: read it, then write
+a new one.
+
+Rows and columns are numbers starting at 1, so row 1, column 1 is cell A1;
+<xlCellName> and <xlColumnName> turn numbers into Excel's letters. Workbooks,
+sheets, formats, charts and readers are integer handles. 0 means a call was
+refused, and a stale handle is harmless: getters return 0 or empty, actions
+do nothing. <xlLastError> says why a call was refused, and
+<xlWorkbookErrorCount> says how many calls a workbook has refused so far.
+
+A date is a number to Excel: the days since the end of 1899, with the time
+as a fraction. <xlDateToSerial> and <xlSerialToDate> convert, and a cell
+shows as a date when its format has a date number format.
+
+Built on libxlsxwriter by John McNamara, with zlib and Expat.
+
+Tags: Spreadsheet, Excel, Files, Library
+*/
+library org.openxtalk.library.xlsxt
+
+use com.livecode.foreign
+
+-- The engine's own string builder, resolved by NAME (so no leading
+-- underscore): see textOf() below.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+
+metadata title is "Excel Spreadsheets for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Reads and writes Excel .xlsx workbooks (cells, formats, formulas, charts, images) via libxlsxwriter."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/xlsx_shim.c; tools/check-lcb-signatures.py holds every line to the
+-- C definition it binds (name, return type, each parameter type).
+-- =====================================================================
+
+-- ---- the library
+private foreign handler _abi_version() returns CInt binds to "c:xlsxt>xlx_abi_version!cdecl"
+private foreign handler _library_version() returns Pointer binds to "c:xlsxt>xlx_library_version!cdecl"
+private foreign handler _last_error() returns Pointer binds to "c:xlsxt>xlx_last_error!cdecl"
+private foreign handler _text_length(in pText as Pointer) returns CInt binds to "c:xlsxt>xlx_text_length!cdecl"
+private foreign handler _set_temp_folder(in pFolder as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_set_temp_folder!cdecl"
+private foreign handler _temp_folder() returns Pointer binds to "c:xlsxt>xlx_temp_folder!cdecl"
+
+-- ---- cell names and dates
+private foreign handler _column_name(in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_column_name!cdecl"
+private foreign handler _cell_name(in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_cell_name!cdecl"
+private foreign handler _range_name(in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_range_name!cdecl"
+private foreign handler _range_formula(in pSheetName as ZStringUTF8, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_range_formula!cdecl"
+private foreign handler _cell_row(in pName as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_cell_row!cdecl"
+private foreign handler _cell_column(in pName as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_cell_column!cdecl"
+private foreign handler _date_to_serial(in pYear as CInt, in pMonth as CInt, in pDay as CInt, in pHour as CInt, in pMinute as CInt, in pSecond as CDouble) returns CDouble binds to "c:xlsxt>xlx_date_to_serial!cdecl"
+private foreign handler _serial_to_date(in pSerial as CDouble) returns Pointer binds to "c:xlsxt>xlx_serial_to_date!cdecl"
+private foreign handler _seconds_to_serial(in pSeconds as CDouble) returns CDouble binds to "c:xlsxt>xlx_seconds_to_serial!cdecl"
+private foreign handler _serial_to_seconds(in pSerial as CDouble) returns CDouble binds to "c:xlsxt>xlx_serial_to_seconds!cdecl"
+
+-- ---- workbooks
+private foreign handler _workbook_count() returns CInt binds to "c:xlsxt>xlx_workbook_count!cdecl"
+private foreign handler _workbook_new(in pPath as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_workbook_new!cdecl"
+private foreign handler _workbook_is_valid(in pBook as CInt) returns CInt binds to "c:xlsxt>xlx_workbook_is_valid!cdecl"
+private foreign handler _workbook_close(in pBook as CInt) returns CInt binds to "c:xlsxt>xlx_workbook_close!cdecl"
+private foreign handler _workbook_discard(in pBook as CInt) returns nothing binds to "c:xlsxt>xlx_workbook_discard!cdecl"
+private foreign handler _workbook_error_count(in pBook as CInt) returns CInt binds to "c:xlsxt>xlx_workbook_error_count!cdecl"
+private foreign handler _workbook_first_error(in pBook as CInt) returns Pointer binds to "c:xlsxt>xlx_workbook_first_error!cdecl"
+private foreign handler _workbook_sheet_count(in pBook as CInt) returns CInt binds to "c:xlsxt>xlx_workbook_sheet_count!cdecl"
+private foreign handler _workbook_add_sheet(in pBook as CInt, in pName as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_workbook_add_sheet!cdecl"
+private foreign handler _workbook_add_format(in pBook as CInt) returns CInt binds to "c:xlsxt>xlx_workbook_add_format!cdecl"
+private foreign handler _workbook_add_chart(in pBook as CInt, in pKind as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_workbook_add_chart!cdecl"
+private foreign handler _workbook_set_property(in pBook as CInt, in pName as ZStringUTF8, in pValue as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_workbook_set_property!cdecl"
+private foreign handler _workbook_define_name(in pBook as CInt, in pName as ZStringUTF8, in pFormula as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_workbook_define_name!cdecl"
+
+-- ---- formats
+private foreign handler _format_is_valid(in pFormat as CInt) returns CInt binds to "c:xlsxt>xlx_format_is_valid!cdecl"
+private foreign handler _format_set_bold(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_bold!cdecl"
+private foreign handler _format_set_italic(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_italic!cdecl"
+private foreign handler _format_set_strikeout(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_strikeout!cdecl"
+private foreign handler _format_set_underline(in pFormat as CInt, in pStyle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_underline!cdecl"
+private foreign handler _format_set_script(in pFormat as CInt, in pStyle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_script!cdecl"
+private foreign handler _format_set_font_name(in pFormat as CInt, in pName as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_font_name!cdecl"
+private foreign handler _format_set_font_size(in pFormat as CInt, in pSize as CDouble) returns nothing binds to "c:xlsxt>xlx_format_set_font_size!cdecl"
+private foreign handler _format_set_font_color(in pFormat as CInt, in pColor as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_font_color!cdecl"
+private foreign handler _format_set_background_color(in pFormat as CInt, in pColor as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_background_color!cdecl"
+private foreign handler _format_set_number_format(in pFormat as CInt, in pCode as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_number_format!cdecl"
+private foreign handler _format_set_align(in pFormat as CInt, in pAlignment as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_align!cdecl"
+private foreign handler _format_set_vertical_align(in pFormat as CInt, in pAlignment as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_vertical_align!cdecl"
+private foreign handler _format_set_text_wrap(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_text_wrap!cdecl"
+private foreign handler _format_set_shrink(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_shrink!cdecl"
+private foreign handler _format_set_rotation(in pFormat as CInt, in pDegrees as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_rotation!cdecl"
+private foreign handler _format_set_indent(in pFormat as CInt, in pLevel as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_indent!cdecl"
+private foreign handler _format_set_border(in pFormat as CInt, in pStyle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_border!cdecl"
+private foreign handler _format_set_border_side(in pFormat as CInt, in pSide as ZStringUTF8, in pStyle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_border_side!cdecl"
+private foreign handler _format_set_border_color(in pFormat as CInt, in pColor as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_format_set_border_color!cdecl"
+private foreign handler _format_set_locked(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_locked!cdecl"
+private foreign handler _format_set_formula_hidden(in pFormat as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_format_set_formula_hidden!cdecl"
+
+-- ---- sheets
+private foreign handler _sheet_is_valid(in pSheet as CInt) returns CInt binds to "c:xlsxt>xlx_sheet_is_valid!cdecl"
+private foreign handler _sheet_name(in pSheet as CInt) returns Pointer binds to "c:xlsxt>xlx_sheet_name!cdecl"
+private foreign handler _sheet_write_number(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pNumber as CDouble, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_number!cdecl"
+private foreign handler _sheet_write_text(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pText as ZStringUTF8, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_text!cdecl"
+private foreign handler _sheet_write_formula(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pFormula as ZStringUTF8, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_formula!cdecl"
+private foreign handler _sheet_write_formula_value(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pFormula as ZStringUTF8, in pValue as CDouble, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_formula_value!cdecl"
+private foreign handler _sheet_write_boolean(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pFlag as CInt, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_boolean!cdecl"
+private foreign handler _sheet_write_blank(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_blank!cdecl"
+private foreign handler _sheet_write_date(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pSerial as CDouble, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_date!cdecl"
+private foreign handler _sheet_write_link(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pUrl as ZStringUTF8, in pText as ZStringUTF8, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_write_link!cdecl"
+private foreign handler _sheet_write_comment(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pText as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_write_comment!cdecl"
+private foreign handler _sheet_write_grid(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pText as ZStringUTF8, in pMode as ZStringUTF8, in pFormat as CInt) returns CInt binds to "c:xlsxt>xlx_sheet_write_grid!cdecl"
+private foreign handler _sheet_set_columns(in pSheet as CInt, in pFirstColumn as CInt, in pLastColumn as CInt, in pWidth as CDouble, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_set_columns!cdecl"
+private foreign handler _sheet_hide_columns(in pSheet as CInt, in pFirstColumn as CInt, in pLastColumn as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_hide_columns!cdecl"
+private foreign handler _sheet_set_row(in pSheet as CInt, in pRow as CInt, in pHeight as CDouble, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_set_row!cdecl"
+private foreign handler _sheet_hide_row(in pSheet as CInt, in pRow as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_hide_row!cdecl"
+private foreign handler _sheet_merge(in pSheet as CInt, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt, in pText as ZStringUTF8, in pFormat as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_merge!cdecl"
+private foreign handler _sheet_freeze(in pSheet as CInt, in pRows as CInt, in pColumns as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_freeze!cdecl"
+private foreign handler _sheet_autofilter(in pSheet as CInt, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_autofilter!cdecl"
+private foreign handler _sheet_validate_list(in pSheet as CInt, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt, in pItems as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_validate_list!cdecl"
+private foreign handler _sheet_insert_image(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pPath as ZStringUTF8, in pXScale as CDouble, in pYScale as CDouble) returns nothing binds to "c:xlsxt>xlx_sheet_insert_image!cdecl"
+private foreign handler _sheet_set_landscape(in pSheet as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_set_landscape!cdecl"
+private foreign handler _sheet_set_paper(in pSheet as CInt, in pPaper as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_set_paper!cdecl"
+private foreign handler _sheet_set_margins(in pSheet as CInt, in pLeft as CDouble, in pRight as CDouble, in pTop as CDouble, in pBottom as CDouble) returns nothing binds to "c:xlsxt>xlx_sheet_set_margins!cdecl"
+private foreign handler _sheet_fit_to_pages(in pSheet as CInt, in pWide as CInt, in pTall as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_fit_to_pages!cdecl"
+private foreign handler _sheet_set_header(in pSheet as CInt, in pText as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_set_header!cdecl"
+private foreign handler _sheet_set_footer(in pSheet as CInt, in pText as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_set_footer!cdecl"
+private foreign handler _sheet_repeat_rows(in pSheet as CInt, in pFirstRow as CInt, in pLastRow as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_repeat_rows!cdecl"
+private foreign handler _sheet_print_area(in pSheet as CInt, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_print_area!cdecl"
+private foreign handler _sheet_set_zoom(in pSheet as CInt, in pPercent as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_set_zoom!cdecl"
+private foreign handler _sheet_show_gridlines(in pSheet as CInt, in pScreenFlag as CInt, in pPrintFlag as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_show_gridlines!cdecl"
+private foreign handler _sheet_set_tab_color(in pSheet as CInt, in pColor as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_set_tab_color!cdecl"
+private foreign handler _sheet_activate(in pSheet as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_activate!cdecl"
+private foreign handler _sheet_hide(in pSheet as CInt) returns nothing binds to "c:xlsxt>xlx_sheet_hide!cdecl"
+private foreign handler _sheet_protect(in pSheet as CInt, in pPassword as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_sheet_protect!cdecl"
+
+-- ---- charts
+private foreign handler _chart_is_valid(in pChart as CInt) returns CInt binds to "c:xlsxt>xlx_chart_is_valid!cdecl"
+private foreign handler _chart_series_count(in pChart as CInt) returns CInt binds to "c:xlsxt>xlx_chart_series_count!cdecl"
+private foreign handler _chart_add_series(in pChart as CInt, in pCategories as ZStringUTF8, in pValues as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_chart_add_series!cdecl"
+private foreign handler _chart_series_set_name(in pChart as CInt, in pSeries as CInt, in pName as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_series_set_name!cdecl"
+private foreign handler _chart_series_set_color(in pChart as CInt, in pSeries as CInt, in pColor as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_series_set_color!cdecl"
+private foreign handler _chart_series_set_labels(in pChart as CInt, in pSeries as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_chart_series_set_labels!cdecl"
+private foreign handler _chart_series_set_smooth(in pChart as CInt, in pSeries as CInt, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_chart_series_set_smooth!cdecl"
+private foreign handler _chart_series_set_marker(in pChart as CInt, in pSeries as CInt, in pKind as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_series_set_marker!cdecl"
+private foreign handler _chart_set_title(in pChart as CInt, in pTitle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_set_title!cdecl"
+private foreign handler _chart_set_axis_title(in pChart as CInt, in pAxis as ZStringUTF8, in pTitle as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_set_axis_title!cdecl"
+private foreign handler _chart_set_axis_range(in pChart as CInt, in pAxis as ZStringUTF8, in pMinimum as CDouble, in pMaximum as CDouble) returns nothing binds to "c:xlsxt>xlx_chart_set_axis_range!cdecl"
+private foreign handler _chart_set_axis_number_format(in pChart as CInt, in pAxis as ZStringUTF8, in pCode as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_set_axis_number_format!cdecl"
+private foreign handler _chart_set_axis_gridlines(in pChart as CInt, in pAxis as ZStringUTF8, in pFlag as CInt) returns nothing binds to "c:xlsxt>xlx_chart_set_axis_gridlines!cdecl"
+private foreign handler _chart_set_legend(in pChart as CInt, in pPosition as ZStringUTF8) returns nothing binds to "c:xlsxt>xlx_chart_set_legend!cdecl"
+private foreign handler _chart_set_style(in pChart as CInt, in pStyle as CInt) returns nothing binds to "c:xlsxt>xlx_chart_set_style!cdecl"
+
+-- ---- sheets
+private foreign handler _sheet_insert_chart(in pSheet as CInt, in pRow as CInt, in pColumn as CInt, in pChart as CInt, in pXScale as CDouble, in pYScale as CDouble) returns nothing binds to "c:xlsxt>xlx_sheet_insert_chart!cdecl"
+
+-- ---- reading
+private foreign handler _read_count() returns CInt binds to "c:xlsxt>xlx_read_count!cdecl"
+private foreign handler _read_open(in pPath as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_read_open!cdecl"
+private foreign handler _read_close(in pReader as CInt) returns nothing binds to "c:xlsxt>xlx_read_close!cdecl"
+private foreign handler _read_is_valid(in pReader as CInt) returns CInt binds to "c:xlsxt>xlx_read_is_valid!cdecl"
+private foreign handler _read_sheet_count(in pReader as CInt) returns CInt binds to "c:xlsxt>xlx_read_sheet_count!cdecl"
+private foreign handler _read_sheet_name(in pReader as CInt, in pSheet as CInt) returns Pointer binds to "c:xlsxt>xlx_read_sheet_name!cdecl"
+private foreign handler _read_sheet_number(in pReader as CInt, in pName as ZStringUTF8) returns CInt binds to "c:xlsxt>xlx_read_sheet_number!cdecl"
+private foreign handler _read_sheet_is_hidden(in pReader as CInt, in pSheet as CInt) returns CInt binds to "c:xlsxt>xlx_read_sheet_is_hidden!cdecl"
+private foreign handler _read_uses_1904(in pReader as CInt) returns CInt binds to "c:xlsxt>xlx_read_uses_1904!cdecl"
+private foreign handler _read_load(in pReader as CInt, in pSheet as CInt) returns CInt binds to "c:xlsxt>xlx_read_load!cdecl"
+private foreign handler _read_row_count(in pReader as CInt, in pSheet as CInt) returns CInt binds to "c:xlsxt>xlx_read_row_count!cdecl"
+private foreign handler _read_column_count(in pReader as CInt, in pSheet as CInt) returns CInt binds to "c:xlsxt>xlx_read_column_count!cdecl"
+private foreign handler _read_cell(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_cell!cdecl"
+private foreign handler _read_cell_value(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_cell_value!cdecl"
+private foreign handler _read_cell_number(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns CDouble binds to "c:xlsxt>xlx_read_cell_number!cdecl"
+private foreign handler _read_cell_kind(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_cell_kind!cdecl"
+private foreign handler _read_cell_formula(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_cell_formula!cdecl"
+private foreign handler _read_cell_format(in pReader as CInt, in pSheet as CInt, in pRow as CInt, in pColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_cell_format!cdecl"
+private foreign handler _read_grid(in pReader as CInt, in pSheet as CInt, in pFirstRow as CInt, in pFirstColumn as CInt, in pLastRow as CInt, in pLastColumn as CInt) returns Pointer binds to "c:xlsxt>xlx_read_grid!cdecl"
+private foreign handler _read_merged(in pReader as CInt, in pSheet as CInt) returns Pointer binds to "c:xlsxt>xlx_read_merged!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+-- A Boolean for the C side, which takes an int.
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is XLX_ABI_VERSION in
+-- src/xlsx_shim.c (the suite's check-binary-freshness.py compares the two).
+-- Called where a script first reaches the library: xlWorkbookNew and
+-- xlReadOpen, which everything else needs a handle from, and
+-- xlLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "xlsxt: incompatible native library (this binding needs ABI 1) - update the xlsxt library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing a
+-- buffer the shim still owns kills the host (box3dxt's first engine run,
+-- 2026-11-20). The bytes are UTF-8, and a cell's text may hold any of it;
+-- 4 is the engine's MCStringEncoding value for UTF-8, sodiumxt's proven
+-- way to build a String from bytes. The length comes from the shim
+-- (the bytes up to the first NUL), since a Pointer carries none.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler xlABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the versions of the native library and of the libraries
+inside it.
+
+Returns: Text such as "xlsxt ABI 1; libxlsxwriter 1.2.4; zlib 1.4; Expat
+2.10.0".
+
+Example:
+put xlLibraryVersion() into field "status"
+
+Description: It throws if the library on disk has a different ABI from this
+binding, which means the two come from different releases.
+*/
+public handler xlLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns why the last call was refused.
+
+Returns: A short sentence, or empty if the last call was not refused.
+
+Example:
+put xlReadOpen(tPath) into tReader
+if tReader is 0 then answer xlLastError()
+
+Description: A call given something it cannot use does nothing and returns 0
+or empty; it never throws. This says what was wrong. Nearly every call
+clears it first, so ask straight after the call in question. A workbook also
+counts its own refusals: see <xlWorkbookErrorCount>.
+*/
+public handler xlLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Chooses the folder that temporary files are made in while a
+workbook is written.
+
+pFolder: The path of a folder that exists and can be written to, or empty
+for the system's own temporary folder.
+
+Example:
+xlSetTempFolder specialFolderPath("temporary")
+
+Description: A workbook is assembled from temporary files when it is closed.
+The system's temporary folder is used unless this names another; a folder
+that cannot be used is passed over, not an error. It applies to workbooks
+made afterwards. On Android, where there is no shared temporary folder, the
+folder of the workbook itself is used unless this is set.
+*/
+public handler xlSetTempFolder(in pFolder as String) returns nothing
+   unsafe
+      _set_temp_folder(pFolder)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the folder chosen with xlSetTempFolder.
+
+Returns: The path, or empty if none was chosen.
+*/
+public handler xlTempFolder() returns String
+   variable tP as Pointer
+   unsafe
+      put _temp_folder() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Cell names and dates
+-- =====================================================================
+
+/**
+Summary: Returns the letters of a column.
+
+pColumn: The number of the column, 1 to 16384.
+
+Returns: The letters: "A" for 1, "Z" for 26, "AA" for 27, "XFD" for 16384.
+Empty for a number outside that range.
+
+Example:
+put xlColumnName(28) -- AB
+*/
+public handler xlColumnName(in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _column_name(pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the name of a cell.
+
+pRow: The row, 1 to 1048576.
+
+pColumn: The column, 1 to 16384.
+
+Returns: The name, such as "B3" for row 3, column 2. Empty if the cell is
+outside the grid.
+
+Example:
+put xlCellName(3, 2) -- B3
+*/
+public handler xlCellName(in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _cell_name(pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the name of a range of cells.
+
+pFirstRow: The first row of the range; 1 is the first row.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+
+Returns: The name, such as "A1:B3". Empty if it is not a range inside the
+grid, first cell above and left of the last.
+
+Example:
+put xlRangeName(1, 1, 3, 2) -- A1:B3
+*/
+public handler xlRangeName(in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _range_name(pFirstRow, pFirstColumn, pLastRow, pLastColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns a range written the way a chart series or a defined name
+wants it.
+
+pSheetName: The name of the sheet the cells are on.
+
+pFirstRow: The first row of the range; 1 is the first row.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+
+Returns: A formula such as "=Sheet1!$A$2:$A$7". Empty if the name is empty
+or the range is not one.
+
+Example:
+put xlRangeFormula("Sales", 2, 2, 7, 2) into tValues -- =Sales!$B$2:$B$7
+
+Description: A sheet name that holds a space or other punctuation is put in
+single quotes, as Excel requires. Use the result with <xlChartAddSeries> and
+<xlWorkbookDefineName>.
+*/
+public handler xlRangeFormula(in pSheetName as String, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _range_formula(pSheetName, pFirstRow, pFirstColumn, pLastRow, pLastColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the row of a cell name.
+
+pName: A cell name such as "B3" or "$B$3", in any letter case.
+
+Returns: The row; 3 for B3. 0 if the text is not a cell name.
+
+Example:
+put xlCellRow("B3") -- 3
+*/
+public handler xlCellRow(in pName as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cell_row(pName) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the column of a cell name.
+
+pName: A cell name such as "B3" or "$B$3", in any letter case.
+
+Returns: The column; 2 for B3. 0 if the text is not a cell name.
+
+Example:
+put xlCellColumn("AB12") -- 28
+*/
+public handler xlCellColumn(in pName as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _cell_column(pName) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the number Excel uses for a date and time.
+
+pYear: The year, 1900 to 9999. Pass 0 for year, month and day to get a time
+of day alone.
+
+pMonth: The month, 1 to 12.
+
+pDay: The day of the month.
+
+pHour: The hour, 0 to 23.
+
+pMinute: The minute, 0 to 59.
+
+pSecond: The seconds, 0 up to 60; fractions are kept.
+
+Returns: The serial: whole days counted from the start of 1900, plus the
+time as a fraction of a day. -1 if it is not a real date.
+
+Example:
+xlSheetWriteDate tSheet, 2, 1, xlDateToSerial(2026, 11, 20, 0, 0, 0), 0
+
+Description: Excel stores a date as a number and shows it as a date because
+of the cell's format. Excel also believes 1900 was a leap year; this follows
+it, so the numbers agree with what Excel shows. Write the result with
+<xlSheetWriteDate>.
+*/
+public handler xlDateToSerial(in pYear as Integer, in pMonth as Integer, in pDay as Integer, in pHour as Integer, in pMinute as Integer, in pSecond as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _date_to_serial(pYear, pMonth, pDay, pHour, pMinute, pSecond) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the date and time that a serial number stands for.
+
+pSerial: A date serial, 0 up to 2958466 (the end of the year 9999).
+
+Returns: Text in the form "2026-11-20 14:30:00". Empty if the number is not
+a date serial.
+
+Example:
+put xlSerialToDate(45292.5) -- 2024-01-01 12:00:00
+
+Description: The reverse of <xlDateToSerial>. Serial 60 comes back as
+1900-02-29, the day Excel invented.
+*/
+public handler xlSerialToDate(in pSerial as Number) returns String
+   variable tP as Pointer
+   unsafe
+      put _serial_to_date(pSerial) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Converts a count of seconds, such as the seconds, to a date serial.
+
+pSeconds: Seconds counted from the start of 1970, as the seconds returns.
+
+Returns: The serial. -1 if the date falls outside 1900 to 9999.
+
+Example:
+xlSheetWriteDate tSheet, 1, 1, xlSecondsToSerial(the seconds), 0
+
+Description: No time zone is applied: a serial has none. The seconds counts
+in universal time, so add your offset first if the sheet should show local
+time.
+*/
+public handler xlSecondsToSerial(in pSeconds as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _seconds_to_serial(pSeconds) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Converts a date serial to seconds counted from the start of 1970.
+
+pSerial: A date serial, 0 up to 2958466.
+
+Returns: The seconds, rounded to a whole second. 0 if the number is not a
+date serial.
+
+Example:
+put xlSerialToSeconds(xlReadCellNumber(tReader, 1, 2, 1)) into tSeconds
+convert tSeconds to long date
+*/
+public handler xlSerialToSeconds(in pSerial as Number) returns Number
+   variable tR as Number
+   unsafe
+      put _serial_to_seconds(pSerial) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Workbooks: writing a file
+-- =====================================================================
+
+/**
+Summary: Returns how many workbooks are open for writing.
+
+Returns: The count.
+
+Description: A workbook stays open, holding memory, until <xlWorkbookClose>
+or <xlWorkbookDiscard>. A count that keeps growing means a script is not
+closing what it makes.
+*/
+public handler xlWorkbookCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Starts a new workbook that will be saved as an .xlsx file.
+
+pPath: The full path of the file to write, usually ending .xlsx. A file
+already there is replaced when the workbook is closed.
+
+Returns: A workbook handle, or 0 if the path cannot be used.
+
+Example:
+put xlWorkbookNew(specialFolderPath("documents") & "/report.xlsx") into tBook
+put xlWorkbookAddSheet(tBook, "Sales") into tSheet
+xlSheetWriteText tSheet, 1, 1, "Month", 0
+xlSheetWriteNumber tSheet, 2, 1, 1250.5, 0
+if not xlWorkbookClose(tBook) then answer xlLastError()
+
+Description: Nothing is written to disk until <xlWorkbookClose>. Add sheets
+with <xlWorkbookAddSheet>, fill them with the xlSheetWrite calls, then
+close. It throws if the native library has a different ABI from this
+binding.
+*/
+public handler xlWorkbookNew(in pPath as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _workbook_new(pPath) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Reports whether a handle names an open workbook.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: True for a workbook that is open for writing.
+*/
+public handler xlWorkbookIsValid(in pBook as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _workbook_is_valid(pBook) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Writes the workbook to its file and closes it.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: True if the file was written. False if it could not be (the folder
+is missing, the disk is full, a picture has gone); <xlLastError> says why.
+
+Example:
+if not xlWorkbookClose(tBook) then answer "Could not save:" && xlLastError()
+
+Description: The workbook and every sheet, format and chart of it are gone
+afterwards, whether or not the file could be written, and their handles go
+dead. To keep a file from being written at all, use <xlWorkbookDiscard>.
+*/
+public handler xlWorkbookClose(in pBook as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _workbook_close(pBook) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Closes a workbook without writing its file.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Description: Everything made in the workbook is thrown away and its handles
+go dead. No file is written and a file already at the path is left alone.
+*/
+public handler xlWorkbookDiscard(in pBook as Integer) returns nothing
+   unsafe
+      _workbook_discard(pBook)
+   end unsafe
+end handler
+
+/**
+Summary: Returns how many calls on a workbook have been refused.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: The count; 0 if every call so far was accepted.
+
+Example:
+if xlWorkbookErrorCount(tBook) > 0 then answer xlWorkbookFirstError(tBook)
+
+Description: Calls on the workbook's sheets, formats and charts count too. A
+script can write ten thousand cells and ask once, before closing, instead of
+checking <xlLastError> after each.
+*/
+public handler xlWorkbookErrorCount(in pBook as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_error_count(pBook) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns why the first refused call on a workbook was refused.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: A short sentence, or empty if no call has been refused.
+*/
+public handler xlWorkbookFirstError(in pBook as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _workbook_first_error(pBook) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns how many sheets a workbook has so far.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: The count.
+*/
+public handler xlWorkbookSheetCount(in pBook as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_sheet_count(pBook) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds a sheet to a workbook.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+pName: The name on the sheet's tab, or empty for Excel's own "Sheet1",
+"Sheet2" and so on. At most 31 characters, none of [ ] : * ? / \, no
+apostrophe at either end, and not a name already used.
+
+Returns: A sheet handle, or 0 if the name was refused.
+
+Example:
+put xlWorkbookAddSheet(tBook, "Sales") into tSheet
+
+Description: Sheets appear in the file in the order they are added. A
+workbook closed with no sheet at all is given one empty sheet, because a
+workbook must have one.
+*/
+public handler xlWorkbookAddSheet(in pBook as Integer, in pName as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_add_sheet(pBook, pName) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a cell format: a font, colours, borders, a number format.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+Returns: A format handle, or 0.
+
+Example:
+put xlWorkbookAddFormat(tBook) into tHeading
+xlFormatSetBold tHeading, true
+xlFormatSetBackgroundColor tHeading, "silver"
+xlSheetWriteText tSheet, 1, 1, "Month", tHeading
+
+Description: A new format changes nothing until the xlFormatSet calls say
+what it is. Pass it to any call that writes a cell. A format is shared and
+not copied: changing it changes every cell written with it, before or after.
+It belongs to its workbook and cannot be used in another.
+*/
+public handler xlWorkbookAddFormat(in pBook as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_add_format(pBook) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Makes a chart.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+pKind: The kind of chart: column, bar, line or area (each also with "
+stacked" or " percent" after it, as in "column stacked"), pie, doughnut,
+scatter, scatter lines, scatter smooth, radar or radar markers.
+
+Returns: A chart handle, or 0 if the kind is not one of those.
+
+Example:
+put xlWorkbookAddChart(tBook, "column") into tChart
+get xlChartAddSeries(tChart, xlRangeFormula("Sales", 2, 1, 7, 1), xlRangeFormula("Sales", 2, 2, 7, 2))
+xlChartSetTitle tChart, "Sales by month"
+xlSheetInsertChart tSheet, 2, 5, tChart, 1, 1
+
+Description: A chart shows cells of the workbook. Give it at least one
+series with <xlChartAddSeries>, then put it on a sheet with
+<xlSheetInsertChart>. A chart never placed on a sheet is left out of the
+file.
+*/
+public handler xlWorkbookAddChart(in pBook as Integer, in pKind as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _workbook_add_chart(pBook, pKind) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Sets one of the document properties Excel shows under File, Info.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+pName: Which property: title, subject, author, manager, company, category,
+keywords, comments or status.
+
+pValue: The text of the property, or empty to clear it.
+
+Example:
+xlWorkbookSetProperty tBook, "author", "Accounts"
+*/
+public handler xlWorkbookSetProperty(in pBook as Integer, in pName as String, in pValue as String) returns nothing
+   unsafe
+      _workbook_set_property(pBook, pName, pValue)
+   end unsafe
+end handler
+
+/**
+Summary: Gives a name to a cell, a range or a formula, for use in other
+formulas.
+
+pBook: A workbook handle from <xlWorkbookNew>.
+
+pName: The name, such as "Rate". Put a sheet name and an exclamation mark
+first ("Sales!Total") for a name that belongs to one sheet. It starts with a
+letter or underscore and cannot be the name of a cell.
+
+pFormula: What the name stands for, such as "=Sales!$B$1"; <xlRangeFormula>
+writes one. At most 127 bytes.
+
+Example:
+xlWorkbookDefineName tBook, "Rate", "=Sales!$B$1"
+xlSheetWriteFormula tSheet, 3, 3, "=B3*Rate", 0
+*/
+public handler xlWorkbookDefineName(in pBook as Integer, in pName as String, in pFormula as String) returns nothing
+   unsafe
+      _workbook_define_name(pBook, pName, pFormula)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Formats
+-- =====================================================================
+
+/**
+Summary: Reports whether a handle names a format of an open workbook.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+Returns: True for a live format.
+*/
+public handler xlFormatIsValid(in pFormat as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _format_is_valid(pFormat) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Makes a format bold, or not.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True for bold.
+*/
+public handler xlFormatSetBold(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_bold(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Makes a format italic, or not.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True for italic.
+*/
+public handler xlFormatSetItalic(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_italic(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Strikes the text of a format through, or not.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True to strike the text through.
+*/
+public handler xlFormatSetStrikeout(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_strikeout(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Sets how a format underlines text.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pStyle: none, single, double, single accounting or double accounting.
+*/
+public handler xlFormatSetUnderline(in pFormat as Integer, in pStyle as String) returns nothing
+   unsafe
+      _format_set_underline(pFormat, pStyle)
+   end unsafe
+end handler
+
+/**
+Summary: Raises or lowers the text of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pStyle: none, superscript or subscript.
+*/
+public handler xlFormatSetScript(in pFormat as Integer, in pStyle as String) returns nothing
+   unsafe
+      _format_set_script(pFormat, pStyle)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the font of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pName: The name of the font, such as "Arial". Excel substitutes another if
+the reader's computer does not have it.
+
+Example:
+xlFormatSetFontName tFormat, "Courier New"
+*/
+public handler xlFormatSetFontName(in pFormat as Integer, in pName as String) returns nothing
+   unsafe
+      _format_set_font_name(pFormat, pName)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the font size of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pSize: The size in points, 1 to 409. Excel's usual size is 11.
+*/
+public handler xlFormatSetFontSize(in pFormat as Integer, in pSize as Number) returns nothing
+   unsafe
+      _format_set_font_size(pFormat, pSize)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the colour of the text of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pColor: A colour: "#RRGGBB", "r,g,b" with each part 0 to 255, or a basic
+colour name such as red, navy or silver.
+
+Example:
+xlFormatSetFontColor tFormat, "#C00000"
+*/
+public handler xlFormatSetFontColor(in pFormat as Integer, in pColor as String) returns nothing
+   unsafe
+      _format_set_font_color(pFormat, pColor)
+   end unsafe
+end handler
+
+/**
+Summary: Fills the cells of a format with a colour.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pColor: A colour: "#RRGGBB", "r,g,b" with each part 0 to 255, or a basic
+colour name such as red, navy or silver.
+
+Example:
+xlFormatSetBackgroundColor tFormat, "255,242,204"
+*/
+public handler xlFormatSetBackgroundColor(in pFormat as Integer, in pColor as String) returns nothing
+   unsafe
+      _format_set_background_color(pFormat, pColor)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how a format shows numbers and dates.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pCode: An Excel number format code, such as "0.00", "#,##0", "0%",
+"yyyy-mm-dd" or "@" for text.
+
+Example:
+xlFormatSetNumberFormat tMoney, "#,##0.00"
+
+Description: The code is Excel's own, the one its Format Cells dialog shows
+under Custom. A date is a number with a date code: see <xlSheetWriteDate>.
+*/
+public handler xlFormatSetNumberFormat(in pFormat as Integer, in pCode as String) returns nothing
+   unsafe
+      _format_set_number_format(pFormat, pCode)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how a format places text across the cell.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pAlignment: general, left, center, right, fill, justify, center across or
+distributed.
+*/
+public handler xlFormatSetAlign(in pFormat as Integer, in pAlignment as String) returns nothing
+   unsafe
+      _format_set_align(pFormat, pAlignment)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how a format places text up and down the cell.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pAlignment: top, middle, bottom, justify or distributed.
+*/
+public handler xlFormatSetVerticalAlign(in pFormat as Integer, in pAlignment as String) returns nothing
+   unsafe
+      _format_set_vertical_align(pFormat, pAlignment)
+   end unsafe
+end handler
+
+/**
+Summary: Lets long text wrap onto more lines inside the cell, or not.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True to wrap.
+
+Description: A cell whose text holds line breaks shows them only when its
+format wraps.
+*/
+public handler xlFormatSetTextWrap(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_text_wrap(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Shrinks text to fit the width of the cell, or not.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True to shrink.
+*/
+public handler xlFormatSetShrink(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_shrink(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Turns the text of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pDegrees: The angle, -90 to 90, or 270 for letters stacked top to bottom.
+*/
+public handler xlFormatSetRotation(in pFormat as Integer, in pDegrees as Integer) returns nothing
+   unsafe
+      _format_set_rotation(pFormat, pDegrees)
+   end unsafe
+end handler
+
+/**
+Summary: Indents the text of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pLevel: How far, 0 to 250; each step is about one character.
+*/
+public handler xlFormatSetIndent(in pFormat as Integer, in pLevel as Integer) returns nothing
+   unsafe
+      _format_set_indent(pFormat, pLevel)
+   end unsafe
+end handler
+
+/**
+Summary: Draws a border on all four sides of the cells of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pStyle: The kind of line: none, thin, medium, thick, dashed, dotted, double,
+hair, medium dashed, dash dot, medium dash dot, dash dot dot, medium dash
+dot dot or slant dash dot.
+
+Example:
+xlFormatSetBorder tFormat, "thin"
+*/
+public handler xlFormatSetBorder(in pFormat as Integer, in pStyle as String) returns nothing
+   unsafe
+      _format_set_border(pFormat, pStyle)
+   end unsafe
+end handler
+
+/**
+Summary: Draws a border on one side of the cells of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pSide: left, right, top or bottom.
+
+pStyle: The kind of line: none, thin, medium, thick, dashed, dotted, double,
+hair, medium dashed, dash dot, medium dash dot, dash dot dot, medium dash
+dot dot or slant dash dot.
+
+Example:
+xlFormatSetBorderSide tTotals, "top", "double"
+*/
+public handler xlFormatSetBorderSide(in pFormat as Integer, in pSide as String, in pStyle as String) returns nothing
+   unsafe
+      _format_set_border_side(pFormat, pSide, pStyle)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the colour of the borders of a format.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pColor: A colour: "#RRGGBB", "r,g,b" with each part 0 to 255, or a basic
+colour name such as red, navy or silver.
+*/
+public handler xlFormatSetBorderColor(in pFormat as Integer, in pColor as String) returns nothing
+   unsafe
+      _format_set_border_color(pFormat, pColor)
+   end unsafe
+end handler
+
+/**
+Summary: Says whether cells of a format can be edited once the sheet is
+protected.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True (the default) to lock the cells; false to leave them editable.
+
+Description: It matters only on a sheet protected with <xlSheetProtect>:
+there every cell is locked unless its format says otherwise.
+*/
+public handler xlFormatSetLocked(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_locked(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Hides the formulas of cells of a format once the sheet is
+protected.
+
+pFormat: A format handle from <xlWorkbookAddFormat>.
+
+pFlag: True to hide the formula; the result still shows.
+
+Description: It matters only on a sheet protected with <xlSheetProtect>.
+*/
+public handler xlFormatSetFormulaHidden(in pFormat as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _format_set_formula_hidden(pFormat, asInt(pFlag))
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Sheets: cells
+-- =====================================================================
+
+/**
+Summary: Reports whether a handle names a sheet of an open workbook.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+Returns: True for a live sheet.
+*/
+public handler xlSheetIsValid(in pSheet as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _sheet_is_valid(pSheet) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the name of a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+Returns: The name on the sheet's tab. Empty for a handle that is not a
+sheet.
+
+Description: Useful when the sheet was added with an empty name and Excel's
+own was used: <xlRangeFormula> needs the name.
+*/
+public handler xlSheetName(in pSheet as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _sheet_name(pSheet) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Writes a number into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pNumber: The number.
+
+pFormat: A format handle from <xlWorkbookAddFormat>, or 0 for no format.
+
+Example:
+xlSheetWriteNumber tSheet, 2, 2, 1250.5, 0
+
+Description: The cell holds the number itself, to all its digits; a format
+decides how many of them show.
+*/
+public handler xlSheetWriteNumber(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pNumber as Number, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_number(pSheet, pRow, pColumn, pNumber, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes text into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pText: The text, at most 32767 characters. A return inside it is a line
+break in the cell.
+
+pFormat: A format handle from <xlWorkbookAddFormat>, or 0 for no format.
+
+Example:
+xlSheetWriteText tSheet, 1, 1, "Month", tHeading
+
+Description: The cell holds text even when the text looks like a number:
+"007" stays 007. Empty text writes nothing. Use <xlSheetWriteNumber> for a
+number that should add up.
+*/
+public handler xlSheetWriteText(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pText as String, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_text(pSheet, pRow, pColumn, pText, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes a formula into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pFormula: The formula as it is typed in Excel, in English and with commas
+between arguments, such as "=SUM(B2:B7)".
+
+pFormat: A format handle from <xlWorkbookAddFormat>, or 0 for no format.
+
+Example:
+xlSheetWriteFormula tSheet, 8, 2, "=SUM(B2:B7)", 0
+
+Description: This library does not calculate. Excel, LibreOffice and Numbers
+work the result out when they open the file; a viewer that does not
+calculate, and this library's own reading calls, see 0. Use
+<xlSheetWriteFormulaValue> to store a result with the formula.
+*/
+public handler xlSheetWriteFormula(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pFormula as String, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_formula(pSheet, pRow, pColumn, pFormula, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes a formula into a cell, along with the result to show before
+it is calculated.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pFormula: The formula, such as "=B2*C2".
+
+pValue: The result to store with it.
+
+pFormat: A format handle from <xlWorkbookAddFormat>, or 0 for no format.
+
+Example:
+xlSheetWriteFormulaValue tSheet, 2, 4, "=B2*C2", tQty * tPrice, 0
+
+Description: For files that will be read by programs that do not calculate
+formulas. A spreadsheet program replaces the stored result with its own when
+it opens the file.
+*/
+public handler xlSheetWriteFormulaValue(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pFormula as String, in pValue as Number, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_formula_value(pSheet, pRow, pColumn, pFormula, pValue, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes TRUE or FALSE into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pFlag: The value.
+
+pFormat: A format handle from <xlWorkbookAddFormat>, or 0 for no format.
+*/
+public handler xlSheetWriteBoolean(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pFlag as Boolean, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_boolean(pSheet, pRow, pColumn, asInt(pFlag), pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Gives an empty cell a format.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pFormat: A format handle from <xlWorkbookAddFormat>. With 0 there is nothing
+to write and nothing is written.
+
+Description: For a border or a fill on a cell that holds no value.
+*/
+public handler xlSheetWriteBlank(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_blank(pSheet, pRow, pColumn, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes a date, a time or both into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pSerial: The date as a serial number, from <xlDateToSerial> or
+<xlSecondsToSerial>.
+
+pFormat: A format handle whose number format is a date code, or 0 to have
+one chosen: "yyyy-mm-dd" for a date, "yyyy-mm-dd hh:mm:ss" for a date and
+time, "hh:mm:ss" for a time alone.
+
+Example:
+xlSheetWriteDate tSheet, 2, 1, xlDateToSerial(2026, 11, 20, 0, 0, 0), 0
+
+Description: A date in a spreadsheet is a number that a format shows as a
+date. This writes the number and makes sure there is such a format.
+*/
+public handler xlSheetWriteDate(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pSerial as Number, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_date(pSheet, pRow, pColumn, pSerial, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Writes a link into a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pUrl: Where the link goes. It begins http://, https://, ftp://, file://, or
+"mailto:", or "internal:" followed by a cell of this workbook
+("internal:Sales!A1"), or "external:" followed by another file.
+
+pText: What the cell shows, or empty to show the link itself.
+
+pFormat: A format handle, or 0 for the usual blue underlined link.
+
+Example:
+xlSheetWriteLink tSheet, 1, 4, "https://openxtalk.org", "OpenXTalk", 0
+*/
+public handler xlSheetWriteLink(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pUrl as String, in pText as String, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_write_link(pSheet, pRow, pColumn, pUrl, pText, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Attaches a note to a cell.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+pText: The text of the note.
+
+Description: The note appears when the pointer rests on the cell, which
+shows a small mark in its corner.
+*/
+public handler xlSheetWriteComment(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pText as String) returns nothing
+   unsafe
+      _sheet_write_comment(pSheet, pRow, pColumn, pText)
+   end unsafe
+end handler
+
+/**
+Summary: Writes a whole table of cells from one text.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the top left cell of the table.
+
+pColumn: The column of the top left cell of the table.
+
+pText: The table: rows separated by returns, cells within a row by tabs.
+
+pMode: "text" to write every cell as text; "numbers" to write a cell that
+reads as a number as a number; "formulas" to do that and also write a cell
+that begins with = as a formula.
+
+pFormat: A format handle for every cell written, or 0 for none.
+
+Returns: The number of cells written. An empty cell is skipped and not
+counted.
+
+Example:
+put xlSheetWriteGrid(tSheet, 1, 1, the text of field "table", "numbers", 0) into tCount
+
+Description: This is the quick way to put a tab-delimited field, or the
+lines of a file, onto a sheet. In the "numbers" and "formulas" modes, a
+number is digits with an optional sign, decimal point and exponent, at most
+15 digits and no leading zero, so a postcode, a phone number or a card
+number stays text. A vertical tab (numToChar(11)) inside a cell becomes a
+line break. A cell that cannot be written (text that is not valid, or a
+table that runs off the edge of the sheet) is skipped and counted in
+<xlWorkbookErrorCount>; the rest is still written. <xlReadGrid> returns the
+same shape.
+*/
+public handler xlSheetWriteGrid(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pText as String, in pMode as String, in pFormat as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _sheet_write_grid(pSheet, pRow, pColumn, pText, pMode, pFormat) into tR
+   end unsafe
+   return tR
+end handler
+
+-- =====================================================================
+-- Sheets: layout
+-- =====================================================================
+
+/**
+Summary: Sets the width of one or more columns, and their format.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstColumn: The first column; 1 is column A.
+
+pLastColumn: The last column; the same number for one column.
+
+pWidth: The width in Excel's units, about one digit of the usual font each,
+0 to 255. Excel's own width is 8.43.
+
+pFormat: A format handle for cells of these columns that have none of their
+own, or 0.
+
+Example:
+xlSheetSetColumns tSheet, 1, 1, 24, 0
+*/
+public handler xlSheetSetColumns(in pSheet as Integer, in pFirstColumn as Integer, in pLastColumn as Integer, in pWidth as Number, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_set_columns(pSheet, pFirstColumn, pLastColumn, pWidth, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Hides one or more columns.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstColumn: The first column; 1 is column A.
+
+pLastColumn: The last column.
+*/
+public handler xlSheetHideColumns(in pSheet as Integer, in pFirstColumn as Integer, in pLastColumn as Integer) returns nothing
+   unsafe
+      _sheet_hide_columns(pSheet, pFirstColumn, pLastColumn)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the height of a row, and its format.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row; 1 is the first.
+
+pHeight: The height in points, 0 to 409. Excel's own height is 15.
+
+pFormat: A format handle for cells of this row that have none of their own,
+or 0.
+*/
+public handler xlSheetSetRow(in pSheet as Integer, in pRow as Integer, in pHeight as Number, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_set_row(pSheet, pRow, pHeight, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Hides a row.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row; 1 is the first.
+*/
+public handler xlSheetHideRow(in pSheet as Integer, in pRow as Integer) returns nothing
+   unsafe
+      _sheet_hide_row(pSheet, pRow)
+   end unsafe
+end handler
+
+/**
+Summary: Merges a block of cells into one and writes text into it.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstRow: The first row of the range; 1 is the first row.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+
+pText: The text the merged cell holds, or empty.
+
+pFormat: A format handle for the merged cell, or 0. Centred text is the
+usual choice.
+
+Example:
+xlSheetMerge tSheet, 1, 1, 1, 4, "Quarterly report", tTitleFormat
+
+Description: The block must be two cells or more.
+*/
+public handler xlSheetMerge(in pSheet as Integer, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer, in pText as String, in pFormat as Integer) returns nothing
+   unsafe
+      _sheet_merge(pSheet, pFirstRow, pFirstColumn, pLastRow, pLastColumn, pText, pFormat)
+   end unsafe
+end handler
+
+/**
+Summary: Keeps the top rows and left columns in view while the rest of the
+sheet scrolls.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRows: How many rows to keep at the top; 0 for none.
+
+pColumns: How many columns to keep at the left; 0 for none.
+
+Example:
+xlSheetFreeze tSheet, 1, 0 -- a heading row that stays put
+*/
+public handler xlSheetFreeze(in pSheet as Integer, in pRows as Integer, in pColumns as Integer) returns nothing
+   unsafe
+      _sheet_freeze(pSheet, pRows, pColumns)
+   end unsafe
+end handler
+
+/**
+Summary: Puts filter buttons on the heading row of a range.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstRow: The heading row of the range.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+
+Example:
+xlSheetAutofilter tSheet, 1, 1, 200, 4
+
+Description: The reader of the file can then sort and filter the rows below
+the headings. No row is hidden by this call.
+*/
+public handler xlSheetAutofilter(in pSheet as Integer, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer) returns nothing
+   unsafe
+      _sheet_autofilter(pSheet, pFirstRow, pFirstColumn, pLastRow, pLastColumn)
+   end unsafe
+end handler
+
+/**
+Summary: Gives every cell of a range a drop-down list of allowed values.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstRow: The first row of the range; 1 is the first row.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+
+pItems: The allowed values, separated by commas; at most 255 bytes in all.
+
+Example:
+xlSheetValidateList tSheet, 2, 3, 200, 3, "open,closed,pending"
+*/
+public handler xlSheetValidateList(in pSheet as Integer, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer, in pItems as String) returns nothing
+   unsafe
+      _sheet_validate_list(pSheet, pFirstRow, pFirstColumn, pLastRow, pLastColumn, pItems)
+   end unsafe
+end handler
+
+/**
+Summary: Puts a picture on a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell under the picture's top left corner.
+
+pColumn: The column of that cell.
+
+pPath: The full path of a PNG, JPEG, GIF or BMP file.
+
+pXScale: How wide to draw it: 1 for full size, 0.5 for half.
+
+pYScale: How tall to draw it: 1 for full size.
+
+Example:
+xlSheetInsertImage tSheet, 1, 6, tLogoPath, 0.5, 0.5
+
+Description: The picture floats over the cells; it is not inside one. The
+file is read again when the workbook is closed, so it must still be there
+then.
+*/
+public handler xlSheetInsertImage(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pPath as String, in pXScale as Number, in pYScale as Number) returns nothing
+   unsafe
+      _sheet_insert_image(pSheet, pRow, pColumn, pPath, pXScale, pYScale)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Sheets: the page and the view
+-- =====================================================================
+
+/**
+Summary: Sets whether a sheet prints sideways.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFlag: True for landscape, false for portrait.
+*/
+public handler xlSheetSetLandscape(in pSheet as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _sheet_set_landscape(pSheet, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Sets the paper a sheet prints on.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pPaper: Excel's paper number: 1 Letter, 5 Legal, 8 A3, 9 A4, 11 A5; 0 for
+the printer's own.
+*/
+public handler xlSheetSetPaper(in pSheet as Integer, in pPaper as Integer) returns nothing
+   unsafe
+      _sheet_set_paper(pSheet, pPaper)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the margins a sheet prints with.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pLeft: The left margin in inches.
+
+pRight: The right margin in inches.
+
+pTop: The top margin in inches.
+
+pBottom: The bottom margin in inches.
+*/
+public handler xlSheetSetMargins(in pSheet as Integer, in pLeft as Number, in pRight as Number, in pTop as Number, in pBottom as Number) returns nothing
+   unsafe
+      _sheet_set_margins(pSheet, pLeft, pRight, pTop, pBottom)
+   end unsafe
+end handler
+
+/**
+Summary: Shrinks a sheet's print to fit a number of pages.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pWide: How many pages across; 0 for as many as it takes.
+
+pTall: How many pages down; 0 for as many as it takes.
+
+Example:
+xlSheetFitToPages tSheet, 1, 0 -- one page wide, however long
+*/
+public handler xlSheetFitToPages(in pSheet as Integer, in pWide as Integer, in pTall as Integer) returns nothing
+   unsafe
+      _sheet_fit_to_pages(pSheet, pWide, pTall)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the text printed at the top of every page of a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pText: The header, at most 255 bytes, using Excel's codes: &L, &C and &R
+start the left, centre and right parts; &P is the page number, &N the page
+count, &D the date, &F the file name, &A the sheet name.
+
+Example:
+xlSheetSetHeader tSheet, "&LSales&RPage &P of &N"
+*/
+public handler xlSheetSetHeader(in pSheet as Integer, in pText as String) returns nothing
+   unsafe
+      _sheet_set_header(pSheet, pText)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the text printed at the bottom of every page of a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pText: The footer, with the same codes as <xlSheetSetHeader>.
+*/
+public handler xlSheetSetFooter(in pSheet as Integer, in pText as String) returns nothing
+   unsafe
+      _sheet_set_footer(pSheet, pText)
+   end unsafe
+end handler
+
+/**
+Summary: Prints a run of rows again at the top of every page.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstRow: The first row to repeat; 1 is the first row.
+
+pLastRow: The last row to repeat.
+*/
+public handler xlSheetRepeatRows(in pSheet as Integer, in pFirstRow as Integer, in pLastRow as Integer) returns nothing
+   unsafe
+      _sheet_repeat_rows(pSheet, pFirstRow, pLastRow)
+   end unsafe
+end handler
+
+/**
+Summary: Limits what prints to one range of a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pFirstRow: The first row of the range; 1 is the first row.
+
+pFirstColumn: The first column of the range; 1 is column A.
+
+pLastRow: The last row of the range.
+
+pLastColumn: The last column of the range.
+*/
+public handler xlSheetPrintArea(in pSheet as Integer, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer) returns nothing
+   unsafe
+      _sheet_print_area(pSheet, pFirstRow, pFirstColumn, pLastRow, pLastColumn)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how far a sheet is zoomed when the file opens.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pPercent: The zoom, 10 to 400; 100 is full size.
+*/
+public handler xlSheetSetZoom(in pSheet as Integer, in pPercent as Integer) returns nothing
+   unsafe
+      _sheet_set_zoom(pSheet, pPercent)
+   end unsafe
+end handler
+
+/**
+Summary: Shows or hides the grey lines between cells.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pScreenFlag: True to show them on screen.
+
+pPrintFlag: True to print them.
+*/
+public handler xlSheetShowGridlines(in pSheet as Integer, in pScreenFlag as Boolean, in pPrintFlag as Boolean) returns nothing
+   unsafe
+      _sheet_show_gridlines(pSheet, asInt(pScreenFlag), asInt(pPrintFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Colours the tab of a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pColor: A colour: "#RRGGBB", "r,g,b" with each part 0 to 255, or a basic
+colour name such as red, navy or silver.
+*/
+public handler xlSheetSetTabColor(in pSheet as Integer, in pColor as String) returns nothing
+   unsafe
+      _sheet_set_tab_color(pSheet, pColor)
+   end unsafe
+end handler
+
+/**
+Summary: Makes this the sheet that shows when the file opens.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+*/
+public handler xlSheetActivate(in pSheet as Integer) returns nothing
+   unsafe
+      _sheet_activate(pSheet)
+   end unsafe
+end handler
+
+/**
+Summary: Hides a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+Description: The reader of the file can bring it back from Excel's sheet
+menu. The sheet shown when the file opens (the first, unless
+<xlSheetActivate> chose another) cannot be hidden.
+*/
+public handler xlSheetHide(in pSheet as Integer) returns nothing
+   unsafe
+      _sheet_hide(pSheet)
+   end unsafe
+end handler
+
+/**
+Summary: Stops a sheet's cells from being edited.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pPassword: A password to ask for before the protection can be removed, or
+empty for none.
+
+Description: Every cell is locked unless its format was unlocked with
+<xlFormatSetLocked>. This is a guard against accidents, not security: the
+file is not encrypted and the password is easy to remove.
+*/
+public handler xlSheetProtect(in pSheet as Integer, in pPassword as String) returns nothing
+   unsafe
+      _sheet_protect(pSheet, pPassword)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Charts
+-- =====================================================================
+
+/**
+Summary: Reports whether a handle names a chart of an open workbook.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+Returns: True for a live chart.
+*/
+public handler xlChartIsValid(in pChart as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _chart_is_valid(pChart) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many series a chart has.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+Returns: The count.
+*/
+public handler xlChartSeriesCount(in pChart as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _chart_series_count(pChart) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Adds a series, a set of values to plot, to a chart.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pCategories: The cells that hold the labels along the bottom, as a range
+formula such as "=Sales!$A$2:$A$7", or empty to number the points. A scatter
+chart needs them: they are its x values.
+
+pValues: The cells that hold the numbers to plot, as a range formula such as
+"=Sales!$B$2:$B$7".
+
+Returns: The number of the new series, counting from 1, or 0 if it was
+refused.
+
+Example:
+get xlChartAddSeries(tChart, xlRangeFormula("Sales", 2, 1, 7, 1), xlRangeFormula("Sales", 2, 2, 7, 2))
+
+Description: <xlRangeFormula> writes the formulas from row and column
+numbers. The chart reads the cells when the file is opened, so the cells can
+be written before or after this call.
+*/
+public handler xlChartAddSeries(in pChart as Integer, in pCategories as String, in pValues as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _chart_add_series(pChart, pCategories, pValues) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Names a series; the name shows in the chart's legend.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pSeries: The number of the series, as <xlChartAddSeries> returned it; 1 is
+the first.
+
+pName: The name, or a formula such as "=Sales!$B$1" to take it from a cell.
+*/
+public handler xlChartSeriesSetName(in pChart as Integer, in pSeries as Integer, in pName as String) returns nothing
+   unsafe
+      _chart_series_set_name(pChart, pSeries, pName)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the colour a series is drawn in.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pSeries: The number of the series, as <xlChartAddSeries> returned it; 1 is
+the first.
+
+pColor: A colour: "#RRGGBB", "r,g,b" with each part 0 to 255, or a basic
+colour name such as red, navy or silver.
+*/
+public handler xlChartSeriesSetColor(in pChart as Integer, in pSeries as Integer, in pColor as String) returns nothing
+   unsafe
+      _chart_series_set_color(pChart, pSeries, pColor)
+   end unsafe
+end handler
+
+/**
+Summary: Shows each point's value beside it, or not.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pSeries: The number of the series, as <xlChartAddSeries> returned it; 1 is
+the first.
+
+pFlag: True to show the values.
+*/
+public handler xlChartSeriesSetLabels(in pChart as Integer, in pSeries as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _chart_series_set_labels(pChart, pSeries, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Draws the line of a series as a smooth curve, or not.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pSeries: The number of the series, as <xlChartAddSeries> returned it; 1 is
+the first.
+
+pFlag: True for a curve. It has an effect on line and scatter charts.
+*/
+public handler xlChartSeriesSetSmooth(in pChart as Integer, in pSeries as Integer, in pFlag as Boolean) returns nothing
+   unsafe
+      _chart_series_set_smooth(pChart, pSeries, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Sets the mark drawn at each point of a series.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pSeries: The number of the series, as <xlChartAddSeries> returned it; 1 is
+the first.
+
+pKind: automatic, none, square, diamond, triangle, x, star, circle, short
+dash or long dash.
+*/
+public handler xlChartSeriesSetMarker(in pChart as Integer, in pSeries as Integer, in pKind as String) returns nothing
+   unsafe
+      _chart_series_set_marker(pChart, pSeries, pKind)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the title of a chart.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pTitle: The title, a formula such as "=Sales!$A$1" to take it from a cell,
+or empty for no title.
+*/
+public handler xlChartSetTitle(in pChart as Integer, in pTitle as String) returns nothing
+   unsafe
+      _chart_set_title(pChart, pTitle)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the title of an axis of a chart.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pAxis: "x" for the axis along the bottom or "y" for the axis up the side.
+
+pTitle: The title, or a formula such as "=Sales!$B$1" to take it from a
+cell.
+
+Example:
+xlChartSetAxisTitle tChart, "y", "Sales (thousands)"
+*/
+public handler xlChartSetAxisTitle(in pChart as Integer, in pAxis as String, in pTitle as String) returns nothing
+   unsafe
+      _chart_set_axis_title(pChart, pAxis, pTitle)
+   end unsafe
+end handler
+
+/**
+Summary: Sets the lowest and highest values an axis shows.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pAxis: "x" for the axis along the bottom or "y" for the axis up the side.
+
+pMinimum: The lowest value.
+
+pMaximum: The highest value; above the lowest.
+
+Description: Only an axis of values has a range: the y axis of most charts,
+and both axes of a scatter chart. On an axis of labels the call is refused.
+*/
+public handler xlChartSetAxisRange(in pChart as Integer, in pAxis as String, in pMinimum as Number, in pMaximum as Number) returns nothing
+   unsafe
+      _chart_set_axis_range(pChart, pAxis, pMinimum, pMaximum)
+   end unsafe
+end handler
+
+/**
+Summary: Sets how the numbers along an axis are shown.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pAxis: "x" for the axis along the bottom or "y" for the axis up the side.
+
+pCode: An Excel number format code, such as "#,##0" or "0%".
+*/
+public handler xlChartSetAxisNumberFormat(in pChart as Integer, in pAxis as String, in pCode as String) returns nothing
+   unsafe
+      _chart_set_axis_number_format(pChart, pAxis, pCode)
+   end unsafe
+end handler
+
+/**
+Summary: Shows or hides the lines a chart draws across from an axis.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pAxis: "x" for the axis along the bottom or "y" for the axis up the side.
+
+pFlag: True to show them.
+*/
+public handler xlChartSetAxisGridlines(in pChart as Integer, in pAxis as String, in pFlag as Boolean) returns nothing
+   unsafe
+      _chart_set_axis_gridlines(pChart, pAxis, asInt(pFlag))
+   end unsafe
+end handler
+
+/**
+Summary: Places the legend of a chart, or removes it.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pPosition: none, right, left, top, bottom or top right.
+*/
+public handler xlChartSetLegend(in pChart as Integer, in pPosition as String) returns nothing
+   unsafe
+      _chart_set_legend(pChart, pPosition)
+   end unsafe
+end handler
+
+/**
+Summary: Gives a chart one of Excel's built-in looks.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pStyle: The number of the style, 1 to 48, as Excel's Chart Styles gallery
+counts them.
+*/
+public handler xlChartSetStyle(in pChart as Integer, in pStyle as Integer) returns nothing
+   unsafe
+      _chart_set_style(pChart, pStyle)
+   end unsafe
+end handler
+
+/**
+Summary: Puts a chart on a sheet.
+
+pSheet: A sheet handle from <xlWorkbookAddSheet>.
+
+pRow: The row of the cell under the chart's top left corner.
+
+pColumn: The column of that cell.
+
+pChart: A chart handle from <xlWorkbookAddChart>.
+
+pXScale: How wide to draw it: 1 for the usual size.
+
+pYScale: How tall to draw it: 1 for the usual size.
+
+Example:
+xlSheetInsertChart tSheet, 2, 6, tChart, 1.5, 1
+
+Description: The chart needs at least one series first, and goes on one
+sheet, once; make another chart for a second copy.
+*/
+public handler xlSheetInsertChart(in pSheet as Integer, in pRow as Integer, in pColumn as Integer, in pChart as Integer, in pXScale as Number, in pYScale as Number) returns nothing
+   unsafe
+      _sheet_insert_chart(pSheet, pRow, pColumn, pChart, pXScale, pYScale)
+   end unsafe
+end handler
+
+-- =====================================================================
+-- Reading a file
+-- =====================================================================
+
+/**
+Summary: Returns how many files are open for reading.
+
+Returns: The count.
+
+Description: A file stays open until <xlReadClose>. A count that keeps
+growing means a script is not closing what it opens.
+*/
+public handler xlReadCount() returns Integer
+   variable tR as Integer
+   unsafe
+      put _read_count() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Opens an .xlsx file for reading.
+
+pPath: The full path of the file.
+
+Returns: A reader handle, or 0 if the file cannot be opened or is not an
+.xlsx workbook; <xlLastError> says which.
+
+Example:
+put xlReadOpen(tPath) into tReader
+if tReader is 0 then
+   answer xlLastError()
+   exit mouseUp
+end if
+put xlReadGrid(tReader, 1, 1, 1, 0, 0) into field "table"
+xlReadClose tReader
+
+Description: This reads the list of sheets; a sheet's cells are read the
+first time they are asked for. The file is not changed and cannot be changed
+through the reader. The older .xls format and workbooks encrypted with a
+password are not read. It throws if the native library has a different ABI
+from this binding.
+*/
+public handler xlReadOpen(in pPath as String) returns Integer
+   variable tR as Integer
+   checkABI()
+   unsafe
+      put _read_open(pPath) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Closes a file opened with xlReadOpen.
+
+pReader: A reader handle from <xlReadOpen>.
+
+Description: The handle goes dead and the memory the file's cells took is
+given back.
+*/
+public handler xlReadClose(in pReader as Integer) returns nothing
+   unsafe
+      _read_close(pReader)
+   end unsafe
+end handler
+
+/**
+Summary: Reports whether a handle names a file that is open for reading.
+
+pReader: A reader handle from <xlReadOpen>.
+
+Returns: True for an open reader.
+*/
+public handler xlReadIsValid(in pReader as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _read_is_valid(pReader) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns how many sheets a file has.
+
+pReader: A reader handle from <xlReadOpen>.
+
+Returns: The count; 0 for a handle that is not a reader.
+*/
+public handler xlReadSheetCount(in pReader as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _read_sheet_count(pReader) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the name of a sheet of a file.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: The name on the sheet's tab. Empty if there is no such sheet.
+
+Example:
+repeat with i = 1 to xlReadSheetCount(tReader)
+   put xlReadSheetName(tReader, i) & return after tNames
+end repeat
+*/
+public handler xlReadSheetName(in pReader as Integer, in pSheet as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_sheet_name(pReader, pSheet) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Finds a sheet of a file by its name.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pName: The name on the sheet's tab; letter case does not matter.
+
+Returns: The number of the sheet, or 0 if the file has no sheet of that
+name.
+
+Example:
+put xlReadSheetNumber(tReader, "Sales") into tSheet
+*/
+public handler xlReadSheetNumber(in pReader as Integer, in pName as String) returns Integer
+   variable tR as Integer
+   unsafe
+      put _read_sheet_number(pReader, pName) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Reports whether a sheet of a file is hidden.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: True for a hidden sheet.
+*/
+public handler xlReadSheetIsHidden(in pReader as Integer, in pSheet as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _read_sheet_is_hidden(pReader, pSheet) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Reports whether a file counts its dates from 1904.
+
+pReader: A reader handle from <xlReadOpen>.
+
+Returns: True for a file that counts from 1904, as some written on older
+Macs do.
+
+Description: The reading calls already allow for it when they show a date.
+It matters only to a script that does its own arithmetic on the serial
+numbers from <xlReadCellNumber>: in such a file serial 0 is the first day of
+1904.
+*/
+public handler xlReadUses1904(in pReader as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _read_uses_1904(pReader) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Reads a sheet's cells into memory and reports whether that worked.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: True if the sheet was read. False if it is damaged or missing;
+<xlLastError> says why.
+
+Example:
+if not xlReadLoad(tReader, 1) then answer xlLastError()
+
+Description: Every other reading call does this itself when it needs to, so
+calling it is optional. Calling it first tells a damaged sheet apart from an
+empty one. One sheet is held at a time: asking for another lets the first
+go, and coming back reads it again.
+*/
+public handler xlReadLoad(in pReader as Integer, in pSheet as Integer) returns Boolean
+   variable tR as Integer
+   unsafe
+      put _read_load(pReader, pSheet) into tR
+   end unsafe
+   return tR is not 0
+end handler
+
+/**
+Summary: Returns the number of the last row of a sheet that holds anything.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: The row number; 0 for an empty sheet.
+*/
+public handler xlReadRowCount(in pReader as Integer, in pSheet as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _read_row_count(pReader, pSheet) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the number of the last column of a sheet that holds
+anything.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: The column number; 0 for an empty sheet.
+*/
+public handler xlReadColumnCount(in pReader as Integer, in pSheet as Integer) returns Integer
+   variable tR as Integer
+   unsafe
+      put _read_column_count(pReader, pSheet) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns what a cell shows.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: The cell's text; a number as plain digits with a "." decimal point;
+a date as "2026-11-20", a time as "14:30:00", or both; "true" or "false"; an
+error such as "#DIV/0!". Empty for an empty cell.
+
+Example:
+put xlReadCell(tReader, 1, 2, 1) into tName
+
+Description: A number comes back to all its digits, not rounded as its
+format would show it. For a formula cell this is the result stored in the
+file. Use <xlReadCellValue> to get a date as its serial number instead, and
+<xlReadGrid> to read many cells in one call.
+*/
+public handler xlReadCell(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_cell(pReader, pSheet, pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns what a cell holds, with a date left as its number.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: As <xlReadCell>, except that a date or time comes back as its
+serial number.
+*/
+public handler xlReadCellValue(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_cell_value(pReader, pSheet, pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the number a cell holds.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: The number; a date's serial number; 1 or 0 for true or false. 0 for
+an empty cell or one that holds text.
+*/
+public handler xlReadCellNumber(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns Number
+   variable tR as Number
+   unsafe
+      put _read_cell_number(pReader, pSheet, pRow, pColumn) into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns what kind of value a cell holds.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: "empty", "number", "date", "text", "boolean" or "error".
+
+Description: A date is a number whose format shows it as a date or a time.
+*/
+public handler xlReadCellKind(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_cell_kind(pReader, pSheet, pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the formula of a cell.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: The formula with its = sign, such as "=SUM(B2:B7)". Empty for a
+cell with no formula.
+
+Description: Where Excel shares one formula between a run of cells, only the
+first of them holds the text.
+*/
+public handler xlReadCellFormula(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_cell_formula(pReader, pSheet, pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the number format of a cell.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pRow: The row of the cell; 1 is the first row.
+
+pColumn: The column of the cell; 1 is column A.
+
+Returns: The Excel format code, such as "General", "0.00" or "yyyy-mm-dd".
+Empty for an empty cell.
+*/
+public handler xlReadCellFormat(in pReader as Integer, in pSheet as Integer, in pRow as Integer, in pColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_cell_format(pReader, pSheet, pRow, pColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns a block of cells as one text.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+pFirstRow: The first row to return; 1 is the first row.
+
+pFirstColumn: The first column to return; 1 is column A.
+
+pLastRow: The last row to return, or 0 for the last row that holds anything.
+
+pLastColumn: The last column to return, or 0 for all of them.
+
+Returns: The cells, rows separated by returns and cells within a row by
+tabs, each as <xlReadCell> would return it.
+
+Example:
+put xlReadGrid(tReader, 1, 1, 1, 0, 0) into field "table" -- the whole first sheet
+
+Description: The fastest way to read a sheet: one call for the block, then
+the item and line chunks, or split, to take it apart. Each row stops at its
+own last cell, and an empty row is an empty line. Inside a cell a tab comes
+back as a space and a line break as a vertical tab (numToChar(11)), so that
+the rows and cells stay where they are. <xlSheetWriteGrid> takes the same
+shape.
+*/
+public handler xlReadGrid(in pReader as Integer, in pSheet as Integer, in pFirstRow as Integer, in pFirstColumn as Integer, in pLastRow as Integer, in pLastColumn as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_grid(pReader, pSheet, pFirstRow, pFirstColumn, pLastRow, pLastColumn) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the merged blocks of a sheet.
+
+pReader: A reader handle from <xlReadOpen>.
+
+pSheet: The number of the sheet; 1 is the first.
+
+Returns: One range such as "A1:C1" per line. Empty if the sheet has none.
+
+Description: The value of a merged block is in its top left cell; the others
+are empty.
+*/
+public handler xlReadMerged(in pReader as Integer, in pSheet as Integer) returns String
+   variable tP as Pointer
+   unsafe
+      put _read_merged(pReader, pSheet) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+end library

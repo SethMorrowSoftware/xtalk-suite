@@ -186,6 +186,11 @@ FUZZ_INT = {
     "contact": "flag()", "hit": "flag()", "sensor": "flag()",
     "lx": "flag()", "ly": "flag()", "lz": "flag()", "ax": "flag()", "ay": "flag()", "az": "flag()",
     "type": "small(-1, 4)", "workers": "small(-1, 5)", "group": "small(-3, 3)",
+    # the renderer: small pictures (a fuzz run renders thousands), pixels in
+    # and just outside them, a colour in and just outside a byte
+    "width": "small(-1, 48)", "height": "small(-1, 48)", "mode": "small(-1, 3)",
+    "x": "small(-2, 50)", "y": "small(-2, 50)",
+    "red": "small(-2, 257)", "green": "small(-2, 257)", "blue": "small(-2, 257)",
     "sides": "small(0, 34)", "substeps": "small(-1, 9)", "countX": "small(0, 9)", "countZ": "small(0, 9)",
 }
 FUZZ_DOUBLE = {
@@ -196,8 +201,9 @@ FUZZ_DOUBLE = {
     "restitution": "DP()", "hertz": "DP()", "damping": "DP()",
 }
 # Exports the table cannot draw arguments for; the fuzz test's own code must
-# call each (b3x_text_length takes a text result: text() measures every one).
-FUZZ_BY_HAND = {"b3x_text_length"}
+# call each (b3x_text_length takes a text result: text() measures every one;
+# b3x_render_pixels is bytes, not text: picture() reads every one after each call.
+FUZZ_BY_HAND = {"b3x_text_length", "b3x_render_pixels"}
 # Creators: the pool a returned handle joins.
 FUZZ_KEEP = [(r"^b3x_world_create$", "s_worlds"), (r"^b3x_body_create", "s_bodies"),
              (r"^b3x_shape_add_", "s_shapes"),
