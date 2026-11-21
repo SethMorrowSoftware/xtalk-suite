@@ -170,9 +170,15 @@ earlier shim two of the smoke test's three new checks failed, and one of the eng
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
 ran on an Android 5.0 emulator for the two x86 ids, and the ABI 2 build's tests ran there again
 in run 44825160471 (2026-11-21), whose Android rows fail unless every member's tests ran; the two
-ARM libraries are built and statically checked, not run, and no OXT engine on Android has loaded
-any of the four: verified statically; needs an OXT pass on Android. The `.lcb` declares Android's INTERNET permission, which OXT-
-Beyond's standalone builder adds to an app that includes this extension.
+ARM libraries are built and statically checked, not run. An OXT engine on Android first loaded
+this library on 2026-11-19, as the ABI 1 build committed before that run: an app OXT-Beyond's CI
+built with the suite's extensions ran on x86_64 emulators (Android 13, and Android 16 with 16 KB
+pages), where `cuLibraryVersion()` answered, its certificate count 149 on Android 16. That is one
+call on the ABI 1 `x86_64-android` library. No Android engine has loaded the ABI 2 files
+committed here now, this member's selftest has not run on an Android engine, and no engine has
+loaded an `x86-android` or an ARM library: needs an OXT pass on Android. The `.lcb` declares
+Android's INTERNET permission, which OXT-Beyond's standalone builder adds to an app that
+includes this extension.
 
 **First engine records, Windows x86-64, on the 2026-11-14 `x86_64-win32` DLL, the one before
 the 2026-11-15 rebuild:**

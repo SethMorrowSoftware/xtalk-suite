@@ -59,6 +59,7 @@ ADOPTERS = [
     os.path.join("torrentxt", "examples", "torrent-dht-channels.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-quickshare.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
+    os.path.join("xlsxt", "examples", "xlsxt-demo.livecodescript"),
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
@@ -66,6 +67,9 @@ ADOPTERS = [
     # one image the stack itself builds
     os.path.join("render3dxt", "examples",
                  "render3d-physics-demo.livecodescript"),
+    # box3dxt's Kit game wears the demos' look: its view is the Kit's image and
+    # its side panel is form chrome (unlike box2dxt's canvas games, D-18)
+    os.path.join("box3dxt", "examples", "box3dxt-orb-island.livecodescript"),
     # the suite paste's hand-written half: it wears the demos' look since D-23
     # (2026-09-24) and keeps the harness scaffold for its report plumbing
     os.path.join("tests", "suite-selftest.core.livecodescript"),
@@ -125,6 +129,13 @@ EXEMPT = {
     # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
+    # audioxt's Sound Stage is a showcase on a dark stage, in OXT-Beyond's
+    # look (the Render3D Tour's palette), which the owner asked every new
+    # extension's demo to wear (2026-11-21); the kit's look is a light form.
+    # Its own drive holds what the kit would: every field and button with
+    # its own colours, no system control, no words cut off.
+    os.path.join("audioxt", "examples", "audioxt-demo.livecodescript"):
+        "a dark showcase stage in OXT-Beyond's look, held by audioxt/tests/demo-drive.livecodescript",
     # curlxt Live wears OXT-Beyond's own look (the Render3D Tour's dark
     # stage and orange section heads), at the owner's request on
     # 2026-11-21: it is one of the showcase demos Beyond's users meet next

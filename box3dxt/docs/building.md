@@ -67,6 +67,26 @@ lines and a `SUMMARY passed failed` line, and exits non-zero on any failure. Par
 generated: a sweep that calls every public handler once (`tools/check-lcb-signatures.py
 --write`).
 
+## The Kit's engine tests
+
+The b3k game Kit and its example game have engine tests of their own, run the same way. Each
+takes render3dxt's compiled module and library as two more, optional, arguments: run each
+both ways, because the Kit draws with whichever renderer is loaded.
+
+```sh
+server-community tests/engine-kit.lc out/box3dxt.lcm build/box3dxt "$PWD/src/box3dxt-kit.livecodescript" [r3.lcm r3lib]
+server-community tests/engine-demo.lc out/box3dxt.lcm build/box3dxt \
+   "$PWD/examples/box3dxt-orb-island.livecodescript" "$PWD/tests/engine-demo-probe.livecodescript" [r3.lcm r3lib]
+server-community tests/engine-demo.lc - - \
+   "$PWD/examples/box3dxt-orb-island.livecodescript" "$PWD/tests/engine-demo-probe.livecodescript"
+```
+
+`engine-kit.lc` uses the Kit as a library stack and hand-steps it, so every number it checks
+is reproducible. `engine-demo.lc` builds Orb Island's window and plays it through a probe
+button on its card; given `-` for the module it checks that the game says what is missing and
+that nothing in it throws when box3dxt is not loaded. Both print PASS and FAIL lines and a
+`SUMMARY passed failed` line, and exit non-zero on any failure.
+
 ## The gates
 
 ```sh
@@ -76,7 +96,9 @@ bash tools/run-gates.sh
 `tools/run-gates.sh` is the member's whole compiler-free list. After changing the shim's
 exports, run `python3 tools/check-smoke-coverage.py --write` (the tests' declaration blocks and
 the fuzz table) and `python3 tools/check-lcb-signatures.py --write` (the engine sweep); after
-changing a doc block, `python3 tools/build-api-reference.py`.
+changing a doc block, `python3 tools/build-api-reference.py`. After changing the Kit
+(`src/box3dxt-kit.livecodescript`), run `python3 tools/sync-embedded-kit.py` (the copy the
+example game carries) and `python3 tools/build-kit-reference.py` (`docs/kit-reference.md`).
 
 ## Release libraries
 

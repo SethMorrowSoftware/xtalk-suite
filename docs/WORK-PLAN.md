@@ -328,8 +328,7 @@ keeping the scaffold for its report.
 | 27 | **The family interpreter rounds digit text just past 2^53 without its stop firing.** `_n` reads text through Python's `float()` and then `_exact()`, which refuses a DOUBLE past 2^53, so text whose decimal value is past 2^53 but whose nearest double is not ("9007199254740993", 2^53 + 1, reads as 2^53; "9007199254740992.4" as the whole 2^53) goes into arithmetic as that double with no refusal, exactly as the engine rounds it (engine note 2.4), where trap 20 in `coinxt/CLAUDE.md` says the model refuses any value past 2^53. Found 2026-09-26 by coinxt row #10's vectors: the old `cxVarInt` wrote `ff0000000000002000` (2^53's bytes) for "9007199254740993" headlessly. Decide it on the text in `_n` (the digits' value against 2^53, before `float()`), in both byte-identical copies (`coinxt/tools/lcs-interp.py` and nostrxt's), with a tier-0 row in coinxt's `check-script-vectors.py` that fails with the refusal removed, and re-run the census over every member's gate list for new refusals in shipped script | A headless gate is the only thing that runs this code between engine sessions, and a model looser than the engine at 2^53 is how row #8's class hid from every gate; stricter than the engine is acceptable, looser is a bug (trap 19) | S | none |
 | 28 | **Rebuild the six mac dylibs at the macOS floor.** Dispatch `release-binaries.yml` with `platforms: universal-mac` (or `all`) once the floor is on the branch it runs from: every committed universal-mac dylib was built for macOS 15.0, and by their imports torrentxt's and datachannelxt's cannot load before macOS 15 nor enetxt's before 11 (section 1.1). Until then the installer's selftest notes box2dxt's committed dylib as pre-floor | Two native members cannot load on any Mac older than macOS 15, and a third before 11 | S | dispatch |
 | 29 | **Install the .lce packages through an IDE's Extension Manager.** `lce-packages.yml` (2026-10-21) builds one `.lce` per extension and, on every run, validates each with extension-utils' own `extensionValidateLCEPackage`, extracts it with revZip, maps its code folder and loads and probes it on OXT-Beyond's server engine, Linux x86-64 only. One IDE install is on record: on 2026-10-21 `sodiumxt-0.1.0.lce` (built by this tool from 1d4557c's tree) was installed through `revIDEExtensionInstall` in the maintainer's OXT-Beyond IDE on Windows x86-64: it landed in the user extensions folder with `api.lcdoc`, `module.lcm`, `manifest.xml`, the source and all six code folders, loaded, mapped `code/x86_64-win32/sodiumxt`, and `sxVersion()` answered `SodiumXT 0.1.0 (libsodium 1.0.22)`. Still owed: the other fourteen packages in a running IDE on Windows (the enetxt and box2dxt packages on a PC WITHOUT the Visual C++ Redistributable, which is what their bundled runtime is for), macOS and stock LiveCode Community 9.6.3 (whose IDE loads a `module.lcm` from OXT-Beyond's lc-compile, same bytecode header, or recompiles it from the `.lcb` beside it), and the Dictionary entry each `api.lcdoc` gives | A package that only one engine and one platform have loaded; verified statically for the rest; needs an IDE pass | S | an engine session |
-| 30 | **Land the Android libraries, then finish what landing leaves.** The tooling is in the tree since 2026-11-18 ([ANDROID.md](ANDROID.md)): `tools/build-android.sh` builds all seven native members for `arm64-android`, `armv7-android`, `x86_64-android` and `x86-android`, and `release-binaries.yml` has an `android` job and a `lanes` input. Done 2026-11-18: (a) the dispatch with `lanes: android`, `commit_mode: none` (run 44379162842 from 7364c0f), all four rows green on the first run, every member's tests run on the Android 5.0 emulator for both x86 ABIs; (b) the dispatch that commits (run 44391791349 from 17b1f93, `commit_mode: branch`): the twenty-eight libraries, commit 5aa3ad4; (c) the four ids in every member's `ships` row in `tools/check-binary-freshness.py`, and ANDROID.md's status paragraph rewritten from the run; (d) an Android paragraph in each of the seven members' READMEs (the members' `CLAUDE.md` files were not touched, bar curlxt's, which records its certificate store). Left: (e) once this is on `main` and published, in OXT-Beyond, pin the libraries in `tools/oxt/xtalk-extensions.json` and probe each extension in an Android app on its emulator | Android apps built with OXT-Beyond cannot use any native member until the libraries exist where its builder looks | M | none (the merge to `main` and the publish come first) |
-| 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets) and has not been examined; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | row 30; owner (onionxt's path) |
+| 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets): its two library files were read on 2026-11-18 and call nothing a desktop alone has ([ANDROID.md](ANDROID.md)), and it has not run on an Android engine; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | owner (onionxt's path) |
 
 ### 1.3 Engine work (suite-level)
 
@@ -342,7 +341,7 @@ keeping the scaffold for its report.
 | 6 | *(optional)* Cheap measurements nothing schedules: FFI-crossing cost and interpreter op rate; whether `byte N of X` on a 60,000-byte Data is O(1) or O(N); `seek to N in file` (a standing nocloud VERIFY) and `rename file` semantics; whether `open file ... for binary write` truncates an existing longer file (engine note 6.14 gives the four-line probe: the reference and engine source say it does, the tree's comments said it does not); whether OXT exposes SQLite through revDB | S1 | - | numbers recorded in engine notes; 6.14 promoted to OBSERVED with a date, or rewritten as a divergence |
 | 7 | Model C Phase 4 exit: a FRESH user on each of macOS, Windows and Linux, following only section 13 of [ONIONXT-INTEGRATION-PLAN.md](ONIONXT-INTEGRATION-PLAN.md), completes a two-machine anonymous transfer | S4 on each OS + PERSON | - | all three done; the phase does not close before |
 | 8 | The suite board's first engine run (D-23), in item 1's launch. PARTLY RUN 2026-09-24 (Windows): the build at 1200x640 with every row, the boot self-check green (9/0/0) with its summary note, Run all with the rows accounting for every check, box2dxt at 1200 wide, Copy results unchanged; the board review's fixes that a report can show (the merged skips, the banner, the renamed pump) ran in the day's third run. The same half ran on Linux on 2026-09-25 (2672/0/10, both loopbacks completing, Copy results by the maintainer's account), and there a SECOND Run all in one launch, TorrentXT installed (the maintainer's account): riptide's session sections green, which closed 3.1 engine #10. Windows ran the report half again that day (2653/2/10; whether a launch's first or second Run all, and how the text was copied, not stated). RAN again 2026-09-26 on Linux with the batch's paste, a fresh stack (2876/0/10): the derived stamp's boot line (`suite-board-0961bb91e5ee`, 1.2 #17), the teardown's counted ENet release (3 counted `enInitialize` calls, one `enDeinitialize` each, 1.2 #16), and by the maintainer's account a second Run all in one launch, copied with Copy results; a second report that day (5:11 PM) read the same, line for line, on its launch's on-open Run all, the only one, by the maintainer's account (box2dxt's joint handles had INFERRED it; its copying not stated). RAN on Windows that evening too, the same batch paste on a fresh stack, twice in ONE launch by the maintainer's account (2857/2/10 each; runbook section 8): the on-open Run all and a second one, each to its summary with the rows adding up, the derived stamp's boot line, the counted ENet release, and on the second run riptide's session sections green, so the second-Run-all item has run on both platforms; Copy results not stated for either. What a text report cannot show is still owed, and so are the halves of those two changes that need another stack: the rebuild over an old-stamp board (the 4:23 PM Linux stack and the Windows one were fresh by the maintainer's account; the 5:11 PM one not stated, and no text report shows a rebuild) and the counted holds beside a live `enet-selftest` | S1 item 1 | 48 | the pills' look after Run all; Run on sodiumxt, on torrentxt twice and on enetxt; each filter and a row's Show; whether a pressed Run stays hilited and whether the press arms the run; opening, running and closing the paste beside a live `enet-selftest` loopback leaves that loopback's hosts alone, and (since 2026-09-26) closing `enet-selftest` or pressing its Re-run beside a live paste run leaves the paste's loopback hosts alone; the first open of a window built under the old `suite-board-1` stamp rebuilds it once |
-| 9 | **Android, first engine loads.** After 1.2 #30 lands the libraries and OXT-Beyond pins them: an app built by OXT-Beyond's Android builder that includes the seven native extensions, on an arm64 device or emulator and on the x86_64 emulator; each extension answers its version handler and its ABI check; then each member's selftest where it has one that fits a phone | an Android device or emulator, OXT-Beyond | - | all seven LOADED at their ABIs on arm64 (the first execution of any ARM library, [ANDROID.md](ANDROID.md)); curlxt fetches an https URL against the system store; the record names the device, Android version and library hashes |
+| 9 | **Android, the engine loads still owed.** The seven members' `x86_64-android` libraries were loaded by an engine on 2026-11-19, one call each, in an app OXT-Beyond's CI built and ran on x86_64 emulators (the record is in [ANDROID.md](ANDROID.md), "The first engine load"; its Android workflow repeats that probe whenever its pins move). Still owed: the same app on an arm64 device or emulator (no ARM library has executed anywhere), and on a 32-bit x86 system for `x86-android`; each extension's ABI check; each member's selftest where it has one that fits a phone; box3dxt's, render3dxt's and xlsxt's libraries once OXT-Beyond pins them | an Android device or emulator, OXT-Beyond | - | all seven LOADED at their ABIs on arm64 (the first execution of any ARM library); curlxt fetches an https URL against the system store; the record names the device, Android version and library hashes |
 
 ### 1.4 Owner calls this plan waits on
 
@@ -885,10 +884,25 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 - Binaries: committed 2026-11-20 by its first release-binaries dispatch (run 44806507517 from
   de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
   and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
-  members' are. The `ships` row lists all eleven. No engine has loaded any of them yet: the
-  engine and IDE runs above used locally built libraries.
+  members' are. The `ships` row lists all eleven. The engine and IDE runs above used locally
+  built libraries. The web archive is the one an engine has loaded: on 2026-11-21 a web engine
+  built locally from OXT-Beyond's pull request 606 linked it from that pull request's pin
+  (this repository at 46ad996, its SHA-256 checked) and played Orb Island in Chromium. No
+  engine has loaded a desktop or Android one yet.
 - Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
   (`--adopt box3dxt`) once this member's changes are on main.
+- The b3k game Kit (2026-11-21): `src/box3dxt-kit.livecodescript`, box2dxt's b2k Kit in 3D,
+  drawing through render3dxt when it is loaded and through box3dxt's own renderer when it is
+  not, and its example game, Orb Island (`examples/box3dxt-orb-island.livecodescript`, which
+  carries the Kit verbatim). Records: `tests/engine-kit.lc` and `tests/engine-demo.lc` on the
+  headless Linux server engine over a locally built library, with box3dxt's renderer, with a
+  render3dxt built from its pull request, and (the game) with no extension at all; the native
+  lane repeats the first and last of those on every change. Orb Island has also played once
+  in a browser (2026-11-21, Chromium): a web engine built locally from OXT-Beyond's pull
+  request 606, with the committed web archives of box3dxt and render3dxt linked in, ran its
+  frame loop at about 12 pictures a second with nothing in the console; its keys were not
+  driven. No IDE has run either:
+  verified statically; needs an OXT pass (row 10).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -897,10 +911,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
-| 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board at its row pitch (25 since render3dxt and xlsxt both joined the same day; 29 and 27 for some hours before): sixteen rows clear the members caption | S1 | 48 | the last row ends above the caption on an engine |
+| 6 | DONE 2026-11-21: Orb Island, `examples/box3dxt-orb-island.livecodescript`, a game on the b3k Kit in the UI kit's look, drawn by `b3RenderWorld` when render3dxt is not loaded | - | - | a paste-and-run example in `box3dxt/examples/` |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
+| 10 | Orb Island and the Kit in an IDE: the eight checks under "WHAT TO VERIFY" in the game's header (the window, walking, the orbs, the toys, falling, the mouse, the keys and buttons, the light and dark appearance), with box3dxt alone and with render3dxt, on Windows, Linux and a Mac | S1 | - | each check answers as the header says, or the Kit is fixed |
+| 11 | The Kit's engine tests with render3dxt in CI: the native lane runs `tests/engine-kit.lc` and `tests/engine-demo.lc` with box3dxt's renderer only, because it was written before render3dxt joined main (#182, 2026-11-21); both pass with render3dxt locally (2026-11-21) | coding: the lane builds render3dxt's library and module too, and the published member takes render3dxt as a gate sibling | - | a lane runs both with render3dxt's module and library |
+| 12 | The Kit shipped as a script library beside the extension: a `.lce` of its own (with row 4) and an entry in OXT-Beyond's extension list, as box2dxt's Kit has, probed by `b3kVersion()` | coding, after row 4; OXT-Beyond | - | `b3kVersion()` answers 1 in an IDE with nothing pasted |
+| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine) | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
 
 ### 2.11 render3dxt
 
@@ -952,12 +969,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
 | 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
 | 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
-| 10 | The suite board is full: at row pitch 25 its sixteen rows fit, each touching the next, and a seventeenth does not fit at any pitch. Move the rows of the members with no harness into a compact band of their own and give the pitch back | coding (in hand with the next member to join), then S1 | 48 | the rows clear one another on an engine, with room for the next member |
 | 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
 | 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
 | 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped, so a stack SAVED before the fix keeps its controls until it is rebuilt. Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
 
-### 2.11 xlsxt
+### 2.12 xlsxt
 
 - Joined 2026-11-20: libxlsxwriter 1.2.4, zlib 1.4 (with its minizip) and Expat 2.10.0, each
   pinned to a commit, behind the `xlx_*` C shim (ABI 1) and the `xl*` binding, whose names
@@ -965,25 +981,78 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   smoke test and random-call test (damaged files included), clean under ASan/UBSan, also as
   a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
-  its native lane repeats on every change. No desktop IDE has loaded it: for everything
-  beyond that server run it is verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+  its native lane repeats on every change. On 2026-11-21 it ran in the IDE on the
+  maintainer's Windows PC over the native lane's DLL (run 44845807163: the self-test 64/0 in
+  the IDE, the demo's checks 39/0; the demo's words were white on white under the dark theme,
+  engine note 5.16) and in a browser (the committed web archive in OXT-Beyond's web engine,
+  its pull request 605: a workbook written and read back in Chromium, Firefox and WebKit,
+  run 44847676839). The same day the demo was rebuilt as Spreadsheet Studio, a showcase
+  that opens playing four scenes, in OXT-Beyond's dark look with every colour named by the
+  stack; that window is driven on the Linux engine (`xlsxt/tests/demo-drive.livecodescript`)
+  and ran that day on the Windows PC under its dark theme: the tour's four scenes, About's
+  checks 39/0, every word readable, and one clipped column, fixed after (checked on Linux
+  only). Everything else is verified statically; needs an OXT pass.
+- Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44838679488
+  from b2d4a6c, commit 0be6db1: six desktop rows and four Android ids, ABI 1), beside the
+  web archive committed before it (built with emsdk 6.0.12 outside that workflow, as the
+  other members' are). The `ships` row lists all eleven. No engine has loaded a desktop or
+  Android one yet: the runs above used locally built or lane-built libraries, and the
+  browser run the web archive.
 - Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
   2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: xlsxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
+| 1 | DONE 2026-11-21 (run 44838679488, commit 0be6db1, beside the web archive): the first release-binaries dispatch with `members: xlsxt`, then the `ships` row | - | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
 | 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
 | 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
-| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
+| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is (linked by OXT-Beyond's pull request 605, whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit on 2026-11-21; open until that work merges there) | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
-| 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
+| 8 | `xlsxt/examples/xlsxt-demo.livecodescript` (Spreadsheet Studio) used by a person: the Showcase's tour and each scene, each tab's Make and Save, Open on a file from Excel, a click on a cell, Run every check (driven on the Linux engine by `xlsxt/tests/demo-drive.livecodescript` since 2026-11-21; on Windows on 2026-11-21 a session on the maintainer's PC built the first window and ran its checks, 39/0, and found its words white on white under the dark theme; the same day the demo was rebuilt as a self-playing showcase in OXT-Beyond's dark look, every colour named by the stack, and that window ran on the same PC under the dark theme: the tour's four scenes, About's checks 39/0, every word readable, one clipped column fixed after and checked on Linux only; a light theme, Make and Save by hand and a file opened in Excel remain) | S1, after #1 | - | the tour plays smoothly, the window looks right under a dark and a light theme, and the saved files open in Excel |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+
+### 2.13 audioxt
+
+- Joined 2026-11-20: miniaudio 0.11.26 (one header, fetched at a commit and held to a
+  SHA-256) behind the `aux_*` C shim (ABI 1) and the `au*` binding, whose names are
+  mechanical. Additive: the engine's `play` and player object are untouched. Records: the
+  shim's smoke test and random-call test, clean under ASan/UBSan and TSan, also as
+  WebAssembly under node; `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server
+  engine over a locally built library (2026-11-20), through miniaudio's silent device; and
+  the web archive playing and recording in headless Chromium (`tests/web/`, the same day).
+  Its native lane repeats all three on every change. On 2026-11-21 the archive was linked
+  as OXT-Beyond's web engine links it (Asyncify and the engine's own settings, in Chromium),
+  and two web faults were fixed: on a page with no microphone API (any page served over
+  plain http) or no AudioContext, miniaudio's JavaScript threw through the whole engine; and
+  a key press did not start a device the browser held (miniaudio waits for a click). The
+  same day the IDE on the maintainer's Windows PC (64-bit OXT-Beyond) loaded a CI-built
+  `x86_64-win32` DLL on WASAPI, and `tests/engine-selftest.lc`, run there as a script-only
+  stack, passed 89 and failed 0; and the demo was driven on the Linux desktop engine (row 7).
+  Nobody has heard it: for everything beyond those runs it is verified statically; needs an
+  OXT pass.
+- Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
+  first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
+  later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
+  those platforms), and the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten
+  6.0.12, the same bytes from two build folders) was built outside that workflow, as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded a committed one yet:
+  the runs above used locally built or CI-built libraries.
+- Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt audioxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | DONE 2026-11-21 (run 44847619287, commit 78223d8, and the web archive): the first release-binaries dispatch, then the `ships` row | - | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass, with ears: install the extension, `auLibraryVersion()`, the README's music-and-click stack, a tone, a clone played several times at once, and a microphone recorded to a WAV and played back, on Windows, Linux and a Mac | S1, after #1 | - | each is HEARD and answers as `audioxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | a tone is heard in the web IDE after one click |
+| 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
+| 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the six members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
 
 ---
 
