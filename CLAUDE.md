@@ -21,7 +21,7 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
   render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
-  transform, move and camera texts it reads, with only its web archive committed yet), pdfxt
+  transform, move and camera texts it reads, its libraries committed 2026-11-21), pdfxt
   (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
   yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
   beside itself, see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files
