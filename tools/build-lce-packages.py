@@ -306,6 +306,13 @@ PACKAGES = [
     # (the header of box3dxt.lcb).
     P('lcb', 'box3dxt', 'org.openxtalk.library.boxthreed', 'src/box3dxt.lcb', 'box3dxt',
       'b3LibraryVersion()', '^box3dxt ABI [0-9]+; Box3D [0-9]+\\.[0-9]+'),
+    # The b3k game Kit (2026-11-21, #193): box2dxt's b2k Kit in 3D, one
+    # script-only stack over box3dxt's extension (and render3dxt's when that
+    # is loaded, which it asks for at run time, so it requires only box3dxt).
+    # Its author is the Kit's own doc block's.
+    P('lcs', 'box3dxt', 'box3dxt-kit', 'src/box3dxt-kit.livecodescript', 'box3dxt-kit',
+      'b3kVersion()', '^1$', stack='box3dxt-kit', title='Box3Dxt Kit', author='Seth Morrow',
+      requires=['org.openxtalk.library.boxthreed']),
     # render3dxt (2026-11-21, the day after it joined): the textured software
     # renderer that draws what box3dxt simulates. Only its web archive is
     # committed, which no package carries, so this row waits like xlsxt's
