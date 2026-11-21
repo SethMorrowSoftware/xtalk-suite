@@ -1489,6 +1489,29 @@ handlers. And the IDE stops following: an open project browser keeps listing
 the controls it last heard of until it is closed and reopened (its
 `preOpenStack` rebuilds the tree).
 
+### 5.16 A control that names no text colour takes the system theme's, and a dark theme's is white
+**OBSERVED 2026-11-21** (Windows, OXT-Beyond 64-bit, the maintainer's PC under its dark
+theme; the day before, render3dxt's physics demo showed the same there, by that member's
+record). No error: a field's text and a tick box's label do not show, and selecting the
+text shows it is there. xlsxt's demo had its table (a kit `uiInput`) and every tick box's
+words white on the white the UI kit paints. On the same window every control that names a
+colour of its own drew right: the kit's labels, captions, status line and footer. The
+colour is inherited, control then card then stack, and reaches the theme only when none of
+them names one: OBSERVED the same day on Linux under xvfb with a stand-in, where the demo's
+stack named white and every field and tick box that named nothing drew white words, and
+each that named a colour drew its own.
+**Rule:** give every control whose words sit on a fill you paint a `foregroundColor` of
+its own; a window that paints its own backgrounds cannot leave its text to the theme.
+OBSERVED to hold on that PC the same day: xlsxt's rebuilt demo, which names the colour of
+every field, label and tick box and the background of every entry field and list, and
+draws its own push buttons, read right throughout under the dark theme.
+**Gate:** for xlsxt's demo only, `xlsxt/tests/demo-drive.livecodescript` (2026-11-21),
+which fails a window where a field or tick box names no colour; no suite-wide gate.
+**Does NOT mean:** that a push button needs one. The theme draws a push button, and no run
+reported one unreadable (INFERRED: a dark theme draws its face dark, with its white words),
+so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
+dark theme has been run on either (UNEVIDENCED either way).
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

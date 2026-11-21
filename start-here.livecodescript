@@ -100,8 +100,8 @@ script "SuiteStartHere"
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
 -- The directory list is filled only at a build, so a registry row added
 -- without a bump stays invisible in a saved launcher: "start-here-4" is
--- render3dxt's demo (2026-11-20), curlxt Live, audioxt's Sound Stage and the
--- three ShowControl showcases (2026-11-21).
+-- render3dxt's demo (2026-11-20), curlxt Live, audioxt's Sound Stage, xlsxt's
+-- Spreadsheet Studio and the three ShowControl showcases (2026-11-21).
 constant kSlUiVersion = "start-here-4"
 
 -- ---- script-local state (declared at top) ------------------------------------
@@ -736,6 +736,7 @@ function slRegistry
    put "box2dxt/examples/box2dxt-spike-gamekit.livecodescript||the box2dxt extension||The game-Kit capability spike: timers, keyboard, sprites, rays, camera - one button per probe." & return after tR
    put "box2dxt/examples/box2dxt-selftest.livecodescript||the box2dxt extension||box2dxt's own harness: the b2k Kit driven deterministically (a paused world stepped by hand, scripted keys), asserting the behaviours the games rely on." & return after tR
    put "box3dxt/examples/box3dxt-orb-island.livecodescript||the box3dxt extension; render3dxt too for the textured, lit look|Self-contained: carries the b3k Kit.|Orb Island, a 3D game on the b3k Kit: walk a floating island for eight golden orbs past a sweeper arm, a lift, a jump pad and a wrecking ball; kick crates, blast them, swap the renderer." & return after tR
+   put "xlsxt/examples/xlsxt-demo.livecodescript||the xlsxt extension (org.openxtalk.library.xlsxt)||Spreadsheet Studio: opens playing a tour of four scenes that write real Excel files and read them back (a sheet that fills itself, formulas and dates, all fifteen kinds of chart, ten thousand cells timed); then a tab each for a table in one call, formats, formulas, charts and page setup, a reader for any .xlsx, and one click that checks all of it." & return after tR
    put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables; a local tor daemon for onion tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online. Self-contained: carries onionxt.|Serverless Texas Hold'em: hotseat now, online tables over the DHT or Tor, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
    put "oscxt/examples/osc-show-surface.livecodescript||the oscxt extension (org.openxtalk.library.osc)|Nothing to set up: the surface and its rig talk over UDP on this computer only. Self-contained: carries osc-helpers.|Open Sound Control from xTalk: faders, an XY pad, address patterns, cues that wait for their timetag, and bad bytes refused with their reasons - every message read back by a rig." & return after tR
    put "midixt/examples/midi-stage.livecodescript||the midixt extension (org.openxtalk.library.midi)|Nothing to set up on macOS or Linux (it makes a virtual port); on Windows a loopMIDI port carries it, and without one it decodes on the spot. It plays aloud only when you press Sound. Self-contained: carries midi-helpers.|Realtime MIDI from xTalk: a player and a stage - notes, chords, eight knobs, pitch bend, drums and program changes, each drawn as it arrives; a keyboard plugged in plays in blue." & return after tR

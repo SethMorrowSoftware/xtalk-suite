@@ -17,14 +17,14 @@
 capabilities app authors reach for: cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor,
 Bitcoin and Ethereum primitives, 2-D physics with a game kit, Nostr, and show control (OSC, MIDI
 and Art-Net lighting).** Each is a small, friendly set of xTalk handlers, and each native member
-bundles its library inside the extension, so there is nothing else to install. Fifteen
+bundles its library inside the extension, so there is nothing else to install. Sixteen
 extensions, plus three apps built on them.
 
 Every member is a thin binding over a proven C/C++ library (or pure LiveCodeScript for OnionXT
-and NostrXT, and pure LiveCode Builder for artnetxt), built to one set of engineering rules so they read as one system and compose:
-identity, transport and storage can come from different members. The apps are the proof. All of
-it is developed here, and each member is also published into its own repository
-([docs/MEMBER-REPO-SPLIT.md](docs/MEMBER-REPO-SPLIT.md)).
+and NostrXT, and pure LiveCode Builder for artnetxt), built to one set of engineering rules so
+they read as one system and compose: identity, transport and storage can come from different
+members. The apps are the proof. All of it is developed here, and each member is also published
+into its own repository ([docs/MEMBER-REPO-SPLIT.md](docs/MEMBER-REPO-SPLIT.md)).
 
 ## The extensions
 
@@ -156,7 +156,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | box3dxt | 6 platforms, 4 Android ABIs and a web archive, ABI 2 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change); and its committed web archive in Chromium, 2026-11-21: a web engine built locally from OXT-Beyond's pull request 606 played the b3k Kit's Orb Island (its keys not driven) | the committed desktop and Android libraries on any engine (the runs so far loaded locally built ones, bar that web archive); Windows, macOS, Android and a released web engine; a row in the suite paste |
 | audioxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library and through miniaudio's silent device: the module loaded, the ABI check passed, binary data crossed both ways, a tone was rendered and measured, and every public handler was called; the web archive played and recorded in headless Chromium the same day; in the IDE on the maintainer's Windows PC, 2026-11-21, a CI-built 64-bit DLL loaded on WASAPI and the same self-test passed 89, failed 0; the demo driven on the Linux desktop engine the same day (`audioxt/tests/demo-drive.livecodescript`) | the committed release libraries on any engine; macOS, Android and the web engine; anyone hearing it (every run so far played through the silent device); a row in the suite paste |
 | render3dxt | the web archive only (the first release dispatch lands the rest), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second. On Windows (OXT-Beyond 0.2.8-dp.1, dark system appearance) the rebuilt demo was readable, 2026-11-21 | macOS, Android and the web; a pointer on Windows; the desktop and Android libraries committed; a row in the suite paste |
-| xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
+| xlsxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change); in the IDE on the maintainer's Windows PC, 2026-11-21, over the native lane's DLL: that self-test 64/0 and the demo's checks 39/0 (its words were white on white under the dark theme; the demo was rebuilt the same day as a self-playing showcase that names every colour, and that window ran on the same PC readable throughout, its tour and checks 39/0); the committed web archive in OXT-Beyond's web engine (its pull request 605), 2026-11-21: a workbook written and read back in Chromium, Firefox and WebKit | the committed desktop and Android release libraries on any engine (the runs so far loaded locally built or lane-built ones); macOS and Android; most of its handlers in a browser; a file of its own opened in Excel, on the record; a row in the suite paste |
 | oscxt | none yet (the first release dispatch lands them), ABI 2 | its LCB suite under lc-run and its Script suite in OXT-Beyond's headless standalone engine (`-ui`), Linux x86_64, 2026-11-21, over a locally built library: real UDP through the engine's own sockets and an independent OSC peer included (`oscxt/tools/run-lcb-tests.py`, `run-lcs-tests.py`; its native lane runs both on Linux, Windows and macOS on every change); the parser fuzzed under ASan/UBSan the same day | any desktop IDE; Windows and macOS on the record outside CI; a committed library; Android; a row in the suite paste |
 | midixt | none yet (the first release dispatch lands them), ABI 2 | the same two suites on the same engine, 2026-11-21, over a locally built library and the member's mock MIDI backend | a message through a real MIDI service (ALSA, CoreMIDI or Windows MM) on the record; any desktop IDE; a committed library; a row in the suite paste |
 | artnetxt | pure LCB (no library to commit) | the same two suites on the same engine, 2026-11-21: lc-compile `-Werror`, real UDP, discovery and DMX against an independent virtual node | a hardware node or lighting desk on the record; any desktop IDE; Windows and macOS on the record outside CI; a row in the suite paste |
@@ -207,9 +207,12 @@ box3dxt joined on 2026-11-20; its four Android libraries were committed that day
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
 audioxt joined the same day; its four Android libraries were committed on 2026-11-21 by release
 run 44847619287 (78223d8), the x86 ones tested on the emulator, the ARM ones built and checked, not run.
-render3dxt and xlsxt joined the same day and are in the recipe; none of their Android libraries
-is committed yet. oscxt and midixt joined on 2026-11-21 with no Android build
-(`tools/build-android.sh` names them desktop-only and says why); artnetxt has no library.
+render3dxt joined the same day and is in the recipe; none of its Android libraries is
+committed yet. xlsxt joined the same day too; its four Android libraries were committed on
+2026-11-21 by its own release run (0be6db1), tested on the emulator for the two x86
+ABIs, the ARM ones built and checked, not run. oscxt and midixt joined on 2026-11-21 with no
+Android build (`tools/build-android.sh` names them desktop-only and says why); artnetxt has no
+library.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 

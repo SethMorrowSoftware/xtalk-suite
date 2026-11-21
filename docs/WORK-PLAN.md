@@ -986,24 +986,36 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   smoke test and random-call test (damaged files included), clean under ASan/UBSan, also as
   a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
-  its native lane repeats on every change. No desktop IDE has loaded it: for everything
-  beyond that server run it is verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+  its native lane repeats on every change. On 2026-11-21 it ran in the IDE on the
+  maintainer's Windows PC over the native lane's DLL (run 44845807163: the self-test 64/0 in
+  the IDE, the demo's checks 39/0; the demo's words were white on white under the dark theme,
+  engine note 5.16) and in a browser (the committed web archive in OXT-Beyond's web engine,
+  its pull request 605: a workbook written and read back in Chromium, Firefox and WebKit,
+  run 44847676839). The same day the demo was rebuilt as Spreadsheet Studio, a showcase
+  that opens playing four scenes, in OXT-Beyond's dark look with every colour named by the
+  stack; that window is driven on the Linux engine (`xlsxt/tests/demo-drive.livecodescript`)
+  and ran that day on the Windows PC under its dark theme: the tour's four scenes, About's
+  checks 39/0, every word readable, and one clipped column, fixed after (checked on Linux
+  only). Everything else is verified statically; needs an OXT pass.
+- Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44838679488
+  from b2d4a6c, commit 0be6db1: six desktop rows and four Android ids, ABI 1), beside the
+  web archive committed before it (built with emsdk 6.0.12 outside that workflow, as the
+  other members' are). The `ships` row lists all eleven. No engine has loaded a desktop or
+  Android one yet: the runs above used locally built or lane-built libraries, and the
+  browser run the web archive.
 - Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
   2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: xlsxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
+| 1 | DONE 2026-11-21 (run 44838679488, commit 0be6db1, beside the web archive): the first release-binaries dispatch with `members: xlsxt`, then the `ships` row | - | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
 | 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
 | 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
-| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
+| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is (linked by OXT-Beyond's pull request 605, whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit on 2026-11-21; open until that work merges there) | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
-| 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
+| 8 | `xlsxt/examples/xlsxt-demo.livecodescript` (Spreadsheet Studio) used by a person: the Showcase's tour and each scene, each tab's Make and Save, Open on a file from Excel, a click on a cell, Run every check (driven on the Linux engine by `xlsxt/tests/demo-drive.livecodescript` since 2026-11-21; on Windows on 2026-11-21 a session on the maintainer's PC built the first window and ran its checks, 39/0, and found its words white on white under the dark theme; the same day the demo was rebuilt as a self-playing showcase in OXT-Beyond's dark look, every colour named by the stack, and that window ran on the same PC under the dark theme: the tour's four scenes, About's checks 39/0, every word readable, one clipped column fixed after and checked on Linux only; a light theme, Make and Save by hand and a file opened in Excel remain) | S1, after #1 | - | the tour plays smoothly, the window looks right under a dark and a light theme, and the saved files open in Excel |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
 
 ### 2.13 audioxt
