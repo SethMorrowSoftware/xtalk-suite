@@ -1384,6 +1384,51 @@ it does stop is every ENGINE message your script may rely on: `menuPick` from a
 handlers. And the IDE stops following: an open project browser keeps listing
 the controls it last heard of until it is closed and reopened (its
 `preOpenStack` rebuilds the tree).
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1: the messages and what they
+cost. audioxt's demo, Sound Stage, builds 252 controls in its `preOpenStack`;
+built with messages on, the headless desktop engine sent 520 such messages for
+them, which a script inserted in front heard: 252 `nameChanged`, 244
+`newField`, `newButton` or `newGraphic`, and for its 8 groups 8 `newGroup` and
+16 `newBackground` (`audioxt/tests/demo-drive.livecodescript` counts them). In
+the IDE on the maintainer's Windows PC its stack file froze the IDE for 59 s
+(the `go stack` call's time) while other demos opened in under half a second.
+In that release's IDE on Linux (its package under Xvfb, 1440 x 900, no other
+stack of ours open), the same file's `go` took 1.8 s and left 514
+`ideMessageSend` messages queued, all handled 1.9 s after the `go` began, or
+3.2 s with the project browser open; built under `lock messages`, 0.14 s with 2
+queued (0.23 s with the project browser open). The engine alone builds that
+window in about 30 ms. What made Windows thirty times slower than Linux is not
+measured: what that IDE had open, which an open project browser walks on every
+message, is not recorded.
+
+### 5.17 A new stack is 32,32,288,288, and a size set keeps its centre
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's desktop engine (Linux,
+`-ui` and in a window under Xvfb): a big window made in script opens above
+and left of the screen. `create stack` makes a stack whose rect is
+32,32,288,288, and setting its width to 960 and its height to 600 keeps its
+centre, 160,160, so its rect becomes -320,-140,640,460. `save stack` keeps
+that rect. audioxt's stack builder saved Sound Stage so, and in the IDE on
+the maintainer's Windows PC (0.2.8-dp.1) it opened there: its title bar 140
+px above the top of the screen, where the window could not be dragged; it
+was moved by hand. The same file in that release's IDE on Linux opened at
+0,96: that IDE moved it on to the screen. A stack a person makes with New
+Stack and whose `preOpenStack` sets its size grows round its own centre the
+same way.
+**Rule:** set a window's place after its size (`topLeft`, `loc` or `rect`),
+and a window a stack builds or sizes when it opens is placed in its
+`preOpenStack` against `the working screenRects`, title bar included. Not
+in a browser: the Stack Player opens a stack in its own window and lays the
+page out (`the platform` is "HTML5"), and a phone's window is its screen.
+**Gate:** for Sound Stage only, `audioxt/tests/demo-drive.livecodescript`
+checks the window is on the screen when it opens in a window (it failed at
+-320,-140,640,460 on a 1280 x 720 Xvfb screen before the fix) and tries the
+demo's placing function on screens it has not got; the native lane checks
+the place the stack builder reports for the file it saves (160,60,1120,660).
+No suite-wide gate.
+**Does NOT mean:** that a size set moves a window that has a place. Setting
+the width and height keeps the centre the window has, wherever it is; only a
+stack whose centre is still the engine's first one, near the screen's
+corner, is pushed off it.
 
 ## 6. Sockets and processes
 
