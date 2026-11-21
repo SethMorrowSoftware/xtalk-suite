@@ -86,8 +86,12 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   (`set_ca_file`: curl would otherwise load both), and `cux_version_string` ends with the
   count. User-added certificates are not read. Built for Android 2026-11-18, and the smoke
   test ran that day on an Android 5.0 emulator for both x86 ABIs (157 certificates read from its
-  store); the ARM libraries are built, not run, and no engine on Android has loaded any: needs
-  an OXT pass on Android.
+  store); the ARM libraries are built, not run. An engine first loaded the `x86_64-android`
+  library on 2026-11-19, in an app OXT-Beyond's CI ran on x86_64 emulators: `cuLibraryVersion()`
+  answered, 149 certificates on Android 16 (the conscrypt path). One call, no request made,
+  and on the ABI 1 build: the four Android libraries were rebuilt at ABI 2 on 2026-11-21 (run
+  44825160471, its tests run on the emulator again), and no Android engine has loaded those.
+  The selftest on an Android engine and any ARM run still need an OXT pass on Android.
 - **Release builds** (the suite's `release-binaries.yml`): 64-bit Linux and the mac slices
   link a pinned static OpenSSL 3.5.9 (no `libssl.so.3` needed); 32-bit Linux links the
   system's, as datachannelxt does; Windows uses Schannel and the static CRT (`/MT`), so

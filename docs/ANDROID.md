@@ -19,21 +19,35 @@ the installer's checks and the whole gate set passed over them. In each run's tw
 **every member's own tests ran on an Android 5.0 x86_64 emulator and passed**, for
 `x86_64-android` and `x86-android` (the record is below); a row builds, tests and uploads in one
 job, so the fourteen committed x86 libraries are the files the second run tested.
-The fourteen ARM libraries were built and checked in both runs and **not run**. **No OXT engine
-on Android has loaded any of the twenty-eight.**
+The fourteen ARM libraries were built and checked in both runs and **not run**. **An OXT engine
+on Android first loaded them on 2026-11-19**: OXT-Beyond pinned the twenty-eight, and its CI
+built an app with all seven extensions and ran it on x86_64 emulators, where every extension's
+library loaded and answered one call (the record is below). That is the seven `x86_64-android`
+libraries, one call each; no engine has loaded an `x86-android` or an ARM one. curlxt's four
+were rebuilt at ABI 2 on 2026-11-21 (release run 44825160471, commit 02b4238, its tests run on
+the emulator again for the two x86 ABIs); the engine load was of the ABI 1 files, and no
+Android engine has loaded the ABI 2 ones committed now.
 **box3dxt joined on 2026-11-20**, after both runs: `tools/build-android.sh` names it as an eighth
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change. Its four libraries were
 committed on 2026-11-20 by its own release run (run 44806507517, commit 6d132d3; the x86 ones
 tested on the emulator, the ARM ones built and checked, not run). The counts in this page's dated records are of the seven members of those runs.
-**render3dxt joined the same day** as a ninth, built and tested the same way by its own lane
+**audioxt joined the same day**, the same way: a member of `tools/build-android.sh`, built
+for the four ABIs and tested on the emulator for the two x86 ones by `native-audioxt.yml`. Its
+four libraries were committed on 2026-11-21 from release run 44847619287 (commit 78223d8; the x86
+ones tested on the emulator, the ARM ones built and checked, not run).
+**render3dxt joined the same day** as a tenth, built and tested the same way by its own lane
 (`native-render3dxt.yml`), with no Android library committed yet; its tests carry their model
 and picture files inside them, so they run from the folder the emulator is handed.
 **xlsxt joined the same day**, the same way: named in `tools/build-android.sh`, built for the four
-ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`), with no
-Android library committed yet.
-So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
-The ARM libraries are: built and verified statically; needs an OXT pass on Android.
+ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`) on every
+change. Its four libraries were committed on 2026-11-21 by its own release run (run 44838679488,
+commit 0be6db1; the x86 ones tested on the emulator, the ARM ones built and checked, not run).
+So the seven members' `x86_64-android` libraries are: native tests run on an Android emulator,
+and loaded by an engine in an app for one call each; a member's own selftest on an Android engine
+is still owed. Every other `x86_64-android` and every `x86-android` library: native tests run on
+an Android emulator; needs an OXT pass on Android. The ARM libraries are: built and verified
+statically; needs an OXT pass on Android.
 
 ## The four platform ids
 
@@ -143,21 +157,46 @@ twenty-eight new libraries, four per member, each through
 change after it added the four ids to every member's `ships` row, so the freshness gate now
 demands all of them.
 
-Not run anywhere yet: any ARM library; any library inside an app; any `.lcb` binding on an Android
-engine.
+**The first engine load, 2026-11-19** (OXT-Beyond pull request 572, head 7f66366, merged as
+6bab006; its `Android builder on linux-x86_64` job, run 44456373273). OXT-Beyond pinned the seven
+members at the commits the publisher carried the Android libraries to, and all twenty-eight
+pinned SHA-256s equal the ones 5aa3ad4 committed (compared 2026-11-21). Its CI built one app with
+OXT-Beyond's Android builder (the 0.2.8-dp.1 package with that pull request's builder), the seven
+`.lcb` extensions chosen in its standalone settings, for all four ABIs, and checked that the
+package held `lib/<abi>/lib<name>.so` for every extension and ABI. On an Android 16 x86_64
+emulator with 16 KB pages (API 36) the app's `openStack` called one handler of each extension
+inside a `try`, and each answered (read back from the job's log): sodiumxt's `sxVersion()`
+`SodiumXT 0.1.0 (libsodium 1.0.22)`; enetxt's `enLibraryVersion()` `enet 1.3.18`; datachannelxt's
+`dcLibraryVersion()` `libdatachannel v0.24.5`; box2dxt's `b2Version()` `4`; coinxt's
+`cxKeccak256Len()` `32`; torrentxt's `btLastError()` empty; curlxt's `cuLibraryVersion()`
+`curlxt ABI 1; libcurl/8.22.0 OpenSSL/3.5.9 libssh2/1.11.1; Android CA store: 149 certificates`,
+so its certificate reader ran inside an app, on the conscrypt path the Android 5.0 emulator does
+not have. `dumpsys package` showed the app holding INTERNET, which nothing but the four bindings'
+`metadata android.permissions` line asked for (the probe's settings name no permission: read in
+OXT-Beyond's `tools/ci/android-check.livecodescript`). The same step ran first on an Android 13
+emulator (API 33) and fails the job unless every extension answers; the job passed, and that
+step's lines were not read back for this record (INFERRED from the workflow and its result).
+What this is NOT: a member's selftest. One call per extension shows that the library loads from
+the package, the binding resolves and that call returns; no socket was opened, no torrent session
+started, no world stepped. And the device was x86_64: the
+`x86-android` and the ARM libraries rode in the package and were not loaded.
+
+Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
+selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app.
 
 ## What differs on Android, per member
 
 | Member | Difference | State |
 |---|---|---|
-| curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | tests run on the emulator 2026-11-18 (both x86 ABIs): 157 certificates read from its store. ARM: built, not run |
-| coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
-| torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
-| datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
+| curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | tests run on the emulator 2026-11-18 (both x86 ABIs): 157 certificates read from its store. Loaded by an engine in an app 2026-11-19 (x86_64, one call, the ABI 1 build): 149 certificates on Android 16. Rebuilt at ABI 2 on 2026-11-21 and tested on the emulator again; no Android engine has loaded that build. ARM: built, not run |
+| coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
+| torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
+| datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
-| xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built and tested by its own lane, not yet by a release run; no library committed |
-| sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
+| xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
 | nostrxt (script) | Pure script over coinxt and sodiumxt (both built for Android) and the engine's sockets. Its relay layer opens secure sockets, so an app needs the engine's SSL library in the package (the builder's `android,include revsecurity` setting) and the Internet permission ticked. Neither library file calls anything a desktop alone has (read 2026-11-18: no `shell`, no `open process`, no fixed path). | read, not run: verified statically; needs an OXT pass on Android |
 | riptide, nocloud, holde-em | Their windows are laid out for a 1200 x 640 desktop card. | no phone layout |
@@ -166,9 +205,11 @@ Every native extension that opens a socket needs the app to hold Android's INTER
 The four that do (enetxt, curlxt, datachannelxt, torrentxt) declare it in their binding,
 `metadata android.permissions is "INTERNET"`, the key OXT-Beyond's standalone builder reads from
 each extension an app includes and writes into the app's manifest (read in its
-`ide-support/revsblibrary.livecodescript`, 2026-11-18; not observed: verified statically; needs an
-OXT pass on Android). `tools/test-build-android.py` holds the four to that line and the other
-three to none. The script members ride the engine's own sockets, so an app that uses onionxt or
+`ide-support/revsblibrary.livecodescript`, 2026-11-18; OBSERVED 2026-11-19: the app of the first
+engine load, whose own settings name no permission, held INTERNET by `dumpsys package`; no socket
+was opened with it). The comment above the line in each `.lcb` still carries its 2026-11-18
+label and is corrected with the binding's next change (a `.lcb` edit starts the member's native
+lanes). `tools/test-build-android.py` holds the four to that line and the other three to none. The script members ride the engine's own sockets, so an app that uses onionxt or
 nostrxt alone still ticks Internet in the IDE's standalone settings.
 
 ## Landing the libraries
@@ -186,6 +227,8 @@ a shim change), which repeats 1 and 2.
    `tools/check-binary-freshness.py` (the gate names the edit), and replace this page's status
    paragraph with the run's record. (Done in the change that follows 5aa3ad4. A first landing
    only: once the ids are in `ships`, a rebuild needs no `--installing` allowance.)
-4. STILL OWED. Publishing carries each member's `src/code/<abi>-android/` to its repository when
-   this reaches `main`. OXT-Beyond then pins them in its `tools/oxt/xtalk-extensions.json`, and
-   its Android builder packs them into an app, where the first engine load can be observed.
+4. Publishing carries each member's `src/code/<abi>-android/` to its repository when this
+   reaches `main`. OXT-Beyond then pins them in its `tools/oxt/xtalk-extensions.json`, and its
+   Android builder packs them into an app, where an engine loads them. (Done 2026-11-19 for the
+   seven: OXT-Beyond pull request 572, the first engine load above. Its Android workflow runs the
+   same probe again whenever its pins move, so a rebuilt library meets an engine there.)
