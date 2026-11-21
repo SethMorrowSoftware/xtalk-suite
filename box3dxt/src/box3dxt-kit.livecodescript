@@ -2428,10 +2428,14 @@ private command b3kVisualLook pThing
    if tTex is a number and tTex > 0 then
       if sChecker[pThing] is not empty then r3TextureSetSmooth tTex, false
       r3TextureSetRepeat tTex, true
-      put r3MaterialCreate(255, 255, 255) into tMat
-      r3MaterialSetTexture tMat, tTex
       put tTex into sOwnTex[pThing]
-      put tMat into sOwnMat[pThing]
+      -- tMat was emptied above and r3MaterialSetTexture takes an Integer:
+      -- a material that could not be made is never handed on (engine note 6.4)
+      put r3MaterialCreate(255, 255, 255) into tMat
+      if tMat is a number and tMat > 0 then
+         r3MaterialSetTexture tMat, tTex
+         put tMat into sOwnMat[pThing]
+      end if
    else if sOwnLook[pThing] is not true then
       put b3kColorMat(sColor[pThing]) into tMat
    end if

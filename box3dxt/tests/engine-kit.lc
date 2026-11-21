@@ -861,6 +861,16 @@ command testRenderers
    b3kUseRenderer "render3dxt"
    check "back to render3dxt: the things are drawn again", item 1 of r3LiveCounts() is 1 and item 2 of r3LiveCounts() >= 2, r3LiveCounts()
    b3kSetTexture tBox, empty
+   -- a checker is a texture and a material of the thing's own: made once,
+   -- freed when the look changes (counts are "scenes,nodes,meshes,
+   -- materials,textures,lights"; red's material is the shared one)
+   put r3LiveCounts() into tCounts
+   b3kSetChecker tBox, "white", "black", 4
+   check "a checker makes one texture and one material", item 4 of r3LiveCounts() is item 4 of tCounts + 1 and item 5 of r3LiveCounts() is item 5 of tCounts + 1, tCounts && "then" && r3LiveCounts()
+   b3kSetChecker tBox, "white", "black", 8
+   check "a second checker frees the first one's", item 4 of r3LiveCounts() is item 4 of tCounts + 1 and item 5 of r3LiveCounts() is item 5 of tCounts + 1, tCounts && "then" && r3LiveCounts()
+   b3kSetColor tBox, "red"
+   check "a plain colour gives the checker's back", r3LiveCounts() is tCounts, tCounts && "then" && r3LiveCounts()
    b3kSetChecker tBox, "white", "black", 4
    b3kSetVisible tBox, false
    b3kSetVisible tBox, true
