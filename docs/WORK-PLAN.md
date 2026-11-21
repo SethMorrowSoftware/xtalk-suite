@@ -896,7 +896,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   in a browser (2026-11-21, Chromium): a web engine built locally from OXT-Beyond's pull
   request 606, with the committed web archives of box3dxt and render3dxt linked in, ran its
   frame loop at about 12 pictures a second with nothing in the console; its keys were not
-  driven. No IDE has run either:
+  driven. The same day it played in the web-2026.11.21 pre-release's Stack Player, keys and
+  mouse driven, built into a stack file for the community gallery (row 13). No IDE has run
+  either:
   verified statically; needs an OXT pass (row 10).
 
 | # | What | Needs | Runbook | Done when |
@@ -912,7 +914,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 10 | Orb Island and the Kit in an IDE: the eight checks under "WHAT TO VERIFY" in the game's header (the window, walking, the orbs, the toys, falling, the mouse, the keys and buttons, the light and dark appearance), with box3dxt alone and with render3dxt, on Windows, Linux and a Mac | S1 | - | each check answers as the header says, or the Kit is fixed |
 | 11 | The Kit's engine tests with render3dxt in CI: the native lane runs `tests/engine-kit.lc` and `tests/engine-demo.lc` with box3dxt's renderer only, because it was written before render3dxt joined main (#182, 2026-11-21); both pass with render3dxt locally (2026-11-21) | coding: the lane builds render3dxt's library and module too, and the published member takes render3dxt as a gate sibling | - | a lane runs both with render3dxt's module and library |
 | 12 | The Kit shipped as a script library beside the extension: a `.lce` of its own (with row 4) and an entry in OXT-Beyond's extension list, as box2dxt's Kit has, probed by `b3kVersion()` | coding, after row 4; OXT-Beyond | - | `b3kVersion()` answers 1 in an IDE with nothing pasted |
-| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine) | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
+| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine). Built so on 2026-11-21 (its window built once, then saved at 1104 by 640) and played in the web-2026.11.21 pre-release's Stack Player, the gallery's pinned one, keys and mouse driven (section 2.10's prose); the gallery's pull request 22 lists it, to merge once the gallery's player has render3dxt | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
 
 ### 2.11 render3dxt
 

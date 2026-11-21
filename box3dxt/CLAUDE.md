@@ -158,7 +158,8 @@ engine on 2026-11-21 (`tests/engine-kit.lc`, `tests/engine-demo.lc`; a local lib
 box3dxt's renderer and with a render3dxt built from its pull request); no IDE has run them.
 Orb Island has played once in a browser, on a web engine built locally from OXT-Beyond's pull
 request 606 with the committed web archives of box3dxt and render3dxt linked in (2026-11-21;
-its keys not driven). On Windows, OXT-Beyond 0.2.8-dp.1's IDE ran the committed ABI 2
+its keys not driven), and again that day in the web-2026.11.21 pre-release's Stack Player,
+keys and mouse driven, built into a stack file for the community gallery (README "Status"). On Windows, OXT-Beyond 0.2.8-dp.1's IDE ran the committed ABI 2
 `x86_64-win32` library as an installed extension (2026-11-21): from script in a hidden stack,
 the version calls, a drop that came to rest, ray casts, a contact event, and a picture read as
 data with picking and a ray through a pixel (README "Status"); no window, frame loop or game

@@ -143,9 +143,13 @@ Joined the suite on 2026-11-20. What has run, and where:
   locally from OXT-Beyond's pull request 606, with the committed web archives of box3dxt and
   render3dxt linked in (each SHA-256 checked against its pin), opened it and ran its frame
   loop, render3dxt drawing about 12 pictures a second, the orb counter and timer running and
-  nothing in the console; its keys were not driven. Neither has run in an IDE: a real
-  window, keyboard and mouse are verified statically; needs an OXT pass (the game's header
-  lists what to look at).
+  nothing in the console; its keys were not driven. The same day it played in a published
+  player, the web-2026.11.21 pre-release's Stack Player (box3dxt's ABI 2 web archive, no
+  render3dxt), in Chromium, built into a stack file for the community gallery: the window
+  built at its size, W walked to an orb that was counted, C dropped crates, V said render3dxt
+  was not loaded, a click knocked crates over and a drag turned the camera. Neither has run
+  in an IDE: a real window, keyboard and mouse there are verified statically; needs an OXT
+  pass (the game's header lists what to look at).
 - **On Windows, the release library** (2026-11-21): OXT-Beyond 0.2.8-dp.1's IDE on the
   maintainer's Windows PC (engine 9.7.1-BeyondEngine build 25923, x86_64), with box3dxt
   installed as an extension from the ABI 2 files then on the suite's main branch: the file
