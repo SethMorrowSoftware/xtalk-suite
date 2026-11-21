@@ -66,6 +66,33 @@ end dropFrame
 
 [docs/getting-started.md](docs/getting-started.md) carries on from there.
 
+## The game Kit (`b3k...`)
+
+For making games rather than simulations, `src/box3dxt-kit.livecodescript` is a pure-script
+toolkit over the binding, the 3D sibling of box2dxt's b2k Kit. You work in metres and degrees
+with y up; the Kit runs the world on a fixed step, draws it into one image, moves an orbiting
+camera, reads the keyboard, walks a player about, and sends your script `b3kFrame`,
+`b3kContact`, `b3kSensorEnter` and `b3kFell`. It draws with the suite's render3dxt when that
+extension is loaded (textured, lit, smooth edges) and with box3dxt's own renderer when it is
+not; the game code is the same either way.
+
+```livecodescript
+on openCard
+   b3kQuickStart                          -- world, view, ground, camera, go
+   b3kSpawnBox 0, 4, 0, 1, 1, 1, "orange"
+   b3kPlayerMake 0, 1, 3                  -- arrows or WASD walk, space jumps
+end openCard
+
+on closeCard
+   b3kTeardown
+end closeCard
+```
+
+[docs/kit-guide.md](docs/kit-guide.md) teaches it; [docs/kit-reference.md](docs/kit-reference.md)
+lists every handler. `examples/box3dxt-orb-island.livecodescript` is a small game on it, one
+file to paste into a stack: walk a floating island, find eight golden orbs, mind the sweeper,
+the wrecking ball and the edge.
+
 ## Status
 
 Joined the suite on 2026-11-20. What has run, and where:
@@ -101,6 +128,13 @@ Joined the suite on 2026-11-20. What has run, and where:
   (`docs/getting-started.md`, "Seeing the world");
   four minutes with up to 150 spheres counted no assert. One stack on one machine; on
   Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
+- **The game Kit and Orb Island** (2026-11-21): `tests/engine-kit.lc` runs the Kit as a
+  library on the headless Linux server engine (9.7.1-OXT, a locally built library) and checks
+  it scene by scene, hand-stepped so every number is reproducible, with box3dxt's renderer and
+  again with render3dxt (built from its pull request); `tests/engine-demo.lc` builds Orb
+  Island's window there and plays the game through, both ways and with no extension loaded.
+  Neither has run in an IDE: a real window, keyboard and mouse are verified statically; needs
+  an OXT pass (the game's header lists what to look at).
 - **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
   loaded a release library or an installed extension: on those it is verified statically;
   needs an OXT pass. The libraries
@@ -127,6 +161,9 @@ A C17 compiler and CMake 3.22 are all it needs; Box3D is fetched at configure ti
   rules that decide whether a scene works.
 - [docs/api-reference.md](docs/api-reference.md) - every `b3*` handler, generated from the
   binding's doc blocks.
+- [docs/kit-guide.md](docs/kit-guide.md) - the game Kit, from an empty stack to a game.
+- [docs/kit-reference.md](docs/kit-reference.md) - every `b3k*` handler, generated from the
+  Kit's doc blocks.
 - [docs/building.md](docs/building.md) - builds, sanitizers, the tests, the gates.
 - [CLAUDE.md](CLAUDE.md) - rules and gotchas for anyone changing this member.
 
@@ -170,6 +207,7 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- The demo UI kit (`tools/ui-kit.livecodescript`; gate `tools/check-ui-kit-drift.py`) in `examples/box3dxt-orb-island.livecodescript`.
 - `tools/check-livecodescript.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

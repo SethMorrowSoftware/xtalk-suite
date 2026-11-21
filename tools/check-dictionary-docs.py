@@ -99,6 +99,7 @@ CORPUS = [
     "nostrxt/src/nostrxt.livecodescript",
     "nostrxt/src/nostr-relay.livecodescript",
     "box3dxt/src/box3dxt.lcb",
+    "box3dxt/src/box3dxt-kit.livecodescript",
     "xlsxt/src/xlsxt.lcb",
     "curlxt/src/curl.lcb",
     "curlxt/src/curl-helpers.livecodescript",
@@ -124,6 +125,9 @@ EXEMPT = {
     },
     "box2dxt/src/box2dxt-kit.livecodescript": {
         "b2kStep": "the loop's timer message, sent by b2kStart and rescheduled by itself with send in; start the loop with b2kStart, never call it",
+    },
+    "box3dxt/src/box3dxt-kit.livecodescript": {
+        "b3kStep": "the loop's timer message, sent by b3kStart and rescheduled by itself with send in; start the loop with b3kStart, never call it",
     },
     "onionxt/src/onionxt.livecodescript": {
         "oxCtlOpened": "open socket message for the control connection; engine-called, not API (docs/05 lists it under handlers the engine calls)",

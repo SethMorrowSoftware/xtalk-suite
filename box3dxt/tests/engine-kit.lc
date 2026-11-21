@@ -1,0 +1,944 @@
+<?lc
+-- engine-kit.lc - the b3k game Kit (src/box3dxt-kit.livecodescript) on a
+-- REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine, the same engine core, LCB virtual
+-- machine and foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-kit.lc MODULE LIBRARY KIT [R3MODULE R3LIBRARY]
+--      MODULE     box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile
+--      LIBRARY    the built box3dxt library WITHOUT its extension
+--      KIT        the full path of src/box3dxt-kit.livecodescript
+--      R3MODULE   optional: render3dxt.lcm, to run the Kit over render3dxt
+--      R3LIBRARY  optional: the built render3dxt library without its extension
+--
+-- The Kit is set as the script of a stack made here (so the ENGINE compiles
+-- it: a compile error is the first FAIL) and that stack is used as a
+-- library, exactly as a game stack would use it. The world is hand-stepped
+-- with b3kStepOnce (the loop's own frame work, one 1/60 s step at a time),
+-- so every number below is reproducible; keys come from b3kInputInject.
+-- A probe button is the frame and contact target and logs what it hears.
+--
+-- Run it twice, without and with render3dxt: the Kit draws with whichever is
+-- there, and the game code (this file) is the same for both.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures. What this is NOT: a pass in the
+-- IDE, with a real keyboard and a real window, or on any other platform.
+
+global gB3kLog, gB3kFrames, gB3kOther
+local sPassed, sFailed, sR3
+
+on check pName, pOk, pDetail
+   if pOk is true then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=box3dxt Kit engine test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function near pA, pB, pTolerance
+   if pA is not a number or pB is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end near
+
+-- two "x,y,z" (or longer) lists, item by item
+function nearList pA, pB, pTolerance
+   local i
+   set the itemDelimiter to comma
+   if the number of items of pA is not the number of items of pB then return false
+   repeat with i = 1 to the number of items of pA
+      if not near(item i of pA, item i of pB, pTolerance) then return false
+   end repeat
+   return true
+end nearList
+
+function oneLine pText
+   replace return with " | " in pText
+   return pText
+end oneLine
+
+command stepN pCount
+   repeat pCount times
+      b3kStepOnce
+   end repeat
+end stepN
+
+-- the frame error so far, as a check of its own
+command noFrameError pWhere
+   check pWhere & ": no frame threw", b3kFrameError() is empty, oneLine(b3kFrameError())
+end noFrameError
+
+-- the colour of one pixel of the view, "r,g,b"
+function viewPixel pX, pY
+   local tData, tAt
+   put the imageData of image "b3kView" of stack "B3kHost" into tData
+   put (pY * the width of image "b3kView" of stack "B3kHost" + pX) * 4 into tAt
+   return byteToNum(byte tAt + 2 of tData) & comma & byteToNum(byte tAt + 3 of tData) & comma & byteToNum(byte tAt + 4 of tData)
+end viewPixel
+
+-- a fresh world with a ground, the probe as both targets
+command freshWorld
+   b3kSetup
+   b3kFrameTarget the long id of button "Probe" of stack "B3kHost"
+   b3kContactTarget the long id of button "Probe" of stack "B3kHost"
+   b3kAddGround 20
+   put empty into gB3kLog
+   put 0 into gB3kFrames
+end freshWorld
+
+-- ---------------------------------------------------------------------
+command testLoad
+   check "b3kVersion", b3kVersion() is 1, b3kVersion()
+   check "b3kHasPhysics sees box3dxt", b3kHasPhysics() is true, b3kHasPhysics()
+   check "b3kHasRender3d is whether render3dxt is loaded", b3kHasRender3d() is sR3, b3kHasRender3d() && sR3
+end testLoad
+
+-- whether the log holds a b3kContact with this thing on either side
+function heardContact pThing
+   local tLine
+   repeat for each line tLine in gB3kLog
+      if item 1 of tLine is "contact" and (item 2 of tLine is pThing or item 3 of tLine is pThing) then return true
+   end repeat
+   return false
+end heardContact
+
+-- With no target named, the messages go to the card that is current at
+-- b3kSetup. The Kit here is a LIBRARY (start using), as OXT-Beyond ships a
+-- script library, so the first default, "me", sent them to the library
+-- itself, where no game code is: this test fails on that default.
+command testDefaultTarget
+   local tBall
+   set the script of card 1 of stack "B3kHost" to the script of button "Probe" of stack "B3kHost"
+   b3kSetup
+   b3kAddGround 20
+   b3kSpawnBall 0, 2, 0, 1
+   put the result into tBall
+   put empty into gB3kLog
+   put 0 into gB3kFrames
+   stepN 60
+   check "with no target named, b3kFrame reaches the card current at b3kSetup", gB3kFrames is 60, gB3kFrames
+   check "and so do the touch messages", heardContact(tBall), oneLine(gB3kLog)
+   -- each b3kSetup chooses again: another stack's card now
+   create stack "B3kOther"
+   set the script of card 1 of stack "B3kOther" to "global gB3kOther" & return & "on b3kFrame" & return & "add 1 to gB3kOther" & return & "end b3kFrame"
+   set the defaultStack to "B3kOther"
+   b3kSetup
+   put 0 into gB3kFrames
+   put 0 into gB3kOther
+   stepN 3
+   set the defaultStack to "B3kHost"
+   check "each b3kSetup chooses the current card again", gB3kOther is 3 and gB3kFrames is 0, gB3kOther && gB3kFrames
+   -- a target the game names is kept by the next b3kSetup
+   b3kFrameTarget the long id of card 1 of stack "B3kHost"
+   set the defaultStack to "B3kOther"
+   b3kSetup
+   put 0 into gB3kFrames
+   put 0 into gB3kOther
+   stepN 3
+   set the defaultStack to "B3kHost"
+   check "a target the game named is kept by b3kSetup", gB3kFrames is 3 and gB3kOther is 0, gB3kFrames && gB3kOther
+   -- empty puts the default back: the card current now, chosen again by b3kSetup
+   set the defaultStack to "B3kOther"
+   b3kFrameTarget empty
+   set the defaultStack to "B3kHost"
+   b3kSetup
+   put 0 into gB3kFrames
+   put 0 into gB3kOther
+   stepN 2
+   check "b3kFrameTarget empty puts the default back", gB3kFrames is 2 and gB3kOther is 0, gB3kFrames && gB3kOther
+   set the script of card 1 of stack "B3kHost" to empty
+   delete stack "B3kOther"
+   noFrameError "default target"
+end testDefaultTarget
+
+command testWorld
+   local tWorld
+   b3kSetup
+   check "b3kSetup reports no error", the result is empty, the result
+   put b3kWorld() into tWorld
+   check "a world exists", tWorld is an integer and tWorld > 0, tWorld
+   if sR3 then
+      check "auto picks render3dxt when it is loaded", b3kRenderer() is "render3dxt", b3kRenderer()
+   else
+      check "auto picks box3dxt's renderer without render3dxt", b3kRenderer() is "box3dxt", b3kRenderer()
+   end if
+   check "gravity starts 0,-10,0", nearList(b3kGravity(), "0,-10,0", 0.0001), b3kGravity()
+   b3kSetGravity 0, -9.8, 0
+   check "b3kSetGravity reads back", nearList(b3kGravity(), "0,-9.8,0", 0.0001), b3kGravity()
+   check "not running after setup", b3kIsRunning() is false and b3kIsPaused() is false, b3kIsRunning() && b3kIsPaused()
+   b3kPause
+   check "b3kPause", b3kIsPaused() is true, b3kIsPaused()
+   b3kResume
+   check "b3kResume", b3kIsPaused() is false, b3kIsPaused()
+   b3kSetSubsteps 99
+   b3kSetup
+   check "b3kSetup again makes a new world", b3kWorld() is an integer and b3kWorld() is not tWorld, b3kWorld() && tWorld
+   noFrameError "world"
+end testWorld
+
+command testView
+   local tView, tCentre, tCorner, tStats, tBox
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   put the result into tView
+   check "b3kViewMake reports an image", tView contains "image", tView
+   check "b3kView is that image", b3kView() is tView, b3kView() && tView
+   check "the view is 160 by 120", the width of image "b3kView" of stack "B3kHost" is 160 and the height of image "b3kView" of stack "B3kHost" is 120, \
+         the rect of image "b3kView" of stack "B3kHost"
+   b3kSpawnBox 0, 0.5, 0, 1, 1, 1, "red"
+   put the result into tBox
+   b3kCamLookAt 0, 2, 6, 0, 0.5, 0, 50
+   b3kSetBackground "#102030"
+   b3kDraw
+   check "b3kDraw paints the whole view", the number of bytes of the imageData of image "b3kView" of stack "B3kHost" is 160 * 120 * 4, \
+         the number of bytes of the imageData of image "b3kView" of stack "B3kHost"
+   put viewPixel(2, 2) into tCorner
+   check "a corner shows the background", tCorner is "16,32,48", tCorner
+   put viewPixel(80, 60) into tCentre
+   check "the middle shows the red box, not the background", tCentre is not "16,32,48" and item 1 of tCentre > item 2 of tCentre, tCentre
+   put b3kStats() into tStats
+   set the itemDelimiter to comma
+   check "b3kStats counts two things and names the renderer", item 2 of tStats is 2 and item 4 of tStats is b3kRenderer() and item 5 of tStats is false, tStats
+   -- the loop's own drawing (b3kStepOnce runs a whole frame): a moved box
+   -- is in the next pictures, whichever renderer draws them
+   b3kMoveTo tBox, 6, 0.5, 0
+   stepN 3
+   put viewPixel(80, 60) into tCentre
+   check "a frame redraws: the box has left the middle", not (item 1 of tCentre > item 2 of tCentre + 40), tCentre
+   b3kMoveTo tBox, 0, 0.5, 0
+   stepN 3
+   put viewPixel(80, 60) into tCentre
+   check "and is back in the middle a few frames later", item 1 of tCentre > item 2 of tCentre + 40, tCentre
+   b3kSetRenderMode "wireframe"
+   b3kDraw
+   b3kSetRenderMode "solid"
+   b3kSetLight 0.3, -1, -0.2
+   b3kSetAmbient "40,40,40"
+   b3kSetFog "16,32,48", 5, 30
+   b3kSetSmooth 1
+   b3kDraw
+   b3kSetFog empty, empty, empty
+   b3kSync
+   check "the look calls draw without error", the number of bytes of the imageData of image "b3kView" of stack "B3kHost" is 160 * 120 * 4, "no picture"
+   noFrameError "view"
+end testView
+
+command testSpawn
+   local tThings, tA, tB, tC, tD, tE, tF, tG, tCube, tCount
+   freshWorld
+   put "v -0.5 -0.5 -0.5" & return & "v 0.5 -0.5 -0.5" & return & "v 0.5 0.5 -0.5" & return & "v -0.5 0.5 -0.5" & return & \
+         "v -0.5 -0.5 0.5" & return & "v 0.5 -0.5 0.5" & return & "v 0.5 0.5 0.5" & return & "v -0.5 0.5 0.5" & return & \
+         "f 1 4 3 2" & return & "f 5 6 7 8" & return & "f 1 2 6 5" & return & "f 4 8 7 3" & return & "f 1 5 8 4" & return & "f 2 3 7 6" into tCube
+   b3kSpawnBox -6, 1, 0, 1, 1, 1
+   put the result into tA
+   b3kSpawnBall -4, 1, 0, 1
+   put the result into tB
+   b3kSpawnCapsule -2, 1, 0, 1.6, 0.6
+   put the result into tC
+   b3kSpawnCylinder 0, 1, 0, 1, 1
+   put the result into tD
+   b3kSpawnCone 2, 1, 0, 1, 1
+   put the result into tE
+   b3kSpawnHull 4, 1, 0, "0,0,0;1,0,0;0,1,0;0,0,1"
+   put the result into tF
+   b3kSpawnModel 6, 1, 0, tCube, 1, "silver"
+   put the result into tG
+   check "every spawn reports a thing", tA > 0 and tB > 0 and tC > 0 and tD > 0 and tE > 0 and tF > 0 and tG > 0, \
+         tA && tB && tC && tD && tE && tF && tG && b3kLastError()
+   check "kinds", b3kKind(tA) & b3kKind(tB) & b3kKind(tC) & b3kKind(tD) & b3kKind(tE) & b3kKind(tF) & b3kKind(tG) is "boxballcapsulecylinderconehullmodel", \
+         b3kKind(tA) && b3kKind(tB) && b3kKind(tC) && b3kKind(tD) && b3kKind(tE) && b3kKind(tF) && b3kKind(tG)
+   check "b3kThingCount counts the ground and seven", b3kThingCount() is 8, b3kThingCount()
+   put b3kThings() into tThings
+   check "b3kThings lists them oldest first", the number of lines of tThings is 8 and line 2 of tThings is tA and line 3 of tThings is tB and line 8 of tThings is tG, \
+         oneLine(tThings) && tA && tB && tG
+   check "b3kIsThing", b3kIsThing(tA) is true and b3kIsThing("x") is false and b3kIsThing(999999) is false, b3kIsThing(tA)
+   b3kSetColor tA, "#ff8000"
+   check "b3kSetColor and b3kColor", b3kColor(tA) is "255,128,0", b3kColor(tA)
+   b3kSetColor tA, "teal"
+   check "a colour by name", b3kColor(tA) is "50,160,160", b3kColor(tA)
+   b3kSetColor tA, "180,20,300"
+   check "an r,g,b colour is kept in range", b3kColor(tA) is "180,20,255", b3kColor(tA)
+   b3kName tB, "hero"
+   check "b3kName and b3kThingNamed", b3kThingNamed("hero") is tB and b3kNameOf(tB) is "hero", b3kThingNamed("hero")
+   check "a 1 m box of density 1 weighs 1 kg", near(b3kMass(tA), 1, 0.001), b3kMass(tA)
+   b3kSetDensity tA, 3
+   check "b3kSetDensity changes the mass", near(b3kMass(tA), 3, 0.001), b3kMass(tA)
+   check "a model's mass is its hull's", near(b3kMass(tG), 1, 0.05), b3kMass(tG)
+   b3kRemove tB
+   check "b3kRemove", b3kIsThing(tB) is false and b3kThingNamed("hero") is empty and b3kThingCount() is 7, b3kThingCount()
+   b3kRemove tB
+   check "removing twice is harmless", b3kThingCount() is 7, b3kThingCount()
+   b3kSpawnBox 0, 1, 0, 0, -3, 1
+   check "a box of no size is refused or floored, never a throw", b3kFrameError() is empty, b3kLastError()
+   put b3kThingCount() into tCount
+   b3kClear
+   check "b3kClear removes every thing", b3kThingCount() is 0 and b3kWorld() is not empty, b3kThingCount() && b3kWorld()
+   noFrameError "spawn"
+end testSpawn
+
+command testDrop
+   local tBox, tBall, tMesh, tOn, tRot
+   freshWorld
+   b3kSpawnBox 0, 3, 0, 1, 1, 1
+   put the result into tBox
+   b3kSpawnBall 3, 3, 0, 1
+   put the result into tBall
+   stepN 120
+   check "a box falls to rest on the ground", near(b3kY(tBox), 0.5, 0.02), b3kPosition(tBox)
+   check "a ball rests on the ground", near(b3kY(tBall), 0.5, 0.02), b3kPosition(tBall)
+   check "gB3kFrames counts the frames", gB3kFrames is 120, gB3kFrames
+   b3kSetVelocity tBall, 1, 2, 3
+   check "b3kSetVelocity reads back", nearList(b3kVelocity(tBall), "1,2,3", 0.0001), b3kVelocity(tBall)
+   check "b3kSpeed", near(b3kSpeed(tBall), sqrt(14), 0.001), b3kSpeed(tBall)
+   b3kMoveTo tBall, 5, 4, -2
+   check "b3kMoveTo puts it there and stops it", nearList(b3kPosition(tBall), "5,4,-2", 0.0001) and nearList(b3kVelocity(tBall), "0,0,0", 0.0001), \
+         b3kPosition(tBall) && b3kVelocity(tBall)
+   check "b3kX, b3kY, b3kZ", b3kX(tBall) = 5 and b3kY(tBall) = 4 and b3kZ(tBall) = -2, b3kX(tBall) && b3kY(tBall) && b3kZ(tBall)
+   b3kPush tBall, 0, 6, 0
+   check "b3kPush adds speed", near(item 2 of b3kVelocity(tBall), 6, 0.001), b3kVelocity(tBall)
+   b3kSetGravityScale tBall, 0
+   b3kSetVelocity tBall, 0, 0, 0
+   stepN 30
+   check "gravity scale 0 floats", near(b3kY(tBall), 4, 0.001), b3kPosition(tBall)
+   b3kSetGravityScale tBall, 1
+   -- rotation round trips through the three angles b3kSetRotation takes
+   repeat for each item tRot in "10 20 30,-40 70 -100,170 -10 5,0 0 90"
+      b3kSetRotation tBox, word 1 of tRot, word 2 of tRot, word 3 of tRot
+      check "b3kRotation reads back b3kSetRotation " & tRot, nearList(b3kRotation(tBox), word 1 of tRot & comma & word 2 of tRot & comma & word 3 of tRot, 0.01), \
+            b3kRotation(tBox)
+   end repeat
+   b3kTurnTo tBox, 90
+   check "b3kTurnTo and b3kYaw", near(b3kYaw(tBox), 90, 0.01), b3kYaw(tBox)
+   b3kTurnTo tBox, -135
+   check "b3kYaw past 90", near(b3kYaw(tBox), -135, 0.01), b3kYaw(tBox)
+   b3kSetType tBox, "static"
+   check "b3kSetType static", b3kType(tBox) is "static", b3kType(tBox)
+   b3kSetType tBox, "kinematic"
+   check "b3kSetType kinematic", b3kType(tBox) is "kinematic", b3kType(tBox)
+   b3kSetType tBox, "dynamic"
+   check "b3kSetType dynamic", b3kType(tBox) is "dynamic", b3kType(tBox)
+   -- a static mesh made from OBJ text: a ball comes to rest on top of it
+   b3kAddStaticModel 8, 1, 8, "v -2 0 -2" & return & "v 2 0 -2" & return & "v 2 0 2" & return & "v -2 0 2" & return & "f 1 4 3 2" & return, 1
+   put the result into tMesh
+   check "b3kAddStaticModel makes a thing", tMesh > 0 and b3kType(tMesh) is "static", tMesh && b3kLastError()
+   b3kSpawnBall 8, 3, 8, 0.5
+   put the result into tOn
+   stepN 120
+   check "a ball rests on a mesh made from OBJ text", near(b3kY(tOn), 1.25, 0.03), b3kPosition(tOn)
+   noFrameError "drop"
+end testDrop
+
+command testEvents
+   local tBall, tSensor, tLost, tSeen, tLine, tDone, i
+   freshWorld
+   b3kSpawnBall 0, 2, 0, 1
+   put the result into tBall
+   stepN 60
+   put false into tSeen
+   repeat for each line tLine in gB3kLog
+      if item 1 of tLine is "contact" and (item 2 of tLine is tBall or item 3 of tLine is tBall) then put true into tSeen
+   end repeat
+   check "b3kContact reaches the contact target", tSeen, oneLine(gB3kLog)
+   -- a sensor in the air; a ball falls through it, in and out
+   put empty into gB3kLog
+   b3kAddSensorBox 4, 3, 0, 2, 1, 2
+   put the result into tSensor
+   b3kSpawnBall 4, 6, 0, 0.5
+   put the result into tBall
+   stepN 120
+   check "b3kSensorEnter: the sensor, then the visitor", gB3kLog contains ("sensorenter," & tSensor & comma & tBall), oneLine(gB3kLog)
+   check "b3kSensorExit when it leaves", gB3kLog contains ("sensorexit," & tSensor & comma & tBall), oneLine(gB3kLog)
+   check "the ball fell through the sensor to the ground", near(b3kY(tBall), 0.25, 0.03), b3kPosition(tBall)
+   -- b3kEvents polls the same events, one frame at a time
+   b3kSpawnBall -4, 1.5, 0, 1
+   put the result into tBall
+   put false into tDone
+   repeat with i = 1 to 90
+      b3kStepOnce
+      if b3kEvents() contains "contact," then put true into tDone
+   end repeat
+   check "b3kEvents lists a frame's contacts", tDone, "never"
+   -- the kill floor: off the 20 m ground, a ball is reported and removed
+   put empty into gB3kLog
+   b3kKillFloor -3
+   b3kSpawnBall 15, 2, 0, 0.5
+   put the result into tLost
+   stepN 90
+   check "b3kFell reaches the frame target", gB3kLog contains ("fell," & tLost), oneLine(gB3kLog)
+   check "and the fallen thing is removed", b3kIsThing(tLost) is false, b3kPosition(tLost)
+   noFrameError "events"
+end testEvents
+
+command testPicking
+   local tBox, tAt, tHit, tGround, tNear
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kSpawnBox 0, 0.5, 0, 1, 1, 1
+   put the result into tBox
+   b3kCamLookAt 0, 2, 10, 0, 0.5, 0, 50
+   put b3kProject(0, 0.5, 0) into tAt
+   check "b3kProject puts the target at the view's middle", tAt is "80,60", tAt
+   put b3kProject(0, 0.5, 20) into tAt
+   check "b3kProject: behind the camera is empty", tAt is empty, tAt
+   put b3kThingAt(80, 60) into tHit
+   check "b3kThingAt finds the box", tHit is tBox, tHit && b3kHitPoint()
+   check "b3kHitNormal: its front face", nearList(b3kHitNormal(), "0,0,1", 0.001), b3kHitNormal()
+   check "b3kHitPoint is on the front face", near(item 3 of b3kHitPoint(), 0.5, 0.01), b3kHitPoint()
+   check "b3kPointAt is that point", nearList(b3kPointAt(80, 60), b3kHitPoint(), 0.0001), b3kPointAt(80, 60)
+   put b3kGroundPoint(80, 110) into tGround
+   check "b3kGroundPoint lands on y = 0 in front of the box", item 2 of tGround = 0 and near(item 1 of tGround, 0, 0.001) and item 3 of tGround > 0.5, tGround
+   check "b3kGroundPoint at another height", item 2 of b3kGroundPoint(80, 60, 0.5) = 0.5 and near(item 3 of b3kGroundPoint(80, 60, 0.5), 0, 0.001), \
+         b3kGroundPoint(80, 60, 0.5)
+   put b3kRayHit(0, 5, 0, 0, -10, 0) into tHit
+   check "b3kRayHit straight down finds the box top", tHit is tBox and near(item 2 of b3kHitPoint(), 1, 0.001) and nearList(b3kHitNormal(), "0,1,0", 0.001), \
+         tHit && b3kHitPoint() && b3kHitNormal()
+   check "b3kHitDistance", near(b3kHitDistance(), 4, 0.001), b3kHitDistance()
+   check "b3kRayHit into empty air", b3kRayHit(0, 5, 0, 0, 10, 0) is empty and b3kHitPoint() is empty, b3kHitPoint()
+   put b3kOverlapSphere(0, 0.5, 0, 0.2) into tNear
+   check "b3kOverlapSphere finds the box", tNear is tBox, oneLine(tNear)
+   put b3kOverlapSphere(0, 0.5, 0, 2) into tNear
+   check "a bigger sphere finds the ground too", the number of lines of tNear is 2, oneLine(tNear)
+   noFrameError "picking"
+end testPicking
+
+command testCamera
+   local tYaw, tThing
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kCamOrbit 0, 30, 10, 0, 0, 0
+   check "b3kCamOrbit: the eye", nearList(b3kCamEye(), "0,5,8.660254", 0.0001), b3kCamEye()
+   check "b3kCamYaw, Pitch, Distance", b3kCamYaw() = 0 and b3kCamPitch() = 30 and b3kCamDistance() = 10, b3kCamYaw() && b3kCamPitch() && b3kCamDistance()
+   b3kCamOrbitBy 90, 0
+   check "b3kCamOrbitBy 90 carries the eye round to +x", nearList(b3kCamEye(), "8.660254,5,0", 0.0001), b3kCamEye()
+   b3kCamZoom 5
+   check "b3kCamZoom", b3kCamDistance() = 5, b3kCamDistance()
+   b3kCamZoomBy 2
+   check "b3kCamZoomBy", b3kCamDistance() = 10, b3kCamDistance()
+   b3kCamSetFov 60
+   check "b3kCamSetFov ends b3kCamText", item -1 of b3kCamText() = 60, b3kCamText()
+   b3kCamLookAt 0, 5, 10, 0, 0, 0
+   check "b3kCamLookAt: yaw, pitch, distance", near(b3kCamYaw(), 0, 0.0001) and near(b3kCamPitch(), 26.565051, 0.0001) and near(b3kCamDistance(), sqrt(125), 0.0001), \
+         b3kCamYaw() && b3kCamPitch() && b3kCamDistance()
+   check "b3kCamTarget", nearList(b3kCamTarget(), "0,0,0", 0.0001), b3kCamTarget()
+   -- "turn" (q, e): e turns the view right, so the yaw goes down
+   b3kInputOn
+   b3kInputInject "e"
+   put b3kCamYaw() into tYaw
+   stepN 30
+   check "holding e turns the view right, 120 degrees a second", near(b3kCamYaw(), tYaw - 60, 0.5), tYaw && b3kCamYaw()
+   b3kInputInject "q"
+   stepN 30
+   check "q turns it back", near(b3kCamYaw(), tYaw, 0.5), b3kCamYaw()
+   b3kInputInject empty
+   -- follow: the target eases onto the thing, height above it
+   b3kSpawnBall 6, 3, -4, 1
+   put the result into tThing
+   b3kCamFollow tThing, 0.5, 1
+   stepN 90
+   check "b3kCamFollow brings the target to the thing", nearList(b3kCamTarget(), (6 & comma & b3kY(tThing) + 1 & comma & -4), 0.05), \
+         b3kCamTarget() && b3kPosition(tThing)
+   b3kCamUnfollow
+   b3kCamShake 0.2, 100
+   b3kStepOnce
+   b3kCamMouseOrbit true
+   b3kStepOnce
+   check "b3kCamDragged is false with no press", b3kCamDragged() is false, b3kCamDragged()
+   b3kCamMouseOrbit false
+   b3kInputInjectOff
+   noFrameError "camera"
+end testCamera
+
+command testJoints
+   local tWheel, tJ, tLift, tSlide, tHook, tBob, tRope, tSlack, tMin, tD, tA, tB, tWeld, tOffset, tP, tQ, tPin, tBall, i
+   freshWorld
+   -- a hinge pinned to the world at a bar's middle, driven at 90 deg/s
+   b3kSpawnBox 0, 5, -8, 2, 0.2, 0.2
+   put the result into tWheel
+   b3kHinge tWheel, empty
+   put the result into tJ
+   check "b3kHinge pins to the world", tJ is an integer and tJ > 0, tJ && b3kLastError()
+   b3kMotor tJ, 90, 1000
+   stepN 60
+   check "b3kMotor turns a hinge at its speed", near(b3kHingeAngle(tJ), 90, 3), b3kHingeAngle(tJ)
+   check "the bar stays at its pin", nearList(b3kPosition(tWheel), "0,5,-8", 0.01), b3kPosition(tWheel)
+   -- a limit set while inside it holds against a motor of sensible strength
+   b3kMotor tJ, -90, 20
+   stepN 60
+   b3kHingeLimit tJ, 45, -30
+   stepN 60
+   check "b3kHingeLimit (ends in either order) holds the bottom end", near(b3kHingeAngle(tJ), -30, 2), b3kHingeAngle(tJ)
+   b3kHingeLimit tJ, empty, empty
+   stepN 30
+   check "taking the limit off lets the motor turn it on", b3kHingeAngle(tJ) < -38, b3kHingeAngle(tJ)
+   b3kMotor tJ, empty
+   b3kRemoveJoint tJ
+   b3kRemoveJoint tJ
+   check "b3kHingeAngle of a removed joint is 0", b3kHingeAngle(tJ) is 0, b3kHingeAngle(tJ)
+   -- a slider: a lift driven up one metre a second, then stopped at 0.5 m
+   b3kSpawnBox 4, 1, -8, 1, 0.3, 1
+   put the result into tLift
+   b3kSlider tLift, empty, 0, 1, 0
+   put the result into tSlide
+   b3kMotor tSlide, 1, 1000
+   stepN 60
+   check "a slider's motor drives it up, b3kHingeAngle reads metres", near(b3kHingeAngle(tSlide), 1, 0.05) and near(b3kY(tLift), 2, 0.05), \
+         b3kHingeAngle(tSlide) && b3kPosition(tLift)
+   check "a slider keeps to its line", near(b3kX(tLift), 4, 0.01) and near(b3kZ(tLift), -8, 0.01), b3kPosition(tLift)
+   b3kHingeLimit tSlide, 0, 0.5
+   stepN 60
+   check "b3kHingeLimit stops a slider (metres)", near(b3kHingeAngle(tSlide), 0.5, 0.05), b3kHingeAngle(tSlide)
+   -- a rope: taut at its length, slack when pushed up
+   b3kAddStaticBox -4, 6, -8, 0.4, 0.4, 0.4
+   put the result into tHook
+   b3kSpawnBall -4, 4.5, -8, 0.5
+   put the result into tBob
+   b3kRope tHook, tBob, 3
+   put the result into tRope
+   check "b3kRope makes a joint", tRope is an integer and tRope > 0, tRope && b3kLastError()
+   stepN 120
+   check "a rope holds at its length", near(b3kDistance(tHook, tBob), 3, 0.05), b3kDistance(tHook, tBob)
+   b3kPush tBob, 0, 6, 0
+   put 99 into tMin
+   repeat with i = 1 to 30
+      b3kStepOnce
+      put min(tMin, b3kDistance(tHook, tBob)) into tMin
+   end repeat
+   check "a rope goes slack when the ends come closer", tMin < 2.5, tMin
+   -- a ball joint 2 m above a ball
+   b3kSpawnBall -8, 2, -8, 0.5
+   put the result into tBall
+   b3kBallJoint tBall, empty, -8, 4, -8
+   put the result into tPin
+   stepN 60
+   check "b3kBallJoint holds 2 m from its point", near(b3kY(tBall), 2, 0.02), b3kPosition(tBall)
+   -- a weld: two boxes fall as one
+   b3kSpawnBox 8, 4, -8, 1, 1, 1
+   put the result into tA
+   b3kSpawnBox 9, 4.5, -8, 0.5, 0.5, 0.5
+   put the result into tB
+   b3kWeld tA, tB
+   put the result into tWeld
+   stepN 90
+   check "b3kWeld: the pair keeps its offset", near(b3kX(tB) - b3kX(tA), 1, 0.02) and near(b3kY(tB) - b3kY(tA), 0.5, 0.02), \
+         b3kPosition(tA) && b3kPosition(tB)
+   -- no-collide: two boxes in one place, made before the first step, stay there
+   b3kSpawnBox -8, 3, 6, 1, 1, 1
+   put the result into tP
+   b3kSpawnBox -8, 3, 6, 1, 1, 1
+   put the result into tQ
+   b3kSetGravityScale tP, 0
+   b3kSetGravityScale tQ, 0
+   b3kNoCollide tP, tQ
+   check "b3kNoCollide makes a joint", the result is an integer, b3kLastError()
+   stepN 30
+   check "b3kNoCollide: the two overlap and stay", b3kDistance(tP, tQ) < 0.01, b3kDistance(tP, tQ)
+   b3kHinge "junk", empty
+   check "a joint to something not a thing is refused", the result is empty, the result
+   b3kRope tA, empty
+   check "a rope needs two things", the result is empty, the result
+   b3kMotor "junk", 10
+   b3kHingeLimit 0, 1, 2
+   b3kRemoveJoint empty
+   check "joint calls on no joint are harmless", b3kHingeAngle("junk") is 0, b3kHingeAngle("junk")
+   noFrameError "joints"
+end testJoints
+
+command testInput
+   b3kInputOn
+   check "b3kInputIsOn", b3kInputIsOn() is true, b3kInputIsOn()
+   freshWorld
+   b3kInputInject "left"
+   b3kStepOnce
+   check "an injected key is down", b3kKeyIsDown("left") is true, b3kKeysHeld()
+   check "and pressed on its first frame", b3kKeyPressed("left") is true, b3kKeyPressed("left")
+   b3kStepOnce
+   check "pressed only once", b3kKeyPressed("left") is false and b3kKeyIsDown("left") is true, b3kKeyPressed("left")
+   check "axis moveX is -1 on left", b3kAxis("moveX") is -1, b3kAxis("moveX")
+   b3kInputInject empty
+   b3kStepOnce
+   check "released on the frame it comes up", b3kKeyReleased("left") is true and b3kKeyIsDown("left") is false, b3kKeysHeld()
+   b3kInputInject "a,d"
+   b3kStepOnce
+   check "both ends of an axis read 0", b3kAxis("moveX") is 0, b3kAxis("moveX")
+   b3kInputInject "W"
+   b3kStepOnce
+   check "a letter binds both cases (moveY forward)", b3kAxis("moveY") is 1, b3kAxis("moveY")
+   b3kBindAction "fire", "x,control"
+   b3kInputInject "control"
+   b3kStepOnce
+   check "b3kBindAction: any key of the set", b3kActionIsDown("fire") is true and b3kActionPressed("fire") is true, b3kActionIsDown("fire")
+   b3kInputInject "x"
+   b3kStepOnce
+   check "switching keys inside an action is no new press", b3kActionPressed("fire") is false and b3kActionIsDown("fire") is true, b3kActionPressed("fire")
+   b3kInputInject empty
+   b3kStepOnce
+   check "b3kActionReleased", b3kActionReleased("fire") is true, b3kActionReleased("fire")
+   b3kInputInject "space,up"
+   b3kStepOnce
+   check "b3kKeysHeld names the keys", b3kKeysHeld() is "space up", b3kKeysHeld()
+   check "the jump action is bound to space", b3kActionIsDown("jump") is true, b3kActionIsDown("jump")
+   check "an action never bound is up", b3kActionIsDown("nothing") is false, b3kActionIsDown("nothing")
+   b3kInputOff
+   check "b3kInputOff: every key reads up", b3kKeyIsDown("space") is false and b3kInputIsOn() is false, b3kKeysHeld()
+   b3kInputOn
+   b3kInputInjectOff
+   noFrameError "input"
+end testInput
+
+command testPlayer
+   local tHero, tZ, tX, tY, tMax, tVy, tRose, tLeft, i, tPlat, tSensor, tWas
+   freshWorld
+   b3kCamOrbit 0, 25, 12, 0, 0, 0
+   b3kPlayerMake 0, 1, 0
+   put the result into tHero
+   check "b3kPlayerMake makes a capsule player", tHero > 0 and b3kPlayer() is tHero and b3kKind(tHero) is "capsule", tHero && b3kKind(tHero)
+   b3kInputInject empty
+   stepN 40
+   check "the player stands on the ground", b3kPlayerOnGround() is true and near(b3kY(tHero), 0.8, 0.03), b3kPlayerOnGround() && b3kPosition(tHero)
+   check "the camera follows the player", near(item 1 of b3kCamTarget(), b3kX(tHero), 0.1), b3kCamTarget()
+   -- forward is away from the camera: at yaw 0 the camera looks along -z
+   put b3kZ(tHero) into tZ
+   b3kInputInject "up"
+   stepN 60
+   check "up walks forward (away from the camera) at about moveSpeed", b3kZ(tHero) < tZ - 4.4 and b3kZ(tHero) > tZ - 5.1 and abs(b3kX(tHero)) < 0.05, b3kPosition(tHero)
+   check "and faces that way (180 is -z)", near(abs(b3kPlayerFacing()), 180, 1), b3kPlayerFacing()
+   check "a walking player stays upright", nearList(b3kRotation(tHero), "0,0,180", 1) or nearList(b3kRotation(tHero), "180,0,0", 1) or nearList(b3kRotation(tHero), "0,0,-180", 1) or near(abs(b3kYaw(tHero)), 180, 1), \
+         b3kRotation(tHero) && b3kYaw(tHero)
+   b3kInputInject "right"
+   put b3kX(tHero) into tX
+   stepN 60
+   check "right walks to the camera's right (+x)", b3kX(tHero) > tX + 4.4 and near(b3kPlayerFacing(), 90, 1), b3kPosition(tHero) && b3kPlayerFacing()
+   b3kInputInject empty
+   stepN 20
+   check "letting go stops it", b3kSpeed(tHero) < 0.05, b3kVelocity(tHero)
+   -- a held jump: about jumpSpeed^2 / 2g high
+   put b3kY(tHero) into tY
+   put tY into tMax
+   b3kInputInject "space"
+   repeat with i = 1 to 70
+      b3kStepOnce
+      put max(tMax, b3kY(tHero)) into tMax
+   end repeat
+   check "a held jump rises about 1.5 m", near(tMax - tY, 5.5 * 5.5 / 20, 0.12), tMax - tY
+   check "and lands", b3kPlayerOnGround() is true, b3kPosition(tHero)
+   -- a tapped jump is cut short
+   b3kInputInject empty
+   b3kStepOnce
+   put b3kY(tHero) into tY
+   put tY into tMax
+   b3kInputInject "space"
+   b3kStepOnce
+   b3kStepOnce
+   b3kInputInject empty
+   repeat with i = 1 to 70
+      b3kStepOnce
+      put max(tMax, b3kY(tHero)) into tMax
+   end repeat
+   check "a tapped jump is lower (jumpCut)", tMax - tY < 0.8 and tMax - tY > 0.1, tMax - tY
+   -- no second jump in the air without airJumps; one with airJumps 1
+   b3kInputInject "space"
+   stepN 10
+   b3kInputInject empty
+   stepN 2
+   b3kInputInject "space"
+   b3kStepOnce
+   put item 2 of b3kVelocity(tHero) into tVy
+   check "no jump in the air without airJumps", tVy < 4, tVy
+   stepN 80
+   b3kPlayerSet "airJumps", 1
+   b3kInputInject "space"
+   stepN 10
+   b3kInputInject empty
+   stepN 2
+   b3kInputInject "space"
+   b3kStepOnce
+   put item 2 of b3kVelocity(tHero) into tVy
+   check "airJumps 1 gives a double jump", near(tVy, 5.5, 0.3), tVy
+   b3kInputInject empty
+   stepN 90
+   b3kPlayerSet "airJumps", empty
+   check "b3kPlayerGet: a knob put back to its default", b3kPlayerGet("airJumps") is 0 and b3kPlayerGet("JUMPSPEED") is 5.5, b3kPlayerGet("airJumps")
+   b3kPlayerSet "myScore", "abc"
+   check "an unknown knob is kept for the game", b3kPlayerGet("myScore") is "abc", b3kPlayerGet("myScore")
+   -- coyote time: a jump just after walking off an edge still counts
+   b3kAddStaticBox 0, 1.5, -20, 4, 3, 4
+   b3kPlayerRespawn 0, 3.9, -20
+   b3kInputInject empty
+   stepN 20
+   check "b3kPlayerRespawn on a block", b3kPlayerOnGround() is true and near(b3kY(tHero), 3.8, 0.03), b3kPosition(tHero)
+   b3kInputInject "up"
+   put false into tLeft
+   repeat with i = 1 to 60
+      b3kStepOnce
+      if b3kPlayerOnGround() is false then
+         put true into tLeft
+         exit repeat
+      end if
+   end repeat
+   b3kInputInject "up,space"
+   b3kStepOnce
+   b3kStepOnce
+   put item 2 of b3kVelocity(tHero) into tVy
+   check "coyote time: jump just after leaving the edge", tLeft and tVy > 4, tLeft && tVy
+   b3kInputInject empty
+   stepN 120
+   -- too late: 300 ms after leaving, no jump
+   b3kPlayerRespawn 0, 3.9, -20
+   stepN 20
+   b3kInputInject "up"
+   repeat with i = 1 to 60
+      b3kStepOnce
+      if b3kPlayerOnGround() is false then exit repeat
+   end repeat
+   stepN 18
+   b3kInputInject "up,space"
+   b3kStepOnce
+   put item 2 of b3kVelocity(tHero) into tVy
+   check "no jump long after leaving the edge", tVy < 0, tVy
+   b3kInputInject empty
+   stepN 120
+   -- the jump buffer: pressed just before landing, it happens on landing
+   b3kPlayerRespawn 0, 2.5, 0
+   put false into tRose
+   repeat with i = 1 to 120
+      b3kStepOnce
+      if b3kY(tHero) < 1.05 and item 2 of b3kVelocity(tHero) < 0 then exit repeat
+   end repeat
+   b3kInputInject "space"
+   b3kStepOnce
+   b3kInputInject empty
+   repeat with i = 1 to 12
+      b3kStepOnce
+      if item 2 of b3kVelocity(tHero) > 1 then put true into tRose
+   end repeat
+   check "the jump buffer: a press just before landing jumps", tRose, b3kPosition(tHero)
+   stepN 90
+   -- script steering, and control off
+   b3kPlayerSteer 1, 0
+   put b3kX(tHero) into tX
+   stepN 30
+   check "b3kPlayerSteer walks it with no keys", b3kX(tHero) > tX + 2, b3kPosition(tHero)
+   b3kPlayerSteer empty, empty
+   stepN 20
+   b3kPlayerControl false
+   b3kInputInject "up"
+   put b3kZ(tHero) into tZ
+   stepN 30
+   check "b3kPlayerControl false: the keys do nothing", near(b3kZ(tHero), tZ, 0.01), b3kPosition(tHero)
+   b3kPlayerControl true
+   b3kInputInject empty
+   -- the ground sweep looks past sensors: falling through one is not ground
+   b3kAddSensorBox 6, 5.5, 6, 3, 1, 3
+   put the result into tSensor
+   b3kPlayerRespawn 6, 5.6, 6
+   b3kStepOnce
+   check "inside a sensor is not ground", b3kPlayerOnGround() is false, b3kPosition(tHero)
+   stepN 90
+   -- a moving platform carries the player
+   b3kAddPlatform -6, 0.3, 6, 3, 0.2, 3
+   put the result into tPlat
+   b3kPlayerRespawn -6, 1.3, 6
+   stepN 20
+   b3kSetVelocity tPlat, 1, 0, 0
+   put b3kX(tHero) into tX
+   stepN 60
+   check "a moving platform carries the player", near(b3kX(tHero) - tX, 1, 0.15) and b3kPlayerOnGround() is true, b3kX(tHero) - tX && b3kPosition(tHero)
+   b3kSetVelocity tPlat, 0, 0, 0
+   -- remove: the thing stays and is an ordinary thing again
+   b3kPlayerRemove
+   check "b3kPlayerRemove: no player, the thing stays", b3kPlayer() is empty and b3kIsThing(tHero) is true, b3kPlayer()
+   check "its collision filter is back", item 1 of b3ShapeFilter(b3kShapeOf(tHero)) is 9007199254740991, b3ShapeFilter(b3kShapeOf(tHero))
+   check "knobs go back to defaults", b3kPlayerGet("myScore") is empty, b3kPlayerGet("myScore")
+   b3kPlayerAttach tPlat
+   check "a platform cannot be the player", the result is empty and b3kPlayer() is empty, the result
+   b3kPlayerMake 0, 1, 3, "ball", "blue"
+   put the result into tHero
+   stepN 30
+   check "a ball player stands too", b3kPlayerOnGround() is true and b3kKind(tHero) is "ball", b3kPosition(tHero)
+   b3kInputInject "up"
+   put b3kZ(tHero) into tZ
+   stepN 60
+   check "a ball player rolls forward", b3kZ(tHero) < tZ - 3, b3kPosition(tHero)
+   b3kInputInject empty
+   b3kRemove tHero
+   check "removing the player's thing ends the player", b3kPlayer() is empty, b3kPlayer()
+   b3kPlayerMake 2, 1, 3, "box"
+   check "a box player", b3kKind(b3kPlayer()) is "box", b3kKind(b3kPlayer())
+   b3kClear
+   check "b3kClear removes the player", b3kPlayer() is empty, b3kPlayer()
+   noFrameError "player"
+end testPlayer
+
+command testGlideAndMore
+   local tPlat, tBox, tBall, tBefore
+   freshWorld
+   b3kAddPlatform 0, 1, -5, 2, 0.2, 2
+   put the result into tPlat
+   check "b3kAddPlatform is kinematic", b3kType(tPlat) is "kinematic", b3kType(tPlat)
+   b3kGlideTo tPlat, 0, 3, -5, 1
+   check "b3kIsGliding while it moves", b3kIsGliding(tPlat) is true, b3kIsGliding(tPlat)
+   stepN 70
+   check "b3kGlideTo arrives", nearList(b3kPosition(tPlat), "0,3,-5", 0.01) and b3kIsGliding(tPlat) is false, b3kPosition(tPlat)
+   b3kSpawnBox 3, 0.5, 3, 1, 1, 1
+   put the result into tBox
+   b3kSpawnBall 4.2, 0.5, 3, 1
+   put the result into tBall
+   stepN 10
+   b3kExplode 3.6, 0.5, 3, 3, 8
+   b3kStepOnce
+   check "b3kExplode throws things apart", b3kSpeed(tBox) > 0.5 and b3kSpeed(tBall) > 0.5, b3kSpeed(tBox) && b3kSpeed(tBall)
+   b3kDisable tBall
+   put b3kPosition(tBall) into tBefore
+   stepN 30
+   check "a disabled thing stays put", b3kPosition(tBall) is tBefore, b3kPosition(tBall)
+   b3kEnable tBall
+   b3kSetBounce tBall, 0.9
+   b3kSetFriction tBall, 0.1
+   b3kSetDamping tBall, 0.5, 0.5
+   b3kSetBullet tBall, true
+   b3kKeepUpright tBox, true
+   b3kTorque tBox, 0, 0, 50
+   b3kStepOnce
+   check "b3kKeepUpright: a torque cannot tip it", nearList(b3kRotation(tBox), "0,0,0", 0.5) or near(abs(b3kYaw(tBox)), 0, 180), b3kRotation(tBox)
+   b3kSetSpin tBall, 0, 90, 0
+   b3kForce tBall, 0, 10, 0
+   b3kImpulse tBall, 1, 0, 0
+   b3kWake tBall
+   check "b3kIsAwake", b3kIsAwake(tBall) is true, b3kIsAwake(tBall)
+   b3kSetVisible tBox, false
+   check "b3kSetVisible", b3kIsVisible(tBox) is false, b3kIsVisible(tBox)
+   b3kSetVisible tBox, true
+   b3kSetChecker tBox, "white", "black", 4
+   b3kAddWalls 2
+   b3kAddRamp 6, 0.5, -6, 3, 0.2, 2, 20, 45
+   check "scenery calls make things", b3kThingCount() >= 9, b3kThingCount()
+   noFrameError "more"
+end testGlideAndMore
+
+command testRenderers
+   local tCounts, tBox
+   if not sR3 then
+      check "render3dxt is not loaded: b3kUseRenderer render3dxt falls back", true
+      freshWorld
+      b3kUseRenderer "render3dxt"
+      check "no render3dxt, no render3dxt renderer", b3kRenderer() is not "render3dxt", b3kRenderer()
+      b3kUseRenderer "none"
+      check "b3kUseRenderer none", b3kRenderer() is "none", b3kRenderer()
+      b3kDraw
+      b3kUseRenderer "auto"
+      check "auto again", b3kRenderer() is "box3dxt", b3kRenderer()
+      noFrameError "renderers"
+      exit testRenderers
+   end if
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kSpawnBox 0, 0.5, 0, 1, 1, 1, "red"
+   put the result into tBox
+   put r3LiveCounts() into tCounts
+   check "render3dxt holds one scene for the Kit", item 1 of tCounts is 1, tCounts
+   check "a node for the ground and the box", item 2 of tCounts >= 2, tCounts
+   b3kCamLookAt 0, 2, 6, 0, 0.5, 0, 50
+   b3kSetBackground "#102030"
+   b3kDraw
+   check "render3dxt paints the background", viewPixel(2, 2) is "16,32,48", viewPixel(2, 2)
+   check "render3dxt paints the box red", item 1 of viewPixel(80, 60) > item 2 of viewPixel(80, 60), viewPixel(80, 60)
+   -- one sun, however often the look changes: the scene's own light 1, not
+   -- a second beside it (two lit every surface nearly white)
+   b3kSetLight -0.3, -1, -0.2
+   b3kSetAmbient "60,64,80"
+   check "render3dxt lights the scene with one sun", item 6 of r3LiveCounts() is 1, r3LiveCounts()
+   stepN 30
+   check "frames draw through r3SceneFrame without error", b3kFrameError() is empty, b3kFrameError()
+   b3kUseRenderer "box3dxt"
+   check "b3kUseRenderer box3dxt", b3kRenderer() is "box3dxt", b3kRenderer()
+   check "and render3dxt's scene is given back", item 1 of r3LiveCounts() is 0, r3LiveCounts()
+   b3kDraw
+   check "box3dxt paints the background too", viewPixel(2, 2) is "16,32,48", viewPixel(2, 2)
+   b3kUseRenderer "render3dxt"
+   check "back to render3dxt: the things are drawn again", item 1 of r3LiveCounts() is 1 and item 2 of r3LiveCounts() >= 2, r3LiveCounts()
+   b3kSetTexture tBox, empty
+   b3kSetChecker tBox, "white", "black", 4
+   b3kSetVisible tBox, false
+   b3kSetVisible tBox, true
+   b3kDraw
+   b3kTeardown
+   check "teardown gives render3dxt back everything", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+   noFrameError "renderers"
+end testRenderers
+
+command testTeardown
+   freshWorld
+   b3kSpawnBall 0, 2, 0, 1
+   b3kTeardown
+   check "b3kTeardown: no world, no things", b3kWorld() is empty and b3kThingCount() is 0, b3kWorld() && b3kThingCount()
+   b3kPush 3, 1, 1, 1
+   b3kStepOnce
+   b3kDraw
+   b3kHinge 3, empty
+   b3kMotor 99, 10
+   b3kRemoveJoint "x"
+   b3kPlayerJump
+   b3kGlideTo 3, 1, 1, 1, 1
+   check "calls after teardown are harmless", b3kPosition(3) is empty and b3kFrameError() is empty, b3kPosition(3) && b3kFrameError()
+end testTeardown
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["box3dxt"] to $1
+   load extension from file $0
+   check "box3dxt loads", the result is empty, oneLine(the result)
+   put false into sR3
+   if $3 is not empty then
+      set the revLibraryMapping["render3dxt"] to $4
+      load extension from file $3
+      check "render3dxt loads", the result is empty, oneLine(the result)
+      put true into sR3
+   end if
+   put "INFO renderer under test: " & (sR3 is true) & return
+   create stack "B3kHost"
+   set the defaultStack to "B3kHost"
+   set the script of stack "B3kHost" to URL ("file:" & $2)
+   check "the Kit compiles on the engine", the result is empty, oneLine(the result)
+   create button "Probe" in card 1 of stack "B3kHost"
+   set the script of button "Probe" of stack "B3kHost" to \
+         "global gB3kLog, gB3kFrames" & return & \
+         "on b3kFrame" & return & "add 1 to gB3kFrames" & return & "end b3kFrame" & return & \
+         "on b3kContact pA, pB" & return & "put " & quote & "contact," & quote & " & pA & comma & pB & return after gB3kLog" & return & "end b3kContact" & return & \
+         "on b3kEndContact pA, pB" & return & "put " & quote & "endcontact," & quote & " & pA & comma & pB & return after gB3kLog" & return & "end b3kEndContact" & return & \
+         "on b3kSensorEnter pA, pB" & return & "put " & quote & "sensorenter," & quote & " & pA & comma & pB & return after gB3kLog" & return & "end b3kSensorEnter" & return & \
+         "on b3kSensorExit pA, pB" & return & "put " & quote & "sensorexit," & quote & " & pA & comma & pB & return after gB3kLog" & return & "end b3kSensorExit" & return & \
+         "on b3kFell pA" & return & "put " & quote & "fell," & quote & " & pA & return after gB3kLog" & return & "end b3kFell"
+   check "the probe compiles", the result is empty, oneLine(the result)
+   start using stack "B3kHost"
+   if sFailed is 0 then
+      testLoad
+      testDefaultTarget
+      testWorld
+      testView
+      testSpawn
+      testDrop
+      testEvents
+      testPicking
+      testCamera
+      testJoints
+      testInput
+      testPlayer
+      testGlideAndMore
+      testRenderers
+      testTeardown
+      check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
+            b3AssertCount() && oneLine(b3AssertText()) && b3UnstableCount()
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

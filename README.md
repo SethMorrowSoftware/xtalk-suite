@@ -36,7 +36,7 @@ it is developed here, and each member is also published into its own repository
 | [onionxt](onionxt/) | `ox*` / `oxh*` | a local Tor daemon (pure script) | Anonymous TCP streams, self-authenticating v3 onion services (deterministic from a seed), HTTP-over-onion hosting, offline onion-address tools |
 | [nostrxt](nostrxt/) | `nx*` / `nxr*` | pure script over coinxt + sodiumxt | NIP-01 events with an owned canonical serializer and BIP-340 signatures, NIP-19 entities, NIP-44 v2 encryption, filters, and a websocket relay client that verifies before it delivers |
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
-| [box3dxt](box3dxt/) | `b3*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling |
+| [box3dxt](box3dxt/) | `b3*` / `b3k*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling; plus the pure-script b3k game Kit: things in metres and degrees, an orbiting camera, input, a player controller, drawn by render3dxt when it is loaded or by box3dxt's own renderer |
 | [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
@@ -63,7 +63,9 @@ Design facts that decide how you use them (each member's own docs have the rest)
 - **box3dxt** simulates, and draws the world into a picture a stack shows in an image (a small
   software renderer in the shim; anything finer is the stack's). Box3D is young (no tagged
   release) and trusts its caller, so the shim holds every argument to stated limits and removes
-  a body whose motion stops being a number (`box3dxt/docs/getting-started.md`).
+  a body whose motion stops being a number (`box3dxt/docs/getting-started.md`). Its b3k Kit
+  makes games of it as box2dxt's Kit does in 2-D; the example, Orb Island, is one file
+  (`box3dxt/docs/kit-guide.md`).
 - **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
   number formats), not its looks. It does not edit a file in place or calculate formulas, and the
   reader treats every file as a stranger's: every size in one is bounded
