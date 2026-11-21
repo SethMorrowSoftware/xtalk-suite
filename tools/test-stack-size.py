@@ -81,10 +81,12 @@ def main():
     # 52 since 2026-09-25: the same core's stamped rebuild re-asserts that
     # size, a width line and a height line at kStWidth x kStHeight (review:
     # a board resized and reopened failed its own 1200 x 640 boot check).
-    # 53 since 2026-11-20: xlsxt/examples/xlsxt-demo.livecodescript, one
-    # uiChrome call at kXdWidth x kXdHeight (960 x 620).
-    if "53 stack window dimension" not in out:
-        print("test-stack-size: expected 53 measured dimensions, got:\n" + out)
+    # 53 since 2026-11-20: render3dxt/examples/render3d-physics-demo
+    # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
+    # 54 since 2026-11-21: xlsxt/examples/xlsxt-demo.livecodescript, one
+    # uiChrome call at kXdWidth x kXdHeight (960 x 640).
+    if "54 stack window dimension" not in out:
+        print("test-stack-size: expected 54 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()
