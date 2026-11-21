@@ -103,8 +103,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
 - **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
   loaded a release library or an installed extension: on those it is verified statically;
-  needs an OXT pass. No library is
-  committed under `src/code/` yet; the suite's release-binaries dispatch lands them.
+  needs an OXT pass. The libraries
+  committed under `src/code/` on 2026-11-20 (six desktop platforms, four Android ABIs, a web
+  archive) were tested where they were built; no engine has loaded one of them yet.
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins
 it to a commit and why the shim holds every argument to stated limits before Box3D sees it.

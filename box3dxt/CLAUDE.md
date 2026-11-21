@@ -119,5 +119,7 @@ cast and contact events; README "Status"). The renderer has run natively, on the
 engine (the picture as data, its bytes read) and in that Linux IDE (an image showing the
 teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). No other platform's engine has loaded it and no
 IDE has loaded a release library or an installed extension: verified statically; needs an
-OXT pass. No binaries are committed yet. Open work is in the suite's
+OXT pass. Release libraries were committed on 2026-11-20 (six desktop platforms, four Android
+ABIs; the web archive built separately with emsdk 6.0.12); no engine has loaded one of them
+yet. Open work is in the suite's
 `docs/WORK-PLAN.md`.

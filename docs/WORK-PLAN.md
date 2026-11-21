@@ -847,15 +847,17 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   9b7b59a, a library loaded by hand; picking by pixel and by ray agreed; about 30 frames a
   second solid at 640 by 400 with the default paintCompression, 48 with "rle"). Beyond those runs it is verified statically;
   needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
-- Publishing: `SethMorrowSoftware/box3dxt` does not exist yet. The owner creates it EMPTY,
-  then a publish-members run adopts it (`--adopt box3dxt`).
+- Binaries: committed 2026-11-20 by its first release-binaries dispatch (run 44806507517 from
+  de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
+  and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded any of them yet: the
+  engine and IDE runs above used locally built libraries.
+- Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
+  (`--adopt box3dxt`) once this member's changes are on main.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: box3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-20 (run 44806507517, commit 6d132d3, and the web archive): the first release-binaries dispatch with `members: box3dxt`, then the `ships` row | - | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
