@@ -122,6 +122,21 @@ nocloud, torrentxt and sodiumxt's examples (`a bitXor b`,
 `tM bitAnd (bitNot 255)`); holde-em's no-bitwise-at-all rule is that member's
 own law.
 
+### 1.10 A chunk inside a chunk, with a sum for its start, does not compile
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.7-rc.6's desktop engine
+(9.7.1-OXT, Linux x86-64). In curlxt's desktop demo the line
+`put word 1 to -1 of char tColon + 1 to -1 of tLine into tValue` made
+`set the script` fail; `the result` began `37,3737,27,char` (error 37 at
+line 3737, column 27, near `char`), and nothing in the 4,400-line script ran.
+Written `word 1 to -1 of (char (tColon + 1) to -1 of tLine)` it compiled, and
+the script ran.
+**Rule:** when a chunk sits inside another chunk, parenthesize the inner one
+and any bound of it that is a sum. Parenthesizing a computed bound is
+harmless anywhere. **Gate:** none (the checker does not model chunk grammar);
+an engine run is the judge.
+**Does NOT mean:** that a single chunk with a computed end fails:
+`char 1 to tAt - 1 of tRaw` compiled in the same script.
+
 ## 2. Evaluation
 
 ### 2.1 An undeclared name evaluates to the literal text of its own name
@@ -1595,6 +1610,46 @@ comments), 10 means the tree's claim holds for this engine (record it here as
 a divergence).
 **Does NOT mean:** `for update` (`"r+b"`, no truncation: writes land at the
 position and keep the bytes beyond them) or `for append` (writes at the end).
+
+### 6.15 OXT-Beyond's server engine lists a listener and never delivers a connection to it
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.7-rc.6's server engine
+(`server-community`, 9.7.1-OXT, Linux x86-64). A `.lc` script ran
+`accept connections on port 23999 with message "gotConn"`: `the result` was
+empty and `the openSockets` listed `23999`. The script then waited six seconds
+in `wait 20 milliseconds with messages` steps (and again in 500 ms steps)
+while `curl -m 3` asked the port for a page: curl timed out (exit 28) and
+`gotConn` never ran. It cost curlxt's desktop demo its first engine harness:
+the demo serves its own scenes, so it cannot run on the engine
+`curlxt/tests/engine-selftest.lc` uses.
+**Rule:** a headless run that must SERVE on the engine's sockets runs on the
+desktop engine with `-ui` (6.16). **Gate:** curlxt's native lane runs its
+demo there (`curlxt/tools/run-engine-demo.py`).
+**Does NOT mean:** that the server engine has no network: libcurl's own
+sockets, inside the curlxt extension, ran HTTP, `ws://` and `wss://` on it the
+same day. The engine's own outgoing `open socket` was not tried there.
+
+### 6.16 The desktop engine started with `-ui` runs a script-only stack with no display, sockets included
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.7-rc.6's desktop engine
+(`standalone-community` from its `linux-x86_64-binaries` archive, 9.7.1-OXT,
+Linux x86-64, no `DISPLAY`). `standalone-community -ui file.livecodescript`
+opened the script-only stack and sent it `startup`, `preOpenStack` and
+`openStack`. In it, `send ... in` timers, `accept connections`,
+`read from socket ... with message`, `write ... to socket ... with message`,
+`load extension from file` (with `the revLibraryMapping` naming the
+library), `create stack`, `set the script`, `go invisible stack`, controls and
+their properties, and `export snapshot from card` all worked;
+`write ... to stdout` reached the console and `quit N` set the exit status.
+curlxt's desktop demo ran start to finish on it, its server serving every
+scene (26 checks, `curlxt/tests/engine-demo.livecodescript`).
+**Rule:** for a headless run that needs the engine's own sockets or a stack
+with controls, use the desktop engine with `-ui`. Its only libraries beyond
+the C runtime are FreeType, fontconfig and their usual companions (zlib,
+bzip2, libpng, brotli, Expat), which a stock Ubuntu runner has; no GTK and
+no display server. **Gate:** curlxt's native lane
+(`curlxt/tools/run-engine-demo.py`).
+**Does NOT mean:** that such a run checks what is drawn: a snapshot can be
+taken, but nothing here has compared one with a screen, so a stack's look
+still needs a pass on one.
 
 ## 7. How to add to this file
 

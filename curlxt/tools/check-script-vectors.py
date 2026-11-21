@@ -10,7 +10,9 @@ lcs-interp.py, the runner nocloud and coinxt's wallet gate use too), binds
 every cu* handler of src/curl.lcb to the BUILT curlxt library through ctypes
 - so each call goes through the real cux_* export, exactly what the .lcb
 does - and drives the tsNet calls end to end against an HTTP server and an
-SMTP server this file runs on 127.0.0.1. Nothing touches the network.
+SMTP server this file runs on 127.0.0.1, and the helpers' WebSocket calls
+against a WebSocket server it runs there too (plain, and over TLS with a
+certificate made for the run). Nothing touches the network.
 
 WHERE THE LIBRARY COMES FROM: $CURLXT_LIB if set, else the committed
 src/code/x86_64-linux/curlxt.so. With neither, this gate SKIPS and says so
@@ -36,13 +38,18 @@ Nothing here promotes a label past "verified statically + headless run over
 the native library; needs an OXT pass".
 """
 
+import base64
 import ctypes
+import hashlib
 import http.server
 import importlib.util
 import os
 import re
 import socket
 import socketserver
+import ssl
+import struct
+import subprocess
 import sys
 import tempfile
 import threading
@@ -50,7 +57,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEMBER = os.path.dirname(HERE)
-FLOOR = 90
+FLOOR = 150
 
 
 def sibling(name):
@@ -174,6 +181,163 @@ class SmtpHandler(socketserver.StreamRequestHandler):
                 w(b"250 ok\r\n")
 
 
+class WsHandler(socketserver.BaseRequestHandler):
+    """A WebSocket server in the standard library: the upgrade, then an
+    echo. A text message starting with '!' is a command that makes the
+    server do what a client cannot otherwise provoke. Path /mute upgrades
+    and then neither reads nor writes; /refuse answers the upgrade 404."""
+
+    def _recv(self, n):
+        buf = b""
+        while len(buf) < n:
+            part = self.request.recv(n - len(buf))
+            if not part:
+                raise ConnectionError("closed")
+            buf += part
+        return buf
+
+    def _frame(self, first, payload):
+        n = len(payload)
+        if n < 126:
+            head = bytes([first, n])
+        elif n < 65536:
+            head = bytes([first, 126]) + struct.pack(">H", n)
+        else:
+            head = bytes([first, 127]) + struct.pack(">Q", n)
+        self.request.sendall(head + payload)
+
+    def _read_frame(self):
+        b = self._recv(2)
+        n = b[1] & 0x7F
+        if n == 126:
+            n = struct.unpack(">H", self._recv(2))[0]
+        elif n == 127:
+            n = struct.unpack(">Q", self._recv(8))[0]
+        mask = self._recv(4) if b[1] & 0x80 else None
+        data = self._recv(n)
+        if mask:
+            data = bytes(c ^ mask[i % 4] for i, c in enumerate(data))
+        return b[0], data
+
+    def handle(self):
+        try:
+            self._serve()
+        except (ConnectionError, OSError, ssl.SSLError):
+            pass
+
+    def _serve(self):
+        head = b""
+        while b"\r\n\r\n" not in head:
+            part = self.request.recv(4096)
+            if not part:
+                return
+            head += part
+        lines = head.decode("latin-1").split("\r\n")
+        path = lines[0].split(" ")[1]
+        hdr = {}
+        for ln in lines[1:]:
+            if ": " in ln:
+                k, v = ln.split(": ", 1)
+                hdr[k.lower()] = v
+        if path == "/refuse":
+            self.request.sendall(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            return
+        key = hdr.get("sec-websocket-key", "")
+        accept = base64.b64encode(hashlib.sha1(
+            (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        up = ("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+              "Connection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n" % accept)
+        if "sec-websocket-protocol" in hdr:
+            up += "Sec-WebSocket-Protocol: %s\r\n" % hdr["sec-websocket-protocol"]
+        self.request.sendall((up + "\r\n").encode())
+        if path == "/mute":
+            time.sleep(4)
+            return
+        while True:
+            first, data = self._read_frame()
+            op = first & 0x0F
+            if op == 0x8:
+                self._frame(0x88, data)
+                return
+            if op == 0x9:
+                self._frame(0x8A, data)
+                continue
+            if op == 0xA:
+                continue
+            if op == 0x1 and data.startswith(b"!"):
+                if data == b"!close":
+                    self._frame(0x81, b"last words")
+                    self._frame(0x88, struct.pack(">H", 4001) + b"bye")
+                    return
+                if data == b"!drop":
+                    return
+                if data == b"!frag":
+                    self._frame(0x01, b"ab")
+                    self._frame(0x00, b"cd")
+                    self._frame(0x80, b"ef")
+                elif data == b"!burst":
+                    for i in range(5):
+                        self._frame(0x81, b"m%d" % i)
+                elif data == b"!many":
+                    for i in range(150):
+                        self._frame(0x81, b"n%d" % i)
+                elif data == b"!manyclose":
+                    for i in range(150):
+                        self._frame(0x81, b"c%d" % i)
+                    self._frame(0x88, struct.pack(">H", 1000))
+                    return
+                elif data == b"!header":
+                    self._frame(0x81, (hdr.get("x-test", "") + "|" + hdr.get("sec-websocket-protocol", "")).encode())
+                elif data == b"!binary":
+                    self._frame(0x82, bytes(range(256)))
+                continue
+            self._frame(0x80 | op, data)
+
+
+class TWs(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        pass
+
+
+class TWss(TWs):
+    """The same server behind TLS. The handshake runs in the connection's
+    own thread (a client that refuses the certificate must not stall the
+    accept loop)."""
+    context = None
+
+    def get_request(self):
+        sock, addr = self.socket.accept()
+        return self.context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
+
+    def finish_request(self, request, client_address):
+        request.settimeout(10)
+        request.do_handshake()
+        request.settimeout(None)
+        WsHandler(request, client_address, self)
+
+
+def make_certificate(tmp):
+    """A self-signed certificate for 127.0.0.1, made with the openssl
+    command (the standard library can serve TLS but cannot make a
+    certificate). Returns (cert, key), or None when there is no openssl."""
+    cert = os.path.join(tmp, "ws-cert.pem")
+    key = os.path.join(tmp, "ws-key.pem")
+    try:
+        p = subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
+             "-keyout", key, "-out", cert, "-subj", "/CN=127.0.0.1",
+             "-addext", "subjectAltName=IP:127.0.0.1"],
+            capture_output=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if p.returncode != 0 or not os.path.isfile(cert):
+        return None
+    return cert, key
+
+
 class TServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
@@ -220,6 +384,10 @@ class Lcb(object):
         L.cux_set_header.argtypes = [ctypes.c_int, ctypes.c_char_p]
         L.cux_set_text.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
         L.cux_set_body.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        L.cux_ws_new.argtypes = [ctypes.c_char_p]
+        L.cux_ws_send.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        L.cux_ws_close.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        L.cux_ws_read.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         self.consts, self.opt, self.info_ids, self.text_ids = lcb_tables()
 
     @staticmethod
@@ -286,6 +454,22 @@ class Lcb(object):
             data = S.b(a[1])
             return L.cux_set_body(num(a[0]), data, len(data))
 
+        K = S.consts
+
+        def ws_send(a, kind, data):
+            return L.cux_ws_send(num(a[0]), kind, data, len(data))
+
+        def ws_read(a):
+            # cuWsRead in the .lcb: ask how many wait and how big the next
+            # is, then read into a block of exactly that size.
+            h = num(a[0])
+            if L.cux_info(h, K["kInfoWsMessages"]) < 1:
+                return b""
+            size = int(L.cux_info(h, K["kInfoWsNextSize"]))
+            buf = ctypes.create_string_buffer(max(size, 1))
+            n = L.cux_ws_read(h, buf, size)
+            return buf.raw[:n] if n > 0 else b""
+
         return {
             "cuinitialize": init,
             "cucleanup": lambda a: L.cux_cleanup(),
@@ -307,23 +491,88 @@ class Lcb(object):
             "cutextdata": text_data,
             "cubody": body,
             "culivecount": lambda a: L.cux_live_count(),
+            # WebSockets (ABI 2). cuWsSendText encodes UTF-8 and cuWsReadText
+            # decodes it, as the .lcb does; Data stays Latin-1 bytes.
+            "cuwsnew": lambda a: L.cux_ws_new(S.b(a[0])),
+            "cuwssendtext": lambda a: ws_send(a, K["kWsKindText"], str(a[1]).encode("utf-8")),
+            "cuwssenddata": lambda a: ws_send(a, K["kWsKindBinary"], S.b(a[1])),
+            "cuwsping": lambda a: ws_send(a, K["kWsKindPing"], S.b(a[1])),
+            "cuwsclose": lambda a: L.cux_ws_close(num(a[0]), num(a[1]), str(a[2]).encode("utf-8")),
+            "cuwsread": lambda a: ws_read(a).decode("latin-1"),
+            "cuwsreadtext": lambda a: ws_read(a).decode("utf-8", "replace"),
+            "cuwspoll": lambda a: L.cux_ws_poll(),
+            "cuwswait": lambda a: L.cux_ws_wait(num(a[0]), num(a[1])),
         }
 
 
 # ------------------------------------------------------------ the checks
 
+class StopAtFirst(Exception):
+    pass
+
+
 class Checker(object):
-    def __init__(self):
+    def __init__(self, fail_fast=False):
         self.n = 0
         self.failed = []
+        self.fail_fast = fail_fast
 
     def ck(self, label, got, want):
         self.n += 1
         if got != want:
             self.failed.append("  %s: got %r, want %r" % (label, got, want))
+            if self.fail_fast:
+                raise StopAtFirst()
 
     def ok(self, label, cond):
         self.ck(label, bool(cond), True)
+
+
+# Handlers of a STACK that uses the helpers, written here because the two
+# things they prove can only be seen from inside a message: that a handler
+# may free its socket from within "text", and may open another from within
+# "closed", without the timer losing its place.
+TEST_HANDLERS = '''
+local sCuTestLog
+local sCuTestNext
+
+function cuTestLog
+   return sCuTestLog
+end cuTestLog
+
+command cuTestReset pNextUrl
+   put empty into sCuTestLog
+   put pNextUrl into sCuTestNext
+end cuTestReset
+
+on cuTestFreesInside pSocket, pWhat, pValue
+   put pWhat & ";" after sCuTestLog
+   if pWhat is "text" then
+      get cuFree(pSocket)
+   end if
+end cuTestFreesInside
+
+on cuTestReopens pSocket, pWhat, pValue
+   put pWhat & ":" & pValue & ";" after sCuTestLog
+   if pWhat is "closed" then
+      get cuFree(pSocket)
+      if sCuTestNext is not empty then
+         get cuWsOpen(sCuTestNext, empty, empty, "card 1", "cuTestSecond")
+         put empty into sCuTestNext
+      end if
+   end if
+end cuTestReopens
+
+on cuTestSecond pSocket, pWhat, pValue
+   put "second-" & pWhat & ";" after sCuTestLog
+   if pWhat is "open" then
+      get cuWsClose(pSocket, 1000, empty)
+   end if
+   if pWhat is "closed" then
+      get cuFree(pSocket)
+   end if
+end cuTestSecond
+'''
 
 
 def load_runner():
@@ -340,6 +589,7 @@ def build_source():
             src = fh.read()
         src = re.sub(r'^script\s+"[^"]*"[^\n]*\n', "", src, count=1)
         parts.append(src)
+    parts.append(TEST_HANDLERS)
     src = "\n".join(parts)
     # The three object names (header: modelled).
     src = re.sub(r"the long id of me\b", '"stack tsNetCompat"', src)
@@ -417,7 +667,277 @@ def pump_until(ip, done, limit=400):
     return done()
 
 
-def drive(c, ip, base, smtp_port, tmp):
+def drive_ws(c, ip, call, base, ws, wss, cert):
+    """The helpers' WebSocket calls: cuWsOpen's messages through the timer,
+    cuWsOpenSync, and what the timer does around them."""
+    ck = c.ck
+
+    def s(v):
+        return str(v)
+
+    def events(name="wsEvt"):
+        return [(s(a[1]), s(a[2])) for n, a in ip.callbacks if n == name]
+
+    def kinds(name="wsEvt"):
+        return [k for k, _ in events(name)]
+
+    def until(what, name="wsEvt", limit=600):
+        return pump_until(ip, lambda: what in kinds(name), limit)
+
+    # ---- the everyday path: open, talk, close
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "X-Test: carried\nSec-WebSocket-Protocol: chat.v1", "", "card 1", "wsEvt"])
+    c.ok("cuWsOpen returns a handle", s(sock).isdigit() and int(sock) > 0)
+    ck("one socket watched", s(call("cuWsWatchedCount", [])), "1")
+    ck("a socket is not a waiting request", s(call("cuWaitingCount", [])), "0")
+    c.ok("the timer is armed for it", bool(ip.world.sends))
+    until("open")
+    ck("the first message is open", events()[:1], [("open", "")])
+    ck("it carries the socket handle", [s(a[0]) for n, a in ip.callbacks if n == "wsEvt"][:1], [s(sock)])
+    ck("wsState is open", s(call("cuInfo", [sock, "wsState"])), "2")
+    ck("send text", s(call("cuWsSendText", [sock, "hello"])), "0")
+    pump_until(ip, lambda: len(events()) >= 2)
+    ck("text arrives as a text message", events()[1:2], [("text", "hello")])
+    uni = "h\u00e9llo \u2713 \u65e5\u672c"
+    call("cuWsSendText", [sock, uni])
+    pump_until(ip, lambda: len(events()) >= 3)
+    ck("text is UTF-8 on the wire and text again here", events()[2:3], [("text", uni)])
+    raw = bytes(range(256)).decode("latin-1")
+    ck("send data", s(call("cuWsSendData", [sock, raw])), "0")
+    pump_until(ip, lambda: len(events()) >= 4)
+    ck("bytes arrive as a binary message, unchanged", events()[3:4], [("binary", raw)])
+    call("cuWsSendText", [sock, "!header"])
+    pump_until(ip, lambda: len(events()) >= 5)
+    ck("pHeaders reached the server (a header and a subprotocol)", events()[4:5], [("text", "carried|chat.v1")])
+    call("cuWsSendText", [sock, "!frag"])
+    pump_until(ip, lambda: len(events()) >= 6)
+    ck("a fragmented message arrives whole", events()[5:6], [("text", "abcdef")])
+    call("cuWsSendText", [sock, "!burst"])
+    pump_until(ip, lambda: len(events()) >= 11)
+    ck("a burst arrives in order", [v for _, v in events()[6:11]], ["m0", "m1", "m2", "m3", "m4"])
+    call("cuWsSendText", [sock, ""])
+    pump_until(ip, lambda: len(events()) >= 12)
+    ck("an empty message is still a message", events()[11:12], [("text", "")])
+    ck("ping", s(call("cuWsPing", [sock, "p"])), "0")
+    pump_until(ip, lambda: int(call("cuInfo", [sock, "wsPongs"])) >= 1)
+    ck("the pong is counted", s(call("cuInfo", [sock, "wsPongs"])), "1")
+    ck("and is not a message", len(events()), 12)
+    ck("close", s(call("cuWsClose", [sock, 1000, "done"])), "0")
+    until("closed")
+    ck("closed is the last message, with the code", events()[-1:], [("closed", "1000")])
+    ck("closed arrives once", kinds().count("closed"), 1)
+    ck("open arrived once", kinds().count("open"), 1)
+    ck("the reason is readable after", s(call("cuText", [sock, "wsCloseReason"])), "done")
+    ck("nothing watched after closed", s(call("cuWsWatchedCount", [])), "0")
+    pump_until(ip, lambda: not ip.world.sends, 50)
+    c.ok("the timer stops when no socket is watched", not ip.world.sends)
+    ck("the handler frees it", s(call("cuFree", [sock])), "0")
+
+    # ---- more messages than one pass hands over: none lost, order kept
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "wsEvt"])
+    until("open")
+    call("cuWsSendText", [sock, "!many"])
+    pump_until(ip, lambda: len(events()) >= 151)
+    ck("150 messages, each once, in order", [v for _, v in events()[1:]], ["n%d" % i for i in range(150)])
+
+    # ---- the server closes, after a last message
+    ip.callbacks.clear()
+    call("cuWsSendText", [sock, "!close"])
+    until("closed")
+    ck("what arrived before the close comes first", events(), [("text", "last words"), ("closed", "4001")])
+    ck("the server's reason", s(call("cuText", [sock, "wsCloseReason"])), "bye")
+    ck("a close is not a failure", s(call("cuInfo", [sock, "result"])), "0")
+    call("cuFree", [sock])
+
+    # ---- a close behind more messages than one pass hands over: closed
+    # waits for the last of them
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "wsEvt"])
+    until("open")
+    call("cuWsSendText", [sock, "!manyclose"])
+    # moved by hand, with the timer held still, so that all 150 and the
+    # close are waiting when the timer's next pass comes
+    for _ in range(500):
+        call("cuWsPoll", [])
+        if int(call("cuInfo", [sock, "wsState"])) == 4:
+            break
+        time.sleep(0.01)
+    ck("all of it is waiting, and the socket has closed",
+       [s(call("cuInfo", [sock, "wsMessages"])), s(call("cuInfo", [sock, "wsState"]))], ["150", "4"])
+    until("closed")
+    ck("closed comes after every message that arrived before it",
+       events()[1:], [("text", "c%d" % i) for i in range(150)] + [("closed", "1000")])
+    call("cuFree", [sock])
+
+    # ---- the connection is lost
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "wsEvt"])
+    until("open")
+    call("cuWsSendText", [sock, "!drop"])
+    until("closed")
+    ck("a lost connection is closed 1006", events()[-1:], [("closed", "1006")])
+    c.ok("and the socket says why", s(call("cuText", [sock, "error"])) != "")
+    call("cuFree", [sock])
+
+    # ---- it never opens
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", ["ws://127.0.0.1:1/", "", "", "card 1", "wsEvt"])
+    until("closed")
+    ck("a socket that never opened sends closed 0 and no open", events(), [("closed", "0")])
+    ck("its result is curl's could-not-connect", s(call("cuInfo", [sock, "result"])), "7")
+    call("cuFree", [sock])
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/refuse", "", "", "card 1", "wsEvt"])
+    until("closed")
+    ck("a refused upgrade sends closed 0 and no open", events(), [("closed", "0")])
+    ck("and the server's status is readable", s(call("cuInfo", [sock, "responseCode"])), "404")
+    call("cuFree", [sock])
+    ck("a URL that is not ws:// is refused", s(call("cuWsOpen", ["http://127.0.0.1/", "", "", "card 1", "wsEvt"])), "0")
+    c.ok("and cuHelpersError says why", "ws://" in s(call("cuHelpersError", [])))
+    bad = DB_LCS.LcsArray()
+    bad["wsCloseTimeout"] = "soon"
+    ck("a non-integer wsCloseTimeout is refused", s(call("cuWsOpen", [ws + "/echo", "", bad, "card 1", "wsEvt"])), "0")
+
+    # ---- options reach the socket: a peer that never answers a close
+    ip.callbacks.clear()
+    opts = DB_LCS.LcsArray()
+    opts["wsCloseTimeout"] = 200
+    sock = call("cuWsOpen", [ws + "/mute", "", opts, "card 1", "wsEvt"])
+    until("open")
+    t0 = time.time()
+    call("cuWsClose", [sock, 1000, ""])
+    until("closed")
+    ck("an unanswered close ends as 1006", events()[-1:], [("closed", "1006")])
+    c.ok("after the wsCloseTimeout, not the default five seconds", time.time() - t0 < 3)
+    call("cuFree", [sock])
+
+    # ---- a socket and a request share the timer
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "wsEvt"])
+    until("open")
+    req = call("cuRequestAsync", ["GET", base + "/hello", "", "", "", "card 1", "gotIt"])
+    call("cuWsSendText", [sock, "beside"])
+    pump_until(ip, lambda: ("text", "beside") in events() and any(n == "gotIt" for n, _ in ip.callbacks))
+    c.ok("the socket's message arrives", ("text", "beside") in events())
+    ck("the request reports once, with its own handle", [s(a[0]) for n, a in ip.callbacks if n == "gotIt"], [s(req)])
+    call("cuFree", [req])
+    ck("nothing waits", s(call("cuWaitingCount", [])), "0")
+    pump_until(ip, lambda: False, 10)
+    c.ok("the timer keeps running while a socket is watched", bool(ip.world.sends))
+    call("cuWsUnwatch", [sock])
+    pump_until(ip, lambda: not ip.world.sends, 50)
+    c.ok("and stops once it is unwatched", not ip.world.sends)
+    n_before = len(ip.callbacks)
+    call("cuWsSendText", [sock, "unheard"])
+    ck("an unwatched socket still moves under cuWsWait", s(call("cuWsWait", [sock, 5000])), "1")
+    ck("and is read by hand", s(call("cuWsReadText", [sock])), "unheard")
+    ck("with no message sent for it", len(ip.callbacks), n_before)
+    call("cuFree", [sock])
+
+    # ---- cuWsOpenSync, then by hand
+    sock = call("cuWsOpenSync", [ws + "/echo", "", "", 5000])
+    c.ok("cuWsOpenSync returns an open socket", s(sock).isdigit() and int(sock) > 0)
+    ck("it is open on return", s(call("cuInfo", [sock, "wsState"])), "2")
+    ck("it is not watched", s(call("cuWsWatchedCount", [])), "0")
+    call("cuWsSendText", [sock, "sync"])
+    ck("cuWsWait sees the answer", s(call("cuWsWait", [sock, 5000])), "1")
+    ck("wsNextType is text", s(call("cuInfo", [sock, "wsNextType"])), "1")
+    ck("cuWsReadText", s(call("cuWsReadText", [sock])), "sync")
+    ck("nothing left", s(call("cuInfo", [sock, "wsMessages"])), "0")
+    ck("cuWsRead with nothing waiting is empty", s(call("cuWsRead", [sock])), "")
+    call("cuWsSendText", [sock, "!binary"])
+    call("cuWsWait", [sock, 5000])
+    ck("wsNextType is binary", s(call("cuInfo", [sock, "wsNextType"])), "2")
+    ck("cuWsRead", s(call("cuWsRead", [sock])), raw)
+    ck("cuWsPoll with nothing waiting", s(call("cuWsPoll", [])), "0")
+    # handed to the timer afterwards: "open" is sent, late but once
+    ip.callbacks.clear()
+    call("cuWsWatch", [sock, "card 1", "wsEvt"])
+    call("cuWsSendText", [sock, "watched now"])
+    pump_until(ip, lambda: len(events()) >= 2)
+    ck("a socket watched after it opened still gets open first", events(), [("open", ""), ("text", "watched now")])
+    call("cuWsClose", [sock, 3999, ""])
+    until("closed")
+    ck("an application close code comes back", events()[-1:], [("closed", "3999")])
+    call("cuFree", [sock])
+    ck("cuWsOpenSync of a dead port is 0", s(call("cuWsOpenSync", ["ws://127.0.0.1:1/", "", "", 5000])), "0")
+    c.ok("with the reason", s(call("cuHelpersError", [])) != "")
+    ck("cuWsOpenSync that runs out of time is 0", s(call("cuWsOpenSync", [ws + "/mute-not", "", "", 0])), "0")
+    c.ok("and says so", s(call("cuHelpersError", [])) != "")
+    ck("and leaves no socket behind", s(call("cuLiveCount", [])), "0")
+
+    # ---- a handler may free its socket inside a message
+    call("cuTestReset", [""])
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "cuTestFreesInside"])
+    pump_until(ip, lambda: "open" in s(call("cuTestLog", [])))
+    call("cuWsSendText", [sock, "!burst"])
+    pump_until(ip, lambda: "text" in s(call("cuTestLog", [])))
+    pump_until(ip, lambda: not ip.world.sends, 100)
+    ck("freed inside its first message: no more messages, no closed", s(call("cuTestLog", [])), "open;text;")
+    ck("it is unwatched", s(call("cuWsWatchedCount", [])), "0")
+    c.ok("and the timer stops", not ip.world.sends)
+    ck("no pump failure recorded", s(call("cuPollLastError", [])), "")
+
+    # ---- and may open another inside "closed"
+    call("cuTestReset", [ws + "/echo"])
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "cuTestReopens"])
+    pump_until(ip, lambda: "open" in s(call("cuTestLog", [])))
+    call("cuWsClose", [sock, 1000, ""])
+    pump_until(ip, lambda: "second-closed" in s(call("cuTestLog", [])))
+    ck("a socket opened inside closed lives its own whole life",
+       s(call("cuTestLog", [])), "open:;closed:1000;second-open;second-closed;")
+    ck("nothing watched", s(call("cuWsWatchedCount", [])), "0")
+    ck("no socket left", s(call("cuLiveCount", [])), "0")
+
+    # ---- cuHelpersRelease forgets the watched sockets
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [ws + "/echo", "", "", "card 1", "wsEvt"])
+    until("open")
+    call("cuHelpersRelease", [])
+    ck("release forgets them", s(call("cuWsWatchedCount", [])), "0")
+    ck("and the last hold freed the socket", s(call("cuLiveCount", [])), "0")
+    ck("helpers init again", s(call("cuHelpersInit", [])), "")
+
+    # ---- wss://, against a certificate made for this run
+    if wss is None:
+        return
+    ip.callbacks.clear()
+    opts = DB_LCS.LcsArray()
+    opts["caFile"] = cert
+    sock = call("cuWsOpen", [wss + "/echo", "", opts, "card 1", "wsEvt"])
+    until("open")
+    ck("wss opens when the certificate is trusted (caFile)", kinds()[:1], ["open"])
+    call("cuWsSendText", [sock, "over tls"])
+    pump_until(ip, lambda: len(events()) >= 2)
+    ck("and carries messages", events()[1:2], [("text", "over tls")])
+    big = "t" * 100000
+    call("cuWsSendText", [sock, big])
+    pump_until(ip, lambda: len(events()) >= 3)
+    ck("a large message over TLS", events()[2:3], [("text", big)])
+    call("cuWsClose", [sock, 1000, ""])
+    until("closed")
+    ck("and closes cleanly", events()[-1:], [("closed", "1000")])
+    call("cuFree", [sock])
+    ip.callbacks.clear()
+    sock = call("cuWsOpen", [wss + "/echo", "", "", "card 1", "wsEvt"])
+    until("closed")
+    ck("wss refuses a certificate nobody vouches for", events(), [("closed", "0")])
+    ck("with curl's certificate error", s(call("cuInfo", [sock, "result"])), "60")
+    call("cuFree", [sock])
+    ip.callbacks.clear()
+    opts = DB_LCS.LcsArray()
+    opts["verifyPeer"] = 0
+    opts["verifyHost"] = 0
+    sock = call("cuWsOpen", [wss + "/echo", "", opts, "card 1", "wsEvt"])
+    until("open")
+    ck("verifyPeer 0 is honoured for a socket too", kinds()[:1], ["open"])
+    call("cuFree", [sock])
+    pump_until(ip, lambda: not ip.world.sends, 50)
+    ck("a freed socket is dropped from the watch", s(call("cuWsWatchedCount", [])), "0")
+
+
+def drive(c, ip, base, smtp_port, tmp, ws=None, wss=None, cert=None):
     def call(name, args):
         # A script handler, or one of the modelled .lcb natives.
         if name.lower() in ip.handlers:
@@ -479,6 +999,10 @@ def drive(c, ip, base, smtp_port, tmp):
     ck("its result is 1000", s(call("cuResponse", [a3])["result"]), "1000")
     call("cuFree", [a3])
     ck("no pump failure recorded", s(call("cuPollLastError", [])), "")
+
+    # ---- helpers: WebSockets
+    if ws is not None:
+        drive_ws(c, ip, call, base, ws, wss, cert)
 
     # ---- tsNet: synchronous calls
     r, out = ip.call_ref("tsNetGetSync", [base + "/hello", "", "", "", ""])
@@ -660,7 +1184,11 @@ def main(argv):
     # `--source NAME PATH` drives a mutated copy of one shipped file in its
     # place (tools/test-script-vectors.py's whole mechanism); `--check` is
     # what a gate walker passes, and the check is the default run.
-    args = [a for a in argv[1:] if a != "--check"]
+    # `--fail-fast` stops at the first failed check: the mutation test only
+    # asks WHETHER a broken copy fails, and a broken copy otherwise waits
+    # out every later check that depends on the one it broke.
+    fail_fast = "--fail-fast" in argv[1:]
+    args = [a for a in argv[1:] if a not in ("--check", "--fail-fast")]
     while len(args) >= 3 and args[0] == "--source":
         for i, p in enumerate(SOURCES):
             if os.path.basename(p) == args[1]:
@@ -671,7 +1199,7 @@ def main(argv):
             return 2
         args = args[3:]
     if args:
-        print("usage: check-script-vectors.py [--check] [--source NAME PATH]...")
+        print("usage: check-script-vectors.py [--check] [--fail-fast] [--source NAME PATH]...")
         return 2
     lib = find_library()
     if lib is None:
@@ -687,23 +1215,60 @@ def main(argv):
         return 2
     DB = load_runner()
     DB_LCS = DB.LCS
+    # A library older than the binding (a committed binary that predates an
+    # ABI change) fails here, by name, rather than as a missing symbol
+    # somewhere below. It is a failure, not a skip: the layers did not run.
+    have = ctypes.CDLL(lib).cux_abi_version()
+    want = lcb_tables()[0]["kABIVersion"]
+    if have != want:
+        print("check-script-vectors: FAIL - %s is ABI %d and src/curl.lcb is ABI %d: the "
+              "library predates the binding (the suite's release-binaries dispatch "
+              "rebuilds the committed ones); the script layers did not run"
+              % (lib, have, want))
+        return 1
     lcb = Lcb(lib)
     httpd = TServer(("127.0.0.1", 0), Handler)
     smtpd = TSmtp(("127.0.0.1", 0), SmtpHandler)
-    for srv in (httpd, smtpd):
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    wsd = TWs(("127.0.0.1", 0), WsHandler)
+    servers = [httpd, smtpd, wsd]
     base = "http://127.0.0.1:%d" % httpd.server_address[1]
-    c = Checker()
+    ws = "ws://127.0.0.1:%d" % wsd.server_address[1]
+    c = Checker(fail_fast)
     tmp = tempfile.mkdtemp(prefix="curlxt-vectors-")
+    wss = cert = None
+    note = ""
     try:
+        # wss:// needs a certificate, and making one needs the openssl
+        # command. Without it the TLS checks do not run and the last line
+        # says so; where a skip is a failure (CURLXT_REQUIRE_LIB=1, the
+        # native lane) this one is too.
+        made = make_certificate(tmp)
+        if made is None:
+            if os.environ.get("CURLXT_REQUIRE_LIB") == "1":
+                print("check-script-vectors: FAIL - no openssl command to make the wss:// "
+                      "test certificate, and CURLXT_REQUIRE_LIB=1 allows no skip")
+                return 1
+            note = "; wss:// NOT run: no openssl command to make a certificate"
+        else:
+            cert = made[0]
+            wssd = TWss(("127.0.0.1", 0), WsHandler)
+            wssd.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            wssd.context.load_cert_chain(made[0], made[1])
+            servers.append(wssd)
+            wss = "wss://127.0.0.1:%d" % wssd.server_address[1]
+        for srv in servers:
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
         world = DB.World(tmp)
         DB.install_engine_functions(world)
         DB.LCS.HASHES.update(lcb.natives())
         ip = make_interp(DB, world, build_source())
-        drive(c, ip, base, smtpd.server_address[1], tmp)
+        try:
+            drive(c, ip, base, smtpd.server_address[1], tmp, ws, wss, cert)
+        except StopAtFirst:
+            pass
     finally:
-        httpd.shutdown()
-        smtpd.shutdown()
+        for srv in servers:
+            srv.shutdown()
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
     if c.failed:
@@ -712,8 +1277,8 @@ def main(argv):
     if c.n < FLOOR:
         print("check-script-vectors: FAIL - only %d checks ran (floor %d)" % (c.n, FLOOR))
         return 1
-    print("check-script-vectors: OK (%d checks: the shipped helpers and tsNet layers over %s)"
-          % (c.n, os.path.basename(lib)))
+    print("check-script-vectors: OK (%d checks: the shipped helpers and tsNet layers over %s%s)"
+          % (c.n, os.path.basename(lib), note))
     return 0
 
 
