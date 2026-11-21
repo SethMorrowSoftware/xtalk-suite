@@ -405,6 +405,27 @@ MEMBERS = [
         "companions": {"pdfium": "pdfxt/src/pdfium.pin"},
     },
     {
+        "name": "xlsxt",
+        "lib": "xlsxt",
+        "lcb": ["xlsxt/src/xlsxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands xlsxt's
+        # libraries (joined 2026-11-20 with none committed): that run's
+        # --installing tolerates each gained platform, and the change after it
+        # lists them here, exactly as this row's gained-platform failure says.
+        "ships": [],
+        "shim": "xlsxt/src/xlsx_shim.c",
+        "prefix": "xlx_",
+        # Like box3dxt, the ABI define lives in the shim itself.
+        "abi_header": "xlsxt/src/xlsx_shim.c",
+        "abi_define": "XLX_ABI_VERSION",
+        "abi_symbol": "xlx_abi_version",
+        # src/xlsxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export xlx_* and nothing else; libxlsxwriter, zlib and Expat
+        # are linked in with hidden visibility (measured on the x86_64-linux
+        # build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],

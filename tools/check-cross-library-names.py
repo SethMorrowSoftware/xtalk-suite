@@ -106,6 +106,8 @@ LCB_LIBS = {
     # pdfxt joined 2026-11-20. No other library's prefix begins "pdf".
     "pdfxt/src/pdfxt.lcb": ("pdf",),
     "curlxt/src/curl.lcb": ("cu",),
+    # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
+    "xlsxt/src/xlsxt.lcb": ("xl",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")

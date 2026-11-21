@@ -34,7 +34,7 @@ COPY_SETS = {
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
                                 "holde-em", "nostrxt", "curlxt", "box3dxt",
-                                "pdfxt"],
+                                "pdfxt", "xlsxt"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
                             "nostrxt"],
     # ONE interpreter, two carriers (2026-08-23): the nostrxt execution gate

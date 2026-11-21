@@ -280,29 +280,32 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-64fe372c0667"
+constant kSuUiVersion = "suite-board-763be81b36ff"
 -- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,pdfxt,coinxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,pdfxt,CoinXT,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,pdfxt,coinxt,xlsxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,pdfxt,CoinXT,xlsxt,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a row with a caption, and no pill or Run.
-constant kSuNoHarness = "box3dxt,curlxt,nocloud,pdfxt"
+constant kSuNoHarness = "box3dxt,curlxt,nocloud,pdfxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
 -- next row's (+36), and the last row ends at 538. box3dxt made the fourteenth
 -- (2026-11-20): at 31 its last row ended at 569, past the caption; at 29 a
 -- row's controls still clear the next row's (+34), and the last row ends at
--- 543. pdfxt made the fifteenth the same day: at 29 its last row ended at
--- 572; at 27 a row's controls (+5 to +30) still clear the next row's (+32),
--- by two pixels, and the last row ends at 544. Twenty-seven is the floor of
--- this layout: a sixteenth row needs the caption moved or the rows made
--- shorter, not a smaller pitch. Verified statically; the board at this pitch
--- needs an OXT pass.
+-- 543. pdfxt and xlsxt made the fifteenth and sixteenth the same day, in two
+-- changes that each took the pitch to 27 for fifteen rows; sixteen at 27 end
+-- at 571, past the caption. At 25 the tallest things in a row (the buttons,
+-- +5 to +29, and a harness-less row's caption, +6 to +30) still do not
+-- overlap the next row's (which start at +30), by one pixel and by none, and
+-- the last row ends at 541. Twenty-five is the floor of this layout: a
+-- seventeenth row needs the harness-less members moved out of the rows, not
+-- a smaller pitch. Verified statically; the board at this pitch needs an OXT
+-- pass.
 constant kSuRowTop = 136
-constant kSuRowStep = 27
+constant kSuRowStep = 25
 -- Every control this script names, DERIVED by tools/check-demo-control-lists.py
 -- (--write regenerates it; the gate fails a stale copy). The boot self-check
 -- asserts each one exists.
