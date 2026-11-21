@@ -280,15 +280,15 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-531264148263"
+constant kSuUiVersion = "suite-board-1e80f0b1dd25"
 -- One entry per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,audioxt,render3dxt,gamepadxt,coinxt,xlsxt,curlxt,oscxt,midixt,artnetxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,audioxt,render3dxt,gamepadxt,CoinXT,xlsxt,curlxt,oscxt,midixt,artnetxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,audioxt,render3dxt,gamepadxt,coinxt,xlsxt,curlxt,barcodext,webpxt,oscxt,midixt,artnetxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,audioxt,render3dxt,gamepadxt,CoinXT,xlsxt,curlxt,barcodext,webpxt,oscxt,midixt,artnetxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a name in the band under the rows, and no pill or Run.
-constant kSuNoHarness = "artnetxt,audioxt,box3dxt,curlxt,gamepadxt,midixt,nocloud,oscxt,render3dxt,xlsxt"
+constant kSuNoHarness = "artnetxt,audioxt,barcodext,box3dxt,curlxt,gamepadxt,midixt,nocloud,oscxt,render3dxt,webpxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
@@ -312,7 +312,10 @@ constant kSuNoHarness = "artnetxt,audioxt,box3dxt,curlxt,gamepadxt,midixt,noclou
 -- rows the band has room for four lines above the caption at 546: twelve
 -- such members. oscxt, midixt and artnetxt (2026-11-21) made nine, three
 -- lines whose names end at 523, and gamepadxt, landed beside them, ten:
--- four lines, whose names end at 539. A name takes its whole cell, 152 wide: a
+-- four lines, whose names end at 539. webpxt and barcodext, landed first,
+-- made twelve: the four lines are full, and a thirteenth name needs a new
+-- geometry (suRowsFit and tools/check-suite-ui-boot.py fail one that ends
+-- below the caption). A name takes its whole cell, 152 wide: a
 -- muted "gates" beside each left it 108, and the band's first engine draw
 -- (Linux, 2026-11-21, runbook section 8) showed "No Cloud Quick Share" as
 -- "No Cloud Quick", its last word wrapped out of sight (124 pixels wanted at

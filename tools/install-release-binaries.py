@@ -134,7 +134,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # library committed, its manifest created by its first dispatch. XLSXT
 # JOINED 2026-11-20 too, the same way, and AUDIOXT and RENDER3DXT.
 # GAMEPADXT joined that day too (desktop rows only: it is not built for
-# Android, docs/ANDROID.md).
+# Android, docs/ANDROID.md), and BARCODEXT AND WEBPXT.
 #
 # OSCXT AND MIDIXT JOINED 2026-11-21 (ShowControl's OSC and MIDI) the same
 # way again: rows in release-binaries.yml, no library committed. Their third,
@@ -145,7 +145,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Android library of theirs.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
            "curlxt", "box3dxt", "audioxt", "render3dxt", "xlsxt", "gamepadxt",
-           "oscxt", "midixt")
+           "barcodext", "webpxt", "oscxt", "midixt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 

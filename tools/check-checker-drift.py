@@ -36,7 +36,13 @@ COPY_SETS = {
                                 "riptide", "nocloud", "box2dxt",
                                 "holde-em", "nostrxt", "curlxt", "box3dxt",
                                 "audioxt", "render3dxt", "xlsxt", "gamepadxt",
-                                "oscxt", "midixt", "artnetxt"],
+                                "barcodext", "webpxt", "oscxt", "midixt",
+                                "artnetxt"],
+    # The shim-coverage gate and its fixture (2026-11-20): written once for
+    # barcodext and webpxt, which find their own files by name, so the two
+    # copies are one file and stay one.
+    "check-shim-coverage.py": ["barcodext", "webpxt"],
+    "test-shim-coverage.py": ["barcodext", "webpxt"],
     "check-docs-style.py": ["sodiumxt", "onionxt", "coinxt", "riptide",
                             "nostrxt"],
     # ONE interpreter, two carriers (2026-08-23): the nostrxt execution gate

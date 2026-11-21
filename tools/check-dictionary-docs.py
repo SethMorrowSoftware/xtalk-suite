@@ -121,6 +121,8 @@ CORPUS = [
     "render3dxt/src/render3dxt.lcb",
     "gamepadxt/src/gamepadxt.lcb",
     "xlsxt/src/xlsxt.lcb",
+    "barcodext/src/barcodext.lcb",
+    "webpxt/src/webpxt.lcb",
     "curlxt/src/curl.lcb",
     "curlxt/src/curl-helpers.livecodescript",
     "curlxt/src/tsnet.livecodescript",

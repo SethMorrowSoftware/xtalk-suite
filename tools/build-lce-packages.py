@@ -213,6 +213,8 @@ VERSION_FROM = {
     'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
+    'webpxt': ('src/webpxt.lcb', LCB_VERSION),
+    'barcodext': ('src/barcodext.lcb', LCB_VERSION),
     'oscxt': ('src/osc.lcb', LCB_VERSION),
     'midixt': ('src/midi.lcb', LCB_VERSION),
     'artnetxt': ('src/artnet.lcb', LCB_VERSION),
@@ -252,6 +254,13 @@ LICENCES = {
     # SDL 3's zlib terms, and the BSD terms of the HIDAPI copy SDL carries,
     # are in the member's LICENSE, below its own
     'gamepadxt': [('LICENSE', None, None)],
+    # libwebp's BSD terms, and the patent grant that comes with it, are in
+    # the member's LICENSE, below its own
+    'webpxt': [('LICENSE', None, None)],
+    # zxing-cpp's Apache 2.0 text, and the BSD terms of the Zint backend its
+    # writer is built on (with the two fonts Zint embeds), are in the
+    # member's LICENSE, below its own
+    'barcodext': [('LICENSE', None, None)],
     # tinyosc's terms (oscxt) and RtMidi's (midixt), the one component each
     # library compiles in
     'oscxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
@@ -363,6 +372,18 @@ PACKAGES = [
     # no device and needs no controller.
     P('lcb', 'gamepadxt', 'org.openxtalk.library.gamepadxt', 'src/gamepadxt.lcb', 'gamepadxt',
       'gpLibraryVersion()', '^SDL 3\\.[0-9]+\\.[0-9]+$'),
+    # webpxt (2026-11-21, landed with its libraries, #199): WebP pictures
+    # read and written through libwebp, compiled in. wpLibraryVersion()
+    # checks the ABI first, so a library of another release fails the probe
+    # by name, and it reads no picture.
+    P('lcb', 'webpxt', 'org.openxtalk.library.webpxt', 'src/webpxt.lcb', 'webpxt',
+      'wpLibraryVersion()', '^webpxt ABI [0-9]+; libwebp [0-9]+\\.[0-9]+'),
+    # barcodext (2026-11-21, landed with its libraries, #199): barcodes and
+    # QR codes read from pictures and made into them through zxing-cpp,
+    # compiled in. bcLibraryVersion() checks the ABI first and reads no
+    # picture.
+    P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
+      'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
     # ShowControl (#200): OSC, MIDI and Art-Net. oscxt and midixt joined with
     # no library committed, so their rows wait for their first
     # release-binaries dispatch. Each probe answers the loaded library's ABI
