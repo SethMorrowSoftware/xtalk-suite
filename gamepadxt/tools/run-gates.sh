@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # run-gates.sh - gamepadxt's OWN gate list: what CI and a contributor run.
-# Compiler-free: python3 and sha256sum are all it needs. The three tests that
+# Compiler-free: python3 and sha256sum are all it needs. The four tests that
 # need a compiler or an engine are not this list's: tests/smoke_test.c and
 # tests/fuzz_test.c are the CMake build's (ctest), and
 # tests/engine-selftest.lc is run by the native lane on a real engine over
-# the library that build made. Any gate file added under tools/ or tests/
+# the library that build made, as is tests/demo-drive.livecodescript, which
+# drives the demo window examples/gamepad-lab.livecodescript on the desktop
+# engine with the library and without it. Any gate file added under tools/ or tests/
 # MUST be named here: the suite's tools/check-member-standalone.py refuses a
 # gate file this script never names.
 #

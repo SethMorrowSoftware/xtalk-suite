@@ -99,12 +99,27 @@ box3dxt is the member its shape was taken from.
    No test on virtual pads could see that break, so the shim holds it with compile-time
    asserts beside the tables.
 4. **`SDL_UNIX_CONSOLE_BUILD=ON`** is what lets SDL configure with no X11 or Wayland.
+5. **The demo window keeps its own colours, so it draws its own scroll bars.** The engine
+   draws a field's scroll bar light whatever the field's colours (suite engine note 5.16), so
+   Gamepad Lab's log and mapping box have none: the wheel arrives as `rawKeyDown` 65308 and
+   65309 and `glWheel` scrolls them, and `glScrollMark` draws a thin bar. A mapping has no
+   space but in the pad's name and the engine breaks a line only at a space, so the box shows
+   a space after each comma and `glMappingRead` takes them out again.
+   `tests/demo-drive.livecodescript` refuses a field with a scroll bar, words cut off at any
+   box's edge and a colour pair under 4.5 to 1: it stands in for the UI kit's gate, which
+   exempts the demo (`tools/check-ui-kit-drift.py` in the suite).
+6. **A stack the drive creates is already open** (suite engine note 5.5): `go` to it sends
+   no opening message, so the drive closes it and goes to it again, as a person does after
+   pasting.
 
 ## Status
 
 Verified natively (smoke and fuzz over virtual pads, ASan/UBSan, 64-bit, 32-bit and wasm
 under node) and on the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20,
-a locally built library). No real controller, no desktop IDE and no other platform's engine
-has run it: verified statically; needs an OXT pass. Only the web archive is committed
+a locally built library). The demo window, `examples/gamepad-lab.livecodescript`, ran on the
+Linux desktop engine with no display (`tests/demo-drive.livecodescript`, 2026-11-21: every
+showcase and control, a pad plugged in mid-run, with the library and without). No real
+controller, no desktop IDE and no other platform's engine has run it: verified statically;
+needs an OXT pass. Only the web archive is committed
 (`src/code/wasm32-emscripten/`, 2026-11-21); the desktop libraries are not yet. Open work
 is in the suite's `docs/WORK-PLAN.md`.

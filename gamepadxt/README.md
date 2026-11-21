@@ -73,6 +73,20 @@ end closeCard
 
 [docs/getting-started.md](docs/getting-started.md) carries on from there.
 
+## See it: Gamepad Lab
+
+[examples/gamepad-lab.livecodescript](examples/gamepad-lab.livecodescript) is one window that
+shows all of it. Paste it into a new stack's script, close the stack and open it again: the
+window builds itself and starts playing. Five showcases play in turn on a touch pad made in
+software (every button, sticks and the dead zone, rumble with the light and player numbers,
+a button remapped, a small game), each a few seconds of one thing, with a button each to play
+it again. Plug a controller in and it takes over at once with a buzz and a green light; one
+already plugged in takes over at its first press. Then everything reads that pad: its buttons
+and sticks in the drawing, its events in the log, Rumble, the light and the player number set
+on it, and its mapping, which can be changed in place. The mouse and the keys drive the touch
+pad too. With no gamepadxt installed the window still opens, says so, and plays the showcases
+as a recording.
+
 ## Status
 
 Joined the suite on 2026-11-20. What has run, and where:
@@ -87,6 +101,13 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, attached virtual pads, read buttons, sticks, events, rumble and
   lights back through the binding, and called every public handler once.
+- **The demo window**, Gamepad Lab, the same day: `tests/demo-drive.livecodescript` drove it
+  on OXT-Beyond's Linux desktop engine with no display, over a locally built library and
+  virtual pads: it opened playing, played its five showcases through, took every control,
+  greeted a pad plugged in mid-run, kept its own colours and every word inside its box, and
+  put the library back as it found it. Then again with no gamepadxt, where it plays a recording. The native lane runs
+  both on every change. No person has used it at a screen and no real controller has driven
+  it.
 - **Not yet:** no real controller has been read through it on any platform, no desktop IDE
   has loaded it, and no engine on Windows, macOS or the web has run it: on those it is
   verified statically; needs an OXT pass (with a controller plugged in). Only the web

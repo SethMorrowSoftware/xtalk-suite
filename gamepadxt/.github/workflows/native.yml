@@ -95,6 +95,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc cmake ninja-build libudev-dev
+          # what the desktop engine opens even with -ui (no display)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libfreetype6 libfontconfig1
       - name: Release build + tests
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGAMEPADXT_BUILD_TESTS=ON
@@ -113,6 +116,7 @@ jobs:
           echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
             'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/LiveCode-Community' \
             'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
             'linux-x86_64-bin/modules/lci/*'
           mv "$oxt/linux-x86_64-bin" "$oxt/engine"
@@ -140,6 +144,25 @@ jobs:
             echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /'
           } >> "$GITHUB_STEP_SUMMARY"
+      # The demo window, driven on the desktop engine with no display (-ui):
+      # it must open playing, play its five showcases through, take every
+      # control, greet a pad plugged in mid-run, keep its own colours, and
+      # put the library back as it found it. Then again with no gamepadxt,
+      # where it plays a recording. Green needs an exit of 0 AND a last line
+      # "DRIVE <n> 0" from each run.
+      - name: Drive examples/gamepad-lab.livecodescript on the engine
+        run: |
+          set -o pipefail
+          GL_LCM="$RUNNER_TEMP/lcb/gamepadxt.lcm" GL_LIBRARY="$PWD/build/gamepadxt" \
+          GL_DEMO="$PWD/examples/gamepad-lab.livecodescript" \
+            timeout 300 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo.log"
+          tail -n 1 "$RUNNER_TEMP/demo.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          GL_DEMO="$PWD/examples/gamepad-lab.livecodescript" \
+            timeout 300 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo-recording.log"
+          tail -n 1 "$RUNNER_TEMP/demo-recording.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          echo "Gamepad Lab: $(tail -n 1 "$RUNNER_TEMP/demo.log" | awk '{print $2}') drive checks passed with the library, $(tail -n 1 "$RUNNER_TEMP/demo-recording.log" | awk '{print $2}') without it." >> "$GITHUB_STEP_SUMMARY"
       - name: The member's gates
         run: bash tools/run-gates.sh
 
