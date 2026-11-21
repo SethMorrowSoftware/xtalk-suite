@@ -88,6 +88,9 @@ constant kDriveKeys = "65361,65362,65363,65364,122,120,97,115,113,119,90,88,65,8
 -- The small game's course, as fractions of the arena; a point outside it
 -- is a wall to run into
 constant kCourse = "0.14,0.3|0.86,0.3|1.3,0.55|0.84,0.78|0.16,0.76|-0.3,0.45|0.5,0.5"
+-- How far the arena's caption reaches down into it: the ball rolls below
+-- it, so a ball pushed into the top left never sits on the caption's words
+constant kArenaCaption = 20
 
 local sRunning       -- true while the frame loop runs
 local sLib           -- true when gamepadxt is in this engine
@@ -893,6 +896,12 @@ command glPlay
    if glButtonNow("west") then put tSpeed / 3 into tSpeed
    add item 1 of sLeft * tSpeed to sBallX
    add item 2 of sLeft * tSpeed to sBallY
+   -- a jump grows the ball for a moment
+   put 20 into tSize
+   if sJump > 0 then
+      put 20 + round(sin(sJump / 16 * pi) * 16) into tSize
+      subtract 1 from sJump
+   end if
    put false into tHit
    if sBallX < item 1 of tRect + 12 then
       put item 1 of tRect + 12 into sBallX
@@ -902,8 +911,10 @@ command glPlay
       put item 3 of tRect - 12 into sBallX
       put true into tHit
    end if
-   if sBallY < item 2 of tRect + 12 then
-      put item 2 of tRect + 12 into sBallY
+   -- the top wall is the caption's foot, and a ball that jumps there is
+   -- pushed down rather than over the caption's words
+   if sBallY < item 2 of tRect + kArenaCaption + 2 + tSize div 2 then
+      put item 2 of tRect + kArenaCaption + 2 + tSize div 2 into sBallY
       put true into tHit
    end if
    if sBallY > item 4 of tRect - 12 then
@@ -912,11 +923,6 @@ command glPlay
    end if
    if tHit and sWasHit is not true then glBump
    put tHit into sWasHit
-   put 20 into tSize
-   if sJump > 0 then
-      put 20 + round(sin(sJump / 16 * pi) * 16) into tSize
-      subtract 1 from sJump
-   end if
    put round(sBallX) & comma & round(sBallY) & comma & tSize into tShown
    if tShown is not sBallShown then
       set the rect of graphic "ball" to round(sBallX - tSize / 2), round(sBallY - tSize / 2), \

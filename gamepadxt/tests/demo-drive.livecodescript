@@ -54,6 +54,8 @@ local sPlayerBefore, sLedBefore
 -- The boxes seen showing less than all their words, and how many times
 -- the drive looked
 local sUnfit, sFitLooks
+-- Each moment the game's ball was found over its caption's words
+local sCovered
 
 on startup
    local tError
@@ -233,7 +235,18 @@ command drFits pWhen
          put tName && "(" & pWhen & ": a line needs" && the formattedWidth of tC && "of" && the width of tC & ") " after sUnfit
       end if
    end repeat
+   if not drBallUnder() then put "(" & pWhen & ":" && drBallTop() & ") " after sCovered
 end drFits
+
+-- Whether the game's ball is clear of the caption across the arena's top:
+-- its top at or below the caption's foot
+function drBallUnder
+   return item 2 of the rect of graphic "ball" of card 1 of stack kStack >= item 4 of the rect of field "arenaCaption" of card 1 of stack kStack
+end drBallUnder
+
+function drBallTop
+   return "the ball" && the rect of graphic "ball" of card 1 of stack kStack & ", the caption" && the rect of field "arenaCaption" of card 1 of stack kStack
+end drBallTop
 
 -- A picture of the window, when GL_SHOTS names a folder
 command drShot pName
@@ -568,7 +581,7 @@ command drShowcase5
 end drShowcase5
 
 command drHandsOn
-   local tBall, tShook, tGrip, tI, tR, tLine, tSwapped
+   local tBall, tShook, tGrip, tI, tR, tLine, tSwapped, tUnder, tBiggest
    -- a key takes the touch pad from the tour
    drKey 122, true
    drWait 120
@@ -592,6 +605,27 @@ command drHandsOn
    drKey 65363, false
    drWait 120
    drCheck drText("readout") contains "gpPadStick:  0.00, 0.00", "let go, the stick is back", line 1 of drText("readout")
+   -- up and left held: the ball runs into the top left corner, where the
+   -- caption across the arena's top is, and stops below it; and a jump
+   -- there grows it downwards, never over the caption's words
+   drKey 65362, true
+   drKey 65361, true
+   drWait 2500
+   drCheck drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
+         "held into the top left corner, the ball stops below the game's caption", drBallTop()
+   drKey 122, true
+   put true into tUnder
+   put 0 into tBiggest
+   repeat with tI = 1 to 40
+      if not drBallUnder() then put false into tUnder
+      put max(tBiggest, the width of graphic "ball" of card 1 of stack kStack) into tBiggest
+      drWait 16
+   end repeat
+   drKey 122, false
+   drCheck tUnder and tBiggest > 30, "and jumping there, it grows down from the caption, never over its words", tBiggest && drBallTop()
+   drKey 65362, false
+   drKey 65361, false
+   drWait 120
    -- the mouse on the drawing
    drCall "glTouchDown", "btn_rightstick"
    drCall "glDragTo", 432, 253
@@ -970,6 +1004,7 @@ command drWindowLook
    drCheck tBars is empty, "no box draws the engine's own scroll bar, which is light on a dark system whatever the box's colours", tBars
    drFits "the end"
    drCheck sUnfit is empty and sFitLooks >= 6, "every box that does not scroll showed all its words, each of the" && sFitLooks && "times the drive looked", sUnfit
+   drCheck sCovered is empty, "and the game's ball never covered its caption", sCovered
    put the number of controls of card 1 of stack kStack into tWas
    send "preOpenStack" to stack kStack
    drCheck the number of controls of card 1 of stack kStack is tWas, "opening it again builds nothing twice", tWas && the number of controls of card 1 of stack kStack
@@ -1081,6 +1116,16 @@ command drRecordingRun
          "a key takes the recording's touch pad: Z holds south", drText("chip")
    drFits "the recording, taken"
    drKey 122, false
+   drWait 120
+   -- the recording's game is the same game: held into the top left corner,
+   -- its ball stops below the caption too
+   drKey 65362, true
+   drKey 65361, true
+   drWait 2500
+   drCheck drBallUnder() and item 1 of the loc of graphic "ball" of card 1 of stack kStack < item 1 of the rect of graphic "arena" of card 1 of stack kStack + 20, \
+         "the arrows roll the recording's ball into the top left corner, below the game's caption", drBallTop()
+   drKey 65362, false
+   drKey 65361, false
    drWait 120
    drClick "rumble"
    put false into tShook
