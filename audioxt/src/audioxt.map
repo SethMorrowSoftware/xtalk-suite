@@ -1,0 +1,16 @@
+/* audioxt.map - the linker version script for the shipped shared library.
+ *
+ * audioxt compiles miniaudio into the same translation unit as its shim.
+ * miniaudio's own functions are declared MA_API, which a build that does
+ * not ask for a DLL leaves at default visibility, so without this script
+ * every ma_* function would be exported and could interpose on another
+ * extension's copy of miniaudio (the enetxt lesson, release run 10,
+ * 2026-08-26). It keeps only aux_*, which is all the .lcb binds by name;
+ * CMakeLists.txt gives ld64 the same pattern.
+ */
+{
+    global:
+        aux_*;
+    local:
+        *;
+};

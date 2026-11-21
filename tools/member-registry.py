@@ -123,6 +123,11 @@ MEMBERS = [
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository is "
                        "created empty for the suite to publish into"),
+    Member("audioxt", "audioxt", "extension", OWNER + "/audioxt",
+           # Its gates read its own files only: no sibling beside it.
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
+                       "created empty for the suite to publish into"),
     Member("render3dxt", "render3dxt", "extension", OWNER + "/render3dxt",
            # Its gates read its own files only: no sibling beside it. (Its
            # native lane runs one engine test over box3dxt too, where box3dxt

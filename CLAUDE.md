@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Seventeen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -17,13 +17,14 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
   software renderer, plus the pure-script b3k game Kit; joined 2026-11-20, its libraries
-  committed that day), render3dxt (this suite's own software 3D renderer, textured and lit,
-  into an image's imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside
-  box3dxt, whose transform, move and camera texts it reads, with only its web archive committed
-  yet), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
-  2026-11-20 with no committed library yet) and gamepadxt (SDL 3's gamepad subsystem: game
-  controllers; joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21;
-  desktop and web only).
+  committed that day), audioxt (miniaudio: mixing, streaming, 3D sound and microphone capture,
+  beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
+  render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
+  imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
+  transform, move and camera texts it reads, with only its web archive committed yet), xlsxt
+  (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20 with no
+  committed library yet) and gamepadxt (SDL 3's gamepad subsystem: game controllers; joined
+  2026-11-20, its desktop libraries and web archive committed 2026-11-21; desktop and web only).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -332,7 +333,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, render3dxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -379,10 +380,14 @@ worse than no gate, because it answers the question nobody asks twice.
   status. The job first ran on 2026-11-18 (run 44379162842 from 7364c0f, `commit_mode: none`):
   all four rows green, every member's tests run on the emulator for both x86 ABIs. The same day
   run 44391791349 from 17b1f93 (green again) committed the twenty-eight libraries, commit
-  5aa3ad4, and every member's `ships` row names the four ids since. No ARM library and no engine
-  on Android has run any of them. The four members that open sockets declare
+  5aa3ad4, and every member's `ships` row names the four ids since. An engine first loaded them
+  on 2026-11-19: OXT-Beyond pinned the twenty-eight (its pull request 572) and its CI ran an app
+  with the seven extensions on x86_64 emulators, each library answering ONE call; no member's
+  selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
+  one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238);
+  the engine load was of its ABI 1 files. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
-  builder writes into an app's manifest (verified statically).
+  builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

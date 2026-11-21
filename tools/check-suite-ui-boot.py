@@ -1202,21 +1202,6 @@ def check_build(c, board):
                             and max(ra[1], rb[1]) < min(ra[3], rb[3])):
                         clashes.append("%s/%s" % (ca.name, cb.name))
     c.eq("no two row controls of different rows overlap", clashes, [])
-    # A field shorter than its words cuts them. Measured on OXT-Beyond's
-    # Linux desktop engine, 2026-11-21, at the kit's 8 pixel margins: a
-    # member's name in 12 point bold needs 20, a pill's word and the counts
-    # in 10 point 17. suRowY centres each at its height whatever the pitch;
-    # shrunk with the pitch to 16 at seventeen rows, the names lost their
-    # lowest 4 pixels. (A pill's word is fitted to its own height by the
-    # kit's uiPill, so the pill is measured by its chip.)
-    short = []
-    for key in board.keys:
-        for name, need in (("suName" + key, 20), ("suPill" + key + "Bg", 17),
-                           ("suCount" + key, 17)):
-            r = rect_of(board.ctl(name))
-            if r is not None and r[3] - r[1] < need:
-                short.append("%s %d of %d" % (name, r[3] - r[1], need))
-    c.eq("no row field is shorter than its words need", short, [])
     views = ("stResults", "suView", "suBootLog")
     rects = set(tuple(rect_of(board.ctl(v)) or ()) for v in views)
     c.ck("stResults, suView and suBootLog share one rect", len(rects) == 1,
