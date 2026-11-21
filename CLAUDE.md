@@ -25,7 +25,7 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
   yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
   beside itself, see Building) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files
-  written and read; joined 2026-11-20 with no committed library yet).
+  written and read; joined 2026-11-20, its libraries committed 2026-11-21).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing

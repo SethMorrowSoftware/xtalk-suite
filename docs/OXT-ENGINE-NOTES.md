@@ -1385,7 +1385,33 @@ handlers. And the IDE stops following: an open project browser keeps listing
 the controls it last heard of until it is closed and reopened (its
 `preOpenStack` rebuilds the tree).
 
-### 5.16 Deleting the defaultStack and then creating a stack kills the engine
+### 5.16 A control that names no text colour takes the system theme's, and a dark theme's is white
+**OBSERVED 2026-11-21** (Windows, OXT-Beyond 64-bit, the maintainer's PC under its dark
+theme; the day before, render3dxt's physics demo showed the same there, by that member's
+record, and the same day pdfxt's demo, in its first look on the kit, drew its page number
+and outline white on white, by pdfxt's record). No error: a field's text and a tick box's
+label do not show, and selecting the text shows it is there. xlsxt's demo had its table (a
+kit `uiInput`) and every tick box's words white on the white the UI kit paints. On the same
+window every control that names a colour of its own drew right: the kit's labels, captions,
+status line and footer. The colour is inherited, control then card then stack, and reaches
+the theme only when none of them names one: OBSERVED the same day on Linux under xvfb with
+a stand-in, where the demo's stack named white and every field and tick box that named
+nothing drew white words, and each that named a colour drew its own.
+**Rule:** give every control whose words sit on a fill you paint a `foregroundColor` of
+its own; a window that paints its own backgrounds cannot leave its text to the theme.
+OBSERVED to hold on that PC the same day: xlsxt's rebuilt demo, which names the colour of
+every field, label and tick box and the background of every entry field and list, and
+draws its own push buttons, read right throughout under the dark theme.
+**Gate:** none suite-wide; two demos each hold their own window on the Linux engine:
+`xlsxt/tests/demo-drive.livecodescript` (2026-11-21) fails a window where a field or tick
+box names no colour, and `pdfxt/tests/demo-drive.livecodescript` (2026-11-21) one where a
+field or button names no colour of its own, or where any tick box or radio button is drawn.
+**Does NOT mean:** that a push button needs one. The theme draws a push button, and no run
+reported one unreadable (INFERRED: a dark theme draws its face dark, with its white words),
+so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
+dark theme has been run on either (UNEVIDENCED either way).
+
+### 5.17 Deleting the defaultStack and then creating a stack kills the engine
 **OBSERVED 2026-11-21** (OXT-Beyond 0.2.7-rc.6, its Linux desktop engine run
 as `LiveCode-Community -ui` with no display, version 9.7.1-OXT build 25923;
 found when `pdfxt/tests/demo-drive.livecodescript` grew a stack it deletes).

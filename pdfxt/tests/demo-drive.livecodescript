@@ -152,7 +152,7 @@ on startup
             and the hilite of button "side:find" and the visible of field "find:text", \
             "a scene's button says why it cannot play, and the tabs still work", field "show:about"
       -- not the defaultStack when it goes: deleting the defaultStack and then
-      -- creating a stack killed this engine (engine note 5.16)
+      -- creating a stack killed this engine (engine note 5.17)
       set the defaultStack to the short name of me
       delete stack "pdfxtDemoBare"
 

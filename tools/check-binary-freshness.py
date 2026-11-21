@@ -466,11 +466,17 @@ MEMBERS = [
         "name": "xlsxt",
         "lib": "xlsxt",
         "lcb": ["xlsxt/src/xlsxt.lcb"],
-        # EMPTY until the first release-binaries dispatch lands xlsxt's
-        # libraries (joined 2026-11-20 with none committed): that run's
-        # --installing tolerates each gained platform, and the change after it
-        # lists them here, exactly as this row's gained-platform failure says.
-        "ships": [],
+        # Its first release-binaries dispatch (run 44838679488, commit
+        # 0be6db1, 2026-11-21) landed the six desktop and four Android
+        # libraries. The web archive is built outside that workflow
+        # (Emscripten 6.0.12, OXT-Beyond's config/emscripten-version) and was
+        # committed with its MANIFEST line before them, as b0e77e6 did for
+        # the first three.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "xlsxt/src/xlsx_shim.c",
         "prefix": "xlx_",
         # Like box3dxt, the ABI define lives in the shim itself.
@@ -480,8 +486,12 @@ MEMBERS = [
         # src/xlsxt.map (GNU ld) and the derived -exported_symbols_list
         # (ld64) export xlx_* and nothing else; libxlsxwriter, zlib and Expat
         # are linked in with hidden visibility (measured on the x86_64-linux
-        # build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        # build, 2026-11-20). The web archive's own globals are held tighter
+        # than this gate's skip, in the member: tools/check-web-names.py
+        # --archive (native-xlsxt.yml's web job) lets it define only xlx_*,
+        # xlxw_* and the table function.
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "box2dxt",
