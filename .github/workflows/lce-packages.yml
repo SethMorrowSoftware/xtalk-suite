@@ -76,6 +76,7 @@ on:
       - 'coinxt/native/vendor/**'
       - 'curlxt/src/**'
       - 'box3dxt/src/**'
+      - 'render3dxt/src/**'
       - 'xlsxt/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'

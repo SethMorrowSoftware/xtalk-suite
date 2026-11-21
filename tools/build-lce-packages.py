@@ -205,6 +205,7 @@ VERSION_FROM = {
     'coinxt': ('src/coinxt.lcb', LCB_VERSION),
     'curlxt': ('src/curl.lcb', LCB_VERSION),
     'box3dxt': ('src/box3dxt.lcb', LCB_VERSION),
+    'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
@@ -231,6 +232,8 @@ LICENCES = {
                (OPENSSL, 'OpenSSL-LICENSE.txt', None)],
     # Box3D's MIT text is in the member's LICENSE, below its own
     'box3dxt': [('LICENSE', None, None)],
+    # stb_image's and fast_obj's MIT texts are in the member's LICENSE too
+    'render3dxt': [('LICENSE', None, None)],
     # libxlsxwriter (and the FreeBSD, tmpfileplus and MD5 code it carries),
     # zlib with its minizip, and Expat: each one's terms are in this file
     'xlsxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
@@ -303,6 +306,13 @@ PACKAGES = [
     # (the header of box3dxt.lcb).
     P('lcb', 'box3dxt', 'org.openxtalk.library.boxthreed', 'src/box3dxt.lcb', 'box3dxt',
       'b3LibraryVersion()', '^box3dxt ABI [0-9]+; Box3D [0-9]+\\.[0-9]+'),
+    # render3dxt (2026-11-21, the day after it joined): the textured software
+    # renderer that draws what box3dxt simulates. Only its web archive is
+    # committed, which no package carries, so this row waits like xlsxt's
+    # until its first release-binaries dispatch. r3LibraryVersion() checks
+    # the ABI first; its module id spells the digit out as box3dxt's does.
+    P('lcb', 'render3dxt', 'org.openxtalk.library.renderthreed', 'src/render3dxt.lcb',
+      'render3dxt', 'r3LibraryVersion()', '^render3dxt [0-9.]+ ABI [0-9]+;'),
     # xlsxt (2026-11-21): joined 2026-11-20 with no library committed, so
     # this row waits (EVERY EXTENSION HAS A PACKAGE, above) until its first
     # release-binaries dispatch lands them; nobody has to come back to it.
