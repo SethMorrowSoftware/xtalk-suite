@@ -17,7 +17,8 @@ WHY THIS FILE EXISTS
       - all THREE delivery classes are entries: `send ... to me in` (the plain
         and the computed spelling), `with message "X"`, the engine's own socket
         messages, and a name handed to a library registrar (oxSetStreamCallback
-        / oxhRoute) - the last of which appears at NO call site;
+        / oxhRoute, and curlxt's cuRequestAsync / tsNetGet since 2026-11-21) -
+        the last of which appears at NO call site;
       - each finding names the class that delivered the handler, and never
         claims a `send` for a handler the engine or a library delivers;
       - the closure is real (a hazard two calls deep is found) and a pinned
@@ -75,6 +76,8 @@ on openStack
    read from socket "127.0.0.1:1" with message "faData"
    oxSetStreamCallback "faStream"
    oxhRoute "GET", "/", "faServe"
+   get cuRequestAsync("GET", "http://127.0.0.1:1/", empty, empty, empty, the long id of me, "faFetched")
+   get tsNetGet("fa1", "http://127.0.0.1:1/", empty, "faTsDone")
 end openStack
 
 on faTick
@@ -104,6 +107,14 @@ end faServe
 on socketError pSock, pErr
    faLog pErr
 end socketError
+
+on faFetched pReq
+   put pReq into field "faLog"
+end faFetched
+
+on faTsDone pID, pResult, pBytes, pCurlCode
+   faLog pResult
+end faTsDone
 
 on faWallTick
    set the defaultStack to the short name of this stack
@@ -154,6 +165,8 @@ EXPECTED = [
     ("faData",      "named by `with message`",                 "touches"),
     ("faStream",    "registered as a library callback",        "reaches faServe -> faLog"),
     ("faServe",     "registered as a library callback",        "reaches faLog"),
+    ("faFetched",   "registered as a library callback",        "touches"),
+    ("faTsDone",    "registered as a library callback",        "reaches faLog"),
     ("socketError", "engine socket message delivered by the ENGINE", "reaches faLog"),
 ]
 # Delayed handlers that must NOT be reported: pinned at the entry, or only

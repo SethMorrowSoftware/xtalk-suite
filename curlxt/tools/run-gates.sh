@@ -28,6 +28,16 @@ python3 tools/check-abi-registry.py
 echo "== curlxt: tools/build-api-reference.py --check =="
 python3 tools/build-api-reference.py --check
 
+# tests/engine-selftest.lc RUNS on a real engine in the native lane (the root
+# native-curlxt.yml `engine` job: tools/run-engine-selftest.py over
+# OXT-Beyond's lc-compile and headless server engine). Its compiler-free half
+# runs here: the test's sweep calls every public handler of src/curl.lcb, so
+# a handler added without its sweep line fails here, not only on the engine.
+echo "== curlxt: tools/test-engine-sweep.py =="
+python3 tools/test-engine-sweep.py
+echo "== curlxt: tools/run-engine-selftest.py --check-sweep =="
+python3 tools/run-engine-selftest.py --check-sweep
+
 # The shipped helpers and tsNet layers RUN over the built native library and
 # loopback HTTP and SMTP servers. Without a built library (no $CURLXT_LIB and
 # no committed x86_64-linux binary) both SKIP and say so; the native lane sets

@@ -48,7 +48,9 @@ member's CLAUDE.md for the reasons behind the shared shape.
 7. **Done means:** a shim change is green in `smoke` AND `fuzz` under
    `-DBOX3DXT_SANITIZE=address -DCMAKE_BUILD_TYPE=Debug` (Debug so Box3D's asserts are in);
    a binding change passes `lc-compile -Werror` and `tests/engine-selftest.lc` on the server
-   engine; both pass `bash tools/run-gates.sh`. An ABI change bumps `B3X_ABI_VERSION` and
+   engine; a Kit change passes `tests/engine-kit.lc` with and without render3dxt and
+   `tests/engine-demo.lc` with box3dxt, with render3dxt and with `-` (no extension); all pass
+   `bash tools/run-gates.sh`. An ABI change bumps `B3X_ABI_VERSION` and
    the two literals in `checkABI()` together. Native-library changes refresh the committed
    binaries through the suite's `release-binaries.yml`; `native-box3dxt.yml` never commits.
 
@@ -59,6 +61,8 @@ member's CLAUDE.md for the reasons behind the shared shape.
 | the declaration blocks of both C tests, the joint family table, the fuzz call table | `tools/check-smoke-coverage.py --write` |
 | `sweepEveryHandler` in `tests/engine-selftest.lc` | `tools/check-lcb-signatures.py --write` |
 | `docs/api-reference.md` | `tools/build-api-reference.py` |
+| `docs/kit-reference.md` | `tools/build-kit-reference.py` (its `--check` also holds the Kit's header cheat sheet) |
+| the Kit carried between the markers of `examples/*.livecodescript` | `tools/sync-embedded-kit.py` |
 | `tests/teapot_model.h`, from `tests/models/teapot.obj` | `tools/build-test-model.py` |
 
 ## As built
@@ -95,6 +99,34 @@ member's CLAUDE.md for the reasons behind the shared shape.
 - **The web build** is scalar and single-threaded; the shim forces one worker there.
 - **Only `b3x_*` is exported**: `src/box3dxt.map` for GNU ld and the same pattern for ld64.
 
+## The game Kit
+
+`src/box3dxt-kit.livecodescript` is the b3k Kit, a pure-script game layer over the binding,
+modelled on box2dxt's b2k Kit (read that member's CLAUDE.md for the shared shape). It is the
+ONE source: the example game carries a verbatim copy between `BEGIN EMBEDDED KIT` and
+`END EMBEDDED KIT`, so a fix goes into `src/` and is carried by `tools/sync-embedded-kit.py`.
+
+- **Two renderers, one game.** With render3dxt loaded the Kit draws through a render3dxt
+  scene and carries each step's moves across with `b3WorldUpdateMoves` then
+  `r3SceneApplyMoves`; without it, box3dxt's own renderer draws the world into the same
+  image. A Kit feature that only one renderer can show says so in its doc block ("render3dxt
+  only"), and the other renderer ignores it.
+- **The sun is the scene's first light.** `r3SceneCreate` makes a default directional light;
+  the Kit adopts it as its sun rather than adding another (a second sun washed every surface
+  out, 2026-11-21; `tests/engine-kit.lc` counts the scene's lights).
+- **The messages' default target is the card current at `b3kSetup`**, chosen again by each
+  `b3kSetup` until the game names one. "me" was wrong for a Kit used as a library (OXT-Beyond
+  ships script libraries that way): the messages went to the library itself (2026-11-21;
+  `testDefaultTarget` fails on that default).
+- **`start using` a stack whose script handles a message and passes it runs that handler
+  twice** (measured on the server engine), so `tests/engine-demo.lc` puts its probe in a
+  button on the game's card instead of using the game as a library.
+- **Every public handler has a doc block** (the dictionary reads them, and
+  `docs/kit-reference.md` is built from them) except `b3kStep`, the loop's timer message.
+  A block holds no line that looks like code to the dictionary's parser (`on ...`, a
+  multi-line `if`), so examples are one-line statements; the suite's
+  `tools/check-dictionary-docs.py` and `tools/build-kit-reference.py --check` hold them.
+
 ## Gotchas
 
 1. **A digit in a module's namespace component is a warning, and the Extension Builder runs
@@ -117,9 +149,14 @@ library), and in OXT-Beyond's desktop IDE on 64-bit Linux the same day (a librar
 that machine, loaded by `load extension` and `revLibraryMapping`; one drop scene with a ray
 cast and contact events; README "Status"). The renderer has run natively, on the server
 engine (the picture as data, its bytes read) and in that Linux IDE (an image showing the
-teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). No other platform's engine has loaded it and no
-IDE has loaded a release library or an installed extension: verified statically; needs an
-OXT pass. Release libraries were committed on 2026-11-20 (six desktop platforms, four Android
-ABIs; the web archive built separately with emsdk 6.0.12); no engine has loaded one of them
-yet. Open work is in the suite's
-`docs/WORK-PLAN.md`.
+teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). The game Kit and its example game ran on the server
+engine on 2026-11-21 (`tests/engine-kit.lc`, `tests/engine-demo.lc`; a local library, with
+box3dxt's renderer and with a render3dxt built from its pull request); no IDE has run them.
+Orb Island has played once in a browser, on a web engine built locally from OXT-Beyond's pull
+request 606 with the committed web archives of box3dxt and render3dxt linked in (2026-11-21;
+its keys not driven). No engine on Windows, macOS or Android has loaded it, and no IDE has
+loaded a release library or an installed extension: verified statically; needs an OXT pass.
+Release libraries were committed on 2026-11-20 (six desktop platforms, four Android ABIs; the
+web archive built separately with emsdk 6.0.12); of them only the web archive has met an
+engine (that browser run), and no engine has loaded a desktop or Android one yet. Open work is
+in the suite's `docs/WORK-PLAN.md`.
