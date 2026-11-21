@@ -129,10 +129,19 @@ SOCKET_MSGS = {"socketError", "socketClosed", "socketTimeout"}
 #    archivext's download path) are the Internet library's own registrars:
 #    the quoted handler name is delivered later from libURL's socket
 #    callbacks, the same delivery class as `load URL ... with message`.
+#    curlxt's (added 2026-11-21 with its first demo, curlxt Live): the
+#    helpers' cuRequestAsync, cuWatch, cuWsOpen and cuWsWatch, and the tsNet
+#    layer's calls that take a callback, all deliver the name later from the
+#    helpers' poll timer (`dispatch ... to <target>`), so the handler meets
+#    whatever stack is in front then.
 REGISTRAR = re.compile(r'\b(?:oxSetStreamCallback|oxSetStatusCallback'
                        r'|oxSetPeerCallback|nxrSetCallback|oxhRoute'
                        r'|axSetCallback|libURLSetStatusCallback'
-                       r'|libURLDownloadToFile)\b[^\n]*')
+                       r'|libURLDownloadToFile'
+                       r'|cuRequestAsync|cuWatch|cuWsOpen|cuWsWatch'
+                       r'|tsNetGet|tsNetPost|tsNetHead|tsNetCustom'
+                       r'|tsNetGetFile|tsNetUpload|tsNetUploadFile|tsNetSmtp'
+                       r'|tsNetSetStatusCallback)\b[^\n]*')
 QUOTED = re.compile(r'"(\w+)"')
 CTRL = re.compile(r'\b(field|button|graphic|image|scrollbar|player)\s+'
                   r'("[^"]*"|\w+)(?!\s+of\b)')
