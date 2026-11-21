@@ -139,9 +139,10 @@ script "xTalkSuiteSelfTest"
 -- to put the run on the clipboard and paste it back verbatim.
 --
 -- THE BOARD (D-23). The window is the demos' card look at 1200 x 640: one row
--- per member on the left (a pill - OK, FAILED, skipped, absent, not run - its
--- pass / fail / skip counts, and two buttons), the report on the right, and
--- a boot self-check of the window itself. "Run all" re-runs everything and
+-- per member with an in-engine harness on the left (a pill - OK, FAILED,
+-- skipped, absent, not run - its pass / fail / skip counts, and two buttons),
+-- the members with none named in a band under the rows, the report on the
+-- right, and a boot self-check of the window itself. "Run all" re-runs everything and
 -- is the suite RECORD. A row's "Run" re-runs that ONE member end to end
 -- (probe, its sections, teardown, summary) and replaces the report, which
 -- then says "Scope:" at its top and bottom - a one-member report is never the
@@ -280,41 +281,42 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-c593668866b2"
--- One row per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
--- then the cross-member row. check-suite-selftest.py holds all three lists to
--- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,coinxt,xlsxt,curlxt,oscxt,midixt,artnetxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,CoinXT,xlsxt,curlxt,oscxt,midixt,artnetxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuUiVersion = "suite-board-e221efbc247f"
+-- One entry per tools/member-registry.py member, IN ITS ORDER AND ITS
+-- SPELLING, then the cross-member row. check-suite-selftest.py holds all three
+-- lists to the registry, so a new member cannot be missing from the board.
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,render3dxt,coinxt,xlsxt,curlxt,oscxt,midixt,artnetxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,render3dxt,CoinXT,xlsxt,curlxt,oscxt,midixt,artnetxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
--- NO_HARNESS): a row with a caption, and no pill or Run.
-constant kSuNoHarness = "artnetxt,box3dxt,curlxt,midixt,nocloud,oscxt,xlsxt"
+-- NO_HARNESS): no row, no pill and no Run, only their name in the band under
+-- the rows.
+constant kSuNoHarness = "artnetxt,box3dxt,curlxt,midixt,nocloud,oscxt,render3dxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
--- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
--- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
--- next row's (+36), and the last row ends at 538. box3dxt made the fourteenth
--- (2026-11-20): at 31 its last row ended at 569, past the caption; at 29 a
--- row's controls still clear the next row's (+34), and the last row ends at
--- 543. xlsxt made the fifteenth the same day: at 29 its last row ended at
--- 572; at 27 a row's controls still clear the next row's (+32), and the last
--- row ends at 544. Verified statically; the board at this pitch needs an OXT
--- pass. oscxt, midixt and artnetxt made the sixteenth to eighteenth
--- (2026-11-21), with more members on their way, so the pitch stopped being
--- a number somebody lowers by hand: kSuRowStep is now the WIDEST pitch, and
--- suRowStep() narrows it to what the row count leaves between the first row
--- and the members caption (kSuRowsBottom). Fifteen rows still get 27 and the
--- controls they had; eighteen get 22, and suRowHeight() shortens a row's
--- controls with the pitch (20 tall at 22, so a row's +5 to +24 clears the
--- next row's +27 and the last row ends at 534). The same derivation as the
--- open gamepadxt change's, so the two merge as one. Verified statically;
--- the board at 22 needs an OXT pass.
+-- curlxt made the thirteenth row (2026-11-14), 31 until box3dxt made the
+-- fourteenth (2026-11-20), and 25 once xlsxt and render3dxt joined the same
+-- day: sixteen rows at 25 touched one another, and a seventeenth fitted at no
+-- pitch. Since the seventeenth member (2026-11-21, work plan 2.11 #10) only
+-- the members WITH an in-engine harness have a row (the cross row last); the
+-- others are names in the band below the rows, kSuBandCols to a line, under
+-- one caption. With eleven rows at 29 a row's controls (+5 to +29) clear the
+-- next row's (+34) by five pixels and the last row ends at 455; the band's
+-- caption starts four below it and its three lines of names end at 535,
+-- eleven above the members caption at 546. Nine names fit, so the band holds
+-- one more member than it has; one more ROW moves the band down by a pitch,
+-- past the caption, and suBoardFits fails the boot check (and
+-- tools/check-suite-ui-boot.py) before an engine session would draw it.
+-- Built, and Run all run, on the Linux engine on 2026-11-21 (runbook section
+-- 8); a row's Run and Show in this shape need an OXT pass.
 constant kSuRowTop = 136
-constant kSuRowStep = 27
-constant kSuRowsBottom = 546
+constant kSuRowStep = 29
+-- The band: a name's height is 18, a line of names is kSuBandStep below the
+-- last, and kSuBandCols names share a line of the panel's 468 pixels.
+constant kSuBandStep = 20
+constant kSuBandCols = 3
 -- Every control this script names, DERIVED by tools/check-demo-control-lists.py
 -- (--write regenerates it; the gate fails a stale copy). The boot self-check
 -- asserts each one exists.
-constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBootLog,suFilterAll,suFilterBoot,suFilterFail,suFilterSkip,suHeadCounts,suHeadRun,suHeadStatus,suMembersCap,suPanMembers,suPanResults,suSecMembers,suSecResults,suView,suViewCap,uiFooter,uiStatus,uiTitle"
+constant kSuScControls = "stCopy,stRerun,stResults,stSummary,suBandCap,suBootLog,suFilterAll,suFilterBoot,suFilterFail,suFilterSkip,suHeadCounts,suHeadRun,suHeadStatus,suMembersCap,suPanMembers,suPanResults,suSecMembers,suSecResults,suView,suViewCap,uiFooter,uiStatus,uiTitle"
 
 -- ---- state -------------------------------------------------------------------
 -- "true" while the async phases are still live. Spelled sAsyncRunning rather
@@ -1744,6 +1746,10 @@ command uiInput pName, pRect
    set the borderWidth of field pName to 1
    set the borderColor of field pName to kUiFieldLine
    set the opaque of field pName to true
+   -- SAY THE TEXT COLOUR. Left unset it is the system theme's, and a dark
+   -- theme's is white: white words on the white this builder paints (seen on
+   -- Windows, 2026-11-20, in a log and under two checkboxes).
+   set the foregroundColor of field pName to kUiInk
    set the backgroundColor of field pName to kUiCard
    -- 4-item margins form ONLY: OXT ignored the single-number form on a
    -- real engine pass
@@ -1766,6 +1772,8 @@ command uiArea pName, pRect
    set the borderColor of field pName to kUiCardLine
    set the opaque of field pName to true
    set the backgroundColor of field pName to kUiCard
+   -- and its words, for uiInput's reason: never the theme's
+   set the foregroundColor of field pName to kUiInk
    set the margins of field pName to "6,6,6,6"
    set the vScrollbar of field pName to true
    set the textSize of field pName to 10
@@ -1800,6 +1808,9 @@ command uiCheckbox pName, pLabel, pRect
    uiButton pName, pLabel, pRect
    set the style of button pName to "checkbox"
    set the autoHilite of button pName to false
+   -- its label sits on the adopter's card, which the kit paints white: the
+   -- theme's text colour (white, under a dark theme) must not reach it
+   set the foregroundColor of button pName to kUiInk
 end uiCheckbox
 
 -- Create-or-reuse a named graphic: the chrome layer (cards, pills,
@@ -2187,7 +2198,11 @@ end scFinish
 -- member (a status pill, its pass / fail / skip counts, Run and Show), a
 -- results pane with a filter (All, Failures, Skips, Boot check, and one
 -- member's lines), Run all and Copy results; and the demo boot self-check
--- above checks that window every time it opens.
+-- above checks that window every time it opens. Since 2026-11-21, when a
+-- seventeenth member made a row that fitted at no pitch, only the members
+-- with an in-engine harness keep a row; the rest are names in a
+-- band under the rows (kSuBandCols to a line, under one caption), and the
+-- boot self-check's suBoardFits fails a board whose rows or band overrun.
 --
 -- THE REPORT DID NOT CHANGE, and that is the design rather than a leftover.
 -- The scaffold's accounting (stAssert and friends), stReportText's RUN NOT
@@ -2346,25 +2361,6 @@ function suIsRunKey pKey
    return tOk
 end suIsRunKey
 
--- The row pitch for the rows there are: the widest (kSuRowStep) while they
--- fit above the members caption, else what the space divides into. Derived
--- from kSuKeys so that a new member's row needs no geometry edit.
-function suRowStep
-   local tOld, tCount, tStep
-   put the itemDelimiter into tOld
-   set the itemDelimiter to comma
-   put the number of items of kSuKeys into tCount
-   set the itemDelimiter to tOld
-   put (kSuRowsBottom - kSuRowTop - 3) div tCount into tStep
-   return min(kSuRowStep, tStep)
-end suRowStep
-
--- How tall a row's controls may be at that pitch: 25 (the height every
--- control was drawn for) down to the pitch less a 2 pixel gap.
-function suRowHeight
-   return min(25, suRowStep() - 2)
-end suRowHeight
-
 -- A member with no in-engine harness: a row with a caption instead of a pill
 -- and a Run. kSuNoHarness is a LIST, so it is asked as one - `is` would match
 -- only while the list happened to hold a single name, and a second such
@@ -2379,6 +2375,46 @@ function suNoHarness pKey
    set the itemDelimiter to tOld
    return tHit
 end suNoHarness
+
+-- Where a member sits on the board: a member with a harness (or the cross
+-- row) by its place among the rows, a member with none by its place in the
+-- band. Both count in kSuKeys' order, so the board keeps the registry's.
+function suSlot pKey
+   local tKeys, tKey, tOld, tN, tInBand
+   put suNoHarness(pKey) into tInBand
+   put kSuKeys into tKeys
+   put 0 into tN
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each item tKey in tKeys
+      if suNoHarness(tKey) is tInBand then
+         add 1 to tN
+      end if
+      if tKey is pKey then
+         exit repeat
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return tN
+end suSlot
+
+function suRowTop pKey
+   return kSuRowTop + kSuRowStep * (suSlot(pKey) - 1)
+end suRowTop
+
+-- The band's caption starts four pixels under the last row (whose controls
+-- end at its top + 29), and its names 18 below that, kSuBandCols to a line.
+function suBandTop
+   return kSuRowTop + kSuRowStep * suRowCount() + 4
+end suBandTop
+
+function suBandRect pKey
+   local tN, tLeft, tTop
+   put suSlot(pKey) - 1 into tN
+   put 20 + 156 * (tN mod kSuBandCols) into tLeft
+   put suBandTop() + 18 + kSuBandStep * (tN div kSuBandCols) into tTop
+   return tLeft & comma & tTop & comma & (tLeft + 152) & comma & (tTop + 18)
+end suBandRect
 
 -- Empty (the scaffold's parameterless Run all) and anything unknown mean
 -- everything; a row's key means that row.
@@ -2617,28 +2653,29 @@ end suPresent
 -- same rects every time, pins first (it is reached from the pump's timer), and
 -- does nothing before the board exists.
 command suPaintRows
-   local tKeys, tKey, tI, tOld, tTop, tState, tCounts, tStep, tTall
+   local tKeys, tKey, tI, tOld, tTop, tState, tCounts
    set the defaultStack to the short name of this stack
    if there is no field "suView" then
       exit suPaintRows
    end if
-   put suRowStep() into tStep
-   put suRowHeight() into tTall
    put kSuKeys into tKeys
    put the itemDelimiter into tOld
    set the itemDelimiter to comma
    repeat with tI = 1 to the number of items of tKeys
       put item tI of tKeys into tKey
       if not suNoHarness(tKey) then
-         put kSuRowTop + tStep * (tI - 1) into tTop
+         put suRowTop(tKey) into tTop
          put suRowState(tKey, false) into tState
-         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 2 + tTall)), (line 1 of tState)
+         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",280," & (tTop + 27)), (line 1 of tState)
          if suInScope(tKey) then
             put suNum(sSuP[tKey]) && "/" && suNum(sSuF[tKey]) && "/" && suNum(sSuS[tKey]) into tCounts
          else
             put "-" into tCounts
          end if
-         uiLabel ("suCount" & tKey), tCounts, ("300," & (tTop + 9) & ",376," & (tTop + tTall)), 10
+         -- 94 x 18 since 2026-11-21: at 76 a three-figure count wrapped on
+         -- the Linux engine and hid its skips (the pill gave up 16 for it),
+         -- and at 16 tall the line's 17 pixels were cut by one
+         uiLabel ("suCount" & tKey), tCounts, ("284," & (tTop + 8) & ",378," & (tTop + 26)), 10
          set the textFont of field ("suCount" & tKey) to uiMonoFont()
          set the foregroundColor of field ("suCount" & tKey) to kUiInkSoft
       end if
@@ -2657,9 +2694,7 @@ function suRowControls
    set the itemDelimiter to comma
    repeat for each item tKey in tKeys
       put "suName" & tKey & comma after tOut
-      if suNoHarness(tKey) then
-         put "suNote" & tKey & comma after tOut
-      else
+      if not suNoHarness(tKey) then
          put "suPill" & tKey & comma & "suPill" & tKey & "Bg" & comma & "suCount" & tKey & comma & "suRun" & tKey & comma & "suShow" & tKey & comma after tOut
       end if
    end repeat
@@ -2747,9 +2782,7 @@ end suBuildReset
 -- nothing is named st_*, b2k* or he*, the prefixes box2dxt's and holde-em's
 -- folded harnesses own on this same card.
 command suBuildAll
-   local tKeys, tNames, tKey, tI, tOld, tTop, tRect, tStep, tTall
-   put suRowStep() into tStep
-   put suRowHeight() into tTall
+   local tKeys, tNames, tKey, tI, tOld, tTop
    suBuildReset
    uiChrome kStTitle, kStWidth, kStHeight
    uiPanel "suPanMembers", "8,88,500," & (kStHeight - 8)
@@ -2762,9 +2795,9 @@ command suBuildAll
    uiButton "stCopy", "Copy results", (kStWidth - 132) & ",56," & (kStWidth - 16) & ",80"
 
    -- 1. the members, one row each, in tools/member-registry.py's order
-   uiSection "suSecMembers", "1.  Members: one row per extension and app", "20,96,488,114"
-   uiCap "suHeadStatus", "status", "200,118,296,132"
-   uiCap "suHeadCounts", "pass / fail / skip", "300,118,378,132"
+   uiSection "suSecMembers", "1.  Members: a row for each one with a harness", "20,96,488,114"
+   uiCap "suHeadStatus", "status", "200,118,280,132"
+   uiCap "suHeadCounts", "pass / fail / skip", "284,118,378,132"
    uiCap "suHeadRun", "this member", "380,118,488,132"
    put kSuKeys into tKeys
    put kSuNames into tNames
@@ -2772,18 +2805,20 @@ command suBuildAll
    set the itemDelimiter to comma
    repeat with tI = 1 to the number of items of tKeys
       put item tI of tKeys into tKey
-      put kSuRowTop + tStep * (tI - 1) into tTop
-      uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 2 + tTall)), 12
-      set the textStyle of field ("suName" & tKey) to "bold"
       if suNoHarness(tKey) then
-         put "200," & (tTop + 6) & ",488," & (tTop + 5 + tTall) into tRect
-         uiCap ("suNote" & tKey), "no in-engine harness: its tests run headlessly in the gates", tRect
+         uiLabel ("suName" & tKey), (item tI of tNames), suBandRect(tKey), 11
       else
-         uiButton ("suRun" & tKey), "Run", ("380," & (tTop + 5) & ",432," & (tTop + 4 + tTall))
-         uiButton ("suShow" & tKey), "Show", ("436," & (tTop + 5) & ",488," & (tTop + 4 + tTall))
+         put suRowTop(tKey) into tTop
+         uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 27)), 12
+         uiButton ("suRun" & tKey), "Run", ("380," & (tTop + 5) & ",432," & (tTop + 29))
+         uiButton ("suShow" & tKey), "Show", ("436," & (tTop + 5) & ",488," & (tTop + 29))
       end if
+      set the textStyle of field ("suName" & tKey) to "bold"
    end repeat
    set the itemDelimiter to tOld
+   -- the band: the members with no in-engine harness, under one caption
+   put suBandTop() into tTop
+   uiCap "suBandCap", "No in-engine harness yet: these members' own tests run headlessly in the gates.", ("20," & tTop & ",488," & (tTop + 16))
    uiCap "suMembersCap", "Run re-runs ONE member end to end (probe, its sections, teardown, summary) and replaces the report; Show lists only its lines. Run all is the suite record.", "20,546,488,580"
    uiFooter "Every member's own self-test plus the cross-member seams, in one process. Run all ran on engines 2026-09-24 and 09-25; Run, Show and the filters need an OXT pass (D-23).", "20,588,488,628"
 
@@ -3340,11 +3375,11 @@ command suScRun
    end if
    scBegin "suBootLog"
    put scMissing(kSuScControls) into tMissing
-   scAssert "all 22 controls this script names exist" & suMissingNote(tMissing), tMissing is empty
+   scAssert "all 23 controls this script names exist" & suMissingNote(tMissing), tMissing is empty
    put scMissing(suRowControls()) into tMissing
-   scAssert "every member row is built (" & suRowCount() & " rows, each with its controls)" & suMissingNote(tMissing), tMissing is empty
+   scAssert "every member is on the board (" & suRowCount() && "rows and" && suBandCount() && "names in the band, each with its controls)" & suMissingNote(tMissing), tMissing is empty
    scAssert "the window is" && kStWidth && "x" && kStHeight && "(saw" && the width of this stack && "x" && the height of this stack & ")", suWindowSized()
-   scAssert "the last member row sits above the members caption", suLastRowFits()
+   scAssert "the rows end above the band, and the band above the members caption", suBoardFits()
    scAssert "the board is stamped" && kSuUiVersion && "(saw" && scShow(the uSuUiVersion of this stack) & ")", the uSuUiVersion of this stack is kSuUiVersion
    scAssert "the run started before this check (running:" && scShow(sAsyncRunning) & ", finished:" && scShow(sStRunDone) & ")", suRunStarted()
    scAssert "the probe answered present or absent for every member", suProbeAnswered()
@@ -3364,37 +3399,68 @@ function suMissingNote pMissing
    return " (missing: " & pMissing & ")"
 end suMissingNote
 
+-- The rows (the members with a harness, and the cross row) and the band (the
+-- rest), counted from the lists the board is built from.
 function suRowCount
-   local tKeys, tOld, tN
+   return suCountOf(false)
+end suRowCount
+
+function suBandCount
+   return suCountOf(true)
+end suBandCount
+
+function suCountOf pInBand
+   local tKeys, tKey, tOld, tN
    put kSuKeys into tKeys
+   put 0 into tN
    put the itemDelimiter into tOld
    set the itemDelimiter to comma
-   put the number of items of tKeys into tN
+   repeat for each item tKey in tKeys
+      if suNoHarness(tKey) is pInBand then
+         add 1 to tN
+      end if
+   end repeat
    set the itemDelimiter to tOld
    return tN
-end suRowCount
+end suCountOf
 
 function suWindowSized
    return (the width of this stack is kStWidth) and (the height of this stack is kStHeight)
 end suWindowSized
 
--- A thirteenth member must fail HERE, before an engine session, rather than
--- draw its row over the caption: the last row's name field ends above it.
-function suLastRowFits
-   local tKeys, tOld, tLast
-   put kSuKeys into tKeys
-   put the itemDelimiter into tOld
-   set the itemDelimiter to comma
-   put item -1 of tKeys into tLast
-   set the itemDelimiter to tOld
-   if there is no field ("suName" & tLast) then
-      return false
-   end if
+-- A member too many must fail HERE, before an engine session, rather than
+-- draw over a caption: every row's buttons end above the band's caption, and
+-- every name in the band ends above the members caption. A row too many
+-- moves the band down by a pitch, past that caption; a name too many starts a
+-- line the band has no room for.
+function suBoardFits
+   local tKeys, tKey, tOld, tFits
    if there is no field "suMembersCap" then
       return false
    end if
-   return the bottom of field ("suName" & tLast) < the top of field "suMembersCap"
-end suLastRowFits
+   if there is no field "suBandCap" then
+      return false
+   end if
+   put true into tFits
+   put kSuKeys into tKeys
+   put the itemDelimiter into tOld
+   set the itemDelimiter to comma
+   repeat for each item tKey in tKeys
+      if there is no field ("suName" & tKey) then
+         put false into tFits
+      else if suNoHarness(tKey) then
+         if the bottom of field ("suName" & tKey) > the top of field "suMembersCap" then
+            put false into tFits
+         end if
+      else if there is no button ("suShow" & tKey) then
+         put false into tFits
+      else if the bottom of button ("suShow" & tKey) > the top of field "suBandCap" then
+         put false into tFits
+      end if
+   end repeat
+   set the itemDelimiter to tOld
+   return tFits
+end suBoardFits
 
 function suRunStarted
    return (sAsyncRunning is "true") or (sStRunDone is "true")

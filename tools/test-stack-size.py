@@ -81,8 +81,14 @@ def main():
     # 52 since 2026-09-25: the same core's stamped rebuild re-asserts that
     # size, a width line and a height line at kStWidth x kStHeight (review:
     # a board resized and reopened failed its own 1200 x 640 boot check).
-    if "52 stack window dimension" not in out:
-        print("test-stack-size: expected 52 measured dimensions, got:\n" + out)
+    # 53 since 2026-11-20: render3dxt/examples/render3d-physics-demo
+    # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
+    # 59 since 2026-11-21: the three ShowControl showcases, each a width line
+    # and a height line at 1100 x 620 (oscxt's osc-show-surface at kOsdW x
+    # kOsdH, midixt's midi-stage at kMdsW x kMdsH, artnetxt's
+    # artnet-light-board at kAlbW x kAlbH).
+    if "59 stack window dimension" not in out:
+        print("test-stack-size: expected 59 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

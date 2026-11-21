@@ -17,7 +17,7 @@
 capabilities app authors reach for: cryptography, BitTorrent, reliable-UDP realtime, WebRTC, Tor,
 Bitcoin and Ethereum primitives, 2-D physics with a game kit, Nostr, and show control (OSC, MIDI
 and Art-Net lighting).** Each is a small, friendly set of xTalk handlers, and each native member
-bundles its library inside the extension, so there is nothing else to install. Fourteen
+bundles its library inside the extension, so there is nothing else to install. Fifteen
 extensions, plus three apps built on them.
 
 Every member is a thin binding over a proven C/C++ library (or pure LiveCodeScript for OnionXT
@@ -38,6 +38,7 @@ it is developed here, and each member is also published into its own repository
 | [nostrxt](nostrxt/) | `nx*` / `nxr*` | pure script over coinxt + sodiumxt | NIP-01 events with an owned canonical serializer and BIP-340 signatures, NIP-19 entities, NIP-44 v2 encryption, filters, and a websocket relay client that verifies before it delivers |
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
 | [box3dxt](box3dxt/) | `b3*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling |
+| [render3dxt](render3dxt/) | `r3*` | its own C renderer, with stb_image and fast_obj compiled in | A textured 3D picture for an ordinary image control: OBJ models with their materials and pictures, boxes to capsules made to measure, PNG / JPEG / BMP / TGA textures, sun and lamp lights, fog, smooth edges, a camera that projects and casts rays, clicking on things; drawn on the processor across its cores, and made to draw what box3dxt simulates |
 | [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
@@ -68,6 +69,11 @@ Design facts that decide how you use them (each member's own docs have the rest)
   software renderer in the shim; anything finer is the stack's). Box3D is young (no tagged
   release) and trusts its caller, so the shim holds every argument to stated limits and removes
   a body whose motion stops being a number (`box3dxt/docs/getting-started.md`).
+- **render3dxt** draws and nothing else: a scene in, `imageData` out, no window and no
+  graphics card. It shares box3dxt's world (y up, metres, quaternions) and reads its texts
+  as they stand, so a physics step reaches the picture in one call
+  (`r3SceneApplyMoves(scene, b3MovesText())`); neither extension needs the other. Models and
+  pictures are files from anywhere, so every index and size in one is checked before use.
 - **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
   number formats), not its looks. It does not edit a file in place or calculate formulas, and the
   reader treats every file as a stranger's: every size in one is bounded
@@ -141,6 +147,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | datachannelxt | 5 platforms, ABI 1 | folded 39 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5); standalone async loopback, 2026-08-15; a DHT-signalled chat reported working across two machines on one LAN, 2026-08-27 | the standalone selftest's own async loopback on the 2026-09-12 builds (the paste's own completed on Linux); browser interop; a call across two networks; the loopback demo's itemised record (on 2026-09-26 it "seems to work as intended", by the maintainer's account) |
 | curlxt | 6 platforms, ABI 1 | Windows x86-64 only, on the 2026-11-14 DLL: the three extensions loaded and probed in OXT-Beyond's Windows CI, 2026-11-14; `tsNetGetSync`, an async `tsNetGet`, a refused expired certificate and five concurrent `cuRequestAsync` calls on the maintainer's PC through the MCP bridge, 2026-11-15 | the 2026-11-15 rebuild; SFTP, SCP, SMTP, FTP and uploads on an engine; Linux and mac on an engine |
 | box3dxt | 6 platforms, 4 Android ABIs and a web archive, ABI 2 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | the committed release libraries on any engine (the runs so far loaded locally built ones); Windows, macOS, Android and the web; a row in the suite paste |
+| render3dxt | the web archive only (the first release dispatch lands the rest), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second. On Windows (OXT-Beyond 0.2.8-dp.1, dark system appearance) the rebuilt demo was readable, 2026-11-21 | macOS, Android and the web; a pointer on Windows; the desktop and Android libraries committed; a row in the suite paste |
 | xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
 | oscxt | none yet (the first release dispatch lands them), ABI 2 | its LCB suite under lc-run and its Script suite in OXT-Beyond's headless standalone engine (`-ui`), Linux x86_64, 2026-11-21, over a locally built library: real UDP through the engine's own sockets and an independent OSC peer included (`oscxt/tools/run-lcb-tests.py`, `run-lcs-tests.py`; its native lane runs both on Linux, Windows and macOS on every change); the parser fuzzed under ASan/UBSan the same day | any desktop IDE; Windows and macOS on the record outside CI; a committed library; Android; a row in the suite paste |
 | midixt | none yet (the first release dispatch lands them), ABI 2 | the same two suites on the same engine, 2026-11-21, over a locally built library and the member's mock MIDI backend | a message through a real MIDI service (ALSA, CoreMIDI or Windows MM) on the record; any desktop IDE; a committed library; a row in the suite paste |
@@ -186,8 +193,9 @@ member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: ne
 on Android.
 box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
-xlsxt joined the same day, the same way. oscxt and midixt joined on 2026-11-21 with no Android
-build (`tools/build-android.sh` names them desktop-only and says why); artnetxt has no library.
+render3dxt and xlsxt joined the same day and are in the recipe; none of their Android libraries
+is committed yet. oscxt and midixt joined on 2026-11-21 with no Android build
+(`tools/build-android.sh` names them desktop-only and says why); artnetxt has no library.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -262,6 +270,7 @@ put b2Version()          -- box2dxt: prints 4
 put cxKeccak256Len()     -- coinxt: prints 32
 put cuLibraryVersion()   -- curlxt
 put b3LibraryVersion()   -- box3dxt
+put r3LibraryVersion()   -- render3dxt
 put xlLibraryVersion()   -- xlsxt
 put oscVersion()         -- oscxt: prints 2 (its ABI)
 put midiVersion()        -- midixt: prints 2 (its ABI)

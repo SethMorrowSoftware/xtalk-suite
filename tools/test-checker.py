@@ -35,8 +35,8 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEMBERS = ["sodiumxt", "torrentxt", "enetxt", "datachannelxt",
            "onionxt", "coinxt", "riptide", "nocloud", "box2dxt",
-           "holde-em", "nostrxt", "curlxt", "box3dxt", "xlsxt", "oscxt",
-           "midixt", "artnetxt"]
+           "holde-em", "nostrxt", "curlxt", "box3dxt", "render3dxt", "xlsxt",
+           "oscxt", "midixt", "artnetxt"]
 
 # (name, filename, source, must_contain) - must_contain None means the file
 # must pass CLEAN; otherwise the checker must fail AND its output must contain

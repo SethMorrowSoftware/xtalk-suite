@@ -118,6 +118,16 @@ costs 45 s on the model's clock):
      the board's paint, since a slow native poll inside the first tick fits
      the Windows record as well as a slow render does.
 
+And two for the band of the members with no harness (2026-11-21, when the
+seventeenth member made a seventeenth ROW that fitted at no pitch; work
+plan 2.11 #10):
+
+  ab suBandTop forgets the rows above it, so the band and its names are
+     drawn over the first rows.
+  ac the band puts one name to a line, so its names run down past the
+     members caption (what a band with too many names, or a row too many
+     above it, does).
+
 The mutants run concurrently, at most one gate run per core.
 
 THE --full MUTANTS (python3 tools/test-suite-ui-boot.py --full)
@@ -367,6 +377,18 @@ MUTANTS = [
            "a slow tick with no part to blame",
      DC_POLL_TIMED, '',
      "the notes put the slow tick in datachannel's poll"),
+    # Two for the band (2026-11-21): the members with no harness moved out
+    # of the rows, and each way the band can land where it must not.
+    ("ab", "suBandTop forgets the rows above it: the band is drawn over them",
+     '   return kSuRowTop + kSuRowStep * suRowCount() + 4\n',
+     '   return kSuRowTop + 4\n',
+     "every row with a Run ends above the band's caption"),
+    ("ac", "the band puts one name to a line, so its names run past the "
+           "members caption",
+     'constant kSuBandCols = 3\n',
+     'constant kSuBandCols = 1\n',
+     "every member with no harness is a name in the band, under its "
+     "caption and above the members caption"),
 ]
 
 

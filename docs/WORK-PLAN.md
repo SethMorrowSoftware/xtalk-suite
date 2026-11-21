@@ -873,11 +873,66 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 7 | The suite board's rows on a desktop IDE: 29 apart again since 2026-11-21, when the members with no harness moved into a band under them (render3dxt #10); 25, 27 and 29 before, each set by hand. Drawn on the Linux headless engine that day under a virtual display (runbook section 8: eleven rows and a band of eight, every word whole) | S1 | 48 | the same on Windows and a Mac |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
-| 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
-### 2.11 xlsxt
+### 2.11 render3dxt
+
+- Joined 2026-11-20, beside box3dxt: a software 3D renderer of this suite's own (textured,
+  lit, multi-threaded) behind the `r3x_*` C shim (ABI 1) and the `r3*` binding, whose names
+  are mechanical; stb_image and fast_obj are compiled in at pinned commits. Records: the
+  shim's smoke test (pictures checked by reading pixels back) and random-call test, clean
+  under ASan/UBSan and under TSan, also as a 32-bit build and as WebAssembly under node; and
+  three tests on OXT-Beyond's headless Linux server engine over locally built libraries
+  (2026-11-20), which its native lane repeats on every change: the binding alone
+  (`tests/engine-selftest.lc`), a Box3D simulation drawn with box3dxt beside it
+  (`tests/engine-interop.lc`), and its demo stack opened and driven by message
+  (`tests/engine-demo.lc`). One desktop IDE has run it, the same day: OXT-Beyond
+  0.2.8-dp.2 on the owner's Linux machine, locally built libraries installed as extensions.
+  The demo's window was built, its boot self-check read 11 passed, 0 failed, 0 skipped, the
+  picture was seen and recorded, and a real pointer dragged the camera, kicked a thing and
+  pressed every button. Its first frame loop showed 20 pictures a second, 36 of each
+  frame's 47 ms in `set the imageData` (the engine encoding a PNG, #11); with "rle" set
+  around that line and the picture begun in the background it showed 57 with nine things
+  and 50 to 52 with about fifty, the engine busy 12 ms a frame. On Windows (OXT-Beyond
+  0.2.8-dp.1, 64-bit, dark system appearance, a locally built library, 2026-11-21 UTC)
+  the demo drew (7.8 ms a picture on six threads, its words white on white) and then its
+  rebuilt look was readable; the faults that run found are fixed (5fabc82, 904bb16), and
+  those fixes, the wheel and the buttons' hover have not run there (#2). macOS, Android and
+  the web have not run it: there it is verified statically; needs an OXT pass.
+- The contract with box3dxt (world, transform text, move lines, camera text, picture
+  coordinates, triangle text) is written in both members' CLAUDE.md and pinned by both
+  smoke tests; the engine interop test pins the join. box3dxt's own lane does not run that
+  test, so a box3dxt change to one of those texts shows red in render3dxt's lane only when
+  render3dxt next changes (#7).
+- Binaries: none committed when it joined. The web archive
+  (`src/code/wasm32-emscripten/render3dxt.a`) was committed by hand on 2026-11-20, built with
+  emsdk 6.0.12 as the native lane's wasm job builds it, so OXT-Beyond's web engine can pin
+  it (#4), and the `ships` row lists that one platform. The first release-binaries dispatch
+  lands the rest (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`),
+  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Publishing: `SethMorrowSoftware/render3dxt` was created empty by the owner on 2026-11-20;
+  a publish-members run adopts it (`--adopt render3dxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: render3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `render3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The IDE pass on Windows and a Mac (Linux ran 2026-11-20, above; Windows showed the demo on 2026-11-21 but no pointer was driven there): install render3dxt and box3dxt, open `render3dxt/examples/render3d-physics-demo.livecodescript`, read its boot self-check, drag the picture, click a crate, try each button; note the milliseconds its stats line shows | S1, after #1 (or locally built libraries) | - | the picture is seen, the mouse works, and the record has the numbers |
+| 3 | A model file with textures loaded from disk in the IDE (`r3MeshLoadObj`), on a path with a non-ASCII character on Windows | S1 | - | it draws as its file describes |
+| 4 | The web archive (`wasm32-emscripten/render3dxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `r3LibraryVersion()` answers in the web IDE |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's render3dxt row has a pill and a Run |
+| 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
+| 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
+| 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
+| 10 | DONE 2026-11-21 (with oscxt, midixt and artnetxt, the next members to join): the members with no harness have no row; their names sit in a band under the rows, three to a line under one caption, and the eleven rows that keep a Run are back at a pitch of 29. The boot self-check's `suBoardFits` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows or band overrun the members caption, so the board says it is full before an engine does. Nine names fit; a tenth needs a fourth line, which fits at a pitch of 27 (a row's controls then clear the next row's by three pixels, and the fourth line ends at 533, above the caption at 546). Drawn on the Linux headless engine that day (runbook section 8) | - | - | - |
+| 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
+| 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
+| 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped for it, so a stack SAVED before the fix keeps its controls until it is rebuilt (start-here's moved to start-here-4 on 2026-11-21 for its new rows, which rebuilds a saved launcher with the fix). Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
+
+### 2.12 xlsxt
 
 - Joined 2026-11-20: libxlsxwriter 1.2.4, zlib 1.4 (with its minizip) and Expat 2.10.0, each
   pinned to a commit, behind the `xlx_*` C shim (ABI 1) and the `xl*` binding, whose names
@@ -905,7 +960,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
 
-### 2.12 oscxt
+### 2.13 oscxt
 
 - Joined 2026-11-21 from ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
   extensions): tinyosc behind the `osc_*` C shim (ABI 2) and the `osc*` binding, a codec
@@ -938,7 +993,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
 | 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | all five scenes play by themselves, every word fits and none is white on white, and the footer says what it found |
 
-### 2.13 midixt
+### 2.14 midixt
 
 - Joined 2026-11-21 from ShowControl: RtMidi 6.0.0 (ALSA, CoreMIDI or Windows MM) behind
   the `midi_*` C shim (ABI 2) and the `midi*` binding, with input drained by polling (no
@@ -970,7 +1025,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
 | 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, and the keyboard's notes show in blue |
 
-### 2.14 artnetxt
+### 2.15 artnetxt
 
 - Joined 2026-11-21 from ShowControl: Art-Net (DMX512 lighting over UDP) in pure LiveCode
   Builder, with no shim and no native library: the codec packs and parses, and the

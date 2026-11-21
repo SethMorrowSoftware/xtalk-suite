@@ -99,8 +99,9 @@ script "SuiteStartHere"
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
 -- The directory list is filled only at a build, so a registry row added
--- without a bump stays invisible in a saved launcher: "start-here-4" is the
--- three ShowControl showcases (2026-11-21).
+-- without a bump stays invisible in a saved launcher: "start-here-4" is
+-- render3dxt's demo (2026-11-20) and the three ShowControl showcases
+-- (2026-11-21).
 constant kSlUiVersion = "start-here-4"
 
 -- ---- script-local state (declared at top) ------------------------------------
@@ -304,6 +305,10 @@ command uiInput pName, pRect
    set the borderWidth of field pName to 1
    set the borderColor of field pName to kUiFieldLine
    set the opaque of field pName to true
+   -- SAY THE TEXT COLOUR. Left unset it is the system theme's, and a dark
+   -- theme's is white: white words on the white this builder paints (seen on
+   -- Windows, 2026-11-20, in a log and under two checkboxes).
+   set the foregroundColor of field pName to kUiInk
    set the backgroundColor of field pName to kUiCard
    -- 4-item margins form ONLY: OXT ignored the single-number form on a
    -- real engine pass
@@ -326,6 +331,8 @@ command uiArea pName, pRect
    set the borderColor of field pName to kUiCardLine
    set the opaque of field pName to true
    set the backgroundColor of field pName to kUiCard
+   -- and its words, for uiInput's reason: never the theme's
+   set the foregroundColor of field pName to kUiInk
    set the margins of field pName to "6,6,6,6"
    set the vScrollbar of field pName to true
    set the textSize of field pName to 10
@@ -360,6 +367,9 @@ command uiCheckbox pName, pLabel, pRect
    uiButton pName, pLabel, pRect
    set the style of button pName to "checkbox"
    set the autoHilite of button pName to false
+   -- its label sits on the adopter's card, which the kit paints white: the
+   -- theme's text colour (white, under a dark theme) must not reach it
+   set the foregroundColor of button pName to kUiInk
 end uiCheckbox
 
 -- Create-or-reuse a named graphic: the chrome layer (cards, pills,
@@ -716,6 +726,7 @@ function slRegistry
    put "riptide/examples/riptide-social.livecodescript||sodiumxt AND torrentxt; coinxt for the Nostr rail, and for the onion spelling with a sodiumxt below ABI 7|Two machines to see propagation. SESSION: uses the one torrent session. Self-contained: carries riptide, nostrxt (core + relay), onionxt and onion-httpd.|The capstone: one sealed identity, signed public feeds over the real DHT, private DMs, a LAN device mesh, an onion-only persona, and a Nostr bridge for reach (phases 1-8)." & return after tR
    put "nocloud/src/nocloudquickshare.livecodescript||torrentxt; sodiumxt and onionxt optional (each feature fails closed without its piece)|SESSION: one torrent stack per OXT launch.|The SHIPPED app: No Cloud Quick Share - send any file to anyone, no server, no account, no size limit." & return after tR
    put "nostrxt/examples/nostrxt-demo.livecodescript||the coinxt extension for signing; sodiumxt for key generation; a relay you choose for the live legs|Self-contained: carries nostrxt, its relay layer and its self-test. ws:// mirrors the proven socket idioms; wss:// is engine-unproven.|Nostr from xTalk: generate an identity, sign and verify notes, decode NIP-19 entities, talk to a relay - inbound events verified before display." & return after tR
+   put "render3dxt/examples/render3d-physics-demo.livecodescript||the render3dxt extension (org.openxtalk.library.renderthreed) AND the box3dxt extension (org.openxtalk.library.boxthreed)|Without either extension the window still opens and says which is missing.|A 3D picture in an ordinary image: box3dxt simulates crates, balls and a gem falling, render3dxt draws them textured and lit. Drag to walk round the scene, click a thing to kick it." & return after tR
    put "box2dxt/examples/box2dxt-demo.livecodescript||the box2dxt extension (org.openxtalk.box2dxt)||The physics showcase: scenes for shapes, joints, forces, queries and the Kit's control-backed bodies." & return after tR
    put "box2dxt/examples/box2dxt-platformer.livecodescript||the box2dxt extension||A complete platformer on the b2k game Kit: sprites, input, camera, one-way platforms, hazards - a game, not a widget." & return after tR
    put "box2dxt/examples/box2dxt-slingshot.livecodescript||the box2dxt extension||Knock the towers down: projectile physics, star ratings, level progression." & return after tR
@@ -883,8 +894,9 @@ end slExtProbe
 -- token spelled exactly as the registry's needs prose spells it. onionxt,
 -- nostrxt, riptide and the script HALVES of coinxt/box2dxt are FILES a demo
 -- carries, not extensions, so a row here would be meaningless for them.
--- The members no row names yet (curlxt, box3dxt, xlsxt) join with their
--- first launcher row. oscxt, midixt and artnetxt joined 2026-11-21.
+-- The members no row names yet (curlxt, xlsxt) join with their first
+-- launcher row. box3dxt and render3dxt joined with render3dxt's demo
+-- (2026-11-20); oscxt, midixt and artnetxt with their showcases (2026-11-21).
 function slExtRegistry
    return "sodiumxt|org.openxtalk.library.sodium" & return \
          & "torrentxt|org.openxtalk.library.torrent" & return \
@@ -892,6 +904,8 @@ function slExtRegistry
          & "datachannelxt|org.openxtalk.library.datachannel" & return \
          & "coinxt|org.openxtalk.library.coin" & return \
          & "box2dxt|org.openxtalk.box2dxt" & return \
+         & "box3dxt|org.openxtalk.library.boxthreed" & return \
+         & "render3dxt|org.openxtalk.library.renderthreed" & return \
          & "oscxt|org.openxtalk.library.osc" & return \
          & "midixt|org.openxtalk.library.midi" & return \
          & "artnetxt|org.openxtalk.library.artnet"

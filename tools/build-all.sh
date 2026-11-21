@@ -58,7 +58,7 @@ done
 # compile). midixt's RtMidi needs the platform's MIDI headers: on Linux that is
 # ALSA (libasound2-dev), which a full local walk must have installed; its
 # tests then run against the MOCK backend, so no MIDI service is needed.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt xlsxt oscxt midixt)
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt render3dxt xlsxt oscxt midixt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -448,7 +448,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt xlsxt oscxt midixt artnetxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt render3dxt xlsxt oscxt midixt artnetxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too

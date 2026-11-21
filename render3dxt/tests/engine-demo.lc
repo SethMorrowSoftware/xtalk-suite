@@ -1,0 +1,346 @@
+<?lc
+-- engine-demo.lc - examples/render3d-physics-demo.livecodescript OPENED AND
+-- DRIVEN on a real engine, with no screen.
+--
+--   server-community tests/engine-demo.lc DEMO R3MODULE R3LIBRARY [B3MODULE B3LIBRARY]
+--      DEMO                   the demo's .livecodescript file
+--      R3MODULE, B3MODULE     render3dxt.lcm and box3dxt.lcm (lc-compile)
+--      R3LIBRARY, B3LIBRARY   the built native libraries WITHOUT extension
+--
+-- The server engine has no window, but it has stacks, cards, fields,
+-- buttons, graphics and images, timers and both extensions. So the demo's
+-- script is put into a stack here exactly as a person pastes it, the stack
+-- is sent openStack, and everything that does not need eyes or a mouse is
+-- checked: the window's controls get built, the boot self-check prints
+-- GREEN, the frame timer runs and the picture in the image CHANGES, the
+-- buttons act when sent mouseUp, and closing gives back every object.
+--
+-- With no B3MODULE the same script is opened WITHOUT box3dxt: the demo must
+-- open, say what is missing and skip, not throw.
+--
+-- What this is NOT: the demo seen. Its look, a real mouse (drag to orbit,
+-- click to kick) and its speed on a screen need a desktop engine.
+--
+-- Every check prints PASS or FAIL, then SUMMARY passed failed; the exit
+-- status is the number of failures (1 when the run did not finish).
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=render3dxt demo on the engine::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " | " in pText
+   return pText
+end oneLine
+
+-- the stack's script: the file, less its `script "..."` first line (engine
+-- note 1.1: that line belongs to a script-only stack file, not to a script)
+function demoScript pPath
+   local tText
+   put url ("file:" & pPath) into tText
+   if word 1 of line 1 of tText is "script" then delete line 1 of tText
+   return tText
+end demoScript
+
+function picture
+   return the imageData of image "rdView" of stack "rdDemo"
+end picture
+
+-- "r,g,b" of pixel pX,pY of the demo's picture
+function pixelOf pData, pX, pY
+   local tAt
+   put (pY * 624 + pX) * 4 into tAt
+   return byteToNum(byte tAt + 2 of pData) & comma & byteToNum(byte tAt + 3 of pData) & comma & byteToNum(byte tAt + 4 of pData)
+end pixelOf
+
+-- how many lines of the self-check's log begin with pWord ("FAIL", "SKIP"):
+-- by line and by first word, because "0 failed" contains "fail" and the
+-- engine compares text without case
+function linesStarting pLog, pWord
+   local tLine, tCount
+   put 0 into tCount
+   repeat for each line tLine in pLog
+      if word 1 of tLine is pWord then add 1 to tCount
+   end repeat
+   return tCount
+end linesStarting
+
+-- how far the camera stands from what it looks at, metres
+function eyeDistance
+   local tCam
+   put value("rdCamera()", stack "rdDemo") into tCam
+   return sqrt((item 1 of tCam - item 4 of tCam) ^ 2 + (item 2 of tCam - item 5 of tCam) ^ 2 + (item 3 of tCam - item 6 of tCam) ^ 2)
+end eyeDistance
+
+-- how many things the stats line says there are
+function thingCount
+   return word 1 of field "rdStats" of stack "rdDemo"
+end thingCount
+
+-- Waits, letting timers run, until the stats line counts pCount things; at
+-- most ten seconds. A fixed wait would assume how fast this machine draws:
+-- the line is rewritten every thirty frames, however long those take.
+function thingsBecome pCount
+   local tUntil
+   put the milliseconds + 10000 into tUntil
+   repeat until thingCount() is pCount or the milliseconds > tUntil
+      wait 50 milliseconds with messages
+   end repeat
+   return thingCount() is pCount
+end thingsBecome
+
+-- The same for the picture: until it is no longer pOld.
+function pictureLeaves pOld
+   local tUntil
+   put the milliseconds + 10000 into tUntil
+   repeat until picture() is not pOld or the milliseconds > tUntil
+      wait 50 milliseconds with messages
+   end repeat
+   return picture() is not pOld
+end pictureLeaves
+
+-- And for the self-check's log: until its closing line is there.
+function logCloses
+   local tUntil
+   put the milliseconds + 10000 into tUntil
+   repeat until field "rdLog" of stack "rdDemo" contains "boot self-check GREEN" \
+         or field "rdLog" of stack "rdDemo" contains "boot self-check has FAILURES" or the milliseconds > tUntil
+      wait 50 milliseconds with messages
+   end repeat
+   return field "rdLog" of stack "rdDemo"
+end logCloses
+
+-- the sky: the pale blue the scene is cleared to
+function isSky pPixel
+   return pPixel is "168,186,214"
+end isSky
+
+command press pButton
+   send "mouseUp" to button pButton of stack "rdDemo"
+end press
+
+command openDemo pPath
+   create stack "rdDemo"
+   set the defaultStack to "rdDemo"
+   set the script of stack "rdDemo" to demoScript(pPath)
+   check "the demo's script compiles into a stack", the result is empty, oneLine(the result)
+   send "openStack" to stack "rdDemo"
+   set the defaultStack to "rdDemo"
+end openDemo
+
+command testWithBoth pPath
+   local tLog, tBefore, tCount, tLine, tName, tFar
+   -- a desktop engine starts with "png", and the demo must hand its pictures
+   -- over as "rle" without leaving the property changed
+   set the paintCompression to "png"
+   openDemo pPath
+   check "the window is the size the kit's 720p rule allows", the width of stack "rdDemo" is 980 and the height of stack "rdDemo" is 620, the rect of stack "rdDemo"
+   -- nothing is left to the system's theme, whose words are white under a
+   -- dark one, on a panel the kit paints white (seen on Windows, 2026-11-20)
+   repeat for each item tName in "rdCrate,rdBall,rdGem,rdRain,rdReset,rdPause,rdSmooth,rdTextures,rdTurn"
+      check "button" && tName && "is painted by the stack, in its own colours", \
+            the style of button tName of stack "rdDemo" is "transparent" and the foregroundColor of button tName of stack "rdDemo" is not empty \
+            and the backgroundColor of graphic (tName & "Bg") of stack "rdDemo" is not empty \
+            and the foregroundColor of button tName of stack "rdDemo" is not the backgroundColor of graphic (tName & "Bg") of stack "rdDemo", \
+            the foregroundColor of button tName of stack "rdDemo" && "on" && the backgroundColor of graphic (tName & "Bg") of stack "rdDemo"
+   end repeat
+   check "the log is a dark page with light words", the backgroundColor of field "rdLog" of stack "rdDemo" is "28,34,46" \
+         and the foregroundColor of field "rdLog" of stack "rdDemo" is "214,222,236", the foregroundColor of field "rdLog" of stack "rdDemo"
+   check "the small print is 11 point and dark enough to read", the textSize of field "rdStats" of stack "rdDemo" is 11 \
+         and the foregroundColor of field "rdStats" of stack "rdDemo" is "90,98,110" and the foregroundColor of field "rdHelp" of stack "rdDemo" is "90,98,110" \
+         and the foregroundColor of field "uiFooter" of stack "rdDemo" is "90,98,110", the foregroundColor of field "rdStats" of stack "rdDemo"
+   check "the panels begin below the status line", the top of graphic "rdViewPanel" of stack "rdDemo" >= the bottom of field "uiStatus" of stack "rdDemo" \
+         and the top of field "rdLog" of stack "rdDemo" - the bottom of graphic "rdLogCapLine" of stack "rdDemo" >= 6 \
+         and the top of button "rdSmooth" of stack "rdDemo" - the bottom of graphic "rdLookCapLine" of stack "rdDemo" >= 6, \
+         the top of graphic "rdViewPanel" of stack "rdDemo" && the bottom of graphic "rdLogCapLine" of stack "rdDemo" && the bottom of graphic "rdLookCapLine" of stack "rdDemo"
+   check "the three toggles start on, and say so in words", the uRdOn of button "rdSmooth" of stack "rdDemo" and the uRdOn of button "rdTextures" of stack "rdDemo" \
+         and the uRdOn of button "rdTurn" of stack "rdDemo" and the label of button "rdSmooth" of stack "rdDemo" is "Smooth edges: on", the label of button "rdSmooth" of stack "rdDemo"
+   check "the status line says it is running", field "uiStatus" of stack "rdDemo" begins with "Running - render3dxt", field "uiStatus" of stack "rdDemo"
+   put picture() into tBefore
+   check "the first picture is in the image before any timer ran", the number of bytes of tBefore is 624 * 468 * 4 \
+         and isSky(pixelOf(tBefore, 2, 2)) and pixelOf(tBefore, 312, 300) is not pixelOf(tBefore, 2, 2), pixelOf(tBefore, 2, 2) && pixelOf(tBefore, 312, 300)
+
+   -- the boot self-check: its delayed probe lands at 400 ms
+   put logCloses() into tLog
+   repeat for each line tLine in tLog
+      if tLine is not empty then put "INFO   " & tLine & return
+   end repeat
+   check "the boot self-check finished GREEN", tLog contains "boot self-check GREEN" and tLog contains " 0 failed" and linesStarting(tLog, "FAIL") is 0, oneLine(tLog)
+   check "it checked the join, not skipped it", linesStarting(tLog, "SKIP") is 0 and linesStarting(tLog, "PASS") >= 12, oneLine(tLog)
+
+   -- the frame timer: the picture moves, and the stats line fills
+   check "frames ran on the timer: the picture changed", pictureLeaves(tBefore), "the picture is still the first picture after ten seconds"
+   check "the stats line fills in", thingsBecome(16) and field "rdStats" of stack "rdDemo" contains "triangles", field "rdStats" of stack "rdDemo"
+   put "INFO   " & field "rdStats" of stack "rdDemo" & return
+   check "the picture's corner says how fast it is going", field "rdFps" of stack "rdDemo" contains "fps" and field "rdFps" of stack "rdDemo" contains "ms" \
+         and word 1 of field "rdFps" of stack "rdDemo" > 0, field "rdFps" of stack "rdDemo"
+   put "INFO   " & field "rdFps" of stack "rdDemo" & return
+   check "the paintCompression is left as it was found", the paintCompression is "png", the paintCompression
+   -- the pace: a frame is due every sixteen milliseconds and never sooner,
+   -- and one frame message waits, not a pile of them
+   put 0 into tCount
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine is "rdFrame" then add 1 to tCount
+   end repeat
+   check "one frame is waiting", tCount is 1, tCount
+   check "the stats line says the longest wait between frames, and it is at least a frame", field "rdStats" of stack "rdDemo" contains "the longest wait between frames" \
+         and word -2 of field "rdStats" of stack "rdDemo" >= 15, field "rdStats" of stack "rdDemo"
+   check "never more than sixty-odd pictures a second", word 1 of field "rdFps" of stack "rdDemo" <= 67, field "rdFps" of stack "rdDemo"
+
+   -- the buttons, by message
+   press "rdCrate"
+   press "rdBall"
+   press "rdGem"
+   check "three drops make three more things", thingsBecome(19), field "rdStats" of stack "rdDemo"
+   press "rdRain"
+   check "Ten at once makes ten more", thingsBecome(29), field "rdStats" of stack "rdDemo"
+   repeat 4 times
+      press "rdRain"
+   end repeat
+   check "the oldest go when there are sixty", thingsBecome(60), field "rdStats" of stack "rdDemo"
+   put "INFO   " & field "rdStats" of stack "rdDemo" & return
+
+   press "rdSmooth"
+   check "Smooth edges goes off", the uRdOn of button "rdSmooth" of stack "rdDemo" is false and the label of button "rdSmooth" of stack "rdDemo" is "Smooth edges: off", the label of button "rdSmooth" of stack "rdDemo"
+   press "rdTextures"
+   check "Textures goes off", the uRdOn of button "rdTextures" of stack "rdDemo" is false and the label of button "rdTextures" of stack "rdDemo" is "Textures: off", the label of button "rdTextures" of stack "rdDemo"
+   wait 200 milliseconds with messages
+   check "the picture is still drawn with both off", the number of bytes of picture() is 624 * 468 * 4 and isSky(pixelOf(picture(), 2, 2)), pixelOf(picture(), 2, 2)
+   press "rdSmooth"
+   press "rdTextures"
+   check "and both go on again", the uRdOn of button "rdSmooth" of stack "rdDemo" and the uRdOn of button "rdTextures" of stack "rdDemo", "one stayed off"
+
+   -- Turn slowly off: the camera stays where a hand leaves it
+   press "rdTurn"
+   check "Turn slowly goes off", the uRdOn of button "rdTurn" of stack "rdDemo" is false and the label of button "rdTurn" of stack "rdDemo" is "Turn slowly: off", the label of button "rdTurn" of stack "rdDemo"
+
+   -- Pause holds the picture still; a drag still turns the camera
+   press "rdPause"
+   wait 100 milliseconds with messages
+   put picture() into tBefore
+   wait 300 milliseconds with messages
+   check "Pause holds the picture", picture() is tBefore and the label of button "rdPause" of stack "rdDemo" is "Go on", the label of button "rdPause" of stack "rdDemo"
+   dispatch "rdOrbitBy" to stack "rdDemo" with 60, -20
+   check "a drag turns the camera while paused", picture() is not tBefore, "the picture did not change"
+   -- the wheel: three steps nearer, then as far away as it will go and as
+   -- near, which stop at the two ends
+   put picture() into tBefore
+   dispatch "rdZoom" to stack "rdDemo" with -3
+   check "the wheel brings the camera closer", picture() is not tBefore and eyeDistance() < 10.5 * 0.76 and eyeDistance() > 10.5 * 0.74, eyeDistance()
+   dispatch "rdZoom" to stack "rdDemo" with 40
+   put eyeDistance() into tFar
+   dispatch "rdZoom" to stack "rdDemo" with -80
+   check "and stops at its two ends", abs(tFar - 26) < 0.001 and abs(eyeDistance() - 4.5) < 0.001, tFar && eyeDistance()
+   dispatch "rdZoom" to stack "rdDemo" with "x"
+   dispatch "rdZoom" to stack "rdDemo" with 9
+   -- a click in the middle of the picture: whatever is there is kicked, and
+   -- nothing throws if it is the floor or the sky
+   dispatch "rdKick" to stack "rdDemo" with 312, 300
+   dispatch "rdKick" to stack "rdDemo" with 2, 2
+   put picture() into tBefore
+   press "rdPause"
+   check "Go on starts it again", pictureLeaves(tBefore) and the label of button "rdPause" of stack "rdDemo" is "Pause", the label of button "rdPause" of stack "rdDemo"
+
+   -- running: a drag reaches the picture through the frame timer, which
+   -- begins a picture only when something has changed
+   wait 200 milliseconds with messages
+   put picture() into tBefore
+   dispatch "rdOrbitBy" to stack "rdDemo" with -45, 15
+   check "a drag turns the camera while running", pictureLeaves(tBefore), "the picture did not change"
+   check "and the paintCompression is still as it was found", the paintCompression is "png", the paintCompression
+
+   press "rdReset"
+   check "Start again puts the first sixteen back", thingsBecome(16), field "rdStats" of stack "rdDemo"
+
+   -- closing gives everything back and leaves no timer behind
+   send "closeStack" to stack "rdDemo"
+   check "closing frees every renderer object", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+   check "closing leaves no frame timer", "rdFrame" is not in the pendingMessages, oneLine(the pendingMessages)
+   -- and it opens again, as a saved stack does: the controls are reused
+   put the number of controls of stack "rdDemo" into tCount
+   send "openStack" to stack "rdDemo"
+   set the defaultStack to "rdDemo"
+   wait 200 milliseconds with messages
+   check "it opens a second time with the same controls", the number of controls of stack "rdDemo" is tCount \
+         and field "uiStatus" of stack "rdDemo" begins with "Running", the number of controls of stack "rdDemo" && tCount
+   put logCloses() into tLog
+   check "opened again, the log holds this run only", linesStarting(tLog, "==") is 1, linesStarting(tLog, "==")
+   check "the badge is one line", the dontWrap of field "rdFps" of stack "rdDemo" and the number of lines of the formattedText of field "rdFps" of stack "rdDemo" <= 1, the formattedText of field "rdFps" of stack "rdDemo"
+   -- closed and opened again at once, inside the probe's 400 ms: the first
+   -- run's probe must not close this run's block a second time
+   send "closeStack" to stack "rdDemo"
+   send "openStack" to stack "rdDemo"
+   set the defaultStack to "rdDemo"
+   put logCloses() into tLog
+   wait 600 milliseconds with messages
+   put field "rdLog" of stack "rdDemo" into tLog
+   put 0 into tCount
+   repeat for each line tLine in tLog
+      if tLine contains "boot self-check GREEN" then add 1 to tCount
+   end repeat
+   check "closed and opened at once, the block is closed once", tCount is 1 and linesStarting(tLog, "==") is 1, tCount && linesStarting(tLog, "==")
+   check "the corner's badge is as wide as its words", abs(the width of field "rdFps" of stack "rdDemo" - the formattedWidth of field "rdFps" of stack "rdDemo") <= 3 \
+         or field "rdFps" of stack "rdDemo" is empty, the width of field "rdFps" of stack "rdDemo" && the formattedWidth of field "rdFps" of stack "rdDemo"
+   send "closeStack" to stack "rdDemo"
+   check "and closes clean again", r3LiveCounts() is "0,0,0,0,0,0" and "rdFrame" is not in the pendingMessages, r3LiveCounts()
+end testWithBoth
+
+command testWithoutPhysics pPath
+   local tLog, tLine
+   openDemo pPath
+   check "without box3dxt the status line names it", field "uiStatus" of stack "rdDemo" contains "box3dxt extension is not installed", field "uiStatus" of stack "rdDemo"
+   put logCloses() into tLog
+   repeat for each line tLine in tLog
+      if tLine is not empty then put "INFO   " & tLine & return
+   end repeat
+   check "the self-check skips the join and is otherwise green", linesStarting(tLog, "SKIP") is 1 and tLog contains "boot self-check GREEN" and linesStarting(tLog, "FAIL") is 0, oneLine(tLog)
+   press "rdCrate"
+   press "rdReset"
+   press "rdPause"
+   press "rdSmooth"
+   dispatch "rdKick" to stack "rdDemo" with 10, 10
+   dispatch "rdOrbitBy" to stack "rdDemo" with 10, 10
+   check "the buttons do nothing and say why", field "uiStatus" of stack "rdDemo" contains "missing", field "uiStatus" of stack "rdDemo"
+   check "no frame timer was started", "rdFrame" is not in the pendingMessages, oneLine(the pendingMessages)
+   send "closeStack" to stack "rdDemo"
+   check "nothing was made, so nothing is left", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+end testWithoutPhysics
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["render3dxt"] to $2
+   load extension from file $1
+   check "render3dxt loads", the result is empty and "org.openxtalk.library.renderthreed" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if $3 is not empty then
+      set the revLibraryMapping["box3dxt"] to $4
+      load extension from file $3
+      check "box3dxt loads beside it", the result is empty and "org.openxtalk.library.boxthreed" is among the lines of the loadedExtensions, \
+            "result '" & oneLine(the result) & "'"
+   end if
+   if sFailed is 0 then
+      if $3 is not empty then
+         testWithBoth $0
+      else
+         put "INFO box3dxt is NOT loaded in this run, on purpose" & return
+         testWithoutPhysics $0
+      end if
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

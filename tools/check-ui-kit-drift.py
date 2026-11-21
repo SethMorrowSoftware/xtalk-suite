@@ -62,6 +62,10 @@ ADOPTERS = [
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
+    # render3dxt's Box3D-driven picture (2026-11-20): the kit's chrome round
+    # one image the stack itself builds
+    os.path.join("render3dxt", "examples",
+                 "render3d-physics-demo.livecodescript"),
     # the suite paste's hand-written half: it wears the demos' look since D-23
     # (2026-09-24) and keeps the harness scaffold for its report plumbing
     os.path.join("tests", "suite-selftest.core.livecodescript"),
@@ -164,12 +168,42 @@ def extract(path):
     return "\n".join(lines[begins[0]:ends[0] + 1]), None
 
 
+# THE BUILDERS THAT MUST SAY THEIR TEXT COLOUR. A control that leaves its
+# foregroundColor unset draws its words in the system theme's, and a dark
+# theme's is white: on Windows, 2026-11-20, the physics demo's log and the
+# labels of its two checkboxes were white on the white the kit paints. These
+# three paint (or sit on) a light ground of the kit's own, so the words are
+# the kit's to colour. uiButton is not here: a plain button is the system's
+# whole, ground and words together, and stays readable under any theme.
+SAYS_ITS_INK = ("uiInput", "uiArea", "uiCheckbox")
+INK_RE = re.compile(r"(?m)^\s*set\s+the\s+foregroundColor\s+of\s+"
+                    r"(?:field|button)\s+pName\s+to\s+kUiInk\s*$")
+
+
+def ink_problems(master_block):
+    """One sentence for each builder of SAYS_ITS_INK that sets no text colour
+    (or is gone from the master)."""
+    found = []
+    for name in SAYS_ITS_INK:
+        body = re.search(r"(?ms)^command %s\b.*?^end %s\s*$" % (name, name),
+                         master_block)
+        if not body:
+            found.append("the master has no builder %s (SAYS_ITS_INK names "
+                         "it)" % name)
+        elif not INK_RE.search(body.group(0)):
+            found.append("the master's %s sets no foregroundColor: under a "
+                         "dark system theme its words are white on the kit's "
+                         "white" % name)
+    return found
+
+
 def main():
     problems = []
     master_block, err = extract(MASTER)
     if err:
         print("check-ui-kit-drift: FAILED - %s" % err)
         return 1
+    problems.extend(ink_problems(master_block))
 
     # every stack that CARRIES the marker must be registered - member examples
     # (subdirectories included), app sources, and the suite-level stacks in

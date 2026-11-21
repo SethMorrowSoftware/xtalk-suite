@@ -80,7 +80,7 @@
 # hold) - the dylibs ship with the linker's ad-hoc signature only, and the
 # installer's refusals keep holding the line for hand-assembled bundles.
 #
-# ANDROID LANES SINCE 2026-11-18. The `android` job builds all nine native
+# ANDROID LANES SINCE 2026-11-18. The `android` job builds all ten native
 # members for the four Android ABIs OXT-Beyond's Android builder packs
 # (arm64-android, armv7-android, x86_64-android, x86-android). The recipe is
 # NOT spelled out here row by row as the desktop lanes are: one toolchain,
@@ -430,6 +430,39 @@ jobs:
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
+          # ---- render3dxt: added 2026-11-20. The renderer is this member's
+          # own C with two single-file readers compiled in (stb_image and
+          # fast_obj, FetchContent at pinned commits) and no dependency, so
+          # every row is box3dxt's shape. Its CMake asks for SSE2 arithmetic
+          # on the 32-bit gcc row. native-render3dxt.yml builds and tests the
+          # same six on every change to the member.
+          - member: render3dxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: render3dxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: render3dxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: render3dxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: render3dxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: render3dxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           # ---- xlsxt: added 2026-11-20. libxlsxwriter, zlib and Expat build
           # from source inside the member's CMake (FetchContent, each pinned
           # to a commit) and need nothing from the runner, not even its zlib,
@@ -1339,7 +1372,7 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------- Android
-  # All nine native members, one job per Android ABI, each calling
+  # All ten native members, one job per Android ABI, each calling
   # tools/build-android.sh once per member. (oscxt and midixt, native since
   # 2026-11-21, have no Android library: the script's DESKTOP_ONLY says why,
   # and --list prints them apart, so the loops below never meet them.) Per ABI rather than per member
