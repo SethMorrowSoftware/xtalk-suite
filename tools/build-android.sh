@@ -7,7 +7,8 @@
 #   bash tools/build-android.sh --api <member>  # the Android API level it is built for
 #
 #   <member>       sodiumxt | enetxt | box2dxt | box3dxt | audioxt | render3dxt |
-#                  xlsxt | coinxt | curlxt | datachannelxt | torrentxt
+#                  xlsxt | webpxt | barcodext | coinxt | curlxt |
+#                  datachannelxt | torrentxt
 #   <platform-id>  arm64-android | armv7-android | x86_64-android | x86-android
 #
 # It writes <member>/src/code/<platform-id>/<member>.so, the place every
@@ -90,7 +91,7 @@ OPENSSL_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 BOOST_VERSION="1.86.0"
 BOOST_SHA256="2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26"
 
-MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt coinxt curlxt datachannelxt torrentxt"
+MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt webpxt barcodext coinxt curlxt datachannelxt torrentxt"
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
 # The Android a member is built for: the suite's floor, or the one member
@@ -415,6 +416,16 @@ else
       # no dependency outside the two single-file readers its CMake fetches;
       # its threads are bionic's pthreads, and its tests carry their model
       # and picture files inside them, so they run from the pushed folder.
+      : ;;
+    webpxt)
+      # Nothing to pass. libwebp builds from source inside the member's
+      # CMake and picks its SSE or NEON code per file, at run time where
+      # the ABI does not promise it.
+      : ;;
+    barcodext)
+      # Nothing to pass. zxing-cpp is C++20 and the NDK's libc++ goes INTO
+      # the library (ANDROID_STL above), so it needs nothing of the device
+      # beyond bionic.
       : ;;
     xlsxt)
       # Nothing to pass. libxlsxwriter, zlib and Expat are plain C built from

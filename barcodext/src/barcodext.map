@@ -1,0 +1,17 @@
+/* barcodext.map - the linker version script for the shipped shared library.
+ *
+ * barcodext statically links zxing-cpp (C++) and, on Linux, the C++ runtime
+ * itself (-static-libstdc++), and -fvisibility=hidden does not reach an
+ * archive's own objects: without this script the library would export
+ * zxing-cpp's symbols, zint's (the encoder zxing-cpp carries) and the C++
+ * exception ABI, any of which could interpose on another copy in the same
+ * process (the enetxt lesson, release run 10, 2026-08-26; torrentxt's map
+ * says what a leaked C++ runtime costs). It keeps only bcx_*, which is all
+ * the .lcb binds by name; CMakeLists.txt gives ld64 the same pattern.
+ */
+{
+    global:
+        bcx_*;
+    local:
+        *;
+};

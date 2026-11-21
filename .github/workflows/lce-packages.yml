@@ -80,6 +80,8 @@ on:
       - 'render3dxt/src/**'
       - 'xlsxt/src/**'
       - 'gamepadxt/src/**'
+      - 'webpxt/src/**'
+      - 'barcodext/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'
       - '*/examples/*-helpers.livecodescript'
