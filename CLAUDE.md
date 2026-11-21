@@ -88,7 +88,7 @@ every family: **edit the master, then regenerate or re-carry; never patch a copy
 
 | Block | Master | Held by |
 |---|---|---|
-| UI kit v2, the card look | `tools/ui-kit.livecodescript` | `tools/check-ui-kit-drift.py` |
+| UI kit v2, the card look | `tools/ui-kit.livecodescript` | `tools/check-ui-kit-drift.py`; its words' colours, `check-ui-kit-text-colour.py` |
 | Demo boot self-check | `tools/demo-selfcheck.livecodescript` | `check-demo-selfcheck-drift.py`, `check-demo-control-lists.py` |
 | Harness scaffold | `tools/harness-scaffold.livecodescript` | `tools/check-harness-scaffold-drift.py` |
 | Script libraries in demos | `<member>/src/*.livecodescript` | `sync-demo-embeds.py --check` (after `test-demo-embeds.py --mutate`) |
