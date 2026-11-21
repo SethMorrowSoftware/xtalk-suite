@@ -5,10 +5,12 @@
 -- archive of a release), which is the same engine core, the same LCB virtual
 -- machine and the same foreign-function interface as the IDE's:
 --
---   server-community tests/engine-selftest.lc MODULE LIBRARY
+--   server-community tests/engine-selftest.lc MODULE LIBRARY MODEL
 --      MODULE   box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile
 --      LIBRARY  the built native library WITHOUT its extension
 --               (.../box3dxt for .../box3dxt.so)
+--      MODEL    the full path of tests/models/teapot.obj (a missing one is
+--               a FAIL, not a skipped scene)
 --
 -- tests/smoke_test.c proves the C shim. This proves the layer above it, the
 -- one a compile cannot: that every binding resolves by name in the built
@@ -16,7 +18,8 @@
 -- C string as text, a double as a number), and that a scene built from
 -- SCRIPT simulates. Two halves:
 --
---   the SCENES, written by hand: a drop, a ray, events, a hinge, a hull;
+--   the SCENES, written by hand: a drop, a ray, events, a hinge, a hull,
+--     and a real model read from its .obj file;
 --   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
 --     gate holds it): every public handler called once with zeros. Zeros
 --     are safe by the binding's contract (a 0 handle is a no-op), so a call
@@ -61,8 +64,8 @@ end stepWorld
 -- The scenes
 -- ---------------------------------------------------------------------
 command testLibrary
-   check "ABI", b3ABIVersion() is 1, b3ABIVersion()
-   check "version text", b3LibraryVersion() begins with "box3dxt ABI 1; Box3D ", b3LibraryVersion()
+   check "ABI", b3ABIVersion() is 2, b3ABIVersion()
+   check "version text", b3LibraryVersion() begins with "box3dxt ABI 2; Box3D ", b3LibraryVersion()
    check "a Boolean comes back as a Boolean", b3HasAVX2() is true or b3HasAVX2() is false, b3HasAVX2()
    check "no asserts at load", b3AssertCount() is 0 and b3AssertText() is empty, b3AssertText()
 end testLibrary
@@ -265,11 +268,152 @@ command testJointsAndGeometry
    b3WorldDestroy tWorld
 end testJointsAndGeometry
 
+-- A REAL MODEL, loaded the way a stack would: the Utah teapot's .obj file
+-- (tests/models/teapot.obj) read as text, its "v" lines into
+-- b3GeometryAddPoint and its "f" lines into b3GeometryAddTriangle. The C
+-- smoke test checks the same model against a ray-triangle test of its own;
+-- this checks that thousands of points and triangles cross the binding from
+-- SCRIPT and make the same shapes.
+command testModel pPath
+   local tData, tLine, tPoints, tTriangles, tTop, tWorld, tGround, tPot, tMesh
+   local tFalling, tHull, tSteps, tMass
+   put url ("binfile:" & pPath) into tData
+   check "the model file is read", the number of lines of tData > 1000, "'" & pPath & "': " & the result
+   if the number of lines of tData <= 1000 then exit testModel
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   put b3BodyCreate(tWorld, 0, 0, -0.5, 0) into tGround
+   get b3ShapeAddBox(tGround, 20, 0.5, 20, 0, 0.6, 0)
+
+   -- the mesh: every point, then every triangle (an .obj counts points from 1,
+   -- and so does b3GeometryAddTriangle)
+   put 0 into tPoints
+   put 0 into tTriangles
+   put 0 into tTop
+   b3GeometryBegin
+   repeat for each line tLine in tData
+      if word 1 of tLine is "v" then
+         put b3GeometryAddPoint(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0) into tPoints
+         put max(tTop, word 3 of tLine) into tTop
+      else if word 1 of tLine is "f" then
+         put b3GeometryAddTriangle(word 2 of tLine + 0, word 3 of tLine + 0, word 4 of tLine + 0) into tTriangles
+      end if
+   end repeat
+   check "every point and triangle of the model was taken", tPoints is 3644 and tTriangles is 6320 and b3GeometryPointCount() is 3644, \
+         tPoints && tTriangles && b3LastError()
+   put b3BodyCreate(tWorld, 0, 0, 0, 0) into tPot
+   put b3ShapeAddMesh(tPot, 0.6, 0) into tMesh
+   check "the teapot is a mesh", tMesh > 0 and b3ShapeType(tMesh) is 4, tMesh && b3LastError()
+   check "a ray from above lands on its knob", b3CastRayClosest(tWorld, 0.0131, 6, 0.0173, 0, -5.9, 0) is 1 and b3HitShape(1) is tMesh \
+         and near(item 2 of b3HitPoint(1), tTop, 0.05), b3HitCount() && b3HitPoint(1) && "top" && tTop
+   check "a ray from the side lands on its body", b3CastRayClosest(tWorld, -6, 1.0, 0.5, 12, 0, 0) is 1 and b3HitShape(1) is tMesh \
+         and item 1 of b3HitPoint(1) < 0, b3HitCount() && b3HitPoint(1)
+   -- a mesh is ONE-SIDED: from inside the pot a ray meets only the backs of
+   -- its triangles, and passes through
+   check "a ray from inside the pot passes out through it", b3CastRayClosest(tWorld, 0.0131, 1, 0.0173, 0, 10, 0) is 0, b3HitCount() && b3HitPoint(1)
+
+   -- the same file as a convex hull on a body that falls, at 0.3 of its size
+   put b3BodyCreate(tWorld, 2, 8, 1, 8) into tFalling
+   b3GeometryBegin
+   repeat for each line tLine in tData
+      if word 1 of tLine is "v" then get b3GeometryAddPoint(word 2 of tLine * 0.3, word 3 of tLine * 0.3, word 4 of tLine * 0.3)
+   end repeat
+   put b3ShapeAddHull(tFalling, 1, 0.6, 0) into tHull
+   check "the teapot's points make a hull", tHull > 0 and b3ShapeType(tHull) is 3, tHull && b3LastError()
+   put b3BodyMass(tFalling) into tMass
+   check "the hull weighs more than the pot holds and less than its box", tMass > 0.69 and tMass < 2.19, tMass
+   put 0 into tSteps
+   repeat while b3BodyIsAwake(tFalling) and tSteps < 900
+      b3WorldStep tWorld, 1/60, 4
+      add 1 to tSteps
+   end repeat
+   check "the falling teapot comes to rest on the floor", b3BodyIsAwake(tFalling) is false and b3BodyY(tFalling) > -0.1 and b3BodyY(tFalling) < 1.5, \
+         tSteps && b3BodyPosition(tFalling)
+   b3WorldDestroy tWorld
+   check "the model's world is gone", b3ShapeIsValid(tMesh) is false and b3BodyIsValid(tFalling) is false, b3ShapeIsValid(tMesh)
+end testModel
+
 -- The typed boundary (suite engine note 6.4): an EMPTY value into a typed
 -- parameter is an error the engine raises before the call is made. That is
 -- the engine's rule and not the binding's; what is held here is that it is
 -- an error a script can catch and not a fault, and that 0 is the safe "no
 -- handle".
+-- The renderer, through the binding: the same square-on box the native
+-- smoke test derives by hand, so every number here is that test's. What
+-- only an engine can show is the picture arriving as binary DATA of the
+-- right length with its bytes intact (zero bytes included: a text copy
+-- would stop at the first), and the picture coordinates of a click.
+command testRender
+   local tWorld, tBox, tShape, tData, tAt, tRay, tSpot, tBall, tBallShape, tText
+   check "no picture before the first render", b3RenderWidth() is 0 and b3RenderByteCount() is 0 and b3RenderPixels() is empty \
+         and b3RenderPixel(0, 0) is -1 and b3RenderRay(1, 1) is empty, b3RenderWidth() && b3RenderByteCount()
+   check "the camera starts where the docs say", b3RenderCamera() is "0,4,12,0,1,0,50", b3RenderCamera()
+   check "no world, no picture, and a reason", b3RenderWorld(0, 64, 64, 0) is false and b3LastError() is "not a world", b3LastError()
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   check "a picture too big is refused", b3RenderWorld(tWorld, 2049, 64, 0) is false and b3RenderWorld(tWorld, 64, 64, 3) is false \
+         and b3LastError() is not empty, b3LastError()
+   put b3BodyCreate(tWorld, 0, 0, 0, 0) into tBox
+   put b3ShapeAddBox(tBox, 1, 1, 1, 0, 0.5, 0) into tShape
+   check "a new shape has no colour of its own", b3ShapeColor(tShape) is empty, b3ShapeColor(tShape)
+   b3ShapeSetColor tShape, 200, 100, 50
+   b3ShapeSetColor tShape, 200, 100, 256
+   check "a shape keeps the colour it is given", b3ShapeColor(tShape) is "200,100,50", b3ShapeColor(tShape)
+   b3RenderSetCamera 0, 0, 10, 0, 0, 0, 50
+   b3RenderSetCamera 0, 0, 10, 0, 0, 10, 50
+   check "a camera looking at itself is refused", b3RenderCamera() is "0,0,10,0,0,0,50", b3RenderCamera()
+   b3RenderSetLight 0, 0, -1
+   b3RenderSetBackground 10, 20, 30
+   check "a world is rendered", b3RenderWorld(tWorld, 200, 100, 0) is true and b3LastError() is empty, b3LastError()
+   check "the picture is the size asked for", b3RenderWidth() is 200 and b3RenderHeight() is 100 and b3RenderByteCount() is 80000 \
+         and b3RenderTriangleCount() is 12, b3RenderWidth() && b3RenderHeight() && b3RenderByteCount() && b3RenderTriangleCount()
+   put b3RenderPixels() into tData
+   check "the picture crosses as data, every byte of it", the number of bytes in tData is 80000, the number of bytes in tData
+   put 4 * (50 * 200 + 100) into tAt
+   check "its bytes are 0, red, green, blue, rows from the top", byteToNum(byte tAt + 1 of tData) is 0 and byteToNum(byte tAt + 2 of tData) is 200 \
+         and byteToNum(byte tAt + 3 of tData) is 100 and byteToNum(byte tAt + 4 of tData) is 50 \
+         and byteToNum(byte 2 of tData) is 10 and byteToNum(byte 3 of tData) is 20 and byteToNum(byte 4 of tData) is 30 \
+         and byteToNum(byte 80000 of tData) is 30, \
+         byteToNum(byte tAt + 1 of tData) && byteToNum(byte tAt + 2 of tData) && byteToNum(byte tAt + 3 of tData) && byteToNum(byte tAt + 4 of tData)
+   check "a pixel is its colour as one number", b3RenderPixel(100, 50) is 200 * 65536 + 100 * 256 + 50 and b3RenderPixel(0, 0) is 10 * 65536 + 20 * 256 + 30 \
+         and b3RenderPixel(200, 0) is -1, b3RenderPixel(100, 50) && b3RenderPixel(0, 0)
+   check "the pixel names its shape and its distance", b3RenderShapeAt(100, 50) is tShape and b3RenderShapeAt(0, 0) is 0 \
+         and near(b3RenderDepth(100, 50), 9, 0.001) and b3RenderDepth(0, 0) is 0, b3RenderShapeAt(100, 50) && b3RenderDepth(100, 50)
+   put b3RenderProject(1, 1, 1) into tSpot
+   check "a point of the world lands where the arithmetic says", near(item 1 of tSpot, 111.915, 0.01) and near(item 2 of tSpot, 38.085, 0.01) \
+         and near(item 3 of tSpot, 9, 0.000001), tSpot
+   check "a point behind the camera lands nowhere", b3RenderProject(0, 0, 11) is empty, b3RenderProject(0, 0, 11)
+   -- a click: the ray through a picture point, cast into the world
+   put b3RenderRay(105.5, 45.5) into tRay
+   check "the ray through a pixel starts at the camera", the number of items in tRay is 6 and item 1 to 3 of tRay is "0,0,10" and item 6 of tRay < -0.99, tRay
+   check "cast, it finds the shape that pixel shows", b3CastRayClosest(tWorld, item 1 of tRay, item 2 of tRay, item 3 of tRay, \
+         50 * item 4 of tRay, 50 * item 5 of tRay, 50 * item 6 of tRay) is 1 and b3HitShape(1) is b3RenderShapeAt(105, 45) \
+         and near(item 3 of b3HitPoint(1), 1, 0.001), b3HitCount() && b3HitPoint(1)
+   check "a wireframe leaves the face empty", b3RenderWorld(tWorld, 200, 100, 1) and b3RenderShapeAt(100, 50) is 0 and b3RenderShapeAt(88, 50) is tShape, \
+         b3RenderShapeAt(100, 50) && b3RenderShapeAt(88, 50)
+   check "outlines leave it filled", b3RenderWorld(tWorld, 200, 100, 2) and b3RenderPixel(100, 50) is 200 * 65536 + 100 * 256 + 50, b3RenderPixel(100, 50)
+   b3ShapeClearColor tShape
+   check "a colour taken away is gone", b3ShapeColor(tShape) is empty and b3RenderWorld(tWorld, 200, 100, 0) and b3RenderPixel(100, 50) is 9214604, b3RenderPixel(100, 50)
+   -- triangles as text
+   put b3ShapeTrianglesText(tShape) into tText
+   check "a box is twelve triangles of nine numbers", the number of lines in tText is 12 and the number of items in line 1 of tText is 9 \
+         and the number of items in line 12 of tText is 9, the number of lines in tText && line 1 of tText
+   put b3BodyCreate(tWorld, 2, 3, 0, 0) into tBall
+   put b3ShapeAddSphere(tBall, 0, 0, 0, 0.5, 1, 0.5, 0) into tBallShape
+   put b3ShapeTrianglesText(tBallShape) into tText
+   check "a long list crosses whole", the number of lines in tText > 100 and the number of items in the last line of tText is 9 \
+         and b3ShapeTrianglesText(0) is empty, the number of lines in tText
+   -- a picture resized, and many in a row (each a fresh copy of the data)
+   repeat 50 times
+      get b3RenderWorld(tWorld, 320, 240, 2)
+      put b3RenderPixels() into tData
+   end repeat
+   check "fifty pictures in a row, each whole", the number of bytes in tData is 307200 and b3RenderByteCount() is 307200, the number of bytes in tData
+   b3WorldDestroy tWorld
+   check "the world gone, the picture stays", b3RenderWidth() is 320 and b3RenderShapeAt(160, 120) is 0 and the number of bytes in b3RenderPixels() is 307200, \
+         b3RenderWidth()
+   b3RenderSetBackground 32, 36, 42
+   b3RenderSetCamera 0, 4, 12, 0, 1, 0, 50
+end testRender
+
 command testTypedBoundary
    local tThrew
    put false into tThrew
@@ -1050,11 +1194,49 @@ command sweepEveryHandler
       b3ParallelSetMaxTorque 0, 0
       put "b3ParallelMaxTorque" into tName
       get b3ParallelMaxTorque(0)
+      put "b3RenderSetCamera" into tName
+      b3RenderSetCamera 0, 0, 0, 0, 0, 0, 0
+      put "b3RenderCamera" into tName
+      get b3RenderCamera()
+      put "b3RenderSetLight" into tName
+      b3RenderSetLight 0, 0, 0
+      put "b3RenderSetBackground" into tName
+      b3RenderSetBackground 0, 0, 0
+      put "b3ShapeSetColor" into tName
+      b3ShapeSetColor 0, 0, 0, 0
+      put "b3ShapeClearColor" into tName
+      b3ShapeClearColor 0
+      put "b3ShapeColor" into tName
+      get b3ShapeColor(0)
+      put "b3RenderWorld" into tName
+      get b3RenderWorld(0, 0, 0, 0)
+      put "b3RenderPixels" into tName
+      get b3RenderPixels()
+      put "b3RenderByteCount" into tName
+      get b3RenderByteCount()
+      put "b3RenderWidth" into tName
+      get b3RenderWidth()
+      put "b3RenderHeight" into tName
+      get b3RenderHeight()
+      put "b3RenderTriangleCount" into tName
+      get b3RenderTriangleCount()
+      put "b3RenderPixel" into tName
+      get b3RenderPixel(0, 0)
+      put "b3RenderShapeAt" into tName
+      get b3RenderShapeAt(0, 0)
+      put "b3RenderDepth" into tName
+      get b3RenderDepth(0, 0)
+      put "b3RenderProject" into tName
+      get b3RenderProject(0, 0, 0)
+      put "b3RenderRay" into tName
+      get b3RenderRay(0, 0)
+      put "b3ShapeTrianglesText" into tName
+      get b3ShapeTrianglesText(0)
    catch tError
       check "sweep: " & tName, false, oneLine(tError)
       exit sweepEveryHandler
    end try
-   check "sweep: all 379 public handlers called with zeros, none threw", true
+   check "sweep: all 398 public handlers called with zeros, none threw", true
 end sweepEveryHandler
 -- <<< END SWEEP <<<
 
@@ -1074,6 +1256,8 @@ try
       testQueriesAndEvents
       testJointsAndGeometry
       testTypedBoundary
+      testModel $2
+      testRender
       sweepEveryHandler
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && b3AssertText() && b3UnstableCount()

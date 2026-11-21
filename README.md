@@ -60,7 +60,8 @@ Design facts that decide how you use them (each member's own docs have the rest)
   can be embedded beside onionxt in one script.
 - **box2dxt**'s examples are complete games: a seven-level platformer, a contraption builder, a
   slingshot tower-knockdown and a physics demo.
-- **box3dxt** simulates and reports; drawing is the stack's. Box3D is young (no tagged
+- **box3dxt** simulates, and draws the world into a picture a stack shows in an image (a small
+  software renderer in the shim; anything finer is the stack's). Box3D is young (no tagged
   release) and trusts its caller, so the shim holds every argument to stated limits and removes
   a body whose motion stops being a number (`box3dxt/docs/getting-started.md`).
 - **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
@@ -128,7 +129,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | enetxt | 5 platforms, ABI 2 | folded 34 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 34 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5), where the standalone selftest ran 68/0/0 with its own async loopback complete on 2026-09-26 (presumably on that DLL); standalone async loopback, 2026-08-13 | LAN chat between two machines; internet chat across two networks |
 | datachannelxt | 5 platforms, ABI 1 | folded 39 checks green and the paste's live loopback COMPLETED in the suite paste on Linux, 2026-09-25 and 09-26, on the 2026-09-12 `x86_64-linux` build by the maintainer's account; folded 39 on the 2026-09-12 `x86_64-win32` DLL, Windows, 2026-09-24 to 09-26 (the paste's loopback stalled there all six times, runbook 5.5); standalone async loopback, 2026-08-15; a DHT-signalled chat reported working across two machines on one LAN, 2026-08-27 | the standalone selftest's own async loopback on the 2026-09-12 builds (the paste's own completed on Linux); browser interop; a call across two networks; the loopback demo's itemised record (on 2026-09-26 it "seems to work as intended", by the maintainer's account) |
 | curlxt | 6 platforms, ABI 1 | Windows x86-64 only, on the 2026-11-14 DLL: the three extensions loaded and probed in OXT-Beyond's Windows CI, 2026-11-14; `tsNetGetSync`, an async `tsNetGet`, a refused expired certificate and five concurrent `cuRequestAsync` calls on the maintainer's PC through the MCP bridge, 2026-11-15 | the 2026-11-15 rebuild; SFTP, SCP, SMTP, FTP and uploads on an engine; Linux and mac on an engine |
-| box3dxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a committed library; a row in the suite paste |
+| box3dxt | 6 platforms, 4 Android ABIs and a web archive, ABI 2 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | the committed release libraries on any engine (the runs so far loaded locally built ones); Windows, macOS, Android and the web; a row in the suite paste |
 | xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
@@ -169,7 +170,8 @@ alignment). Every member's own tests ran on an Android 5.0 emulator for the two 
 not run. The twenty-eight libraries were committed the same day by a second release run (each
 member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
 on Android.
-box3dxt joined on 2026-11-20 and is in the recipe; none of its Android libraries is committed yet.
+box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
+(6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
 xlsxt joined the same day, the same way.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).

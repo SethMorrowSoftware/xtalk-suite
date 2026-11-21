@@ -54,8 +54,13 @@ SWEEP_END = "-- <<< END SWEEP <<<"
 # type on either side must be added here on purpose, so "the checker did not
 # know that type" can never read as "the signatures agree".
 LCB_TO_C = {"CInt": "int", "CDouble": "double", "nothing": "void", "Pointer": "const char*"}
-PUBLIC_OVER = {"CInt": ("Integer", "Boolean"), "CDouble": ("Number",), "Pointer": ("String",),
+PUBLIC_OVER = {"CInt": ("Integer", "Boolean"), "CDouble": ("Number",), "Pointer": ("String", "Data"),
                "nothing": ("nothing",)}
+# The exports whose Pointer is BYTES, not text: public as Data, copied by
+# dataOf(). Every other Pointer is text and public as String. A name is
+# here on purpose: textOf() on a picture would stop at its first zero byte,
+# and dataOf() on a text would copy a picture's length out of a short buffer.
+DATA = {"b3x_render_pixels"}
 # The export with no public handler: the helper textOf() calls it to measure
 # a text result before the engine copies it (the shim says why).
 INTERNAL = {"b3x_text_length"}
@@ -66,10 +71,15 @@ MIN_EXPORTS = 300
 BIND_RE = re.compile(r'^\s*private\s+foreign\s+handler\s+(\w+)\s*\((.*?)\)\s*returns\s+(\w+)\s+'
                      r'binds\s+to\s+"c:box3dxt>(b3x_\w+)!cdecl"\s*$')
 PARAM_RE = re.compile(r"^\s*in\s+(\w+)\s+as\s+(\w+)\s*$")
-BUILTIN_RE = re.compile(
-    r'^foreign handler MCStringCreateWithBytes\(in pBytes as Pointer, in pByteCount as CUInt, '
-    r'in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String\) returns CBool '
-    r'binds to "<builtin>"\s*$')
+BUILTIN_RES = {
+    "MCStringCreateWithBytes": re.compile(
+        r'^foreign handler MCStringCreateWithBytes\(in pBytes as Pointer, in pByteCount as CUInt, '
+        r'in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String\) returns CBool '
+        r'binds to "<builtin>"\s*$'),
+    "MCDataCreateWithBytes": re.compile(
+        r'^foreign handler MCDataCreateWithBytes\(in pBytes as Pointer, in pByteCount as CUInt, '
+        r'out rData as Data\) returns CBool binds to "<builtin>"\s*$'),
+}
 PUBLIC_RE = re.compile(r"^public\s+handler\s+(\w+)\s*\((.*?)\)\s*returns\s+(\w+)\s*$")
 DEF_RE = re.compile(r"^LC_API\s+([^(;{]+?)\b(b3x_\w+)\s*\(([^)]*)\)", re.M | re.S)
 
@@ -106,7 +116,7 @@ def split_params(text):
 def parse_lcb(text):
     """(foreign, public, problems). foreign: symbol -> dict; public: name -> dict."""
     foreign, public, problems = {}, {}, []
-    builtins = []
+    builtins = {name: [] for name in BUILTIN_RES}
     lines = text.split("\n")
     for i, line in enumerate(lines):
         m = BIND_RE.match(line)
@@ -120,11 +130,14 @@ def parse_lcb(text):
                 problems.append("box3dxt.lcb:%d: %s is bound twice" % (i + 1, symbol))
             foreign[symbol] = {"handler": handler, "line": i + 1, "ret": ret, "params": pp}
             continue
-        if BUILTIN_RE.match(line):
-            # The ONE engine builtin the binding may name: textOf() needs it
-            # to copy a static C text (check 3). Any other builtin is a way
-            # around this gate, so it is refused by the catch-all below.
-            builtins.append(i + 1)
+        which = [name for name, rx in BUILTIN_RES.items() if rx.match(line)]
+        if which:
+            # The TWO engine builtins the binding may name, each in the one
+            # spelling above: textOf() copies a static C text with the first
+            # (check 3) and dataOf() the picture with the second. Any other
+            # builtin is a way around this gate, so it is refused by the
+            # catch-all below.
+            builtins[which[0]].append(i + 1)
             continue
         if re.match(r"^\s*(private\s+)?foreign\s+handler\b", line):
             problems.append("box3dxt.lcb:%d: a foreign handler this gate cannot read (one line, "
@@ -156,9 +169,10 @@ def parse_lcb(text):
         elif line.startswith("public handler"):
             problems.append("box3dxt.lcb:%d: a public handler this gate cannot read (one line, typed, "
                             "with a return type)" % (i + 1))
-    if len(builtins) != 1:
-        problems.append("box3dxt.lcb: MCStringCreateWithBytes must be declared exactly once "
-                        "(found on lines: %s)" % (", ".join(map(str, builtins)) or "none"))
+    for name, found in sorted(builtins.items()):
+        if len(found) != 1:
+            problems.append("box3dxt.lcb: %s must be declared exactly once "
+                            "(found on lines: %s)" % (name, ", ".join(map(str, found)) or "none"))
     return foreign, public, problems
 
 
@@ -238,6 +252,9 @@ def check(lcb_text, shim_text, selftest_text):
     helper = re.search(r"private handler textOf\(in pText as Pointer\) returns String(.*?)end handler", lcb_text, re.S)
     if not helper or "_text_length(pText)" not in helper.group(1) or "MCStringCreateWithBytes(pText, tLength," not in helper.group(1):
         problems.append("box3dxt.lcb: textOf() must measure with _text_length and copy with MCStringCreateWithBytes")
+    helper = re.search(r"private handler dataOf\(in pBytes as Pointer\) returns Data(.*?)end handler", lcb_text, re.S)
+    if not helper or "_render_byte_count()" not in helper.group(1) or "MCDataCreateWithBytes(pBytes, tLength," not in helper.group(1):
+        problems.append("box3dxt.lcb: dataOf() must measure with _render_byte_count and copy with MCDataCreateWithBytes")
     for name, symbols in sorted(wanted.items()):
         if len(symbols) > 1:
             problems.append("the exports %s would share the public name %s" % (", ".join(symbols), name))
@@ -257,6 +274,10 @@ def check(lcb_text, shim_text, selftest_text):
             continue
         if p["ret"] not in PUBLIC_OVER[f["ret"]]:
             problems.append("%s returns %s over a %s" % (where, p["ret"], f["ret"]))
+        if f["ret"] == "Pointer" and (p["ret"] == "Data") != (symbol in DATA):
+            problems.append("%s returns %s, but %s gives %s" % (where, p["ret"], symbol,
+                                                               "bytes (Data, by dataOf)" if symbol in DATA
+                                                               else "text (String, by textOf)"))
         if len(p["params"]) != len(f["params"]):
             problems.append("%s takes %d parameter(s), its foreign handler %d"
                             % (where, len(p["params"]), len(f["params"])))
@@ -280,6 +301,8 @@ def check(lcb_text, shim_text, selftest_text):
             problems.append("%s does not end `return tR`" % where)
         if p["ret"] == "String" and not re.search(r"^\s*return textOf\(tP\)\s*$", p["body"], re.M):
             problems.append("%s returns text but does not end `return textOf(tP)`" % where)
+        if p["ret"] == "Data" and not re.search(r"^\s*return dataOf\(tP\)\s*$", p["body"], re.M):
+            problems.append("%s returns bytes but does not end `return dataOf(tP)`" % where)
         if not re.search(r"^\s*unsafe\s*$", p["body"], re.M):
             problems.append("%s makes its foreign call outside `unsafe`" % where)
         # 4. the doc block

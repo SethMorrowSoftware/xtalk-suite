@@ -832,26 +832,39 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 2.10 box3dxt
 
 - Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
-  `b3x_*` C shim (ABI 1) and the `b3*` binding, whose names are mechanical. Records: the
+  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20) and the `b3*` binding, whose names are mechanical. Records: the
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
-  its native lane repeats on every change. No desktop IDE has loaded it: for everything
-  beyond that server run it is verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
-- Publishing: `SethMorrowSoftware/box3dxt` does not exist yet. The owner creates it EMPTY,
-  then a publish-members run adopts it (`--adopt box3dxt`).
+  its native lane repeats on every change. The first desktop IDE run, 2026-11-20: OXT-Beyond's
+  IDE on 64-bit Linux (engine 9.7.1-BeyondEngine build 25923, Ubuntu 24.04) over a library
+  built on that machine from 144d529, loaded by `load extension` and `revLibraryMapping`; a
+  stack built there ran a twelve-body drop in a frame loop with a ray cast and contact
+  events, and Box3D counted no assert. A real model (the Utah teapot) is in both tests
+  since that day. The renderer (a software rasteriser in the shim; the picture crosses as
+  imageData) is held natively to Box3D's own ray casts and has crossed as data on the server
+  engine, and OXT-Beyond's Linux IDE showed its pictures in an image on 2026-11-20 (from
+  9b7b59a, a library loaded by hand; picking by pixel and by ray agreed; about 30 frames a
+  second solid at 640 by 400 with the default paintCompression, 48 with "rle"). Beyond those runs it is verified statically;
+  needs an OXT pass.
+- Binaries: committed 2026-11-20 by its first release-binaries dispatch (run 44806507517 from
+  de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
+  and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded any of them yet: the
+  engine and IDE runs above used locally built libraries.
+- Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
+  (`--adopt box3dxt`) once this member's changes are on main.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: box3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 1 | DONE 2026-11-20 (run 44806507517, commit 6d132d3, and the web archive): the first release-binaries dispatch with `members: box3dxt`, then the `ships` row | - | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
-| 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
+| 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
 | 7 | The suite board at its new row pitch (29): fourteen rows clear the members caption | S1 | 48 | the rows do not touch on an engine |
 
 ### 2.11 xlsxt

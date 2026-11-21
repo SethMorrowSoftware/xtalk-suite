@@ -35,7 +35,7 @@
 #include <string.h>
 
 /* >>> BEGIN SHIM DECLARATIONS (generated: tools/check-smoke-coverage.py --write) >>> */
-/* 380 exports, in the shim's order. Plain declarations: the test is a client of
+/* 399 exports, in the shim's order. Plain declarations: the test is a client of
  * the built library, exactly as the engine's FFI is. */
 extern int b3x_abi_version(void);
 extern const char*b3x_library_version(void);
@@ -417,6 +417,25 @@ extern void b3x_parallel_set_spring_damping_ratio(int j, double v);
 extern double b3x_parallel_spring_damping_ratio(int j);
 extern void b3x_parallel_set_max_torque(int j, double v);
 extern double b3x_parallel_max_torque(int j);
+extern void b3x_render_set_camera(double ex, double ey, double ez, double tx, double ty, double tz, double fovDegrees);
+extern const char*b3x_render_camera(void);
+extern void b3x_render_set_light(double dx, double dy, double dz);
+extern void b3x_render_set_background(int red, int green, int blue);
+extern void b3x_shape_set_color(int s, int red, int green, int blue);
+extern void b3x_shape_clear_color(int s);
+extern const char*b3x_shape_color(int s);
+extern int b3x_render_world(int w, int width, int height, int mode);
+extern const char*b3x_render_pixels(void);
+extern int b3x_render_byte_count(void);
+extern int b3x_render_width(void);
+extern int b3x_render_height(void);
+extern int b3x_render_triangle_count(void);
+extern int b3x_render_pixel(int x, int y);
+extern int b3x_render_shape_at(int x, int y);
+extern double b3x_render_depth(int x, int y);
+extern const char*b3x_render_project(double x, double y, double z);
+extern const char*b3x_render_ray(double x, double y);
+extern const char*b3x_shape_triangles_text(int s);
 /* <<< END SHIM DECLARATIONS <<< */
 
 /* ------------------------------------------------------------------ */
@@ -556,6 +575,20 @@ static void text(const char *r)
         || strcmp(s_current, "b3x_assert_text") == 0) return;
     if (n > 0 && (strstr(r, "nan") || strstr(r, "inf") || strstr(r, "NAN") || strstr(r, "INF")))
         finding("a text result carries a non-number", r);
+}
+/* The picture, after EVERY call: whatever was just done to the world or
+ * the renderer, the buffer must still be the size the shim says and every
+ * byte of it readable (ASan reads them here), each pixel led by its zero. */
+static void picture(void)
+{
+    const char *p = b3x_render_pixels();
+    int n = b3x_render_byte_count(), w = b3x_render_width(), h = b3x_render_height();
+    if (!p) { finding("the picture is NULL", NULL); return; }
+    if (w < 0 || h < 0 || w > 2048 || h > 2048 || n != w * h * 4) { finding("the picture's size disagrees with itself", NULL); return; }
+    unsigned lead = 0, sum = 0;
+    for (int i = 0; i < n; i += 4) { lead |= (unsigned char)p[i]; sum += (unsigned char)p[i + 1] + (unsigned char)p[i + 2] + (unsigned char)p[i + 3]; }
+    (void)sum;
+    if (lead) finding("a pixel of the picture does not start with a zero byte", NULL);
 }
 static void number(double r)
 {
@@ -1343,6 +1376,42 @@ static void rp_378(const double *a) { tr("b3x_parallel_set_max_torque", 2, a); b
 static void fz_378(void) { double a[2]; a[0] = HJ(); a[1] = D(); rp_378(a); }
 static void rp_379(const double *a) { tr("b3x_parallel_max_torque", 1, a); number(b3x_parallel_max_torque((int)a[0])); }
 static void fz_379(void) { double a[1]; a[0] = HJ(); rp_379(a); }
+static void rp_380(const double *a) { tr("b3x_render_set_camera", 7, a); b3x_render_set_camera(a[0], a[1], a[2], a[3], a[4], a[5], a[6]); }
+static void fz_380(void) { double a[7]; a[0] = D(); a[1] = D(); a[2] = D(); a[3] = D(); a[4] = D(); a[5] = D(); a[6] = D(); rp_380(a); }
+static void rp_381(const double *a) { (void)a; tr("b3x_render_camera", 0, a); text(b3x_render_camera()); }
+static void fz_381(void) { double a[1];  rp_381(a); }
+static void rp_382(const double *a) { tr("b3x_render_set_light", 3, a); b3x_render_set_light(a[0], a[1], a[2]); }
+static void fz_382(void) { double a[3]; a[0] = D(); a[1] = D(); a[2] = D(); rp_382(a); }
+static void rp_383(const double *a) { tr("b3x_render_set_background", 3, a); b3x_render_set_background((int)a[0], (int)a[1], (int)a[2]); }
+static void fz_383(void) { double a[3]; a[0] = small(-2, 257); a[1] = small(-2, 257); a[2] = small(-2, 257); rp_383(a); }
+static void rp_384(const double *a) { tr("b3x_shape_set_color", 4, a); b3x_shape_set_color((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
+static void fz_384(void) { double a[4]; a[0] = HS(); a[1] = small(-2, 257); a[2] = small(-2, 257); a[3] = small(-2, 257); rp_384(a); }
+static void rp_385(const double *a) { tr("b3x_shape_clear_color", 1, a); b3x_shape_clear_color((int)a[0]); }
+static void fz_385(void) { double a[1]; a[0] = HS(); rp_385(a); }
+static void rp_386(const double *a) { tr("b3x_shape_color", 1, a); text(b3x_shape_color((int)a[0])); }
+static void fz_386(void) { double a[1]; a[0] = HS(); rp_386(a); }
+static void rp_387(const double *a) { tr("b3x_render_world", 4, a); s_lastInt = b3x_render_world((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
+static void fz_387(void) { double a[4]; a[0] = HW(); a[1] = small(-1, 48); a[2] = small(-1, 48); a[3] = small(-1, 3); rp_387(a); }
+static void rp_389(const double *a) { (void)a; tr("b3x_render_byte_count", 0, a); s_lastInt = b3x_render_byte_count(); }
+static void fz_389(void) { double a[1];  rp_389(a); }
+static void rp_390(const double *a) { (void)a; tr("b3x_render_width", 0, a); s_lastInt = b3x_render_width(); }
+static void fz_390(void) { double a[1];  rp_390(a); }
+static void rp_391(const double *a) { (void)a; tr("b3x_render_height", 0, a); s_lastInt = b3x_render_height(); }
+static void fz_391(void) { double a[1];  rp_391(a); }
+static void rp_392(const double *a) { (void)a; tr("b3x_render_triangle_count", 0, a); s_lastInt = b3x_render_triangle_count(); }
+static void fz_392(void) { double a[1];  rp_392(a); }
+static void rp_393(const double *a) { tr("b3x_render_pixel", 2, a); s_lastInt = b3x_render_pixel((int)a[0], (int)a[1]); }
+static void fz_393(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_393(a); }
+static void rp_394(const double *a) { tr("b3x_render_shape_at", 2, a); s_lastInt = b3x_render_shape_at((int)a[0], (int)a[1]); }
+static void fz_394(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_394(a); }
+static void rp_395(const double *a) { tr("b3x_render_depth", 2, a); number(b3x_render_depth((int)a[0], (int)a[1])); }
+static void fz_395(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_395(a); }
+static void rp_396(const double *a) { tr("b3x_render_project", 3, a); text(b3x_render_project(a[0], a[1], a[2])); }
+static void fz_396(void) { double a[3]; a[0] = D(); a[1] = D(); a[2] = D(); rp_396(a); }
+static void rp_397(const double *a) { tr("b3x_render_ray", 2, a); text(b3x_render_ray(a[0], a[1])); }
+static void fz_397(void) { double a[2]; a[0] = D(); a[1] = D(); rp_397(a); }
+static void rp_398(const double *a) { tr("b3x_shape_triangles_text", 1, a); text(b3x_shape_triangles_text((int)a[0])); }
+static void fz_398(void) { double a[1]; a[0] = HS(); rp_398(a); }
 typedef struct { const char *name; int argc; void (*call)(void); void (*replay)(const double *); } FuzzCall;
 static const FuzzCall k_fuzz[] = {
     { "b3x_abi_version", 0, fz_0, rp_0 },
@@ -1724,6 +1793,24 @@ static const FuzzCall k_fuzz[] = {
     { "b3x_parallel_spring_damping_ratio", 1, fz_377, rp_377 },
     { "b3x_parallel_set_max_torque", 2, fz_378, rp_378 },
     { "b3x_parallel_max_torque", 1, fz_379, rp_379 },
+    { "b3x_render_set_camera", 7, fz_380, rp_380 },
+    { "b3x_render_camera", 0, fz_381, rp_381 },
+    { "b3x_render_set_light", 3, fz_382, rp_382 },
+    { "b3x_render_set_background", 3, fz_383, rp_383 },
+    { "b3x_shape_set_color", 4, fz_384, rp_384 },
+    { "b3x_shape_clear_color", 1, fz_385, rp_385 },
+    { "b3x_shape_color", 1, fz_386, rp_386 },
+    { "b3x_render_world", 4, fz_387, rp_387 },
+    { "b3x_render_byte_count", 0, fz_389, rp_389 },
+    { "b3x_render_width", 0, fz_390, rp_390 },
+    { "b3x_render_height", 0, fz_391, rp_391 },
+    { "b3x_render_triangle_count", 0, fz_392, rp_392 },
+    { "b3x_render_pixel", 2, fz_393, rp_393 },
+    { "b3x_render_shape_at", 2, fz_394, rp_394 },
+    { "b3x_render_depth", 2, fz_395, rp_395 },
+    { "b3x_render_project", 3, fz_396, rp_396 },
+    { "b3x_render_ray", 2, fz_397, rp_397 },
+    { "b3x_shape_triangles_text", 1, fz_398, rp_398 },
 };
 /* <<< END FUZZ CALLS <<< */
 
@@ -1862,6 +1949,7 @@ static int run(uint64_t seed, int calls)
         const FuzzCall *c = &k_fuzz[below(n)];
         s_current = c->name;
         c->call();
+        picture();
         note_asserts();
         if ((s_audit || i % 500 == 499) && audit()) break;   /* a poisoned world: nothing after it means anything */
         /* step a world often: half of what is being tested is what a world
@@ -1910,6 +1998,7 @@ static int replay(const char *path)
         if (n != c->argc) continue;
         s_current = c->name;
         c->replay(a);
+        picture();
         made++;
         note_asserts();
         if (audit()) break;
