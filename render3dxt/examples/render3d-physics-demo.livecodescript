@@ -1563,12 +1563,12 @@ command rdShowStats pNow
    if the formattedWidth of field "rdFps" > 0 then
       set the rect of field "rdFps" to 24, 72, 24 + the formattedWidth of field "rdFps", 72 + max(20, the formattedHeight of field "rdFps")
    end if
-   -- a smooth picture that takes more than 6 ms leaves too little of a
-   -- frame for the rest; a plain one that would be under 5 ms smooth (four
+   -- a smooth picture that takes more than 9 ms leaves too little of a
+   -- frame for the rest; a plain one that would be under 7 ms smooth (four
    -- times the samples, about three times the time) can be smooth again
-   if sRdDrawnAt is 2 and item 3 of tStats > 6 and sRdShown > 0 then
+   if sRdDrawnAt is 2 and item 3 of tStats > 9 and sRdShown > 0 then
       put true into sRdQuick
-   else if sRdDrawnAt is 1 and item 3 of tStats * 3 < 5 then
+   else if sRdDrawnAt is 1 and item 3 of tStats * 3 < 7 then
       put false into sRdQuick
    end if
    put sRdGap into tGap
