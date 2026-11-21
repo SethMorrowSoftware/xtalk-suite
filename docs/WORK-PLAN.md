@@ -832,62 +832,40 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 2.10 box3dxt
 
 - Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
-  `b3x_*` C shim (ABI 1) and the `b3*` binding, whose names are mechanical. Records: the
+  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20) and the `b3*` binding, whose names are mechanical. Records: the
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
-  its native lane repeats on every change. No desktop IDE has loaded it: for everything
-  beyond that server run it is verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
-- Publishing: `SethMorrowSoftware/box3dxt` does not exist yet. The owner creates it EMPTY,
-  then a publish-members run adopts it (`--adopt box3dxt`).
+  its native lane repeats on every change. The first desktop IDE run, 2026-11-20: OXT-Beyond's
+  IDE on 64-bit Linux (engine 9.7.1-BeyondEngine build 25923, Ubuntu 24.04) over a library
+  built on that machine from 144d529, loaded by `load extension` and `revLibraryMapping`; a
+  stack built there ran a twelve-body drop in a frame loop with a ray cast and contact
+  events, and Box3D counted no assert. A real model (the Utah teapot) is in both tests
+  since that day. The renderer (a software rasteriser in the shim; the picture crosses as
+  imageData) is held natively to Box3D's own ray casts and has crossed as data on the server
+  engine, and OXT-Beyond's Linux IDE showed its pictures in an image on 2026-11-20 (from
+  9b7b59a, a library loaded by hand; picking by pixel and by ray agreed; about 30 frames a
+  second solid at 640 by 400 with the default paintCompression, 48 with "rle"). Beyond those runs it is verified statically;
+  needs an OXT pass.
+- Binaries: committed 2026-11-20 by its first release-binaries dispatch (run 44806507517 from
+  de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
+  and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded any of them yet: the
+  engine and IDE runs above used locally built libraries.
+- Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
+  (`--adopt box3dxt`) once this member's changes are on main.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: box3dxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 1 | DONE 2026-11-20 (run 44806507517, commit 6d132d3, and the web archive): the first release-binaries dispatch with `members: box3dxt`, then the `ships` row | - | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
-| 6 | A demo stack that draws a scene (a 2D projection of the bodies, the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board's row pitch: 29 when box3dxt made the fourteenth row, 25 since pdfxt and xlsxt made the fifteenth and sixteenth the same day (2.11 #7 is the row to run) | S1 | 48 | the rows do not touch on an engine |
-
-### 2.11 pdfxt
-
-- Joined 2026-11-20: PDFium (the prebuilt shared library of bblanchon/pdfium-binaries release
-  `chromium/8165`, pinned by SHA-256 in `pdfxt/src/pdfium.pin`, shipped as a second file
-  beside the shim and loaded at run time) behind the `pdx_*` C shim (ABI 1) and the `pdf*`
-  binding, whose names are mechanical. Read-only: open, draw, text, search, outline, links.
-  Records: the shim's smoke test over two PDFs it carries, clean under ASan/UBSan; and
-  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally built
-  library (2026-11-20), which its native lane repeats on every change. No desktop IDE has
-  loaded it: for everything beyond that server run it is verified statically; needs an OXT
-  pass.
-- Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
-  Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
-  reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
-- Binaries: none committed when it joined. The first release-binaries dispatch lands TWO
-  files per platform (six desktop rows in `cmake-members`, four Android ids through
-  `tools/build-android.sh`), 4 to 8 MB of PDFium each (16 MB for the universal mac one), 80 MB across the ten
-  platforms; the change after it lists the platforms in `check-binary-freshness.py`'s `ships`
-  row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
-  installer, the freshness gate and the Android script, by fixtures; no dispatch has
-  exercised it yet.
-- Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
-  publish-members run adopts it (`--adopt pdfxt`).
-
-| # | What | Needs | Runbook | Done when |
-|---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: pdfxt`, then the `ships` row | owner (pressing Run is rule 5's decision; it adds 80 MB of PDFium to the repository) | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `pdfLibraryVersion()`, open a PDF, a page into an image both ways (`pdfRenderPageBMP` as its text, `pdfRenderPage` as its imageData), `pdfPageText`, a search with its highlight rectangles, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `pdfxt/docs/api-reference.md` says, and the colours are right (red is red) on each platform |
-| 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
-| 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
-| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
-| 6 | A viewer demo stack (pages, zoom, search, outline; the kit's look) | coding | - | a paste-and-run example in `pdfxt/examples/` |
-| 7 | The suite board at its new row pitch (25): sixteen rows clear the members caption, and a row's buttons end one pixel above the next row's. A seventeenth member needs the harness-less members moved out of the rows, not a smaller pitch | S1 | 48 | the rows do not touch on an engine |
-| 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
+| 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
+| 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
+| 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
+| 7 | The suite board's row pitch: 29 when box3dxt made the fourteenth row, 25 since pdfxt and xlsxt made the fifteenth and sixteenth the same day (2.12 #7 is the row to run) | S1 | 48 | the rows do not touch on an engine |
 
 ### 2.11 xlsxt
 
@@ -916,6 +894,43 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
 | 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+
+### 2.12 pdfxt
+
+- Joined 2026-11-20: PDFium (the prebuilt shared library of bblanchon/pdfium-binaries release
+  `chromium/8165`, pinned by SHA-256 in `pdfxt/src/pdfium.pin`, shipped as a second file
+  beside the shim and loaded at run time) behind the `pdx_*` C shim (ABI 1) and the `pdf*`
+  binding, whose names are mechanical. Read-only: open, draw, text, search, outline, links.
+  Records: the shim's smoke test over two PDFs it carries, clean under ASan/UBSan, and run by
+  its lane on every platform it ships for (run 44840908920, 2026-11-21: the six desktop rows,
+  and the Android 6.0 emulator for both x86 ABIs; the ARM ABIs built, not run); and
+  `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server engine over a locally built
+  library (2026-11-20), which its native lane repeats on every change. No desktop IDE has
+  loaded it: for everything beyond that server run it is verified statically; needs an OXT
+  pass.
+- Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
+  Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
+  reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
+- Binaries: none committed when it joined. The first release-binaries dispatch lands TWO
+  files per platform (six desktop rows in `cmake-members`, four Android ids through
+  `tools/build-android.sh`), 4 to 8 MB of PDFium each (16 MB for the universal mac one), 80 MB across the ten
+  platforms; the change after it lists the platforms in `check-binary-freshness.py`'s `ships`
+  row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
+  installer, the freshness gate and the Android script, by fixtures; no dispatch has
+  exercised it yet.
+- Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt pdfxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: pdfxt`, then the `ships` row | owner (pressing Run is rule 5's decision; it adds 80 MB of PDFium to the repository) | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `pdfLibraryVersion()`, open a PDF, a page into an image both ways (`pdfRenderPageBMP` as its text, `pdfRenderPage` as its imageData), `pdfPageText`, a search with its highlight rectangles, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `pdfxt/docs/api-reference.md` says, and the colours are right (red is red) on each platform |
+| 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
+| 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
+| 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
+| 6 | A viewer demo stack (pages, zoom, search, outline; the kit's look) | coding | - | a paste-and-run example in `pdfxt/examples/` |
+| 7 | The suite board at its new row pitch (25): sixteen rows clear the members caption, and a row's buttons end one pixel above the next row's. A seventeenth member needs the harness-less members moved out of the rows, not a smaller pitch | S1 | 48 | the rows do not touch on an engine |
+| 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 
 ---
 

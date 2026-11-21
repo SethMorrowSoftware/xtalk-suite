@@ -26,6 +26,11 @@ python3 tools/check-livecodescript.py
 # is not a call), and every export in tests/fuzz_test.c's generated table.
 echo "== box3dxt: tools/test-smoke-coverage.py =="
 python3 tools/test-smoke-coverage.py
+# The model the smoke test loads is carried as a generated header; this holds
+# it to tests/models/teapot.obj.
+echo "== box3dxt: tools/build-test-model.py --check =="
+python3 tools/build-test-model.py --check
+
 echo "== box3dxt: tools/check-smoke-coverage.py =="
 python3 tools/check-smoke-coverage.py
 

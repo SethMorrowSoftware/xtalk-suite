@@ -84,7 +84,12 @@ Joined the suite on 2026-11-20. What has run, and where:
   PDFs it carries (three pages with text, shapes, links, an outline and labels; one protected
   by a password) and checks what comes back, down to the colour of single pixels. Clean under
   ASan/UBSan.
-- **On an engine**, the same day: `tests/engine-selftest.lc` ran on OXT-Beyond's headless
+- **Natively on every platform it ships for**, by its own lane (`native-pdfxt.yml`, run
+  44840908920, 2026-11-21): the same smoke test passed on Windows (x86_64 and x86), macOS
+  (arm64, and x86_64 under Rosetta), Linux (x86_64, x86 and arm64) and an Android 6.0 emulator
+  (x86_64 and x86, 183 checks each). On an Android 5.0 emulator only its 12 refusal checks
+  could run, and it said so. The ARM Android libraries were built and checked, not run.
+- **On an engine**, on 2026-11-20: `tests/engine-selftest.lc` ran on OXT-Beyond's headless
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, opened both PDFs, drew pages into real images both ways, read text and
   searched it, walked the outline and links, and called every public handler once.

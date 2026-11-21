@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **box3dxt** binds Box3D (Erin Catto's 3D rigid-body engine, MIT, C17) for OXT: Box3D (static,
 FetchContent, pinned to a COMMIT in `CMakeLists.txt` because it has no release tag yet) -> the
-C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 1**: `B3X_ABI_VERSION` there equals the
+C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 2**: `B3X_ABI_VERSION` there equals the
 literal in `checkABI()` of the binding) -> ONE library `box3dxt.{so,dll,dylib}` (bare token),
 or `box3dxt.a` for the web -> the LCB binding `src/box3dxt.lcb`
 (`org.openxtalk.library.boxthreed`, public `b3*`). box2dxt is its ancestor; read that
@@ -59,6 +59,7 @@ member's CLAUDE.md for the reasons behind the shared shape.
 | the declaration blocks of both C tests, the joint family table, the fuzz call table | `tools/check-smoke-coverage.py --write` |
 | `sweepEveryHandler` in `tests/engine-selftest.lc` | `tools/check-lcb-signatures.py --write` |
 | `docs/api-reference.md` | `tools/build-api-reference.py` |
+| `tests/teapot_model.h`, from `tests/models/teapot.obj` | `tools/build-test-model.py` |
 
 ## As built
 
@@ -69,6 +70,25 @@ member's CLAUDE.md for the reasons behind the shared shape.
   sets what the next shapes are created with. A sensor needs events on itself and its visitor.
 - **A shape's category defaults to every bit**, so a query filter separates nothing until
   shapes have categories of their own.
+- **A mesh is one-sided and a hull is simplified** (both found by the first real model,
+  the teapot of the smoke test, 2026-11-20). Box3D culls the back of a mesh triangle for
+  contacts and for rays. It holds a hull to 128 corners, faces AND edges while its builder
+  takes a corner budget only, so `b3x_shape_add_hull` walks the budget down until the hull
+  fits: asked for 128 corners of a rounded model, Box3D builds some 250 faces and refuses.
+- **A shape's AABB is loose** (Box3D fattens it), so a test that asks where a body rests
+  moves the model's points through the body's transform and does not read the AABB.
+- **The renderer (ABI 2, 2026-11-20) is in the shim**: a software rasteriser over the
+  shim's own shape table (depth as 1/z, near plane 0.05 m, pictures to 2048 a side), one
+  picture for the process. It reads a world and never changes it. The picture is the ONE
+  result that crosses as bytes: `b3x_render_pixels` is public as Data through `dataOf()`,
+  which the signature gate holds to that export alone (its `DATA` set; a second builtin,
+  `MCDataCreateWithBytes`). Its oracle in the smoke test is Box3D: the shape and depth at a
+  pixel against a ray cast through it, over every shape kind and the teapot, from five
+  cameras. The fuzz test reads every byte of the picture after every call. The contract it
+  shares with the suite's render3dxt (camera as "ex,ey,ez,tx,ty,tz,fov", picture coordinates
+  from the top left with pixel centres at +0.5, a ray as origin and unit direction, y up,
+  the fallback up of world -z looking straight down) is in the shim's comments: change
+  neither side alone.
 - **Box3D re-pairs shapes only when one leaves its fat bounding box**: destroying a filter
   joint does not make two resting bodies collide until one of them moves far enough.
 - **32-bit x86 is built with SSE2**, not scalar: Box3D's determinism test fails on x87.
@@ -93,6 +113,13 @@ member's CLAUDE.md for the reasons behind the shared shape.
 
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
-library). No desktop IDE and no other platform's engine has loaded it: verified statically;
-needs an OXT pass. No binaries are committed yet. Open work is in the suite's
+library), and in OXT-Beyond's desktop IDE on 64-bit Linux the same day (a library built on
+that machine, loaded by `load extension` and `revLibraryMapping`; one drop scene with a ray
+cast and contact events; README "Status"). The renderer has run natively, on the server
+engine (the picture as data, its bytes read) and in that Linux IDE (an image showing the
+teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). No other platform's engine has loaded it and no
+IDE has loaded a release library or an installed extension: verified statically; needs an
+OXT pass. Release libraries were committed on 2026-11-20 (six desktop platforms, four Android
+ABIs; the web archive built separately with emsdk 6.0.12); no engine has loaded one of them
+yet. Open work is in the suite's
 `docs/WORK-PLAN.md`.

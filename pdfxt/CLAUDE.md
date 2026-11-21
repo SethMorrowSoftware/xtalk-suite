@@ -102,7 +102,10 @@ box3dxt is the member this one was shaped on.
 
 ## Status
 
-Verified natively (smoke, ASan/UBSan, x86_64 Linux) and on the headless Linux server engine
-(`tests/engine-selftest.lc`, 2026-11-20, a locally built library). No desktop IDE and no other
+Verified natively (smoke, ASan/UBSan, x86_64 Linux; and the smoke test on every platform
+it ships for by `native-pdfxt.yml`, run 44840908920, 2026-11-21: six desktop rows, the mac
+x86_64 slice under Rosetta, and the Android 6.0 emulator for both x86 ABIs, the ARM ABIs built,
+not run) and on the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a
+locally built library). No desktop IDE and no other
 platform's engine has loaded it: verified statically; needs an OXT pass. No binaries are
 committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
