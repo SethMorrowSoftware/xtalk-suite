@@ -349,11 +349,18 @@ worse than no gate, because it answers the question nobody asks twice.
   `tools/test-native-lane-paths.py`); artifacts only, it NEVER commits a binary. Member
   `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
-  requires. It builds all six native members on every platform, installs each library through
+  requires. It builds every native member on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a
   thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
   manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
-  stage waits on the WHOLE matrix: one red lane discards every artifact.
+  stage waits on the WHOLE matrix: one red lane discards every artifact. **`build: named`
+  (2026-11-21)** builds only the lanes of the members `members` names, so one member's release
+  does not queue behind every other member's builds: a `plan` job reads the rows of the
+  workflow's own `include` lists through `tools/release-plan.py` (which refuses any shape it
+  cannot read exactly) and twin jobs run those rows with the originals' steps, by YAML alias.
+  `build: all` stays the default and runs as before. Rows are still added in place; a new JOB
+  needs a place in the plan and in `tools/test-release-plan.py`, which evaluates every job's
+  `if` against the conditions a full build had before.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
