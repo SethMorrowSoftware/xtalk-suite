@@ -91,5 +91,8 @@ changing a doc block, `python3 tools/build-api-reference.py`.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine.
+The six desktop libraries under `src/code/<platform>/` come from the suite's
+`release-binaries.yml` dispatch (the first, run 44848412320, committed them on 2026-11-21),
+never from a developer's machine. The web archive, `src/code/wasm32-emscripten/gamepadxt.a`,
+is not that workflow's: it is built as "The web (wasm32-emscripten)" above says, with
+Emscripten 6.0.12, the version OXT-Beyond's web engine is built with.

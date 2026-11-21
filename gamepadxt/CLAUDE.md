@@ -120,6 +120,6 @@ a locally built library). The demo window, `examples/gamepad-lab.livecodescript`
 Linux desktop engine with no display (`tests/demo-drive.livecodescript`, 2026-11-21: every
 showcase and control, a pad plugged in mid-run, with the library and without). No real
 controller, no desktop IDE and no other platform's engine has run it: verified statically;
-needs an OXT pass. Only the web archive is committed
-(`src/code/wasm32-emscripten/`, 2026-11-21); the desktop libraries are not yet. Open work
-is in the suite's `docs/WORK-PLAN.md`.
+needs an OXT pass. The six desktop libraries and the web archive are committed under
+`src/code/` (2026-11-21: the desktop ones by the suite's release-binaries run 44848412320);
+no engine has loaded a committed one yet. Open work is in the suite's `docs/WORK-PLAN.md`.

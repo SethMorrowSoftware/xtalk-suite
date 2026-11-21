@@ -110,9 +110,11 @@ Joined the suite on 2026-11-20. What has run, and where:
   it.
 - **Not yet:** no real controller has been read through it on any platform, no desktop IDE
   has loaded it, and no engine on Windows, macOS or the web has run it: on those it is
-  verified statically; needs an OXT pass (with a controller plugged in). Only the web
-  archive is committed under `src/code/` (2026-11-21); the suite's release-binaries
-  dispatch lands the desktop libraries.
+  verified statically; needs an OXT pass (with a controller plugged in). The six desktop
+  libraries and the web archive are committed under `src/code/` (2026-11-21), and no
+  engine has loaded a committed one yet: the runs above used a locally built library.
+- **Linux floors:** the 64-bit libraries need glibc 2.27 or newer; the 32-bit one 2.38 or
+  newer (SDL's C23 `__isoc23_*` calls; measured with `objdump -T`, 2026-11-21).
 - **Not built for Android or iOS.** SDL reaches controllers there through its own Java or
   Objective-C application layer, which an OXT app does not have.
 

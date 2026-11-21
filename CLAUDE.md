@@ -21,8 +21,8 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose transform, move and camera
   texts it reads, with only its web archive committed yet), xlsxt (libxlsxwriter + zlib +
   Expat: Excel .xlsx files written and read; joined 2026-11-20 with no committed library yet) and
-  gamepadxt (SDL 3's gamepad subsystem: game controllers; joined 2026-11-20; only its web
-  archive is committed yet; desktop and web only).
+  gamepadxt (SDL 3's gamepad subsystem: game controllers; joined 2026-11-20, its desktop
+  libraries and web archive committed 2026-11-21; desktop and web only).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing

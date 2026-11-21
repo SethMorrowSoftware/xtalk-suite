@@ -988,20 +988,23 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   random-call test, clean under ASan/UBSan with SDL's asserts on, also as a 32-bit build and
   as WebAssembly under node; and `tests/engine-selftest.lc` on OXT-Beyond's headless Linux
   server engine over a locally built library (2026-11-20), which its native lane repeats on
-  every change. EVERY one of those drives SDL's virtual pads: no real controller has been
-  read through it, and no desktop IDE has loaded it. For everything beyond that server run
-  it is verified statically; needs an OXT pass.
+  every change. Its demo window, Gamepad Lab, was driven on OXT-Beyond's Linux desktop
+  engine with no display on 2026-11-21 (`tests/demo-drive.livecodescript`, with that library
+  and without it). EVERY one of those drives SDL's virtual pads: no real controller has been
+  read through it, and no desktop IDE has loaded it. For everything beyond those runs it is
+  verified statically; needs an OXT pass.
 - Binaries: none committed when it joined. The web archive was committed on 2026-11-21
-  (built with Emscripten 6.0.12, its tests run under node; no browser has run it); the
-  first release-binaries dispatch lands the desktop libraries
-  (six desktop rows in `cmake-members`; no Android ids, `docs/ANDROID.md`), and the change
-  after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+  (built with Emscripten 6.0.12, its tests run under node; no browser has run it), and the
+  six desktop libraries the same day by its first release-binaries dispatch (run
+  44848412320 from 4719e46, commit fdcb830; no Android ids, `docs/ANDROID.md`). The
+  `ships` row lists all seven. No engine has loaded any of them yet: the runs above used a
+  locally built library.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
   2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
+| 1 | DONE 2026-11-21 (run 44848412320, commit fdcb830, and the web archive): the first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | - | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
 | 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad. Gamepad Lab (`gamepadxt/examples/gamepad-lab.livecodescript`) shows every one of those steps in its window, so the pass can be: open it, plug the pad in, press, push, pull it out | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
 | 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine, and a pad read in a browser after a button press | OXT-Beyond | - | `gpPads()` lists a pad in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
