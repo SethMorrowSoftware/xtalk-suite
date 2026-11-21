@@ -617,7 +617,9 @@ Description: The file's bytes are copied, so the variable they came from
 can be reused. A still picture opens as an animation of one frame. Close
 the handle with <wpAnimClose> when the animation is no longer playing:
 each open animation holds its file and one full frame in memory, and at
-most 64 can be open at once.
+most 64 can be open at once. A file whose frames add up to more than
+2147483647 milliseconds (about 24.8 days) is refused, because libwebp
+cannot time it; <wpDecode> still reads its first frame.
 */
 public handler wpAnimOpen(in pData as Data) returns Integer
    variable tR as Integer
@@ -853,7 +855,9 @@ pDuration: How long the frame shows, in milliseconds, from 1 to 600000.
 Returns: True if the frame was added; false if it was refused.
 
 Description: The frame must be the animation's size exactly. Frames play
-in the order they are added. An animation holds at most 10000 frames.
+in the order they are added. An animation holds at most 10000 frames and
+lasts at most 2147483647 milliseconds in all (about 24.8 days): a frame
+that would end it later is refused, and the frames before it are kept.
 */
 public handler wpAnimEncoderAddFrame(in pWriter as Integer, in pImageData as Data, in pAlphaData as Data, in pDuration as Integer) returns Boolean
    variable tR as Integer
