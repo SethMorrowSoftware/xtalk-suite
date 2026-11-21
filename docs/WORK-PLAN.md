@@ -1065,8 +1065,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   `DESKTOP_ONLY`: none has run yet).
 - The showcase, `examples/osc-show-surface.livecodescript` (2026-11-21, by Seth Morrow;
   OXT-Beyond's dark look by the owner's request): its engine tests passed on OXT-Beyond's
-  headless Linux engine the same day; its window, look and feel are verified statically;
-  need an OXT pass (row 7).
+  headless Linux engine the same day; with oscxt loaded, its window, look and feel are
+  verified statically; need an OXT pass (row 7). It opened without oscxt in OXT-Beyond
+  0.2.8-dp.1's IDE on Windows and said what was missing. That run found two faults in all
+  three ShowControl showcases: each opened with its left 390 pixels off the screen, and
+  held the IDE as it opened (42 s here; MIDI Stage 81 s, the Light Board 112 s), built with
+  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages
+  locked and centres its window, held by two engine tests that failed against the old
+  build; on Windows the fix needs an OXT pass (row 7).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
@@ -1078,7 +1084,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | all five scenes play by themselves, every word fits and none is white on white, and the footer says what it found |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, and the footer says what it found |
 
 ### 2.15 midixt
 
@@ -1099,7 +1105,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
   library and over the real one with no MIDI service (where it decodes and says why). No
   service has carried its messages and nobody has heard it: verified statically; needs an
-  OXT pass (row 6).
+  OXT pass (row 6). It opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and
+  said what was missing. That run found two faults in all three ShowControl showcases: each
+  opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
+  OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
+  5.15). Fixed the same day: each builds with messages locked and centres its window, held
+  by two engine tests that failed against the old build; on Windows the fix needs an OXT
+  pass (row 6).
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
@@ -1110,7 +1122,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
-| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, and the keyboard's notes show in blue |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, and the keyboard's notes show in blue |
 
 ### 2.16 artnetxt
 
@@ -1120,13 +1132,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   under lc-compile `-Werror` and lc-run, and the Script suite in OXT-Beyond's standalone
   engine with `-ui` (real UDP, discovery and DMX against the virtual node
   `tools/sim/artnet_node.py`), on Linux x86_64 (2026-11-21), which its native lane repeats
-  on Linux, Windows and a Mac. No desktop IDE and no hardware node: verified statically;
-  needs an OXT pass.
+  on Linux, Windows and a Mac. The same day OXT-Beyond 0.2.8-dp.1's IDE on Windows (64-bit)
+  compiled the binding with its own lc-compile, loaded it and ran the showcase: its first
+  desktop IDE and first Windows engine (runbook section 8). The self-test has not run in an
+  IDE, and no hardware node: verified statically; needs an OXT pass.
 - Binaries: none, ever; there is no `src/code/`. An lce package carries the module alone.
-- The showcase, `examples/artnet-light-board.livecodescript` (2026-11-21, by Seth
-  Morrow): its engine tests passed on OXT-Beyond's headless Linux engine the same day; its
-  window, look and feel, and a real node or desk, are verified statically; need an OXT
-  pass (row 7).
+- The showcase, `examples/artnet-light-board.livecodescript` (2026-11-21, by Seth Morrow):
+  its engine tests passed on OXT-Beyond's headless Linux engine the same day; its look and
+  feel on a Mac and on Linux, and a real node or desk, are verified statically; need an OXT
+  pass (row 7). On Windows the same day it ran, the rig lighting from what the board sent
+  ("35 sent, 34 read, 0 ignored" when its picture was taken). That run found two faults in
+  all three ShowControl showcases: each opened with its left 390 pixels off the screen, and
+  held the IDE as it opened (112 s here; OSC Show Surface 42 s, MIDI Stage 81 s), built
+  with messages unlocked (engine note 5.15). Fixed the same day: each builds with messages
+  locked and centres its window, held by two engine tests that failed against the old
+  build; on Windows the fix needs an OXT pass (row 7).
 - Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
 
@@ -1138,7 +1158,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | all five scenes play by themselves, the node's fixture follows the board, and the desk drives the rig |
+| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, and the desk drives the rig |
 
 ---
 

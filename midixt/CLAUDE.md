@@ -17,7 +17,11 @@ self-test.
 `examples/midi-stage.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
 (EXEMPT from the suite's UI kit by the owner's request), a player and a stage joined by a virtual port, a loopback driver's pair, or, with neither, `midiDecode`. It CARRIES
 `examples/midi-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
-`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` over the mock (the stage draws only what arrives, against the mock's log of what left) and `demo_hw_test.livecodescript` over the real library.
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` over the mock (the stage draws only what arrives, against the mock's log of what left) and `demo_hw_test.livecodescript` over the real library. It builds its window with messages locked, then centres it: built unlocked it held
+OXT-Beyond 0.2.8-dp.1's IDE on Windows for 81 s as it opened (each scripted create and rename
+ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre, so it
+opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
+`TestTheWindowOpensCentredOnTheScreen` failed against that build.
 
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -131,5 +135,7 @@ test on its no-service path) and on OXT-Beyond's headless engine (9.7.1-OXT, Lin
 2026-11-21): the LCB suite under lc-run, and the Script suite in the standalone engine with
 `-ui`, over locally built libraries. No MIDI service has carried a message on the record yet
 (the self-test's Tier 3 skipped: no ALSA sequencer where it ran). No desktop IDE and no
-Windows or macOS engine has loaded it: verified statically; needs an OXT pass. No libraries
-are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+Windows or macOS engine has loaded it: verified statically; needs an OXT pass. Its showcase
+has opened without it in OXT-Beyond 0.2.8-dp.1's IDE on Windows (2026-11-21): it said what
+was missing, and that run found the two faults above. No libraries are committed yet. Open
+work is in the suite's `docs/WORK-PLAN.md`.

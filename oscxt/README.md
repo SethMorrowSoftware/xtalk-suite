@@ -67,8 +67,13 @@ library refuses, each with its reason. Every lamp and meter is drawn from what t
 READ, never from what the surface meant to send. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the oscxt extension installed; without it the window still opens and says what is missing.
 
 Its engine tests, `tests/lcs/demo_test.livecodescript`, passed on 2026-11-21 in
-OXT-Beyond's headless engine (Linux x86_64). The window, its look and its feel are
-verified statically; need an OXT pass.
+OXT-Beyond's headless engine (Linux x86_64). The same day it opened in OXT-Beyond
+0.2.8-dp.1's IDE on Windows without oscxt installed, drew its window and said what was
+missing. That run found the window opening with its left 390 pixels off the screen and the
+IDE held for 42 seconds as it opened; both were fixed the same day: it now builds its window with messages locked and
+centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
+OXT pass. With oscxt loaded, its look and
+its feel are verified statically; need an OXT pass.
 
 ## Status
 

@@ -86,8 +86,14 @@ Its engine tests passed on 2026-11-21 in OXT-Beyond's headless engine (Linux x86
 `tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only
 what arrives, checked byte for byte against the mock's log of what left) and
 `demo_hw_test.livecodescript` over the real one (with no MIDI service there, it decoded
-and said why). No MIDI service has carried its messages and nobody has heard it: the
-cable, Sound, the window and its look are verified statically; need an OXT pass.
+and said why). The same day it opened in OXT-Beyond 0.2.8-dp.1's IDE on Windows without
+midixt installed, drew its window and said what was missing. That run found the window
+opening with its left 390 pixels off the screen and the IDE held for 81 seconds as it
+opened; both were fixed the same day: it now builds its window with messages locked and
+centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
+OXT pass. No MIDI service has carried its messages and nobody has heard
+it: the cable, Sound, and the window's look with midixt loaded are verified statically;
+need an OXT pass.
 
 ## Status
 

@@ -1453,6 +1453,17 @@ statically in box2dxt's platformer (`pfStartGame`, 2026-10-08), whose level
 builds the maintainer reported slow after a save and reopen; how much of that
 these messages were is not measured yet (its debug overlay now prints each
 build's time).
+**OBSERVED 2026-11-21** on OXT-Beyond's headless engine (`9.7.1-OXT`, Linux,
+`-ui`): a front script heard `new<Type>` for each control a script made, sent
+before the control has its name (`the short name of the target` read
+`field id 1003`), then `nameChanged`; `delete<Type>` for each delete; and
+`resizeStack` for a stack's width set. Under `lock messages` it heard none of
+them. The three ShowControl showcases' builds sent 276, 494 and 1286 such
+messages with messages unlocked, and in OXT-Beyond 0.2.8-dp.1's IDE on Windows
+the same builds held the IDE for 42, 81 and 112 seconds as they opened, where
+Gamepad Lab, whose build locks messages, opened in under half a second (runbook
+section 8). That these messages were the cost is INFERRED: the locked builds
+have not been timed in that IDE yet.
 **Rule:** bulk create, rename and delete under `lock messages`, and lift it
 around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
 unlocked, the engine updates the screen after every statement that dirtied it
@@ -1462,7 +1473,10 @@ game only, box2dxt's `tools/check-platformer-levels.py` (2026-10-08) counts
 these messages where the engine would send them and fails a level build that
 sends one with messages unlocked; its first run found the no-art build making
 its placeholder hero's image and slices that way, outside the lock (fixed the
-same day). No suite-wide gate.
+same day). The ShowControl showcases' engine tests (`TestTheWindowIsBuiltQuietly`
+in `tests/lcs/demo_test.livecodescript` of oscxt, midixt and artnetxt,
+2026-11-21) hear them with a front script across a build and a rebuild, after
+proving it hears a field made and deleted. No suite-wide gate.
 **Does NOT mean:** that your own calls stop. Calling a handler directly still
 works; `send` and `dispatch` unlock messages for their own delivery
 (`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the

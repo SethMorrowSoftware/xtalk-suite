@@ -12,6 +12,10 @@ script "ArtnetDemoTest"
 --     sits inside it, and every field and button carries its OWN text and
 --     background colours, so a dark system theme cannot turn its words white
 --     on white (OXT-Beyond's behaviour, reported 2026-11-21);
+--   * it builds that window with messages locked, so no create, rename or
+--     delete message reaches the IDE's script (the suite's engine notes,
+--     5.15), and it opens centred on the screen: each failed in OXT-Beyond's
+--     IDE on Windows, 2026-11-21;
 --   * every scene plays with nothing going wrong, and each does what its
 --     words say: the rig's lamps are drawn from the levels that ARRIVED, the
 --     chase lights the PAR it is at, the heads aim where pan and tilt say,
@@ -34,7 +38,12 @@ script "ArtnetDemoTest"
 
 local sDemo
 
+-- What a scripted create, rename and delete send (the suite's engine notes,
+-- 5.15). In the IDE each one runs the IDE's own script.
+constant kDemoQuietMessages = "newButton,newField,newGraphic,newImage,newGroup,newScrollbar,newPlayer,newWidget,newBackground,deleteButton,deleteField,deleteGraphic,deleteImage,deleteGroup,deleteScrollbar,deletePlayer,deleteWidget,deleteBackground,nameChanged"
+
 on TestTearDown
+   demoStopListening
    if sDemo is not empty and there is a stack sDemo then
       close stack sDemo
       TestPump 50
@@ -55,7 +64,7 @@ end demoPath
 -- it has a script, so the `go` is a genuine open that fires preOpenStack
 -- and openStack (the suite's engine notes, 5.5). pEdit, when given, is
 -- "old|new": one line of the script changed first (kAlbAlsoTo's tests).
-command demoOpen pEdit
+command demoPrepare pEdit
    local tScript, tName
    put url ("file:" & demoPath()) into tScript
    if tScript is empty then
@@ -84,7 +93,11 @@ command demoOpen pEdit
       throw "the demo's script does not compile"
    end if
    put tName into sDemo
-   go invisible stack tName
+end demoPrepare
+
+command demoOpen pEdit
+   demoPrepare pEdit
+   go invisible stack sDemo
 end demoOpen
 
 function demoState
@@ -538,3 +551,100 @@ on TestWithoutTheLibraryItSaysWhatIsMissing
    put demoState() into tState
    TestAssert "the board still moves", tState["sentLevels"] is not tFaders
 end TestWithoutTheLibraryItSaysWhatIsMissing
+
+-- ===== Opened quietly, and on the screen ===================================
+-- On OXT-Beyond 0.2.8-dp.1 on Windows (2026-11-21) all three ShowControl
+-- showcases opened with their left 390 pixels past the screen's edge, and
+-- held the IDE for 42 to 112 seconds as they opened: built with messages
+-- unlocked, every create, rename and delete ran the IDE's own script (the
+-- suite's engine notes, 5.15). The window now centres itself and is built
+-- with messages locked.
+
+-- A front script that hears every such message the engine sends, from any
+-- object, and notes it with the name of its target
+command demoListen
+   local tScript, tMsg
+   global gDemoHeard
+   put "global gDemoHeard" & return into tScript
+   repeat for each item tMsg in kDemoQuietMessages
+      put "on " & tMsg & return & "put " & quote & tMsg & space & quote & " & the short name of the target & return after gDemoHeard" & return & "pass " & tMsg & return & "end " & tMsg & return after tScript
+   end repeat
+   if there is not a stack "DemoQuietEar" then
+      create invisible stack "DemoQuietEar"
+      set the script of stack "DemoQuietEar" to tScript
+      insert the script of stack "DemoQuietEar" into front
+   end if
+   put empty into gDemoHeard
+end demoListen
+
+command demoStopListening
+   if there is a stack "DemoQuietEar" then
+      remove the script of stack "DemoQuietEar" from front
+      delete stack "DemoQuietEar"
+   end if
+end demoStopListening
+
+function demoHeard
+   global gDemoHeard
+   return gDemoHeard
+end demoHeard
+
+-- A field made and deleted with messages on, in a stack of its own: what
+-- the ear must hear, or its silence proves nothing. The engine sends
+-- newField before the field has its name, so the ear hears it as
+-- "field id N"; nameChanged then gives the name.
+command demoEarProbe
+   local tOld
+   put the defaultStack into tOld
+   if there is not a stack "DemoEarProbe" then
+      create invisible stack "DemoEarProbe"
+   end if
+   set the defaultStack to "DemoEarProbe"
+   create field "demoProbeField"
+   delete field "demoProbeField"
+   if tOld is not empty and there is a stack tOld then
+      set the defaultStack to tOld
+   end if
+end demoEarProbe
+
+on TestTheWindowIsBuiltQuietly
+   local tHeard
+   demoPrepare
+   demoListen
+   demoEarProbe
+   put demoHeard() into tHeard
+   replace return with "; " in tHeard
+   TestAssert "the ear hears a create (" & tHeard & ")", tHeard contains "newField field id"
+   TestAssert "the name it gives", tHeard contains "nameChanged demoProbeField"
+   TestAssert "and a delete", tHeard contains "deleteField demoProbeField"
+   -- the demo, opened as start-here opens it
+   demoListen
+   go invisible stack sDemo
+   put demoHeard() into tHeard
+   TestAssert "the window was built", there is a graphic "albStage" of stack sDemo
+   TestAssertEqual "sending no create, rename or delete message (the first: " & line 1 of tHeard & ")", the number of lines of tHeard, 0
+   -- the show plays, and makes, renames and deletes nothing as it plays
+   TestPump 1500
+   put demoHeard() into tHeard
+   TestAssertEqual "nor as it plays (the first: " & line 1 of tHeard & ")", the number of lines of tHeard, 0
+   -- a reopen deletes the window it built and builds it again
+   close stack sDemo
+   TestPump 50
+   demoListen
+   go invisible stack sDemo
+   put demoHeard() into tHeard
+   TestAssert "a reopen built the window again", there is a graphic "albStage" of stack sDemo
+   TestAssertEqual "quietly too (the first: " & line 1 of tHeard & ")", the number of lines of tHeard, 0
+end TestTheWindowIsBuiltQuietly
+
+-- A headless engine has no screen (its screenLoc is 0,0), so this settles
+-- that the build centres the window by the screen the engine reports, not
+-- where that lands on a real one (an OXT pass)
+on TestTheWindowOpensCentredOnTheScreen
+   demoPrepare
+   -- where the three showcases opened on Windows
+   set the rect of stack sDemo to "-390,-3,710,617"
+   go invisible stack sDemo
+   TestAssertEqual "the window opens centred on the screen", the loc of stack sDemo, the screenLoc
+   TestAssertEqual "at its own size", the width of stack sDemo & "x" & the height of stack sDemo, "1100x620"
+end TestTheWindowOpensCentredOnTheScreen

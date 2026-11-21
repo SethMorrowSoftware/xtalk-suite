@@ -62,8 +62,13 @@ Every lamp and every square of the universe is drawn from the packets the rig RE
 Paused, a lighting desk sending universe 0 to this computer drives the rig instead. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the artnetxt extension installed; without it the window still opens and says what is missing.
 
 Its engine tests, `tests/lcs/demo_test.livecodescript`, passed on 2026-11-21 in
-OXT-Beyond's headless engine (Linux x86_64). The window, its look, its feel and a real
-node or desk are verified statically; need an OXT pass.
+OXT-Beyond's headless engine (Linux x86_64). The same day it ran in OXT-Beyond
+0.2.8-dp.1's IDE on Windows: the board sent ArtDmx to this computer and the rig lit from
+what arrived. That run found the window opening with its left 390 pixels off the screen
+and the IDE held for 112 seconds as it opened; both were fixed the same day: it now builds its window with messages locked and
+centres it. The fix passed its engine tests on the headless engine; on Windows it needs an
+OXT pass. Its look and feel on a
+Mac and on Linux, and a real node or desk, are verified statically; need an OXT pass.
 
 ## Status
 
@@ -79,9 +84,11 @@ Joined the suite on 2026-11-21. What has run, and where:
   self-test, real UDP through the engine's sockets, and discovery plus DMX against the
   virtual node). Every fix artnetxt made to ShowControl's code has a test that failed
   against it.
-- **Not yet:** no desktop IDE has loaded it, no engine on Windows, macOS or Android has run
-  it, and no hardware node has received its packets: there it is verified statically; needs
-  an OXT pass.
+- **In a desktop IDE**, the same day: OXT-Beyond 0.2.8-dp.1 on Windows (64-bit) compiled the
+  binding with its own lc-compile, loaded it and ran the showcase (above).
+- **Not yet:** the self-test has not run in an IDE, no engine on macOS or Android has run it,
+  and no hardware node has received its packets: there it is verified statically; needs an
+  OXT pass.
 
 ## Building and testing
 

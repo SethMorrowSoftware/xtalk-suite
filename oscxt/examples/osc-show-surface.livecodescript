@@ -1281,11 +1281,25 @@ end osdState
 -- ===== Building the window ==================================================
 
 command osdBuild
-   local tI, tX, tY
+   local tI, tX, tY, tWasQuiet
+   -- Built with messages locked. In the IDE every scripted create, rename
+   -- and delete sends an engine message that runs the IDE's own script
+   -- (the suite's engine note 5.15): built with them unlocked, this window
+   -- held OXT-Beyond 0.2.8-dp.1's IDE on Windows for 42 seconds as it
+   -- opened (2026-11-21). Nothing here asks a question or needs an engine
+   -- message, and the caller's lock is given back at the end.
+   put the lockMessages into tWasQuiet
    lock screen
+   lock messages
    osdClear
    set the width of this stack to kOsdW
    set the height of this stack to kOsdH
+   -- Then centred on the screen. A new stack is 32,32,288,288 and a size
+   -- set keeps its centre, so 1100 wide put its left at -390: the window
+   -- opened 390 pixels past the screen's edge on Windows (the same day).
+   -- start-here centres a window it opens; one opened any other way now
+   -- centres itself.
+   set the loc of this stack to the screenLoc
    set the resizable of this stack to false
    set the label of this stack to "OSC Show Surface - OXT-Beyond"
    set the backgroundColor of this stack to kOsdPage
@@ -1389,6 +1403,7 @@ command osdBuild
    -- the footer: what is missing, or that nothing is
    osdLabel "osdStatus", empty, 11, kOsdSoft, "plain", kOsdStageL, 593, kOsdSideR, 614
    osdShowSwitches
+   set the lockMessages to tWasQuiet
    unlock screen
 end osdBuild
 

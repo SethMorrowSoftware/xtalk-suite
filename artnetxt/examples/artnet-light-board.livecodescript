@@ -1336,11 +1336,25 @@ end albState
 -- ===== Building the window ==================================================
 
 command albBuild
-   local tI, tX, tY, tTag, tCol, tRow
+   local tI, tX, tY, tTag, tCol, tRow, tWasQuiet
+   -- Built with messages locked. In the IDE every scripted create, rename
+   -- and delete sends an engine message that runs the IDE's own script
+   -- (the suite's engine note 5.15): built with them unlocked, this window
+   -- held OXT-Beyond 0.2.8-dp.1's IDE on Windows for 112 seconds as it
+   -- opened (2026-11-21). Nothing here asks a question or needs an engine
+   -- message, and the caller's lock is given back at the end.
+   put the lockMessages into tWasQuiet
    lock screen
+   lock messages
    albClear
    set the width of this stack to kAlbW
    set the height of this stack to kAlbH
+   -- Then centred on the screen. A new stack is 32,32,288,288 and a size
+   -- set keeps its centre, so 1100 wide put its left at -390: the window
+   -- opened 390 pixels past the screen's edge on Windows (the same day).
+   -- start-here centres a window it opens; one opened any other way now
+   -- centres itself.
+   set the loc of this stack to the screenLoc
    set the resizable of this stack to false
    set the label of this stack to "Art-Net Light Board - OXT-Beyond"
    set the backgroundColor of this stack to kAlbPage
@@ -1472,6 +1486,7 @@ command albBuild
    -- the footer: what is missing, or that nothing is
    albLabel "albStatus", empty, 11, kAlbSoft, "plain", kAlbStageL, 593, kAlbSideR, 614
    albShowSwitches
+   set the lockMessages to tWasQuiet
    unlock screen
 end albBuild
 

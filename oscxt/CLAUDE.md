@@ -17,7 +17,11 @@ script's own UDP sockets, so nothing here opens a socket, starts a thread or cal
 `examples/osc-show-surface.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
 (EXEMPT from the suite's UI kit by the owner's request), a surface and a virtual rig over real UDP on 127.0.0.1, ports 9000 to 9009. It CARRIES
 `examples/osc-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
-`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (opened as start-here opens it; each scene against an oracle written in the test).
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (opened as start-here opens it; each scene against an oracle written in the test). It builds its window with messages locked, then centres it: built unlocked it held
+OXT-Beyond 0.2.8-dp.1's IDE on Windows for 42 s as it opened (each scripted create and rename
+ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre, so it
+opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
+`TestTheWindowOpensCentredOnTheScreen` failed against that build.
 
 It is the OSC third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -109,5 +113,6 @@ million fuzz inputs clean on 2026-11-21) and on OXT-Beyond's headless engine (9.
 Linux x86_64, 2026-11-21): the LCB suite under lc-run, and the Script suite in the
 standalone engine with `-ui`, real UDP and the interop peer included, over a locally built
 library. No desktop IDE and no Windows, macOS or Android engine has loaded it: verified
-statically; needs an OXT pass. No libraries are committed yet. Open work is in the suite's
-`docs/WORK-PLAN.md`.
+statically; needs an OXT pass. Its showcase has opened without it in OXT-Beyond 0.2.8-dp.1's
+IDE on Windows (2026-11-21): it said what was missing, and that run found the two faults
+above. No libraries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.

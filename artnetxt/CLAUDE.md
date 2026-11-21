@@ -16,7 +16,11 @@ nothing here opens a socket, starts a thread or calls back.
 `examples/artnet-light-board.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
 (EXEMPT from the suite's UI kit by the owner's request), a board and a virtual node over real UDP on 127.0.0.1, port 6454 (6464 at most), never a broadcast. It CARRIES
 `examples/artnet-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
-`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (the rig's ArtPollReply checked byte by byte against an oracle written from the Art-Net 4 field table).
+`tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` (the rig's ArtPollReply checked byte by byte against an oracle written from the Art-Net 4 field table). It builds its window with messages locked, then centres it: built unlocked it held
+OXT-Beyond 0.2.8-dp.1's IDE on Windows for 112 s as it opened (each scripted create and rename
+ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre, so it
+opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
+`TestTheWindowOpensCentredOnTheScreen` failed against that build.
 
 It is the Art-Net third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -100,6 +104,9 @@ plus `scArtnetEnsureSocket`, `scArtnetSetChannel`, `scArtnetChannel`, `scArtnetP
 
 Verified on OXT-Beyond's headless engine (9.7.1-OXT, Linux x86_64, 2026-11-21): the LCB
 suite under lc-compile `-Werror` and lc-run, and the Script suite in the standalone engine
-with `-ui`, real UDP and the virtual node included. No desktop IDE, no Windows, macOS or
-Android engine, and no hardware node has met it: verified statically; needs an OXT pass.
-Open work is in the suite's `docs/WORK-PLAN.md`.
+with `-ui`, real UDP and the virtual node included. In a desktop IDE on 2026-11-21:
+OXT-Beyond 0.2.8-dp.1 on Windows (64-bit) compiled the binding with its own lc-compile,
+loaded it and ran the showcase, ArtDmx out to 127.0.0.1:6454 and the rig lit from what
+arrived (that run found the two faults above; the suite's runbook, section 8). The self-test
+has not run in an IDE, and no macOS or Android engine and no hardware node has met it:
+verified statically; needs an OXT pass. Open work is in the suite's `docs/WORK-PLAN.md`.
