@@ -241,6 +241,11 @@ Remove the member, in the same change as its directory, from:
   `tools/build-preflight.py`'s probe (regenerate);
 - `tools/sync-demo-embeds.py` `REGISTRY` rows (a copy carried elsewhere stays as
   a snapshot, noted in the carrier's README); `tools/build-all.sh`'s member loop;
+- `tools/build-lce-packages.py`'s `PACKAGES`, `VERSION_FROM` and `LICENCES` rows, or
+  its `NOT_PACKAGED` entry (its `table` gate holds them to the registry both ways),
+  and the member's lines in `.github/workflows/lce-packages.yml`'s `paths:`. The
+  next push to main then publishes a release without its packages, and the
+  extensions site drops them (2026-11-21);
 - the root `README.md` tables, the `CLAUDE.md` layout, and the suite docs that
   name it (`docs/OXT-PASS-RUNBOOK.md`, `docs/WORK-PLAN.md`), which keep its dated
   records under a MOVED OUT note.
