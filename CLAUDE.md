@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Fifteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Sixteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -17,11 +17,13 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics and a
   software renderer, plus the pure-script b3k game Kit; joined 2026-11-20, its libraries
-  committed that day), render3dxt (this suite's own software 3D renderer, textured and lit,
-  into an image's imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside
-  box3dxt, whose transform, move and camera texts it reads, with only its web archive committed
-  yet) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
-  2026-11-20 with no committed library yet).
+  committed that day), audioxt (miniaudio: mixing, streaming, 3D sound and microphone capture,
+  beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
+  render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
+  imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
+  transform, move and camera texts it reads, with only its web archive committed yet) and xlsxt
+  (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
+  libraries committed 2026-11-21).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -330,7 +332,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -347,11 +349,18 @@ worse than no gate, because it answers the question nobody asks twice.
   `tools/test-native-lane-paths.py`); artifacts only, it NEVER commits a binary. Member
   `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
-  requires. It builds all six native members on every platform, installs each library through
+  requires. It builds every native member on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a
   thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
   manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
-  stage waits on the WHOLE matrix: one red lane discards every artifact.
+  stage waits on the WHOLE matrix: one red lane discards every artifact. **`build: named`
+  (2026-11-21)** builds only the lanes of the members `members` names, so one member's release
+  does not queue behind every other member's builds: a `plan` job reads the rows of the
+  workflow's own `include` lists through `tools/release-plan.py` (which refuses any shape it
+  cannot read exactly) and twin jobs run those rows with the originals' steps, by YAML alias.
+  `build: all` stays the default and runs as before. Rows are still added in place; a new JOB
+  needs a place in the plan and in `tools/test-release-plan.py`, which evaluates every job's
+  `if` against the conditions a full build had before.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
@@ -367,8 +376,9 @@ worse than no gate, because it answers the question nobody asks twice.
   `x86-android`: the NDK revision OXT-Beyond pins, API 21 (torrentxt alone API 24 since
   2026-11-21: below it libtorrent uses a netlink socket Android 11 refuses an app, and a session
   starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
-  it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its committed
-  libraries are the API 21 builds until a dispatch rebuilds them), libc++ inside each library, the desktop
+  it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its four
+  were rebuilt at API 24 that day, run 44914897842, commit d47060f, tests run on the Android 7.0
+  emulator for the two x86 ABIs, and no app has run them yet), libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
   leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each

@@ -93,6 +93,24 @@
 # cannot run an ARM Android at any useful speed, and the job says so in its
 # summary rather than reading as tested. The `lanes` input runs the Android
 # job alone, or leaves it out.
+#
+# NAMED BUILDS SINCE 2026-11-21. Until then every dispatch built every lane
+# of every native member, whatever `members` said (that input narrows what
+# is installed, never what is built), so a run for one member's change asked
+# the account for every lane; the account runs about twenty jobs at a time,
+# and with several members waiting on runs at once, runs queued for hours
+# behind rebuilds of libraries nobody had changed. `build: named` builds only
+# the lanes of the members `members` names. The plan job reads their rows
+# from the two `include:` lists below (tools/release-plan.py, strictly; it
+# refuses a name no lane builds), and the twin jobs cmake-members-named and
+# mac-lipo-named run those rows with the originals' own steps (a YAML
+# anchor, so a step is written once, where it always was); coinxt runs when
+# it is named, and the Android job builds only the named members, for all
+# four ABIs. Everything after the builds is the same run: the bundle, the
+# installer, the gates and the commit, and `members` still decides what
+# lands. `build: all`, the default, is the run this workflow always was: the
+# plan job and the twins are skipped. tools/test-release-plan.py holds the
+# wiring (which jobs run, and when the commit job may, for every input).
 name: release binaries
 
 on:
@@ -110,8 +128,14 @@ on:
         default: all
         required: false
       members:
-        description: "Members whose libraries to INSTALL and commit, space-separated (e.g. 'curlxt'), or 'all'. Every lane still builds and tests; the other members' libraries are left as committed."
+        description: "Members whose libraries to INSTALL and commit, space-separated (e.g. 'curlxt'), or 'all'. Unless build is 'named', every lane still builds and tests; the other members' libraries are left as committed."
         type: string
+        default: all
+        required: false
+      build:
+        description: "Which lanes to BUILD: 'all' (every member's, as always) or 'named' (only the lanes of the members that `members` names, so a release of one member's change does not wait behind every other member's builds; `members` must then name them)."
+        type: choice
+        options: [all, named]
         default: all
         required: false
       lanes:
@@ -160,6 +184,34 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "10.15"
 
 jobs:
+  # ------------------------------------------------------------------ the plan
+  # Only for `build: named` (the header's NAMED BUILDS): read the named
+  # members' rows from this file and hand them to the twin jobs. It needs
+  # the checkout and nothing else: tools/release-plan.py reads the rows,
+  # and tools/build-android.sh --list names the members the Android job
+  # builds. A refusal (no names, `all`, a name no lane builds) fails here,
+  # in seconds, and every job after it is skipped.
+  plan:
+    name: choose the named members' lanes
+    if: github.event.inputs.build == 'named'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      cmake: ${{ steps.plan.outputs.cmake }}
+      maclipo: ${{ steps.plan.outputs.maclipo }}
+      coinxt: ${{ steps.plan.outputs.coinxt }}
+      android: ${{ steps.plan.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the lanes from this workflow and keep the named members'
+        id: plan
+        shell: bash
+        env:
+          MEMBERS: ${{ github.event.inputs.members }}
+        run: |
+          python3 tools/release-plan.py --members "$MEMBERS" \
+            --github-output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+
   # ---------------------------------------------------------------- CMake five
   # sodiumxt, torrentxt, enetxt, datachannelxt and (since 2026-08-23) box2dxt
   # all build through CMake with the same shape, so one matrix covers them.
@@ -170,8 +222,10 @@ jobs:
   cmake-members:
     name: ${{ matrix.member }} ${{ matrix.platform_id }}
     # Left out by lanes=android (a run that only builds the Android
-    # libraries); the commit job below accepts that skip and no other.
-    if: github.event.inputs.lanes != 'android'
+    # libraries), and by build=named, whose twin cmake-members-named runs
+    # the named members' rows of this list instead; the commit job below
+    # accepts those skips and no other.
+    if: github.event.inputs.lanes != 'android' && github.event.inputs.build != 'named'
     strategy:
       fail-fast: false
       matrix:
@@ -430,6 +484,41 @@ jobs:
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
+          # ---- audioxt: added 2026-11-20. miniaudio is ONE header the
+          # member's CMake fetches (an exact commit, held to a SHA-256) and
+          # compiles into the shim; it links no audio library (it finds the
+          # system's at run time), so every row is box3dxt's shape and needs
+          # no audio package on the runner. Its tests play and record through
+          # miniaudio's silent null device. native-audioxt.yml builds and
+          # tests the same six on every change to the member.
+          - member: audioxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: audioxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: audioxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: audioxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: audioxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: audioxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- render3dxt: added 2026-11-20. The renderer is this member's
           # own C with two single-file readers compiled in (stb_image and
           # fast_obj, FetchContent at pinned commits) and no dependency, so
@@ -463,6 +552,7 @@ jobs:
             platform_id: universal-mac
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- xlsxt: added 2026-11-20. libxlsxwriter, zlib and Expat build
           # from source inside the member's CMake (FetchContent, each pinned
           # to a commit) and need nothing from the runner, not even its zlib,
@@ -584,7 +674,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ matrix.member }}
-    steps:
+    # The anchor: cmake-members-named's steps are these, by alias, so a step
+    # added here runs in a named build too and is written nowhere else.
+    steps: &cmake-member-steps
       - uses: actions/checkout@v4
       # The manylinux image supplies its own CPython (setup-python cannot
       # install into a container it did not provision).
@@ -920,6 +1012,27 @@ jobs:
           path: ${{ matrix.member }}/src/code/${{ matrix.platform_id }}/
           if-no-files-found: error
 
+  # The same lanes for a named build (the header's NAMED BUILDS): the rows
+  # are the named members' rows of cmake-members' list, as the plan job read
+  # them, and the steps are cmake-members' own, by alias. Everything else
+  # here is that job's, line for line, so a lane builds the same library
+  # whichever of the two runs it, under the same name and into the same
+  # artifact. Skipped in a full run, and in a named one with no CMake member.
+  cmake-members-named:
+    name: ${{ matrix.member }} ${{ matrix.platform_id }}
+    needs: plan
+    if: github.event.inputs.lanes != 'android' && needs.plan.outputs.cmake != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.cmake) }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.member }}
+    steps: *cmake-member-steps
+
   # -------------------------------------------------------------------- coinxt
   # coinxt builds from a shell script, not CMake, so it gets its own job.
   #
@@ -937,7 +1050,16 @@ jobs:
   # is native Linux, which build-all already exercises.
   coinxt:
     name: coinxt ${{ matrix.platform_id }}
-    if: github.event.inputs.lanes != 'android'
+    # A named build runs this job when it names coinxt and skips it
+    # otherwise; a full run runs it as it always has. `!cancelled()` is the
+    # commit job's reason below: without a status function GitHub prepends
+    # success(), which is false when the plan job was skipped, as it is in
+    # every full run.
+    needs: plan
+    if: >-
+      !cancelled() && github.event.inputs.lanes != 'android' &&
+      (github.event.inputs.build != 'named' ||
+       (needs.plan.result == 'success' && needs.plan.outputs.coinxt == 'true'))
     strategy:
       fail-fast: false
       matrix:
@@ -1097,6 +1219,13 @@ jobs:
   kat-windows:
     name: coinxt x86_64-win32 KATs (on Windows)
     needs: coinxt
+    # Spelled out rather than left to the implicit success() (2026-11-21):
+    # coinxt now needs the plan job, which every full build skips, and
+    # GitHub applies a skip "to all jobs in the dependency chain from the
+    # point of failure or skip onwards", so an implicit success() here may
+    # read that skip two levels up and skip the KATs of every full build.
+    # This says what the job always meant: run when coinxt built.
+    if: ${{ !cancelled() && needs.coinxt.result == 'success' }}
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -1139,7 +1268,9 @@ jobs:
   # refusing a FAILED one (a broken build).
   mac-lipo:
     name: ${{ matrix.member }} universal-mac (two slices + lipo)
-    if: github.event.inputs.mac_lipo != 'false' && github.event.inputs.lanes != 'android'
+    # build=named runs the named members' rows of this list in the twin
+    # mac-lipo-named instead (the header's NAMED BUILDS).
+    if: github.event.inputs.mac_lipo != 'false' && github.event.inputs.lanes != 'android' && github.event.inputs.build != 'named'
     strategy:
       fail-fast: false
       matrix:
@@ -1157,7 +1288,8 @@ jobs:
     defaults:
       run:
         working-directory: ${{ matrix.member }}
-    steps:
+    # The anchor: mac-lipo-named's steps are these, by alias.
+    steps: &mac-lipo-steps
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -1282,6 +1414,23 @@ jobs:
           path: ${{ matrix.member }}/src/code/universal-mac/
           if-no-files-found: error
 
+  # cmake-members-named's counterpart for these lanes: the named members'
+  # rows of mac-lipo's list, run with mac-lipo's own steps, by alias. The
+  # mac_lipo input skips it as it skips mac-lipo.
+  mac-lipo-named:
+    name: ${{ matrix.member }} universal-mac (two slices + lipo)
+    needs: plan
+    if: github.event.inputs.mac_lipo != 'false' && github.event.inputs.lanes != 'android' && needs.plan.outputs.maclipo != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.maclipo) }}
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ${{ matrix.member }}
+    steps: *mac-lipo-steps
+
   # ------------------------------------------------------------------- Android
   # All ten native members, one job per Android ABI, each calling
   # tools/build-android.sh once per member. Per ABI rather than per member
@@ -1302,7 +1451,15 @@ jobs:
   # an emulator row in which any member's tests did not run.
   android:
     name: android ${{ matrix.platform_id }}
-    if: github.event.inputs.lanes != 'desktop'
+    # A named build runs it only when it names a member build-android.sh
+    # builds, and then for those members alone (the "Choose the members"
+    # step); a full run builds every member, as it always has. `!cancelled()`
+    # for coinxt's reason: the plan job is skipped in every full run.
+    needs: plan
+    if: >-
+      !cancelled() && github.event.inputs.lanes != 'desktop' &&
+      (github.event.inputs.build != 'named' ||
+       (needs.plan.result == 'success' && needs.plan.outputs.android != ''))
     strategy:
       fail-fast: false
       matrix:
@@ -1320,6 +1477,39 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+
+      # Which members this row builds: every member build-android.sh lists,
+      # as always, or in a named build the named ones among them (the plan
+      # job's android output, read from the same --list on the same commit),
+      # in the script's order. The loops below all read ANDROID_MEMBERS, so
+      # they cannot disagree about it.
+      - name: Choose the members
+        shell: bash
+        env:
+          BUILD: ${{ github.event.inputs.build }}
+          NAMED: ${{ needs.plan.outputs.android }}
+        run: |
+          set -euo pipefail
+          listed=$(bash tools/build-android.sh --list | sed -n 's/^members: *//p')
+          if [ "$BUILD" = named ]; then
+            [ -n "$NAMED" ] || { echo "::error::a named build reached the Android job with no member for it"; exit 1; }
+            for member in $NAMED; do
+              case " $listed " in
+                *" $member "*) : ;;
+                *) echo "::error::the plan named $member, which build-android.sh does not build ($listed)"; exit 1 ;;
+              esac
+            done
+            chosen=""
+            for member in $listed; do
+              case " $NAMED " in *" $member "*) chosen="$chosen $member" ;; esac
+            done
+          else
+            chosen=" $listed"
+          fi
+          chosen=${chosen# }
+          [ -n "$chosen" ] || { echo "::error::build-android.sh --list named no members"; exit 1; }
+          echo "members: $chosen"
+          echo "ANDROID_MEMBERS=$chosen" >> "$GITHUB_ENV"
 
       # The NDK revision is build-android.sh's pin, read from the script so
       # the two cannot disagree; the runner's SDK holds it or sdkmanager
@@ -1366,10 +1556,10 @@ jobs:
             echo "XTALK_ANDROID_BOOTED=$floor"
           } >> "$GITHUB_ENV"
 
-      # Every member, in the script's own order (its --list): the light ones
-      # first, so a toolchain problem shows in the first minute and not after
-      # OpenSSL. A member that fails stops the row; the commit job needs
-      # every row green.
+      # Every chosen member, in the script's own order (its --list): the
+      # light ones first, so a toolchain problem shows in the first minute
+      # and not after OpenSSL. A member that fails stops the row; the commit
+      # job needs every row green.
       #
       # A member built for a later Android than the emulator that is up
       # (torrentxt: API 24, build-android.sh says why) has its tests run on
@@ -1383,7 +1573,7 @@ jobs:
           set -euo pipefail
           : > "$RUNNER_TEMP/android-summary.txt"
           booted="${XTALK_ANDROID_BOOTED:-}"
-          for member in $(bash tools/build-android.sh --list | sed -n 's/^members: *//p'); do
+          for member in $ANDROID_MEMBERS; do
             if [ -n "$booted" ]; then
               want=$(bash tools/build-android.sh --api "$member")
               if [ "$want" != "$booted" ]; then
@@ -1418,9 +1608,9 @@ jobs:
             if [ -s "$summary" ]; then sed 's/^== build-android: /- /; s/ ==$//' "$summary"; else echo "- nothing was built"; fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -n "${{ matrix.emulator }}" ]; then
-            want=$(bash tools/build-android.sh --list | sed -n 's/^members: *//p' | wc -w)
+            want=$(wc -w <<< "${ANDROID_MEMBERS:-}")
             ran=$(grep -c 'tests RUN on ' "$summary" || true)
-            if [ "$ran" != "$want" ]; then
+            if [ "$want" = 0 ] || [ "$ran" != "$want" ]; then
               echo "::error::tests ran for $ran of $want members on the emulator"
               exit 1
             fi
@@ -1430,7 +1620,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for member in $(bash tools/build-android.sh --list | sed -n 's/^members: *//p'); do
+          for member in $ANDROID_MEMBERS; do
             mkdir -p "stage/$member/${{ matrix.platform_id }}"
             cp "$member/src/code/${{ matrix.platform_id }}/$member.so" "stage/$member/${{ matrix.platform_id }}/"
           done
@@ -1447,7 +1637,7 @@ jobs:
 
   bundle:
     name: collect one bundle
-    needs: [cmake-members, coinxt, kat-windows, mac-lipo, android]
+    needs: [cmake-members, cmake-members-named, coinxt, kat-windows, mac-lipo, mac-lipo-named, android]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -1501,7 +1691,7 @@ jobs:
   # is worse than no release, because the missing one looks deliberate afterwards.
   commit-binaries:
     name: install into each extension and commit
-    needs: [cmake-members, coinxt, kat-windows, mac-lipo, android, bundle]
+    needs: [plan, cmake-members, cmake-members-named, coinxt, kat-windows, mac-lipo, mac-lipo-named, android, bundle]
     # mac-lipo alone may be SKIPPED (the mac_lipo input is a deliberate,
     # visible choice, and the bundle then simply carries no torrentxt/
     # datachannelxt mac dylib to install); a FAILED mac-lipo still refuses
@@ -1518,18 +1708,42 @@ jobs:
     # skipped Android job only when lanes=desktop did. Any other skip (a
     # need that failed upstream skips its dependants) still refuses the
     # commit.
+    #
+    # The `build` input (2026-11-21) is a third. In a named build the plan
+    # job must have succeeded; cmake-members and mac-lipo are skipped by
+    # design and their twins run in their place; and a twin, coinxt (and
+    # with it the Windows KATs) or the Android job may be skipped only where
+    # the plan gave it nothing to build, or `lanes` left it out. A twin
+    # mac-lipo-named is mac-lipo's kind of skip. In a full run the plan job
+    # and both twins are skipped, and every other clause reads as before.
+    # tools/test-release-plan.py evaluates this expression, and every job's
+    # `if`, for each combination of inputs and outcomes.
     if: >-
       !cancelled() &&
       github.event.inputs.commit_mode != 'none' &&
+      (needs.plan.result == 'success' ||
+       (needs.plan.result == 'skipped' && github.event.inputs.build != 'named')) &&
       (needs.cmake-members.result == 'success' ||
-       (needs.cmake-members.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
+       (needs.cmake-members.result == 'skipped' &&
+        (github.event.inputs.lanes == 'android' || github.event.inputs.build == 'named'))) &&
+      (needs.cmake-members-named.result == 'success' ||
+       (needs.cmake-members-named.result == 'skipped' &&
+        (github.event.inputs.build != 'named' || github.event.inputs.lanes == 'android' ||
+         needs.plan.outputs.cmake == '[]'))) &&
       (needs.coinxt.result == 'success' ||
-       (needs.coinxt.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
+       (needs.coinxt.result == 'skipped' &&
+        (github.event.inputs.lanes == 'android' ||
+         (github.event.inputs.build == 'named' && needs.plan.outputs.coinxt != 'true')))) &&
       (needs.kat-windows.result == 'success' ||
-       (needs.kat-windows.result == 'skipped' && github.event.inputs.lanes == 'android')) &&
+       (needs.kat-windows.result == 'skipped' &&
+        (github.event.inputs.lanes == 'android' ||
+         (github.event.inputs.build == 'named' && needs.plan.outputs.coinxt != 'true')))) &&
       (needs.mac-lipo.result == 'success' || needs.mac-lipo.result == 'skipped') &&
+      (needs.mac-lipo-named.result == 'success' || needs.mac-lipo-named.result == 'skipped') &&
       (needs.android.result == 'success' ||
-       (needs.android.result == 'skipped' && github.event.inputs.lanes == 'desktop')) &&
+       (needs.android.result == 'skipped' &&
+        (github.event.inputs.lanes == 'desktop' ||
+         (github.event.inputs.build == 'named' && needs.plan.outputs.android == '')))) &&
       needs.bundle.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
