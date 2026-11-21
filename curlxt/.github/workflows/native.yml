@@ -35,6 +35,13 @@ permissions:
 
 env:
   MACOSX_DEPLOYMENT_TARGET: "10.15"
+  # The OXT-Beyond release whose lc-compile and server engine the `engine`
+  # job uses: lce-packages.yml's pins, as native-box3dxt.yml's are, so one
+  # engine build compiles and runs every member's modules. Bump them together.
+  OXT_BEYOND_REPO: SethMorrowSoftware/OpenXTalk-Beyond
+  OXT_BEYOND_TAG: v0.2.7-rc.6
+  OXT_BEYOND_BINARIES: OXT-Beyond-0.2.7-rc.6-linux-x86_64-binaries.tar.xz
+  OXT_BEYOND_BINARIES_SHA256: 12504ee02cbf26c59f218263724790853b50993ebdda02546df66bcf6525add8
 
 jobs:
   sanitize:
@@ -62,6 +69,59 @@ jobs:
       - name: The member's gates, over the built library
         run: |
           CURLXT_LIB="$PWD/build/curlxt.so" CURLXT_REQUIRE_LIB=1 bash tools/run-gates.sh
+
+  engine:
+    name: the binding on OXT-Beyond's server engine (linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Acquire toolchain + OpenSSL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ cmake ninja-build libssl-dev
+      - name: Release build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+      # lc-compile, modules/lci and the server engine from the release's
+      # binaries archive, checked against its pin (the folder is renamed from
+      # linux-x86_64-bin: a folder of that name in the engine's path makes
+      # the engine look for a source checkout).
+      - name: Fetch OXT-Beyond's tools
+        run: |
+          oxt="$RUNNER_TEMP/oxt"
+          mkdir -p "$oxt"
+          base="https://github.com/$OXT_BEYOND_REPO/releases/download/$OXT_BEYOND_TAG"
+          curl -sSfL --retry 4 -o "$RUNNER_TEMP/bin.tar.xz" "$base/$OXT_BEYOND_BINARIES"
+          echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
+            'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
+            'linux-x86_64-bin/modules/lci/*'
+          mv "$oxt/linux-x86_64-bin" "$oxt/engine"
+          rm "$RUNNER_TEMP/bin.tar.xz"
+      # -Werror, as the IDE's Extension Builder runs it: a warning here is a
+      # module nobody can install.
+      - name: Compile the binding (lc-compile -Werror)
+        run: |
+          mkdir -p "$RUNNER_TEMP/lcb"
+          "$RUNNER_TEMP/oxt/engine/lc-compile" -Werror \
+            --modulepath "$RUNNER_TEMP/oxt/engine/modules/lci" \
+            --modulepath "$RUNNER_TEMP/lcb" \
+            --output "$RUNNER_TEMP/lcb/curl.lcm" src/curl.lcb
+      # The driver checks the test's sweep against the binding, starts the
+      # servers and runs the engine. Green needs the engine's exit 0 AND a
+      # SUMMARY line with no failure and at least the driver's floor of
+      # checks: an engine that printed nothing must not read as a pass.
+      - name: Run tests/engine-selftest.lc on the engine
+        run: |
+          set -o pipefail
+          python3 tools/run-engine-selftest.py "$RUNNER_TEMP/oxt/engine/server-community" \
+            "$RUNNER_TEMP/lcb/curl.lcm" "$PWD/build/curlxt.so" | tee "$RUNNER_TEMP/engine.log"
+          {
+            echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | tail -n 1 | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
+            grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build-matrix:
     name: ${{ matrix.name }}

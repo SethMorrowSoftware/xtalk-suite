@@ -100,21 +100,25 @@ if tData begins with "tsneterr:" then answer tData
 
 ## Status
 
-The shim and its smoke test are verified natively (the whole exported surface against loopback
-HTTP and WebSocket servers, clean under ASan/UBSan). The helpers and the tsNet layer RUN headlessly
-over the built library against loopback HTTP, SMTP and WebSocket servers (`tools/check-script-vectors.py`,
-on the family's interpreter). The binaries for all six platforms come from the suite's
-release-binaries dispatch (2026-11-14, rebuilt 2026-11-15 with the file-download fixes).
+The shim and its smoke test are verified natively (the whole exported surface against loopback HTTP
+and WebSocket servers, clean under ASan/UBSan). The helpers and the tsNet layer RUN headlessly over
+the built library against loopback HTTP, SMTP and WebSocket servers
+(`tools/check-script-vectors.py`, on the family's interpreter). The binding and both layers also RUN
+on a real engine, OXT-Beyond's headless Linux server engine: `tests/engine-selftest.lc`, driven by
+`tools/run-engine-selftest.py` against the same servers, in the native lane on every change
+(2026-11-21 below). The binaries for all six platforms come from the suite's release-binaries
+dispatch (2026-11-14, rebuilt 2026-11-15 with the file-download fixes).
 
-**WebSockets (2026-11-20, ABI 2).** Added on libcurl's own WebSocket support, as new handlers
-only: every handler, option, number and result that existed before is as it was, `cuPoll` never
-lists a socket, and a stack that opens none sees no difference. The smoke test drives the six new
-exports against a WebSocket server it runs itself (clean under ASan/UBSan), and the helpers' calls
-run headlessly over the built library against `ws://` and, with a certificate made for the run,
-`wss://` servers. No engine has opened a socket yet: verified statically; needs an OXT pass. The
-ABI number moved from 1 to 2, so the `.lcb` and the native library must come from the same build,
-as always. There is no web (Emscripten) build of curlxt, so none of this reaches an HTML5
-standalone; a browser has its own WebSocket.
+**WebSockets (2026-11-20, ABI 2).** Added on libcurl's own WebSocket support, as new handlers only:
+every handler, option, number and result that existed before is as it was, `cuPoll` never lists a
+socket, and a stack that opens none sees no difference. The smoke test drives the six new exports
+against a WebSocket server it runs itself (clean under ASan/UBSan), and the helpers' calls run
+headlessly over the built library against `ws://` and, with a certificate made for the run, `wss://`
+servers. On 2026-11-21 OXT-Beyond's headless Linux server engine opened `ws://` and `wss://` sockets
+through the binding and the helpers (the record below); no IDE and no Windows, mac or Android engine
+has opened one yet: needs an OXT pass there. The ABI number moved from 1 to 2, so the `.lcb` and the
+native library must come from the same build, as always. There is no web (Emscripten) build of
+curlxt, so none of this reaches an HTML5 standalone; a browser has its own WebSocket.
 
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
@@ -124,8 +128,8 @@ checked, not run, and no OXT engine on Android has loaded any of the four: verif
 needs an OXT pass on Android. The `.lcb` declares Android's INTERNET permission, which OXT-
 Beyond's standalone builder adds to an app that includes this extension.
 
-**First engine records (Windows x86-64 only), on the 2026-11-14 `x86_64-win32` DLL, the one
-before the 2026-11-15 rebuild:**
+**First engine records, Windows x86-64, on the 2026-11-14 `x86_64-win32` DLL, the one before
+the 2026-11-15 rebuild:**
 - 2026-11-14: OXT-Beyond's own Windows CI loaded the three extensions as built in. It ran
   `cuLibraryVersion()` (`curlxt ABI 1; libcurl/8.22.0 Schannel libssh2/1.11.1`),
   `cuWaitingCount()` and `tsNetVersion()` (1.4.5), and found only system DLL imports.
@@ -136,8 +140,18 @@ before the 2026-11-15 rebuild:**
   - `cuRequestAsync`, five at once with the expired one among them: the expired one failed in
     116-314 ms each of four runs, with no pump call over 108 ms.
 
-The rest (SFTP, SCP, SMTP, FTP, uploads, the helpers' callbacks, Linux and mac) is verified
-statically; needs an OXT pass.
+**Engine record, Linux x86-64 (2026-11-21).** OXT-Beyond 0.2.7-rc.6's `lc-compile -Werror` compiled
+`src/curl.lcb`, and that release's headless server engine (9.7.1-OXT) loaded it over a library built
+from this tree (`curlxt ABI 2; libcurl/8.22.0 OpenSSL/3.5.9 libssh2/1.11.1`) and ran
+`tests/engine-selftest.lc`: 138 checks, none failed. It called every public handler of the binding;
+made GET and POST requests and waited for and polled them; ran `cuRequestSync`, `cuRequestAsync`
+with its callback, `tsNetVersion`, `tsNetGetSync` and `tsNetClose`; and opened `ws://` and `wss://`
+sockets through the binding and through the helpers' timer: text, UTF-8, binary, fragmented and
+burst messages, ping and pong, the peer's close, a dropped connection, the close timeout, the
+message cap (1009), a refused upgrade, a dead port and a refused certificate.
+
+The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
+OXT pass.
 
 ## Building and testing
 

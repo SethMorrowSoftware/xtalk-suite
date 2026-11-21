@@ -53,8 +53,11 @@ library org.openxtalk.library.curl
 -- smaller than kScratchCap, so a "needed" answer is always below
 -- -kScratchCap and can never be mistaken for one of the small error codes.
 --
--- OXT cannot compile/run .lcb headlessly, so every edit gets the static gate
--- (tools/check-livecodescript.py); verified statically; needs an OXT pass.
+-- Every edit gets the static gate (tools/check-livecodescript.py). Since
+-- 2026-11-21 the native lane also compiles this file with OXT-Beyond's own
+-- lc-compile -Werror and RUNS tests/engine-selftest.lc on that release's
+-- headless server engine (Linux x86-64), which calls every public handler;
+-- the IDE and the other platforms need an OXT pass.
 
 use com.livecode.foreign
 
@@ -490,7 +493,7 @@ end handler
 /**
 Summary: The versions of curlxt's ABI, libcurl and the libraries it uses.
 
-Returns: A line such as "curlxt ABI 1; libcurl/8.22.0 OpenSSL/3.0.13 libssh2/1.11.1".
+Returns: A line such as "curlxt ABI 2; libcurl/8.22.0 OpenSSL/3.5.9 libssh2/1.11.1".
 
 References: cuInitialize (handler)
 */
@@ -915,7 +918,9 @@ public handler cuLiveCount() returns Integer
 end handler
 
 -- ===================================================================== --
---  Public API: WebSockets (ABI 2). Verified statically; needs an OXT pass.
+--  Public API: WebSockets (ABI 2). Ran on OXT-Beyond's headless Linux
+--  server engine 2026-11-21 (tests/engine-selftest.lc, ws:// and wss://);
+--  the IDE and the other platforms need an OXT pass.
 -- ===================================================================== --
 
 -- One message out: the bytes of pData as a frame of kind pKind.
@@ -1171,7 +1176,12 @@ error.
 Description:
 The script pauses while it waits. Other sockets and requests move too.
 
-References: cuWsPoll (handler), cuWsRead (handler)
+It answers 1 at once, and moves nothing, while a message is already
+waiting to be read. To wait for something that comes after those
+messages, such as the socket closing, read them first with <cuWsRead> or
+<cuWsReadText>, or call <cuWsPoll> in a loop instead.
+
+References: cuWsPoll (handler), cuWsRead (handler), cuWsReadText (handler)
 */
 public handler cuWsWait(in pSocket as Integer, in pTimeoutMs as Integer) returns Integer
    variable tR as Integer

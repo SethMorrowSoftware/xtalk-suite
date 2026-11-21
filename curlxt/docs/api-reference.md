@@ -2,7 +2,9 @@
 
 Every public handler, from the doc blocks in the source (the IDE dictionary reads the same
 blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
-gate). Verified statically; needs an OXT pass.
+gate). Every handler of the binding, and the helpers' requests and WebSocket calls, run on
+OXT-Beyond's headless Linux server engine in the native lane (`tests/engine-selftest.lc`;
+README, Status); the rest, the IDE and the other platforms need an OXT pass.
 
 ## The binding: src/curl.lcb
 
@@ -28,7 +30,7 @@ Returns: The number of holds still taken; 0 means curlxt is shut down.
 
 The versions of curlxt's ABI, libcurl and the libraries it uses.
 
-Returns: A line such as "curlxt ABI 1; libcurl/8.22.0 OpenSSL/3.0.13 libssh2/1.11.1".
+Returns: A line such as "curlxt ABI 2; libcurl/8.22.0 OpenSSL/3.5.9 libssh2/1.11.1".
 
 ### `cuLastError`
 

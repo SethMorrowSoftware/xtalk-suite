@@ -43,6 +43,13 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    callback parameters follow the public tsNet dictionary only (docs/tsnet-compat.md marks
    the two entries that could not be read). Never change one to taste; never take tsNet code.
    It must never touch libURL: a stack that does not use it must behave exactly as before.
+8. **The engine run is `tests/engine-selftest.lc`** (since 2026-11-21): the root
+   `native-curlxt.yml` `engine` job compiles the binding with OXT-Beyond's `lc-compile
+   -Werror` and runs the test on that release's headless Linux server engine through
+   `tools/run-engine-selftest.py`, against the same loopback servers as rule 6's gate. A new
+   public handler goes into the test's SWEEP in the same change (`--check-sweep` is a gate);
+   new behaviour gets a check there too. It runs the server engine only: the IDE, Windows,
+   mac and Android still need an OXT pass, and a label says which.
 
 ## As built
 
@@ -117,3 +124,11 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    block does; the README can show it in full.
 5. **The WebSocket test servers answer ANY request with an upgrade.** Point an ordinary request
    at the HTTP server (`base`), never at the WebSocket one.
+6. **`cuWsWait` answers 1 at once while a message waits, and moves nothing then** (by contract:
+   `cux_ws_wait` looks before it pumps). A loop that waits for a LATER state (closed, a count of
+   messages) with messages unread spins in place: the engine test's first run lost eight checks
+   to it (2026-11-21). Read the messages first, or loop on `cuWsPoll` with a short `wait`.
+7. **The engine's parser is the judge of a `.lc` test**, which `tools/check-livecodescript.py`
+   does not read (it reads `.lcb` and `.livecodescript`): `does not contain` is not xTalk (the
+   checker's check 7 refuses it in a script; the engine stops the whole file at it), and
+   `unicodeText` is a reserved word, so a handler of that name cannot be called.

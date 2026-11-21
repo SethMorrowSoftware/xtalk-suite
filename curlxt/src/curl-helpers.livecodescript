@@ -24,7 +24,11 @@ script "curlHelpers"
 -- column-0 name cannot be co-embedded (suite engine note 1.6, enetxt
 -- gotcha 5); the suite's check-cross-library-names.py holds them disjoint.
 --
--- Verified statically; needs an OXT pass.
+-- Ran on OXT-Beyond's headless Linux server engine 2026-11-21
+-- (tests/engine-selftest.lc): cuRequestSync, cuRequestAsync and its
+-- callback, cuResponse, and every WebSocket call here with the timer's
+-- events (open, text, binary, closed), ws:// and wss://. The IDE, the other
+-- platforms and the rest of this file need an OXT pass.
 
 constant kCuDefaultInterval = 20
 constant kCuIntOptions = "timeout,connectTimeout,followRedirects,maxRedirects,verifyPeer,verifyHost,lowSpeedLimit,lowSpeedTime,useSsl,ftpPassive,maxBodyBytes,httpVersion,dnsCacheSeconds,createDirs,wsCloseTimeout"
