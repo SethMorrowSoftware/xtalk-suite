@@ -7,6 +7,10 @@ once. It also opens a microphone. This page is what to know before the
 It does not replace anything. The `play` command and the player object are the engine's own
 and work as they always have; a stack can use both.
 
+To hear what it does before reading on, open the demo, Sound Stage
+(`examples/audioxt-demo.livecodescript`): each of its scenes is one of the ideas below, at
+work, and its code is written to be read.
+
 ## The conventions
 
 - **Handles are integers.** An engine, a sound, a group or a capture is a number; 0 is

@@ -81,8 +81,10 @@ def main():
     # 52 since 2026-09-25: the same core's stamped rebuild re-asserts that
     # size, a width line and a height line at kStWidth x kStHeight (review:
     # a board resized and reopened failed its own 1200 x 640 boot check).
-    if "52 stack window dimension" not in out:
-        print("test-stack-size: expected 52 measured dimensions, got:\n" + out)
+    # 54 since 2026-11-21: audioxt/examples/audioxt-demo.livecodescript, a
+    # width line and a height line at kAdWidth x kAdHeight (960 x 600).
+    if "54 stack window dimension" not in out:
+        print("test-stack-size: expected 54 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

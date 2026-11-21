@@ -49,10 +49,12 @@ stack hears is out of bounds.
 7. **Done means:** a shim change is green in `smoke` AND `fuzz` under
    `-DAUDIOXT_SANITIZE=address`, and `smoke` under `-DAUDIOXT_SANITIZE=thread`; a binding
    change passes `lc-compile -Werror` and `tests/engine-selftest.lc` on the server engine;
-   a change the web can see passes `tests/web/run-web-test.cjs`; all pass
-   `bash tools/run-gates.sh`. An ABI change bumps `AUX_ABI_VERSION` and the two literals in
-   `checkABI()` together. Native-library changes refresh the committed binaries through the
-   suite's `release-binaries.yml`; `native-audioxt.yml` never commits.
+   a change the web can see passes `tests/web/run-web-test.cjs`; a demo change passes
+   `tests/demo-drive.livecodescript` on the desktop engine, with the extension and without
+   it (`AUDIOXT_LCM` empty); all pass `bash tools/run-gates.sh`. An ABI change bumps
+   `AUX_ABI_VERSION` and the two literals in `checkABI()` together. Native-library changes
+   refresh the committed binaries through the suite's `release-binaries.yml`;
+   `native-audioxt.yml` never commits.
 
 ## Generated text: edit the source, then regenerate
 
@@ -96,6 +98,22 @@ stack hears is out of bounds.
 - **No brown noise**: miniaudio's wanders to 1.34 at amplitude 0.25 (measured).
 - **Only `aux_*` is exported**: `src/audioxt.map` for GNU ld and the same pattern for ld64.
 
+## The demo
+
+`examples/audioxt-demo.livecodescript` (Sound Stage) wears OXT-Beyond's showcase look, which
+the owner asked of every new extension's demo (2026-11-21), not the suite's light UI kit
+(the suite's `check-ui-kit-drift.py` exempts it, naming the drive): a dark stage, the
+header with OXT-Beyond's name, the demo's, one line on what it does and "by Seth Morrow";
+straight into motion on open; scenes of 5 to 15 seconds; ONE timer, the screen locked per
+frame and nothing waiting; long work a piece a frame with its progress shown. Every field
+and button gets its own text and background colours (a system in dark mode gives a control
+with none white text, seen on Windows), and no control is a system tick box, menu or
+slider. The drive checks those, that no words are cut off (in Linux's font, which is wider
+than Windows'), and every scene at its moments. With `AUDIOXT_SHOTS=<folder>` and a display
+it saves a picture of each moment: copy the drive to `Toolset/home.rev` in the windowed
+engine's working folder and run the engine with no arguments (`export snapshot` needs a
+window; `-ui` has none).
+
 ## Gotchas
 
 1. **A path ending in `.` is refused by the shim** (`path_ok`): miniaudio's
@@ -118,5 +136,8 @@ Verified natively (smoke and fuzz, ASan/UBSan and TSan, x86_64 Linux; wasm under
 the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library, through the silent device) and in headless Chromium (`tests/web/`, the archive
 called from C). No desktop IDE and no other platform's engine has loaded it, and nobody has
-HEARD it: verified statically; needs an OXT pass. Only the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12) is committed; no desktop or Android library yet. Open work is
-in the suite's `docs/WORK-PLAN.md`.
+HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
+through the silent device, headless and in a window (`tests/demo-drive.livecodescript`,
+2026-11-21); nobody has used it by hand. Only the web archive
+(`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12) is committed; no desktop or
+Android library yet. Open work is in the suite's `docs/WORK-PLAN.md`.

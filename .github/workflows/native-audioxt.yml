@@ -131,6 +131,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc cmake ninja-build
+          # what the desktop engine opens even with -ui (no display)
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libfreetype6 libfontconfig1
       - name: Release build + tests
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DAUDIOXT_BUILD_TESTS=ON
@@ -149,6 +152,7 @@ jobs:
           echo "$OXT_BEYOND_BINARIES_SHA256  $RUNNER_TEMP/bin.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/bin.tar.xz" -C "$oxt" --wildcards \
             'linux-x86_64-bin/lc-compile' 'linux-x86_64-bin/server-community' \
+            'linux-x86_64-bin/LiveCode-Community' \
             'linux-x86_64-bin/server-revzip.so' 'linux-x86_64-bin/server-revxml.so' \
             'linux-x86_64-bin/modules/lci/*'
           mv "$oxt/linux-x86_64-bin" "$oxt/engine"
@@ -183,6 +187,36 @@ jobs:
             echo "Engine self-test: $(grep '^SUMMARY ' "$RUNNER_TEMP/engine.log" | awk '{print $2 " passed, " $3 " failed"}') on OXT-Beyond $OXT_BEYOND_TAG (Linux x86-64)."
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /'
           } >> "$GITHUB_STEP_SUMMARY"
+      # The demo, Sound Stage, driven on the desktop engine with no display
+      # (-ui) and no sound card: its window built, every scene played as
+      # Play all plays them and checked at its moments, the silent
+      # microphone picked and heard, pause, the volume knob, another device,
+      # its own checks run, no words cut off. Then the same window without
+      # the extension, which must say so and survive every click. Green
+      # needs an exit of 0 AND a last line "DRIVE <n> 0" from both.
+      - name: Drive examples/audioxt-demo.livecodescript on the engine
+        run: |
+          set -o pipefail
+          AUDIOXT_LCM="$RUNNER_TEMP/lcb/audioxt.lcm" AUDIOXT_LIB="$PWD/build/audioxt" \
+          AUDIOXT_DEMO="$PWD/examples/audioxt-demo.livecodescript" \
+            timeout 300 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo.log"
+          tail -n 1 "$RUNNER_TEMP/demo.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          grep -E '^SUMMARY [1-9][0-9]* 0$' "$RUNNER_TEMP/demo.log"
+          AUDIOXT_LCM= AUDIOXT_DEMO="$PWD/examples/audioxt-demo.livecodescript" \
+            timeout 120 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui tests/demo-drive.livecodescript \
+            | tee "$RUNNER_TEMP/demo-missing.log"
+          tail -n 1 "$RUNNER_TEMP/demo-missing.log" | grep -E '^DRIVE [1-9][0-9]* 0$'
+          echo "Demo: $(tail -n 1 "$RUNNER_TEMP/demo.log" | awk '{print $2 " drive checks passed"}'), its own $(grep '^SUMMARY ' "$RUNNER_TEMP/demo.log" | awk '{print $2 " checks passed, " $3 " failed"}'); without the extension $(tail -n 1 "$RUNNER_TEMP/demo-missing.log" | awk '{print $2 " passed"}')." >> "$GITHUB_STEP_SUMMARY"
+      # The stack file the demo is handed out as, made the way a release
+      # makes it (it must save; opening it is the drive's half).
+      - name: Build the demo's stack file
+        run: |
+          AUDIOXT_DEMO="$PWD/examples/audioxt-demo.livecodescript" AUDIOXT_OUT="$RUNNER_TEMP/audioxt-demo.oxtstack" \
+            timeout 60 "$RUNNER_TEMP/oxt/engine/LiveCode-Community" -ui examples/build-demo-stack.livecodescript \
+            | tee "$RUNNER_TEMP/stack.log"
+          grep -E '^MADE ' "$RUNNER_TEMP/stack.log"
+          test -s "$RUNNER_TEMP/audioxt-demo.oxtstack"
       - name: The member's gates
         run: bash tools/run-gates.sh
 

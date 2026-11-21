@@ -45,6 +45,18 @@ and touches nothing of theirs.
   (rule 3). Every handle is a generation-tagged integer, and a stale one is a harmless no-op
   (rule 4).
 
+## See it first
+
+`examples/audioxt-demo.livecodescript` is **Sound Stage**, a dark stage that opens playing:
+a beat started on the mixer's own clock, a sound that circles your head and flies past, a
+synth gliding through its four shapes into a chord, a tape mixed in script, written as a WAV
+file and streamed back, and your microphone heard and played back, with a live oscilloscope
+and level meters under every scene and one button that runs every check of the window.
+Paste it into a stack's script and reopen the stack, or make a stack file of it with
+`examples/build-demo-stack.livecodescript` and open that. It needs nothing but the
+extension: every sound is made in script, and without a sound device or the extension it
+says so plainly.
+
 ## Quick taste
 
 ```livecodescript
@@ -92,6 +104,13 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **In a browser**, the same day: the web archive, called from C as the web engine will call
   it, opened Web Audio in headless Chromium, played a tone after one click and recorded from
   Chromium's fake microphone (`tests/web/`).
+- **The demo**, Sound Stage, on 2026-11-21: `tests/demo-drive.livecodescript` drove it on
+  OXT-Beyond's Linux desktop engine (9.7.1-OXT) over a locally built library, with no sound
+  card (so through the silent device, as the window itself chooses), headless and in a
+  window: every scene played and checked at its moments, its own checks green, every field
+  and button with its own colours, no words cut off; and without the extension the window
+  said so and survived every click. The native lane repeats that on every change. Nobody has
+  used it by hand yet.
 - **Not yet:** nobody has HEARD it. No machine with a sound card, no desktop IDE, and no
   engine on Windows, macOS, Android or the web has run it: on those it is verified
   statically; needs an OXT pass. Only the web archive is committed under `src/code/` yet; the
@@ -111,6 +130,8 @@ details.
 
 ## Documentation
 
+- [examples/audioxt-demo.livecodescript](examples/audioxt-demo.livecodescript) - Sound
+  Stage, the showcase: each scene's code is one capability, written to be read.
 - [docs/getting-started.md](docs/getting-started.md) - engines and sounds, the timer that
   polls, the microphone, the limits, the rules that decide whether a sound is heard.
 - [docs/api-reference.md](docs/api-reference.md) - every `au*` handler, generated from the

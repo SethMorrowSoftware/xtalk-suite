@@ -915,7 +915,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
-| 7 | A demo stack in the kit's look: a small mixer with a level meter, a beat on the sample clock and a voice memo | coding | - | a paste-and-run example in `audioxt/examples/` |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
 | 9 | The suite board's band: the members with no harness (audioxt among them) are names under the rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch on an engine |
 

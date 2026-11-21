@@ -121,6 +121,13 @@ EXEMPT = {
     # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
+    # audioxt's Sound Stage is a showcase on a dark stage, in OXT-Beyond's
+    # look (the Render3D Tour's palette), which the owner asked every new
+    # extension's demo to wear (2026-11-21); the kit's look is a light form.
+    # Its own drive holds what the kit would: every field and button with
+    # its own colours, no system control, no words cut off.
+    os.path.join("audioxt", "examples", "audioxt-demo.livecodescript"):
+        "a dark showcase stage in OXT-Beyond's look, held by audioxt/tests/demo-drive.livecodescript",
 }
 
 # The three spellings that mean "this file builds a window". Until the
