@@ -145,6 +145,16 @@ EXEMPT = {
     # own uiStatus, in the dark palette.
     os.path.join("curlxt", "examples", "curlxt-live.livecodescript"):
         "OXT-Beyond's dark showcase look at the owner's request (2026-11-21); carries the boot self-check",
+    # gamepadxt's Gamepad Lab is a showcase in the dark look of the 3D demos
+    # (Render3D Tour, the physics demo, Box3D Playground), to the bar the
+    # owner set on 2026-11-21: a dark stage, the OXT-Beyond header, and every
+    # colour set by the stack itself so a dark system theme changes nothing.
+    # The kit's light card look is not that language. The colours are held
+    # by its drive test instead (gamepadxt/tests/demo-drive.livecodescript:
+    # every field, button and slider sets its own, and every word reads at
+    # 4.5 to 1 or better against what is behind it).
+    os.path.join("gamepadxt", "examples", "gamepad-lab.livecodescript"):
+        "a dark showcase in the 3D demos' look (the 2026-11-21 demo bar); its colours held by its drive test",
     # ShowControl's three showcases wear OXT-Beyond's dark stage (the
     # Render3D Tour's palette and flat buttons), not the light card look, at
     # the owner's request of 2026-11-21: the same bar as Beyond's own demos.

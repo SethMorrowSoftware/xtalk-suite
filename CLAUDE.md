@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Nineteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Twenty members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -23,10 +23,12 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
   transform, move and camera texts it reads, with only its web archive committed yet), xlsxt
   (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
-  libraries committed 2026-11-21), and ShowControl's three, which joined 2026-11-21 with no
-  committed library yet: oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and
-  artnetxt (Art-Net DMX lighting in pure LCB, with no native library at all, but a native lane:
-  its suites run on an engine).
+  libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game controllers;
+  joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21; desktop and
+  web only), and ShowControl's three, which joined 2026-11-21 with no committed library yet:
+  oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and artnetxt (Art-Net DMX
+  lighting in pure LCB, with no native library at all, but a native lane: its suites run on an
+  engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -97,7 +99,7 @@ every family: **edit the master, then regenerate or re-carry; never patch a copy
 
 | Block | Master | Held by |
 |---|---|---|
-| UI kit v2, the card look | `tools/ui-kit.livecodescript` | `tools/check-ui-kit-drift.py` |
+| UI kit v2, the card look | `tools/ui-kit.livecodescript` | `tools/check-ui-kit-drift.py`; its words' colours, `check-ui-kit-text-colour.py` |
 | Demo boot self-check | `tools/demo-selfcheck.livecodescript` | `check-demo-selfcheck-drift.py`, `check-demo-control-lists.py` |
 | Harness scaffold | `tools/harness-scaffold.livecodescript` | `tools/check-harness-scaffold-drift.py` |
 | Script libraries in demos | `<member>/src/*.livecodescript` | `sync-demo-embeds.py --check` (after `test-demo-embeds.py --mutate`) |
@@ -336,7 +338,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, oscxt, midixt; midixt needs ALSA's headers on Linux) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, gamepadxt, oscxt, midixt; midixt needs ALSA's headers on Linux) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -353,11 +355,18 @@ worse than no gate, because it answers the question nobody asks twice.
   `tools/test-native-lane-paths.py`); artifacts only, it NEVER commits a binary. Member
   `.github/workflows/` are GENERATED from these and run only in published repos.
 - **`release-binaries.yml`** is a manual dispatch; pressing Run is the human decision rule 5
-  requires. It builds all six native members on every platform, installs each library through
+  requires. It builds every native member on every platform, installs each library through
   `tools/install-release-binaries.py` (name, object format, architecture and exports checked; a
   thin Mach-O, a fat one missing a slice, or a slice above the macOS floor refused), refreshes
   manifests, runs the gates and commits per `commit_mode` (`branch`, `pr`, `none`). The commit
-  stage waits on the WHOLE matrix: one red lane discards every artifact.
+  stage waits on the WHOLE matrix: one red lane discards every artifact. **`build: named`
+  (2026-11-21)** builds only the lanes of the members `members` names, so one member's release
+  does not queue behind every other member's builds: a `plan` job reads the rows of the
+  workflow's own `include` lists through `tools/release-plan.py` (which refuses any shape it
+  cannot read exactly) and twin jobs run those rows with the originals' steps, by YAML alias.
+  `build: all` stays the default and runs as before. Rows are still added in place; a new JOB
+  needs a place in the plan and in `tools/test-release-plan.py`, which evaluates every job's
+  `if` against the conditions a full build had before.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized
@@ -369,7 +378,7 @@ worse than no gate, because it answers the question nobody asks twice.
   the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
   macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
 - **Android (2026-11-18).** `tools/build-android.sh <member> <abi>-android` is the WHOLE recipe
-  for the native members on `arm64-android`, `armv7-android`, `x86_64-android` and
+  for the native members (bar gamepadxt, oscxt and midixt, which it names desktop-only, each with its reason) on `arm64-android`, `armv7-android`, `x86_64-android` and
   `x86-android`: the NDK revision OXT-Beyond pins, API 21, libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or

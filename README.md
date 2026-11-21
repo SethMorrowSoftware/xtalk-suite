@@ -40,6 +40,7 @@ into its own repository ([docs/MEMBER-REPO-SPLIT.md](docs/MEMBER-REPO-SPLIT.md))
 | [box3dxt](box3dxt/) | `b3*` / `b3k*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling; plus the pure-script b3k game Kit: things in metres and degrees, an orbiting camera, input, a player controller, drawn by render3dxt when it is loaded or by box3dxt's own renderer |
 | [audioxt](audioxt/) | `au*` | miniaudio 0.11.26 | Sound beside the engine's own `play`: any number of sounds mixed at once with low delay, music streamed from WAV, FLAC and MP3, sample-exact start times, fades and loops, groups, 3D placement, tones and noise, microphone capture to samples or straight to a WAV file, decoding and offline rendering |
 | [render3dxt](render3dxt/) | `r3*` | its own C renderer, with stb_image and fast_obj compiled in | A textured 3D picture for an ordinary image control: OBJ models with their materials and pictures, boxes to capsules made to measure, PNG / JPEG / BMP / TGA textures, sun and lamp lights, fog, smooth edges, a camera that projects and casts rays, clicking on things; drawn on the processor across its cores, and made to draw what box3dxt simulates |
+| [gamepadxt](gamepadxt/) | `gp*` | SDL 3.4.20 (its gamepad subsystem only) | Game controllers: Xbox, PlayStation, Switch and most other pads under one button layout, sticks with a dead zone, hot-plug, button and axis events read by polling, rumble and lights, mappings, and virtual pads for on-screen controls and tests |
 | [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; WebSockets (`ws://`, `wss://`); plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
@@ -81,6 +82,9 @@ Design facts that decide how you use them (each member's own docs have the rest)
   as they stand, so a physics step reaches the picture in one call
   (`r3SceneApplyMoves(scene, b3MovesText())`); neither extension needs the other. Models and
   pictures are files from anywhere, so every index and size in one is checked before use.
+- **gamepadxt** is "poll or nothing": nothing changes between two `gpPoll` calls, and buttons
+  are named by position (`south`), not by the letter printed on them. It reads controllers
+  and opens no window (`gamepadxt/docs/getting-started.md`).
 - **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
   number formats), not its looks. It does not edit a file in place or calculate formulas, and the
   reader treats every file as a stranger's: every size in one is bounded
@@ -156,6 +160,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | box3dxt | 6 platforms, 4 Android ABIs and a web archive, ABI 2 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change); and its committed web archive in Chromium, 2026-11-21: a web engine built locally from OXT-Beyond's pull request 606 played the b3k Kit's Orb Island (its keys not driven) | the committed desktop and Android libraries on any engine (the runs so far loaded locally built ones, bar that web archive); Windows, macOS, Android and a released web engine; a row in the suite paste |
 | audioxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library and through miniaudio's silent device: the module loaded, the ABI check passed, binary data crossed both ways, a tone was rendered and measured, and every public handler was called; the web archive played and recorded in headless Chromium the same day; in the IDE on the maintainer's Windows PC, 2026-11-21, a CI-built 64-bit DLL loaded on WASAPI and the same self-test passed 89, failed 0; the demo driven on the Linux desktop engine the same day (`audioxt/tests/demo-drive.livecodescript`) | the committed release libraries on any engine; macOS, Android and the web engine; anyone hearing it (every run so far played through the silent device); a row in the suite paste |
 | render3dxt | the web archive only (the first release dispatch lands the rest), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second. On Windows (OXT-Beyond 0.2.8-dp.1, dark system appearance) the rebuilt demo was readable, 2026-11-21 | macOS, Android and the web; a pointer on Windows; the desktop and Android libraries committed; a row in the suite paste |
+| gamepadxt | 6 platforms and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library and virtual pads: the module loaded, the ABI check passed and every public handler was called (`gamepadxt/tests/engine-selftest.lc`, run again by its native lane on every change); its demo window, Gamepad Lab, driven on OXT-Beyond's Linux desktop engine with no display, 2026-11-21, with that library and without it (`gamepadxt/tests/demo-drive.livecodescript`); the committed web archive in OXT-Beyond's web engine, built by its pull request 612, whose web IDE check ran a virtual pad in Chromium, Firefox and WebKit, 2026-11-21; in the IDE on the maintainer's Windows PC, 2026-11-21 (OXT-Beyond 0.2.8-dp.1, over a DLL the size of the committed one): Gamepad Lab opened and played its first showcase on its software pad | a real controller, on any platform; macOS; an IDE on Linux; the committed Linux and Mac libraries on any engine; a row in the suite paste |
 | xlsxt | 6 platforms, 4 Android ABIs and a web archive, ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change); in the IDE on the maintainer's Windows PC, 2026-11-21, over the native lane's DLL: that self-test 64/0 and the demo's checks 39/0 (its words were white on white under the dark theme; the demo was rebuilt the same day as a self-playing showcase that names every colour, and that window ran on the same PC readable throughout, its tour and checks 39/0); the committed web archive in OXT-Beyond's web engine (its pull request 605), 2026-11-21: a workbook written and read back in Chromium, Firefox and WebKit | the committed desktop and Android release libraries on any engine (the runs so far loaded locally built or lane-built ones); macOS and Android; most of its handlers in a browser; a file of its own opened in Excel, on the record; a row in the suite paste |
 | oscxt | none yet (the first release dispatch lands them), ABI 2 | its LCB suite under lc-run and its Script suite in OXT-Beyond's headless standalone engine (`-ui`), Linux x86_64, 2026-11-21, over a locally built library: real UDP through the engine's own sockets and an independent OSC peer included (`oscxt/tools/run-lcb-tests.py`, `run-lcs-tests.py`; its native lane runs both on Linux, Windows and macOS on every change); the parser fuzzed under ASan/UBSan the same day | any desktop IDE; Windows and macOS on the record outside CI; a committed library; Android; a row in the suite paste |
 | midixt | none yet (the first release dispatch lands them), ABI 2 | the same two suites on the same engine, 2026-11-21, over a locally built library and the member's mock MIDI backend | a message through a real MIDI service (ALSA, CoreMIDI or Windows MM) on the record; any desktop IDE; a committed library; a row in the suite paste |
@@ -188,7 +193,8 @@ only, and every Windows engine run since 2026-09-24 loaded the 64-bit DLL, by th
 sodiumxt and torrentxt on x86-linux. The Windows DLLs carry libtorrent 2.1.2 and OpenSSL 3.6.5 from vcpkg
 rather than the 2.0.11 and 3.5.9 the other platforms pin; libsodium is 1.0.22 everywhere since
 2026-11-07. Linux floors vary: both
-datachannelxt builds and torrentxt's 32-bit build need glibc 2.38, box2dxt's 32-bit build 2.34. The
+datachannelxt builds and the 32-bit builds of torrentxt and gamepadxt need glibc 2.38, box2dxt's
+32-bit build 2.34. The
 macOS dylibs are universal (arm64 + x86_64) and unsigned.
 
 **Android (started 2026-11-18).** All seven native members build for `arm64-android`,
@@ -210,9 +216,10 @@ run 44847619287 (78223d8), the x86 ones tested on the emulator, the ARM ones bui
 render3dxt joined the same day and is in the recipe; none of its Android libraries is
 committed yet. xlsxt joined the same day too; its four Android libraries were committed on
 2026-11-21 by its own release run (0be6db1), tested on the emulator for the two x86
-ABIs, the ARM ones built and checked, not run. oscxt and midixt joined on 2026-11-21 with no
-Android build (`tools/build-android.sh` names them desktop-only and says why); artnetxt has no
-library.
+ABIs, the ARM ones built and checked, not run.
+gamepadxt, which joined the same day too, is not built for Android. oscxt and midixt joined on
+2026-11-21 with no Android build either (`tools/build-android.sh` names the three desktop-only
+and says why); artnetxt has no library.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -289,6 +296,7 @@ put cuLibraryVersion()   -- curlxt
 put b3LibraryVersion()   -- box3dxt
 put auLibraryVersion()   -- audioxt
 put r3LibraryVersion()   -- render3dxt
+put gpLibraryVersion()   -- gamepadxt
 put xlLibraryVersion()   -- xlsxt
 put oscVersion()         -- oscxt: prints 2 (its ABI)
 put midiVersion()        -- midixt: prints 2 (its ABI)

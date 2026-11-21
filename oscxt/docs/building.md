@@ -10,8 +10,9 @@ ONE shared library, `oscxt.{so,dll,dylib}` under its bare name (no `lib` prefix)
 `src/osc_shim.c` and tinyosc (ISC, vendored under `src/third_party/tinyosc/`), compiled
 together. It exports `osc_*` and nothing else (`src/oscxt.map` for GNU ld; the same pattern
 for ld64), carries the static C runtime on Windows, starts no thread and opens no socket.
-It needs nothing but a C17 compiler, so it builds for Android too (the suite's
-`tools/build-android.sh`).
+It needs nothing but a C17 compiler, so nothing in it stops an Android build, but none has
+run yet: the suite's `tools/build-android.sh` names it desktop-only until one has (the suite's
+work plan carries it).
 
 ## Build
 

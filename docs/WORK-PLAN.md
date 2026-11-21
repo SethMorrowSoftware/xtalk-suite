@@ -329,6 +329,7 @@ keeping the scaffold for its report.
 | 28 | **Rebuild the six mac dylibs at the macOS floor.** Dispatch `release-binaries.yml` with `platforms: universal-mac` (or `all`) once the floor is on the branch it runs from: every committed universal-mac dylib was built for macOS 15.0, and by their imports torrentxt's and datachannelxt's cannot load before macOS 15 nor enetxt's before 11 (section 1.1). Until then the installer's selftest notes box2dxt's committed dylib as pre-floor | Two native members cannot load on any Mac older than macOS 15, and a third before 11 | S | dispatch |
 | 29 | **Install the .lce packages through an IDE's Extension Manager.** `lce-packages.yml` (2026-10-21) builds one `.lce` per extension and, on every run, validates each with extension-utils' own `extensionValidateLCEPackage`, extracts it with revZip, maps its code folder and loads and probes it on OXT-Beyond's server engine, Linux x86-64 only. One IDE install is on record: on 2026-10-21 `sodiumxt-0.1.0.lce` (built by this tool from 1d4557c's tree) was installed through `revIDEExtensionInstall` in the maintainer's OXT-Beyond IDE on Windows x86-64: it landed in the user extensions folder with `api.lcdoc`, `module.lcm`, `manifest.xml`, the source and all six code folders, loaded, mapped `code/x86_64-win32/sodiumxt`, and `sxVersion()` answered `SodiumXT 0.1.0 (libsodium 1.0.22)`. Still owed: the other fourteen packages in a running IDE on Windows (the enetxt and box2dxt packages on a PC WITHOUT the Visual C++ Redistributable, which is what their bundled runtime is for), macOS and stock LiveCode Community 9.6.3 (whose IDE loads a `module.lcm` from OXT-Beyond's lc-compile, same bytecode header, or recompiles it from the `.lcb` beside it), and the Dictionary entry each `api.lcdoc` gives | A package that only one engine and one platform have loaded; verified statically for the rest; needs an IDE pass | S | an engine session |
 | 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets): its two library files were read on 2026-11-18 and call nothing a desktop alone has ([ANDROID.md](ANDROID.md)), and it has not run on an Android engine; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | owner (onionxt's path) |
+| 32 | **The dangling `else if`.** Check 20 refuses a bare `else` after a single-line `if`, but not an `else if ... then` there, which the engine binds to the single-line `if` just the same (engine note 3.6: `190` "if: missing 'end if'" at the handler's end; gamepadxt's demo had it twice, found only by compiling). The form is legal when that else is meant for the single-line `if`, so the rule is the indentation: refuse an `else` or `else if` written to the LEFT of the single-line `if` before it. Every carrier's copy, with `tools/test-checker.py` fixtures both ways | The checker passed a script the engine refused | S | none |
 
 ### 1.3 Engine work (suite-level)
 
@@ -1057,9 +1058,54 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
 | 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
-| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (nine since oscxt, midixt and artnetxt joined on 2026-11-21: artnetxt, audioxt, box3dxt, curlxt, midixt, nocloud, oscxt, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29. The boot self-check's `suRowsFit` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows run into the band or whose band runs into the members caption. DRAWN on the Linux headless engine under a virtual display on 2026-11-21 (runbook section 8): rows and band clear of each other and of the caption, every word whole once a name took its whole cell (beside a muted "gates", No Cloud Quick Share had lost its last word) | S1 | 48 | the same on Windows and a Mac, in their own fonts |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (ten since gamepadxt, oscxt, midixt and artnetxt joined: artnetxt, audioxt, box3dxt, curlxt, gamepadxt, midixt, nocloud, oscxt, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29. The boot self-check's `suRowsFit` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows run into the band or whose band runs into the members caption. Measured on OXT-Beyond's Linux desktop engine on 2026-11-21 with gamepadxt in it (the board built alone, read back, and pictured under a virtual display; no person has looked at it): the rows do not touch, the band's three lines end at 523, above the caption at 546, and every name reads in full bar nocloud's, which wrapped in its 108-pixel cell. DRAWN on the Linux headless engine under a virtual display the same day with oscxt, midixt and artnetxt in it instead (runbook section 8): rows and band clear of each other and of the caption, every word whole once a name took its whole cell, 152 wide (beside a muted "gates", No Cloud Quick Share had lost its last word). DRAWN again on that engine once gamepadxt's merge made the band ten names: four lines, the fourth above the caption, every word whole, `suRowsFit` passing (runbook section 8) | S1 | 48 | the same on Windows and a Mac, in their own fonts |
 
-### 2.14 oscxt
+### 2.14 gamepadxt
+
+- Joined 2026-11-20: SDL 3.4.20's gamepad subsystem (pinned to the release commit, built
+  static with only its joystick, haptic and HIDAPI parts) behind the `gpx_*` C shim (ABI 1)
+  and the `gp*` binding, whose names are mechanical. Records: the shim's smoke test and
+  random-call test, clean under ASan/UBSan with SDL's asserts on, also as a 32-bit build and
+  as WebAssembly under node; and `tests/engine-selftest.lc` on OXT-Beyond's headless Linux
+  server engine over a locally built library (2026-11-20), which its native lane repeats on
+  every change. Its demo window, Gamepad Lab, was driven on OXT-Beyond's Linux desktop
+  engine with no display on 2026-11-21 (`tests/demo-drive.livecodescript`, with that library
+  and without it). The same day it ran in a desktop IDE for the first time, on the
+  maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit, the extension in the user's
+  Extensions folder): Gamepad Lab opened reading "SDL 3.4.20, gamepadxt ABI 1: reading
+  controllers" and played its first showcase, every button pressed on its software pad
+  and each press read back from `gpEvents()`, SDL's assertions at 0 (runbook section 8).
+  EVERY one of those drives SDL's virtual pads: no real controller has been read through
+  it, and no Linux IDE and no Mac engine has run it. For everything beyond those runs it
+  is verified statically; needs an OXT pass.
+- Binaries: none committed when it joined. The web archive was committed on 2026-11-21
+  (built with Emscripten 6.0.12, its tests run under node), and the six desktop libraries
+  the same day by its first release-binaries dispatch (run 44848412320 from 4719e46,
+  commit fdcb830; no Android ids, `docs/ANDROID.md`). The `ships` row lists all seven.
+  The same day OXT-Beyond's pull request 612, which builds gamepadxt in, linked the
+  committed archive into its web engine, and that pull request's web IDE check ran a
+  gamepad step in Chromium, Firefox and WebKit: a virtual pad attached, a button pressed
+  and read back as an event, a stick, rumble and the light, the pad unplugged, and SDL's
+  assertions at 0 (Chromium's log read; the other two passed the same check). No real pad
+  has been read in a browser. Of the desktop libraries only the `x86_64-win32` DLL has met
+  an engine: the Windows IDE run above loaded a DLL of its size (1,936,384 bytes, not
+  hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC). The Linux runs used a
+  locally built library, and no engine has loaded the committed Linux, 32-bit Windows or
+  Mac ones.
+- Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
+  2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | DONE 2026-11-21 (run 44848412320, commit fdcb830, and the web archive): the first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | - | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
+| 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad. Gamepad Lab (`gamepadxt/examples/gamepad-lab.livecodescript`) shows every one of those steps in its window, so the pass can be: open it, plug the pad in, press, push, pull it out. On Windows it has already opened in the IDE and played on its software pad (2026-11-21), so there the pass is the controller alone | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
+| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine (its pull request 612, whose web IDE check read a virtual pad in three browsers on 2026-11-21), and a REAL pad read in a browser after a button press | OXT-Beyond's 612 merged, a controller | - | `gpPads()` lists a real pad in the web IDE |
+| 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 5 | An in-engine harness folded into the suite paste (virtual pads make one possible without hardware), replacing its NO_HARNESS entry | coding | - | the board's gamepadxt row has a pill and a Run |
+| 6 | b2k Kit input from a pad: a b2k game steered by a controller through gamepadxt. (The pad tester half of this row landed 2026-11-21 as Gamepad Lab, `gamepadxt/examples/gamepad-lab.livecodescript`; its record is in `gamepadxt/CLAUDE.md`'s status.) | coding | - | a b2k game played with a controller |
+| 7 | Android: the Java side SDL's controller code needs, written for the engine's activity | OXT-Beyond | - | a pad read on an Android device |
+
+### 2.15 oscxt
 
 - Joined 2026-11-21 from ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
   extensions): tinyosc behind the `osc_*` C shim (ABI 2) and the `osc*` binding, a codec
@@ -1107,7 +1153,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
 | 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 
-### 2.15 midixt
+### 2.16 midixt
 
 - Joined 2026-11-21 from ShowControl: RtMidi 6.0.0 (ALSA, CoreMIDI or Windows MM) behind
   the `midi_*` C shim (ABI 2) and the `midi*` binding, with input drained by polling (no
@@ -1150,7 +1196,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
 | 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
 
-### 2.16 artnetxt
+### 2.17 artnetxt
 
 - Joined 2026-11-21 from ShowControl: Art-Net (DMX512 lighting over UDP) in pure LiveCode
   Builder, with no shim and no native library: the codec packs and parses, and the

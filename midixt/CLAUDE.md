@@ -19,7 +19,7 @@ self-test.
 `examples/midi-helpers.livecodescript` between the embed markers: edit the helper, then run the suite's
 `tools/sync-demo-embeds.py`, never the copy. Its tests: `tests/lcs/demo_test.livecodescript` over the mock (the stage draws only what arrives, against the mock's log of what left) and `demo_hw_test.livecodescript` over the real library. It builds its window with messages locked, then centres it: built unlocked it held
 OXT-Beyond 0.2.8-dp.1's IDE on Windows for 81 s as it opened (each scripted create and rename
-ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre (5.17), so it
+ran the IDE's script, the suite's engine note 5.15), and a size set keeps a new stack's centre (5.18), so it
 opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQuietly` and
 `TestTheWindowOpensCentredOnTheScreen` failed against that build. Built so, it opened there in
 3.0 s, without midixt, wholly on the screen (the same day). Its loop stops itself at its next

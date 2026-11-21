@@ -43,12 +43,16 @@ and picture files inside them, so they run from the folder the emulator is hande
 ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`) on every
 change. Its four libraries were committed on 2026-11-21 by its own release run (run 44838679488,
 commit 0be6db1; the x86 ones tested on the emulator, the ARM ones built and checked, not run).
-**oscxt and midixt joined on 2026-11-21 with no Android build.** `tools/build-android.sh` names
-them apart (`DESKTOP_ONLY`, which `--list` prints), so `tools/test-build-android.py` still holds
-every native member to one list or the other. midixt cannot have one: RtMidi's Android backend
-needs API 29 (AMidi) and JNI, above this page's floor of API 21. oscxt could (C over two vendored
-files); its first Android build waits on the work plan. Their third, artnetxt, is pure LCB with
-no library to build.
+**gamepadxt (joined the same day too) is not built for Android**: SDL reaches controllers on
+Android through its own Java activity, which an OXT app does not have.
+**oscxt and midixt joined on 2026-11-21 with no Android build either.** midixt cannot have one:
+RtMidi's Android backend needs API 29 (AMidi) and JNI, above this page's floor of API 21. oscxt
+could (C over two vendored files); its first Android build waits on the work plan. Their third,
+artnetxt, is pure LCB with no library to build. `tools/build-android.sh` names gamepadxt, oscxt
+and midixt apart (`DESKTOP_ONLY`, each with its reason, which `--list` prints and a request to
+build one refuses by pointing at), so `tools/test-build-android.py` still holds every native member to one list or
+the other, and holds a desktop-only member's packager and `ships` row to no Android id: the
+all-four-or-none rule has nothing to hold.
 So the seven members' `x86_64-android` libraries are: native tests run on an Android emulator,
 and loaded by an engine in an app for one call each; a member's own selftest on an Android engine
 is still owed. Every other `x86_64-android` and every `x86-android` library: native tests run on
@@ -201,6 +205,7 @@ selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libra
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
+| gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |

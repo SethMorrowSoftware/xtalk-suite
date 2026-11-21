@@ -58,7 +58,7 @@ done
 # compile). midixt's RtMidi needs the platform's MIDI headers: on Linux that is
 # ALSA (libasound2-dev), which a full local walk must have installed; its
 # tests then run against the MOCK backend, so no MIDI service is needed.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt xlsxt oscxt midixt)
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt xlsxt gamepadxt oscxt midixt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -178,6 +178,18 @@ fi
 if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
+fi
+# The kit's words on its own colours have a colour of the kit's (its rule 7):
+# uiInput's and uiArea's fields were white on white in the dark appearance
+# (2026-11-21). It reads the master; the drift gate above holds every copy to
+# it. Its fixture mutates the master in memory only.
+if [ -f tools/test-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/test-ui-kit-text-colour.py =="
+  python3 tools/test-ui-kit-text-colour.py
+fi
+if [ -f tools/check-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/check-ui-kit-text-colour.py =="
+  python3 tools/check-ui-kit-text-colour.py
 fi
 # Fixtures beside the gate: this one reported a confident 43/27 for months while
 # measuring nothing at all in nocloud, so its three legs are proven before it
@@ -448,7 +460,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt xlsxt oscxt midixt artnetxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt xlsxt gamepadxt oscxt midixt artnetxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too
@@ -744,6 +756,21 @@ fi
 if [ -f tools/test-android-run.py ]; then
   echo "== suite: tools/test-android-run.py =="
   python3 tools/test-android-run.py
+fi
+# Named release builds (2026-11-21). release-binaries.yml's `build: named`
+# runs only the named members' lanes, through a plan job that reads the rows
+# of the workflow's own include lists (tools/release-plan.py), so a member's
+# pull request adds its rows in place and nothing else. Like the Android
+# tests, this is held on every push because the workflow itself only runs
+# when someone dispatches it: the reader against the rows (and PyYAML's
+# reading of them, where it is installed), each member's plan against its
+# rows, and every job's `needs` and `if` against a full build that runs and
+# commits exactly as it did before and a named build that runs nothing else,
+# under both readings of a status function. Its mutants prove those checks
+# are not blind.
+if [ -f tools/test-release-plan.py ]; then
+  echo "== suite: tools/test-release-plan.py =="
+  python3 tools/test-release-plan.py
 fi
 
 if [ "$GATES_ONLY" = 1 ]; then

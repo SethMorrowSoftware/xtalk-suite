@@ -114,30 +114,43 @@ def main():
     listed = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
     members = listed.get("members", "").split()
     platforms = listed.get("platforms", "").split()
-    # The native members it names and does NOT build (2026-11-21: oscxt,
-    # midixt), each with its reason in the script. They count toward the
-    # comparison below, so a new native member must land in one list or the
-    # other: never in neither.
+    # The native members it names and does NOT build (gamepadxt since
+    # 2026-11-20, oscxt and midixt since 2026-11-21), each with its reason in
+    # the script. They count toward the comparison below, so a new native
+    # member must land in one list or the other: never in neither.
     desktop_only = listed.get("desktop-only", "").split()
     check(rc == 0 and members and platforms, "--list names members and "
           "platform ids", (rc, out, err))
     check(not set(members) & set(desktop_only),
           "no member is both built for Android and desktop-only",
           (members, desktop_only))
-    native = [m["name"] for m in freshness.MEMBERS]
-    check(sorted(members + desktop_only) == sorted(native),
+    every_native = [m["name"] for m in freshness.MEMBERS]
+    check(sorted(members + desktop_only) == sorted(every_native),
           "it builds exactly the native members the freshness gate knows, "
-          "bar the ones it names desktop-only", (members, desktop_only, native))
+          "bar the ones it names desktop-only", (members, desktop_only, every_native))
     check(sorted(members + desktop_only) == sorted(installer.MEMBERS),
           "  ...which are the members the installer installs",
           (members, desktop_only, sorted(installer.MEMBERS)))
-    # A desktop-only member declares no Android library either: its `ships`
-    # row names none, so nothing promises a library this script never builds.
+    # A desktop-only member is held to the opposite of every Android rule
+    # below (gamepadxt's rule, 2026-11-20): its `ships` row names no Android
+    # library and its packager names no Android id, so "not built" can
+    # never drift into "half built" and nothing promises a library this
+    # script never builds.
     for row in freshness.MEMBERS:
-        if row["name"] in desktop_only:
-            android = [p for p in row["ships"] if p.endswith("-android")]
-            check(not android, f"desktop-only {row['name']} ships no Android "
-                  "library", android)
+        if row["name"] not in desktop_only:
+            continue
+        android = [p for p in row["ships"] if p.endswith("-android")]
+        check(not android, f"desktop-only {row['name']} ships no Android "
+              "library", android)
+        packer = os.path.join(ROOT, row["name"], "tools", "package-extension.py")
+        with open(packer, encoding="utf-8") as fh:
+            text = fh.read()
+        # An id as the packager would hold it, a quoted string: a comment
+        # naming build-android.sh is not an id.
+        named = [p for p in platforms if f'"{p}"' in text or f"'{p}'" in text]
+        check(not named, f"  ...and its packager names no Android id", named)
+    # The rules below are for the members it does build.
+    native = [m for m in every_native if m in members]
     check(sorted(platforms) == sorted(installer.ANDROID_ABIS),
           "its platform ids are the installer's ANDROID_ABIS",
           (platforms, sorted(installer.ANDROID_ABIS)))
@@ -166,8 +179,9 @@ def main():
     # a member that opens none declares nothing: a permission that appears
     # in a crypto or physics library is a question for a reviewer, not a
     # default. WHICH members open sockets is this table, by hand; nothing
-    # in a compiler-free gate can derive it.
-    for member in native:
+    # in a compiler-free gate can derive it. A desktop-only member is asked
+    # too, and must declare nothing: no app of its has an Android build.
+    for member in every_native:
         folder = os.path.join(ROOT, member, "src")
         lcbs = [f for f in sorted(os.listdir(folder)) if f.endswith(".lcb")]
         lines = []

@@ -79,6 +79,13 @@ MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt coinxt curlxt 
 # these to exactly the native members every other table names: a member
 # left out of both is a library built for the desktop and silently missing
 # from every Android app, which is the gap that comparison exists to catch.
+# The same test holds each one's packager and `ships` row to no Android id,
+# so "not built" cannot drift into "half built".
+#   gamepadxt (2026-11-20)  SDL reaches controllers on Android through its
+#                        own Java activity (SDLActivity,
+#                        SDLControllerManager), which an OXT app does not
+#                        have: the engine's activity is its own
+#                        (docs/ANDROID.md).
 #   midixt (2026-11-21)  RtMidi's Android backend needs API 29 (AMidi) and
 #                        JNI; the floor here is API 21, and its CMake
 #                        refuses an Android configure.
@@ -87,7 +94,7 @@ MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt coinxt curlxt 
 #                        row here would first build in a release dispatch,
 #                        where a red row discards every artifact; the suite
 #                        work plan carries it.
-DESKTOP_ONLY="oscxt midixt"
+DESKTOP_ONLY="gamepadxt oscxt midixt"
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
 case "${1:-}" in
