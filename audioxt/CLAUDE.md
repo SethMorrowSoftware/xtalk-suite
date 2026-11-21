@@ -121,7 +121,7 @@ stack file froze OXT-Beyond 0.2.8-dp.1's IDE on Windows for 59 s (2026-11-21; bu
 opened there in 796 ms the same day). Its `preOpenStack` then places the window on a working
 screen, title bar included, on the desktop only (`adPlaceWindow`; in a browser the Stack Player
 lays the page out): sized round the engine's first centre, the file opened at -320,-140 there
-(engine note 5.17), and `examples/build-demo-stack.livecodescript` now saves it at 160,60. The
+(engine note 5.18), and `examples/build-demo-stack.livecodescript` now saves it at 160,60. The
 drive holds both: an ear in front of every object hears no create, name or delete during the
 build (the old build sent 520), and in a windowed engine the window opens on the screen.
 
