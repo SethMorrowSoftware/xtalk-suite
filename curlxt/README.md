@@ -128,8 +128,10 @@ the built library against loopback HTTP, SMTP and WebSocket servers
 (`tools/check-script-vectors.py`, on the family's interpreter). The binding and both layers also RUN
 on a real engine, OXT-Beyond's headless Linux server engine: `tests/engine-selftest.lc`, driven by
 `tools/run-engine-selftest.py` against the same servers, in the native lane on every change
-(2026-11-21 below). The binaries for all six platforms come from the suite's release-binaries
-dispatch (2026-11-14, rebuilt 2026-11-15 with the file-download fixes).
+(2026-11-21 below). The binaries come from the suite's release-binaries dispatch (2026-11-14,
+rebuilt 2026-11-15 with the file-download fixes); since 2026-11-21 every committed library, the
+six desktop rows and the four Android ABIs, is the ABI 2 build of run 44825160471 (from ac22df8,
+commit 02b4238).
 
 **WebSockets (2026-11-20, ABI 2).** Added on libcurl's own WebSocket support, as new handlers only:
 every handler, option, number and result that existed before is as it was, `cuPoll` never lists a
@@ -145,9 +147,10 @@ curlxt, so none of this reaches an HTML5 standalone; a browser has its own WebSo
 **Android (2026-11-18).** `src/code/` also carries this library for `arm64-android`,
 `armv7-android`, `x86_64-android` and `x86-android` (Android 5.0, API 21, and up), built by the
 suite's `tools/build-android.sh` and landed by its `release-binaries.yml` dispatch. Its smoke test
-ran on an Android 5.0 emulator for the two x86 ids; the two ARM libraries are built and statically
-checked, not run, and no OXT engine on Android has loaded any of the four: verified statically;
-needs an OXT pass on Android. The `.lcb` declares Android's INTERNET permission, which OXT-
+ran on an Android 5.0 emulator for the two x86 ids, and the ABI 2 build's tests ran there again
+in run 44825160471 (2026-11-21), whose Android rows fail unless every member's tests ran; the two
+ARM libraries are built and statically checked, not run, and no OXT engine on Android has loaded
+any of the four: verified statically; needs an OXT pass on Android. The `.lcb` declares Android's INTERNET permission, which OXT-
 Beyond's standalone builder adds to an app that includes this extension.
 
 **First engine records, Windows x86-64, on the 2026-11-14 `x86_64-win32` DLL, the one before
@@ -170,7 +173,9 @@ made GET and POST requests and waited for and polled them; ran `cuRequestSync`, 
 with its callback, `tsNetVersion`, `tsNetGetSync` and `tsNetClose`; and opened `ws://` and `wss://`
 sockets through the binding and through the helpers' timer: text, UTF-8, binary, fragmented and
 burst messages, ping and pong, the peer's close, a dropped connection, the close timeout, the
-message cap (1009), a refused upgrade, a dead port and a refused certificate.
+message cap (1009), a refused upgrade, a dead port and a refused certificate. The same day it ran
+again over the COMMITTED `x86_64-linux` library, the ABI 2 release build of run 44825160471 (the
+same version line): 138 checks, none failed.
 
 **The demo on an engine, Linux x86-64 (2026-11-21).** `examples/curlxt-live.livecodescript` ran
 start to finish on OXT-Beyond 0.2.7-rc.6's desktop engine (9.7.1-OXT) with no screen, over a library
@@ -179,8 +184,10 @@ native lane on every change, made 26 checks, none failed. The boot self-check wa
 started by itself and kept going; every scene reached its own verdict (all 8 messages back
 identical, over 11,000 echoes in 8.1 s every one in order, 15 of 15 local requests answered, the server's
 1001 heard and the reconnect made); closing left no request, socket or listener behind; and the
-demo opened and ran again. That run sees nothing drawn: the demo's look, and the demo in the IDE
-and on Windows, mac and Android, are verified statically; needs an OXT pass.
+demo opened and ran again. It ran again the same day over the committed `x86_64-linux` library:
+26 checks, none failed (12,453 echoes in 8.1 s at full speed). Neither run sees anything drawn:
+the demo's look, and the demo in the IDE and on Windows, mac and Android, are verified
+statically; needs an OXT pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

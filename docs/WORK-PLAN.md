@@ -822,7 +822,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   records in `curlxt/README.md`, Status.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands
   them (its rows ride `cmake-members` and `mac-lipo`), and the change after it lists
-  the platforms in `check-binary-freshness.py`'s `ships` row.
+  the platforms in `check-binary-freshness.py`'s `ships` row. Since 2026-11-21 all ten
+  committed libraries are the ABI 2 build of run 44825160471 (from ac22df8, commit
+  02b4238).
 - Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
 - WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
@@ -833,18 +835,19 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   0.2.7-rc.6's headless Linux server engine ran `curlxt/tests/engine-selftest.lc` over a
   library built from the tree (138 checks, none failed): every public handler of the
   binding, requests through the binding and the helpers, and `ws://` and `wss://` sockets
-  through the binding and the helpers' timer. The native lane's `engine` job runs it on
-  every change. No IDE and no Windows, mac or Android engine has opened a socket yet:
-  needs an OXT pass there (row 3). curlxt has no web archive, so none of it reaches an
-  HTML5 standalone.
+  through the binding and the helpers' timer; the same day again over the committed
+  `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
+  `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
+  opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
+  of it reaches an HTML5 standalone.
 - The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
   scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
   the engine's own sockets, launched from `start-here`. It ran start to finish the same day
   on OXT-Beyond 0.2.7-rc.6's desktop engine with no screen
   (`curlxt/tests/engine-demo.livecodescript` through `curlxt/tools/run-engine-demo.py`, 26
-  checks, a close and a reopen included; the native lane's `engine` job runs it on every
-  change). The server engine cannot host it (engine note 6.15). What it draws needs an OXT
-  pass on a screen (row 6).
+  checks, a close and a reopen included; again over the committed `x86_64-linux` library,
+  26 checks; the native lane's `engine` job runs it on every change). The server engine
+  cannot host it (engine note 6.15). What it draws needs an OXT pass on a screen (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
