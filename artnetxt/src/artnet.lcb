@@ -1,0 +1,484 @@
+/*
+artnet.lcb - xTalk Builder (LCB) library for Art-Net (DMX512 lighting over
+             UDP). The artnetxt member of the xTalk suite (born as the Art-Net
+             third of ShowControl for OpenXTalk).
+
+Art-Net is plain byte-packing over a UDP socket on port 6454, openly published
+and royalty free. It needs no third-party library and no C shim: this whole
+extension is LCB, so it has no native library, nothing to build per platform,
+and runs wherever the engine runs.
+
+Transport is the script's own datagram socket, as for oscxt: build a packet
+here and `write` the Data to "host:6454", on a socket opened first
+(examples/artnet-helpers.livecodescript does both). Inbound packets arrive
+through `accept datagram connections on port 6454 with message ...`; pass the
+Data to artnetParseDmx or artnetParseReply. Nothing here starts a thread or
+calls back into script.
+
+THE ONE REAL GOTCHA -- mixed endianness:
+  * OpCode is LITTLE-endian (low byte first): 0x5000 -> bytes 00 50.
+  * Protocol version is BIG-endian (high byte first): 14 -> bytes 00 0E.
+  * The ArtDmx Length is BIG-endian.
+  * The ArtPollReply Port is LITTLE-endian again: 6454 -> bytes 36 19.
+Reverse a big-endian field and a node silently ignores the packet. The shared
+vectors (tests/vectors/artnet.json) pin every byte, and a clean-room codec
+written from the specification (tools/sim/refcodec.py) agrees with them.
+
+Nothing here throws for bad INPUT: a refusal returns an empty result and
+artnetLastError() says why. An EMPTY value into a typed parameter is the
+engine's error, raised before any code here runs (the suite's engine note 6.4),
+and a fractional universe is cut toward zero where it becomes a byte (6.15).
+
+Art-Net(TM) Designed by and Copyright Artistic Licence Holdings Ltd. This
+library implements the published protocol ("Art-Net compatible"); no
+endorsement is implied.
+*/
+
+/**
+Builds and reads Art-Net packets: DMX512 lighting levels and node discovery
+over a network.
+
+Send levels with <artnetBuildDmx>, which turns a universe number and up to
+512 channel levels into one ArtDmx packet. Find the Art-Net nodes on a network
+with <artnetBuildPoll>, and read each node's answer with <artnetParseReply>.
+Read levels another controller sends with <artnetParseDmx>.
+
+This library only turns values into Art-Net bytes and Art-Net bytes back into
+values. The network is the stack's own: send the bytes with a datagram socket
+(`open datagram socket`, then `write`) to port 6454, and receive them with
+`accept datagram connections on port 6454 with message`. The artnet-helpers
+script (examples/artnet-helpers.livecodescript) does both for you.
+
+Nothing here throws for bad input. A refusal returns an empty result, and
+<artnetLastError> says why.
+
+Art-Net(TM) Designed by and Copyright Artistic Licence Holdings Ltd.
+
+Tags: Networking, Art-Net, DMX, Lighting, Show control, Library
+*/
+library org.openxtalk.library.artnet
+
+metadata title is "Art-Net compatible DMX for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+
+private constant kOpDmx       is 20480   -- 0x5000
+private constant kOpPoll      is 8192    -- 0x2000
+private constant kOpPollReply is 8448    -- 0x2100
+private constant kProtoVer    is 14
+
+variable sLastError as String
+
+-- =====================================================================
+-- Byte helpers
+-- =====================================================================
+-- The 8-byte Art-Net ID: ASCII "Art-Net" + a NUL terminator.
+private handler artnetId() returns Data
+   variable tId as Data
+   put the byte with code (65) into tId      -- A
+   put the byte with code (114) after tId    -- r
+   put the byte with code (116) after tId    -- t
+   put the byte with code (45) after tId     -- -
+   put the byte with code (78) after tId     -- N
+   put the byte with code (101) after tId    -- e
+   put the byte with code (116) after tId    -- t
+   put the byte with code (0) after tId      -- NUL
+   return tId
+end handler
+
+-- Pad (with zeros) or truncate channel Data to exactly pLen bytes.
+-- (ShowControl's copy named its loop variable `i`: an all-lowercase LCB name
+-- WARNS, and the IDE's Extension Builder compiles with -Werror, so the
+-- extension could not be built there. Every name here has a capital.)
+private handler fitChannels(in pChannels as Data, in pLen as Integer) returns Data
+   variable tN as Integer
+   variable tOut as Data
+   variable tZero as Data
+   variable tIndex as Integer
+   put the number of bytes in pChannels into tN
+   if tN is pLen then
+      return pChannels
+   end if
+   if tN > pLen then
+      return byte 1 to pLen of pChannels
+   end if
+   put pChannels into tOut
+   put the byte with code (0) into tZero
+   repeat with tIndex from tN + 1 up to pLen
+      put tZero after tOut
+   end repeat
+   return tOut
+end handler
+
+-- One byte's value, or 0 past the end of the packet: every reader below goes
+-- through this (or checks the length itself first), so no length a packet
+-- claims can make the parser read beyond the bytes that arrived.
+private handler byteAt(in pData as Data, in pIndex as Integer) returns Integer
+   if pIndex < 1 or pIndex > the number of bytes in pData then
+      return 0
+   end if
+   return the code of (byte pIndex of pData)
+end handler
+
+-- Read a fixed-width NUL-terminated ASCII field into a String. A field cut
+-- short by the end of the packet reads to the end; a byte above 127 reads as
+-- the Latin-1 character with that code (the specification says ASCII).
+private handler fieldText(in pData as Data, in pStart as Integer, in pWidth as Integer) returns String
+   variable tStr as String
+   variable tIndex as Integer
+   variable tByte as Integer
+   put the empty string into tStr
+   repeat with tIndex from pStart up to pStart + pWidth - 1
+      if tIndex > the number of bytes in pData then
+         exit repeat
+      end if
+      put the code of (byte tIndex of pData) into tByte
+      if tByte is 0 then
+         exit repeat
+      end if
+      put tStr & (the char with code (tByte)) into tStr
+   end repeat
+   return tStr
+end handler
+
+-- LCB has no integer-division operator ('div' is Script only and does not
+-- parse in LCB). For non-negative integers a - (a mod b) is an exact multiple
+-- of b, so dividing gives the exact quotient. (Defined before first use.)
+private handler intDiv(in pA as Integer, in pB as Integer) returns Integer
+   variable tQ as Integer
+   put (pA - (pA mod pB)) / pB into tQ
+   return tQ
+end handler
+
+-- Two lower-case hex digits for one byte value (a MAC address).
+private handler hexByte(in pValue as Integer) returns String
+   variable tDigits as String
+   put "0123456789abcdef" into tDigits
+   return (char (intDiv(pValue, 16) + 1) of tDigits) & (char ((pValue mod 16) + 1) of tDigits)
+end handler
+
+-- Are these the bytes of an Art-Net packet: the ID "Art-Net" + NUL, then at
+-- least an OpCode?
+private handler isArtNet(in pData as Data) returns Boolean
+   if the number of bytes in pData < 10 then
+      return false
+   end if
+   return (byte 1 to 8 of pData) is artnetId()
+end handler
+
+-- The OpCode of an Art-Net packet (little-endian, bytes 9 and 10).
+private handler opCodeOf(in pData as Data) returns Integer
+   return byteAt(pData, 9) + byteAt(pData, 10) * 256
+end handler
+
+-- =====================================================================
+-- Output: ArtDmx
+-- =====================================================================
+/**
+Summary: Builds one ArtDmx packet: the levels of one DMX universe, ready to send.
+
+pUniverse: The universe (the 15-bit Port-Address), 0 to 32767.
+
+pChannels: The levels as binary data, one byte (0 to 255) per DMX channel,
+channel 1 first, up to 512 of them.
+
+Returns: The packet as binary data, or empty when the universe is out of range.
+
+Example:
+local tLevels
+put numToByte(255) & numToByte(128) & numToByte(0) into tLevels
+open datagram socket to "192.168.1.50:6454"
+write artnetBuildDmx(0, tLevels) to socket "192.168.1.50:6454"
+
+Description: The packet carries an even number of channels from 2 to 512, as
+the Art-Net specification asks: fewer than 2 levels, or an odd number, are
+padded with level 0, and anything past 512 is left out. A universe outside
+0 to 32767 builds nothing: the result is empty and <artnetLastError> says why.
+A fractional universe is cut toward zero.
+
+Every packet goes out with sequence number 0, which tells a node not to
+reorder packets.
+*/
+public handler artnetBuildDmx(in pUniverse as Integer, in pChannels as Data) returns Data
+   variable tLen as Integer
+   variable tPkt as Data
+   put the empty string into sLastError
+   -- Refuse an out-of-range Port-Address BEFORE packing. LCB's mod follows the
+   -- sign of the dividend, so a negative universe makes `the byte with code
+   -- (pUniverse mod 256)` throw (out of the 0..255 byte domain), and one above
+   -- 32767 would be silently masked into a different universe -- driving the
+   -- wrong rig. Failure is quiet, never thrown.
+   if pUniverse < 0 or pUniverse > 32767 then
+      put "artnetBuildDmx: universe out of range 0..32767" into sLastError
+      return the empty data
+   end if
+   put the number of bytes in pChannels into tLen
+   if tLen > 512 then
+      put 512 into tLen
+   end if
+   if tLen < 2 then
+      put 2 into tLen
+   end if
+   if tLen mod 2 is 1 then
+      put tLen + 1 into tLen
+   end if
+
+   put artnetId() into tPkt
+   -- OpCode 0x5000, LITTLE-endian (low byte first)
+   put the byte with code (kOpDmx mod 256) after tPkt
+   put the byte with code (intDiv(kOpDmx, 256) mod 256) after tPkt
+   -- Protocol version, BIG-endian (high byte first)
+   put the byte with code (intDiv(kProtoVer, 256) mod 256) after tPkt
+   put the byte with code (kProtoVer mod 256) after tPkt
+   -- Sequence (0 = ordering disabled) + Physical (informational)
+   put the byte with code (0) after tPkt
+   put the byte with code (0) after tPkt
+   -- SubUni (low byte) then Net (high 7 bits) of the 15-bit Port-Address
+   put the byte with code (pUniverse mod 256) after tPkt
+   put the byte with code (intDiv(pUniverse, 256) mod 128) after tPkt
+   -- Length, BIG-endian (high byte first)
+   put the byte with code (intDiv(tLen, 256) mod 256) after tPkt
+   put the byte with code (tLen mod 256) after tPkt
+   -- DMX data
+   put fitChannels(pChannels, tLen) after tPkt
+   return tPkt
+end handler
+
+-- =====================================================================
+-- Input: ArtDmx
+-- =====================================================================
+/**
+Summary: Reads an ArtDmx packet: the levels of one universe that arrived as bytes.
+
+pData: The bytes of one datagram.
+
+Returns: An array: "opcode" ("ArtDmx"), "universe" (0 to 32767 for a
+well-formed packet), "net" and "subuni" (the two bytes the universe is made
+of), "sequence", "physical", "length" (the number of channels) and "channels"
+(the levels as binary data, channel 1 first). For bytes that are not an ArtDmx
+packet, "opcode" is empty and <artnetLastError> says why.
+
+Example:
+put artnetParseDmx(pData) into tFrame
+if tFrame["opcode"] is "ArtDmx" and tFrame["universe"] is 0 then
+   put byteToNum(byte 1 of tFrame["channels"]) into tLevelOfChannel1
+end if
+
+Description: A packet whose Length field claims more channels than arrived, or
+more than 512, is read as far as its bytes go and no further: "length" is the
+number of levels in "channels".
+*/
+public handler artnetParseDmx(in pData as Data) returns Array
+   variable tArr as Array
+   variable tSeq as Integer
+   variable tPhys as Integer
+   variable tSub as Integer
+   variable tNet as Integer
+   variable tLen as Integer
+   variable tAvail as Integer
+   put the empty string into sLastError
+   put the empty string into tArr["opcode"]
+   if not isArtNet(pData) then
+      put "artnetParseDmx: not an Art-Net packet" into sLastError
+      return tArr
+   end if
+   if the number of bytes in pData < 18 then
+      put "artnetParseDmx: packet too short" into sLastError
+      return tArr
+   end if
+   if opCodeOf(pData) is not kOpDmx then
+      put "artnetParseDmx: not an ArtDmx opcode" into sLastError
+      return tArr
+   end if
+   put the code of (byte 13 of pData) into tSeq
+   put the code of (byte 14 of pData) into tPhys
+   put the code of (byte 15 of pData) into tSub
+   put the code of (byte 16 of pData) into tNet
+   -- Length is big-endian
+   put the code of (byte 17 of pData) * 256 + the code of (byte 18 of pData) into tLen
+   if tLen > 512 then
+      put 512 into tLen           -- Art-Net DMX is 512 channels at most
+   end if
+   put the number of bytes in pData - 18 into tAvail
+   if tLen > tAvail then
+      put tAvail into tLen        -- never read past the bytes that arrived
+   end if
+   put "ArtDmx" into tArr["opcode"]
+   put tSeq into tArr["sequence"]
+   put tPhys into tArr["physical"]
+   put tSub into tArr["subuni"]
+   put tNet into tArr["net"]
+   put tNet * 256 + tSub into tArr["universe"]
+   put tLen into tArr["length"]
+   if tLen > 0 then
+      put byte 19 to (18 + tLen) of pData into tArr["channels"]
+   else
+      put the empty data into tArr["channels"]
+   end if
+   return tArr
+end handler
+
+-- =====================================================================
+-- Discovery: ArtPoll / ArtPollReply
+-- =====================================================================
+/**
+Summary: Builds an ArtPoll packet, which asks every Art-Net node to say who it is.
+
+Returns: The packet as binary data.
+
+Example:
+set the allowDatagramBroadcasts to true
+open datagram socket to "255.255.255.255:6454"
+write artnetBuildPoll() to socket "255.255.255.255:6454"
+
+Description: Broadcast it to port 6454 (the engine sends a broadcast only
+after `set the allowDatagramBroadcasts to true`), or send it to one node's
+address. Each node answers with an ArtPollReply, which <artnetParseReply>
+reads. Nodes answer to port 6454 of the computer that asked, so listen there:
+`accept datagram connections on port 6454 with message ...`.
+*/
+public handler artnetBuildPoll() returns Data
+   variable tPkt as Data
+   put the empty string into sLastError
+   put artnetId() into tPkt
+   -- OpCode 0x2000, little-endian
+   put the byte with code (kOpPoll mod 256) after tPkt
+   put the byte with code (intDiv(kOpPoll, 256) mod 256) after tPkt
+   -- Protocol version, big-endian
+   put the byte with code (intDiv(kProtoVer, 256) mod 256) after tPkt
+   put the byte with code (kProtoVer mod 256) after tPkt
+   -- Flags (0: answer only when polled) + DiagPriority (0)
+   put the byte with code (0) after tPkt
+   put the byte with code (0) after tPkt
+   return tPkt
+end handler
+
+-- The universes (15-bit Port-Addresses) of a node's ports, from its
+-- ArtPollReply: port N is an output when bit 7 of PortTypes[N] is set, an input
+-- when bit 6 is, and its Port-Address is NetSwitch (7 bits), SubSwitch (4 bits)
+-- and SwOut[N] or SwIn[N] (4 bits). pSwStart is the 1-based offset of SwOut
+-- (191) or SwIn (187); PortTypes start at 175. A reply too short to hold the
+-- port fields has no ports.
+private handler portUniverses(in pData as Data, in pBit as Integer, in pSwStart as Integer) returns List
+   variable tList as List
+   variable tPort as Integer
+   variable tType as Integer
+   variable tBase as Integer
+   put [] into tList
+   if the number of bytes in pData < 194 then
+      return tList
+   end if
+   put (byteAt(pData, 19) mod 128) * 256 + (byteAt(pData, 20) mod 16) * 16 into tBase
+   repeat with tPort from 0 up to 3
+      put byteAt(pData, 175 + tPort) into tType
+      if (intDiv(tType, pBit) mod 2) is 1 then
+         push tBase + (byteAt(pData, pSwStart + tPort) mod 16) onto tList
+      end if
+   end repeat
+   return tList
+end handler
+
+/**
+Summary: Reads an ArtPollReply packet: one node's answer to an ArtPoll.
+
+pData: The bytes of one datagram.
+
+Returns: An array: "opcode" ("ArtPollReply"), "ip" (the node's address, such
+as "2.0.0.10"), "port" (6454), "shortName", "longName", "nodeReport" (the
+node's status text), "net" and "subuni" (its Net and Sub-Net switches),
+"outputUniverses" and "inputUniverses" (lists of the universes its DMX output
+and input ports use), "mac" (such as "00:1a:2b:3c:4d:5e"), "style" (0 for a
+node, 1 for a controller, 2 for a media server), "bindIndex" and "version"
+(its firmware version). For bytes that are not an ArtPollReply, "opcode" is
+empty and <artnetLastError> says why.
+
+Example:
+put artnetParseReply(pData) into tNode
+if tNode["opcode"] is "ArtPollReply" then
+   put tNode["shortName"] && "at" && tNode["ip"] into line (the number of lines of field "Nodes" + 1) of field "Nodes"
+end if
+
+Description: Send DMX for a node's output port to one of its
+"outputUniverses". A node with more than four ports answers once per group of
+four; "bindIndex" tells the answers apart.
+
+A reply cut short (older nodes send fewer bytes) reads as far as it goes: a
+field it does not reach is empty, or 0, or an empty list.
+*/
+public handler artnetParseReply(in pData as Data) returns Array
+   variable tArr as Array
+   variable tLen as Integer
+   variable tMac as String
+   variable tIndex as Integer
+   put the empty string into sLastError
+   put the empty string into tArr["opcode"]
+   if not isArtNet(pData) then
+      put "artnetParseReply: not an Art-Net packet" into sLastError
+      return tArr
+   end if
+   put the number of bytes in pData into tLen
+   if tLen < 26 then
+      put "artnetParseReply: packet too short" into sLastError
+      return tArr
+   end if
+   if opCodeOf(pData) is not kOpPollReply then
+      put "artnetParseReply: not an ArtPollReply opcode" into sLastError
+      return tArr
+   end if
+   put "ArtPollReply" into tArr["opcode"]
+   -- IP address: 4 bytes at 11..14 (1-based). '&' joins Strings only, so each
+   -- octet is formatted first.
+   put (byteAt(pData, 11) formatted as string) & "." \
+     & (byteAt(pData, 12) formatted as string) & "." \
+     & (byteAt(pData, 13) formatted as string) & "." \
+     & (byteAt(pData, 14) formatted as string) into tArr["ip"]
+   -- Port: LITTLE-endian at 15..16
+   put byteAt(pData, 15) + byteAt(pData, 16) * 256 into tArr["port"]
+   -- VersInfoH, VersInfoL at 17..18 (big-endian)
+   put byteAt(pData, 17) * 256 + byteAt(pData, 18) into tArr["version"]
+   -- NetSwitch at 19, SubSwitch at 20 (ShowControl's names, kept)
+   put byteAt(pData, 19) into tArr["net"]
+   put byteAt(pData, 20) into tArr["subuni"]
+   -- ShortName: 18 bytes at 27; LongName: 64 at 45; NodeReport: 64 at 109
+   put fieldText(pData, 27, 18) into tArr["shortName"]
+   put fieldText(pData, 45, 64) into tArr["longName"]
+   put fieldText(pData, 109, 64) into tArr["nodeReport"]
+   -- Ports: PortTypes at 175..178, SwIn at 187..190, SwOut at 191..194
+   put portUniverses(pData, 128, 191) into tArr["outputUniverses"]
+   put portUniverses(pData, 64, 187) into tArr["inputUniverses"]
+   -- Style at 201; MAC (high byte first) at 202..207; BindIndex at 212
+   put byteAt(pData, 201) into tArr["style"]
+   put the empty string into tMac
+   if tLen >= 207 then
+      repeat with tIndex from 202 up to 207
+         if tIndex > 202 then
+            put tMac & ":" into tMac
+         end if
+         put tMac & hexByte(byteAt(pData, tIndex)) into tMac
+      end repeat
+   end if
+   put tMac into tArr["mac"]
+   put byteAt(pData, 212) into tArr["bindIndex"]
+   return tArr
+end handler
+
+-- =====================================================================
+-- Shared
+-- =====================================================================
+/**
+Summary: Says why the last call of this library built or read nothing.
+
+Returns: The reason, or empty when the last call succeeded.
+
+Example:
+put artnetBuildDmx(tUniverse, tLevels) into tPacket
+if tPacket is empty then answer artnetLastError()
+
+Description: Every other handler of this library clears it when it starts,
+so it always describes the most recent call.
+*/
+public handler artnetLastError() returns String
+   return sLastError
+end handler
+
+end library

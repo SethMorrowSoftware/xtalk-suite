@@ -95,7 +95,7 @@ local gRep, gPass, gFail, gFellCount, gRunning
 local gMsgEnters, gMsgContacts   -- message-path counters (vs polling)
 
 constant kStUIVersion = "1"
-constant kStHarnessV = "35"  -- bump on EVERY harness change: the report
+constant kStHarnessV = "36"  -- bump on EVERY harness change: the report
                              -- header prints it, so a stale paste is
                              -- visible at a glance
 
@@ -194,6 +194,7 @@ command stRunAll
    stRun "stTestSpawnScreenLock"
    stRun "stTestEngineContracts"
    stRun "stTestLoaderMapping"
+   stRun "stTestLoaderErrorKept"
    stRun "stTestMaterialsJoints"
    stRun "stTestFiltering"
    stRun "stTestQueries"
@@ -420,6 +421,40 @@ command stTestLoaderMapping
    end try
    stAssert "revLibraryMapping engine hook is available (" & the platform & ")", tOK
 end stTestLoaderMapping
+
+-- b2LoadNativeLib's reason is read when the load fails, and kept (v36,
+-- 2026-11-21). b2LoadNativeLibError used to read dlerror() when asked, as a
+-- string the engine frees: under lc-run its FIRST answer after a failed load
+-- was empty (the engine binds a foreign handler on its first call, through
+-- dlsym, which consumes the pending error; engine note 6.17) and a later one
+-- aborted the process with a double free (6.16). The loader is Linux only,
+-- so elsewhere this section prints why it did not run; on an engine that
+-- cannot bind dlopen at all it prints that, since then there is no reason to
+-- keep. Nothing here loads a second copy of box2dxt: the one library that
+-- loads is the C library, already in the process.
+command stTestLoaderErrorKept
+   local tErr, tR, tWhy, tLibc
+   if the platform is not "Linux" then
+      stOut "        b2LoadNativeLib is Linux only: not run on " & the platform
+      exit stTestLoaderErrorKept
+   end if
+   try
+      put b2LoadNativeLib("/nonexistent/b2-first/box2dxt.so") into tR
+   catch tErr
+      stOut "        b2LoadNativeLib could not bind the loader here: " & line 1 of tErr
+      exit stTestLoaderErrorKept
+   end try
+   stAssert "a library that is not there does not load (got " & tR & ")", (tR is 0)
+   put b2LoadNativeLibError() into tWhy
+   stAssert "the FIRST reason asked for names it (" & tWhy & ")", (tWhy contains "b2-first")
+   stAssert "asking again gives it again", (b2LoadNativeLibError() contains "b2-first")
+   put b2LoadNativeLib("/nonexistent/b2-second/box2dxt.so") into tR
+   stAssert "a second missing library does not load (got " & tR & ")", (tR is 0)
+   stAssert "its reason is its own", (b2LoadNativeLibError() contains "b2-second")
+   put b2LoadNativeLib("libc.so.6") into tLibc
+   stAssert "a library that IS there loads (libc.so.6, got " & tLibc & ")", (tLibc is 1)
+   stAssert "and leaves no reason behind", (b2LoadNativeLibError() is empty)
+end stTestLoaderErrorKept
 
 command stTestWorld
    local tRef, tY1, tVy

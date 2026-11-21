@@ -29,6 +29,12 @@ tested on the emulator, the ARM ones built and checked, not run). The counts in 
 **xlsxt joined the same day**, the same way: named in `tools/build-android.sh`, built for the four
 ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`), with no
 Android library committed yet.
+**oscxt and midixt joined on 2026-11-21 with no Android build.** `tools/build-android.sh` names
+them apart (`DESKTOP_ONLY`, which `--list` prints), so `tools/test-build-android.py` still holds
+every native member to one list or the other. midixt cannot have one: RtMidi's Android backend
+needs API 29 (AMidi) and JNI, above this page's floor of API 21. oscxt could (C over two vendored
+files); its first Android build waits on the work plan. Their third, artnetxt, is pure LCB with
+no library to build.
 So the x86 libraries are: native tests run on an Android emulator; needs an OXT pass on Android.
 The ARM libraries are: built and verified statically; needs an OXT pass on Android.
 
@@ -156,6 +162,8 @@ engine.
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
 | nostrxt (script) | Pure script over coinxt and sodiumxt (both built for Android) and the engine's sockets. Its relay layer opens secure sockets, so an app needs the engine's SSL library in the package (the builder's `android,include revsecurity` setting) and the Internet permission ticked. Neither library file calls anything a desktop alone has (read 2026-11-18: no `shell`, no `open process`, no fixed path). | read, not run: verified statically; needs an OXT pass on Android |
+| oscxt, midixt | No Android library (above), so an Android app cannot use either yet. | not built for Android |
+| artnetxt (pure LCB) | No library. Art-Net rides the engine's own UDP sockets, broadcast included, so an app ticks Internet in the IDE's standalone settings, as for the script members below. | not examined on Android |
 | riptide, nocloud, holde-em | Their windows are laid out for a 1200 x 640 desktop card. | no phone layout |
 
 Every native extension that opens a socket needs the app to hold Android's INTERNET permission.
@@ -163,8 +171,8 @@ The four that do (enetxt, curlxt, datachannelxt, torrentxt) declare it in their 
 `metadata android.permissions is "INTERNET"`, the key OXT-Beyond's standalone builder reads from
 each extension an app includes and writes into the app's manifest (read in its
 `ide-support/revsblibrary.livecodescript`, 2026-11-18; not observed: verified statically; needs an
-OXT pass on Android). `tools/test-build-android.py` holds the four to that line and the other
-three to none. The script members ride the engine's own sockets, so an app that uses onionxt or
+OXT pass on Android). `tools/test-build-android.py` holds the four to that line and every other
+native member to none. The script members ride the engine's own sockets, so an app that uses onionxt or
 nostrxt alone still ticks Internet in the IDE's standalone settings.
 
 ## Landing the libraries

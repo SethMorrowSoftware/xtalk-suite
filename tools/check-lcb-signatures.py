@@ -61,6 +61,18 @@ BINDINGS = [
      "datachannelxt", "dcx_", "DCX_API"),
     ("coinxt", "coinxt/src/coinxt.lcb", ["coinxt/native/coinxt.c"],
      "coinxt", "cnx_", None),
+    # ShowControl's two native bindings (2026-11-21). ShowControl itself had
+    # no shape check: only its own lc-run tests, which call every bind.
+    ("oscxt", "oscxt/src/osc.lcb", ["oscxt/src/osc_shim.c"],
+     "oscxt", "osc_", "OSC_API"),
+    ("midixt", "midixt/src/midi.lcb", ["midixt/src/midi_shim.c"],
+     "midixt", "midi_", "MIDI_API"),
+    # The mock RtMidi's test hooks, bound by the LCB suite under the shipped
+    # library's name (midixt/tests/lcb/_midimock.lcb): a wrong shape there
+    # would make the tests drive the mock into a state it never reports.
+    ("midixt (mock)", "midixt/tests/lcb/_midimock.lcb",
+     ["midixt/tests/mock/rtmidi_mock.c"],
+     "midixt", "midimock_", "MIDIMOCK_API"),
 ]
 
 # Every LCB type these five bindings use, and the C spelling(s) each may take.
@@ -75,6 +87,8 @@ LCB_TO_C = {
     "CUInt": {"unsigned int", "unsigned", "uint32_t"},
     "CBool": {"int", "bool"},
     "CDouble": {"double"},
+    # oscxt passes an OSC float (`f`, 32 bits on the wire) as C float.
+    "CFloat": {"float"},
     "UIntSize": {"size_t"},
     "ZStringUTF8": {"char *"},
     "nothing": {"void"},
@@ -100,8 +114,14 @@ def pointer_ok(c_type):
 # The type name may contain DIGITS - ZStringUTF8 is the one that matters, and
 # an [A-Za-z]+ class silently stopped at the 8, leaving "8" to fail the anchor
 # and every such parameter reported as a type this gate does not know.
+#
+# The MODE is kept since 2026-11-21, when oscxt brought the first `out`
+# parameter (`out pOk as CInt`, which LCB passes as a pointer to a C int):
+# read as `in`, it is a CInt against `int32_t *` and a false mismatch, and
+# skipping it would pass `in pOk as CInt` against the same pointer, which
+# hands the shim an integer to write through.
 PARAM_RE = re.compile(
-    r'^\s*(?:in|out|inout)\s+\w+\s+as\s+(?:optional\s+)?([A-Za-z][A-Za-z0-9_]*)\s*$')
+    r'^\s*(in|out|inout)\s+\w+\s+as\s+(?:optional\s+)?([A-Za-z][A-Za-z0-9_]*)\s*$')
 
 
 def bind_re(token, prefix):
@@ -160,7 +180,7 @@ def parse_lcb(path, token, prefix):
             types = []
             for p in params:
                 pm = PARAM_RE.match(" " + p)
-                types.append(pm.group(1) if pm else "?" + p)
+                types.append((pm.group(1), pm.group(2)) if pm else ("in", "?" + p))
             out.append((start, m.group(1), types, m.group(3) or "nothing", m.group(4)))
     return out
 
@@ -184,7 +204,18 @@ def parse_shim(paths, prefix, macro):
     return defs
 
 
-def c_ok(lcb_type, c_type):
+def c_ok(lcb_type, c_type, mode="in"):
+    if mode != "in":
+        # `out` and `inout` pass the address of the value: the C side must
+        # be a pointer to what the LCB type allows by value. A pointer to a
+        # pointer is not modelled (norm_c keeps one level), so an `out ...
+        # as Pointer` is refused here rather than passed on a guess.
+        if not c_type.endswith(" *"):
+            return False
+        pointee = c_type[:-2]
+        if lcb_type == "Pointer" or lcb_type.startswith("?"):
+            return False if lcb_type == "Pointer" else None
+        return c_ok(lcb_type, pointee)
     if lcb_type == "Pointer":
         return pointer_ok(c_type)
     allowed = LCB_TO_C.get(lcb_type)
@@ -223,15 +254,16 @@ def main(argv):
                 problems.append(f"{lcb}:{lineno}: {handler} declares {len(ptypes)} "
                                 f"parameter(s) but {sym} takes {len(cargs)}")
                 continue
-            for i, (lt, ct) in enumerate(zip(ptypes, cargs), 1):
+            for i, ((mode, lt), ct) in enumerate(zip(ptypes, cargs), 1):
                 n_params += 1
-                v = c_ok(lt, ct)
+                v = c_ok(lt, ct, mode)
                 if v is None:
                     problems.append(f"{lcb}:{lineno}: {handler} parameter {i} is LCB "
                                     f"type {lt!r}, which this gate does not know - add "
                                     "it to LCB_TO_C on purpose")
                 elif not v:
-                    problems.append(f"{lcb}:{lineno}: {handler} parameter {i} is {lt} "
+                    problems.append(f"{lcb}:{lineno}: {handler} parameter {i} is "
+                                    f"{'' if mode == 'in' else mode + ' '}{lt} "
                                     f"but {sym} takes C {ct!r}")
     for p in problems:
         print("check-lcb-signatures: " + p)

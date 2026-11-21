@@ -1,0 +1,14 @@
+/* oscxt.map - linker version script for the shipped oscxt shared library (ELF).
+ *
+ * Export EXACTLY the osc_* C ABI the .lcb binds to by name; everything else
+ * (vendored tinyosc, internal helpers) is local, so nothing of ours can
+ * interpose with -- or be interposed by -- another library in the engine
+ * process. On macOS the same list is derived from this file at configure
+ * time (-exported_symbols_list); on Windows only OSC_API (dllexport) symbols
+ * are exported. tools/check-binary-freshness.py enforces the closure. */
+{
+  global:
+    osc_*;
+  local:
+    *;
+};

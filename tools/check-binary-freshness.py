@@ -405,6 +405,42 @@ MEMBERS = [
         # build, 2026-11-20).
         "closure": {"elf": [], "pe": [], "macho": []},
     },
+    # oscxt and midixt joined 2026-11-21 (ShowControl's OSC and MIDI) with no
+    # library committed: ShowControl's own were built under the old names
+    # (osc, midi) and stayed behind. artnetxt, the third, binds nothing
+    # foreign and is in BINDLESS_LCB below, not here.
+    {
+        "name": "oscxt",
+        "lib": "oscxt",
+        "lcb": ["oscxt/src/osc.lcb"],
+        # EMPTY until the first release-binaries dispatch lands them.
+        "ships": [],
+        "shim": "oscxt/src/osc_shim.c",
+        "prefix": "osc_",
+        "abi_header": "oscxt/src/osc_shim.h",
+        "abi_define": "OSC_ABI_VERSION",
+        "abi_symbol": "osc_abi_version",
+        # src/oscxt.map (GNU ld) and the derived -exported_symbols_list (ld64)
+        # export osc_* and nothing else; tinyosc is compiled in hidden
+        # (measured on the x86_64-linux build, 2026-11-21).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
+        "name": "midixt",
+        "lib": "midixt",
+        "lcb": ["midixt/src/midi.lcb"],
+        # EMPTY until the first release-binaries dispatch lands them.
+        "ships": [],
+        "shim": "midixt/src/midi_shim.c",
+        "prefix": "midi_",
+        "abi_header": "midixt/src/midi_shim.h",
+        "abi_define": "MIDI_ABI_VERSION",
+        "abi_symbol": "midi_abi_version",
+        # src/midixt.map and the derived ld64 list export midi_* and nothing
+        # else; RtMidi's classes are compiled in without RTMIDI_EXPORT
+        # (measured on the x86_64-linux build, 2026-11-21).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
     {
         "name": "box2dxt",
         "lib": "box2dxt",
@@ -2126,6 +2162,106 @@ def call_abi_in_subprocess(path, symbol):
 
 
 # --------------------------------------------------------------------------
+# The .lcb files that are not a member's binding (2026-11-21).
+#
+# The guard below refuses an .lcb no row names, so that no foreign bind goes
+# unchecked. Until ShowControl joined, every .lcb in the tree was a binding.
+# Its three members brought two other kinds, and each is held to what it
+# claims rather than waved through:
+#
+#   BINDLESS_LCB  a module that binds NOTHING foreign: artnetxt's binding
+#                 (pure LCB, no library at all) and the members' lc-run test
+#                 modules. Each must exist and must hold no `binds to "c:`
+#                 line; a file that grows one fails, and goes to a row.
+#   TEST_LCB      a test module that binds a TEST-ONLY build of a member's
+#                 library (midixt's mock, built as build/mock/midixt.* over a
+#                 double of RtMidi and never committed or shipped). Each bind
+#                 must be defined, non-static, in that double's source under
+#                 its own prefix - the source leg the rows get, without the
+#                 binary legs, because no binary of it is ever committed.
+# --------------------------------------------------------------------------
+
+BINDLESS_LCB = {
+    "artnetxt/src/artnet.lcb":
+        "artnetxt's binding: pure LCB byte packing, no library at all",
+    "artnetxt/tests/lcb/artnet_test.lcb": "artnetxt's lc-run test module",
+    "artnetxt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+    "oscxt/tests/lcb/osc_test.lcb": "oscxt's lc-run test module (it calls the binding)",
+    "oscxt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+    "midixt/tests/lcb/midi_test.lcb": "midixt's lc-run test module (it calls the binding)",
+    "midixt/tests/lcb/midi_hw_test.lcb": "midixt's lc-run test module for a real MIDI service",
+    "midixt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+}
+
+# path -> (the library token its binds must name, the source defining them,
+# the symbol prefix, why)
+TEST_LCB = {
+    "midixt/tests/lcb/_midimock.lcb":
+        ("midixt", "midixt/tests/mock/rtmidi_mock.c", "midimock_",
+         "drives midixt's mock build (CMake's build/mock/midixt.*), which "
+         "tools/package-extension.py refuses to package"),
+}
+
+
+def check_non_binding_lcb(problems, stats, root=ROOT, bindless=None,
+                          test_lcb=None):
+    """Hold BINDLESS_LCB and TEST_LCB to what they claim (see above). The
+    tables are parameters so tools/test-binary-freshness.py can hand it its
+    own files."""
+    bindless = BINDLESS_LCB if bindless is None else bindless
+    test_lcb = TEST_LCB if test_lcb is None else test_lcb
+    for rel in sorted(bindless):
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            problems.append(f"BINDLESS_LCB names {rel}, which does not exist - "
+                            f"remove the stale entry")
+            continue
+        with open(path, encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                if re.search(r'binds\s+to\s+"c:', line):
+                    problems.append(f"{rel}:{lineno} binds into a library, but "
+                                    f"BINDLESS_LCB says it binds nothing - move "
+                                    f"it to its member's row (or TEST_LCB) so "
+                                    f"the bind is checked")
+        stats["bindless"] = stats.get("bindless", 0) + 1
+    for rel in sorted(test_lcb):
+        lib, source, prefix, _why = test_lcb[rel]
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            problems.append(f"TEST_LCB names {rel}, which does not exist - "
+                            f"remove the stale entry")
+            continue
+        mine, foreign = set(), []
+        with open(path, encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                for target, symbol in BIND_RE.findall(line):
+                    if target == lib:
+                        mine.add(symbol)
+                    else:
+                        foreign.append(f"{rel}:{lineno} binds c:{target}>{symbol}")
+        for line in foreign:
+            problems.append(f"{line} - TEST_LCB says its binds name {lib}")
+        if not mine:
+            problems.append(f"{rel}: parsed 0 binds into {lib} - a TEST_LCB "
+                            f"entry that binds nothing belongs in BINDLESS_LCB "
+                            f"(or BIND_RE stopped matching it)")
+            continue
+        spath = os.path.join(root, source)
+        if not os.path.isfile(spath):
+            problems.append(f"{rel}: its test library source {source} does not "
+                            f"exist")
+            continue
+        with open(spath, encoding="utf-8") as fh:
+            src = strip_comments(fh.read())
+        defs = set(def_re(prefix).findall(src))
+        unbacked = sorted(mine - defs)
+        if unbacked:
+            problems.append(f"{rel} binds {unbacked[:6]} which {source} does "
+                            f"not define (non-static, at column 0, {prefix}*)")
+        stats["test_binds"] = stats.get("test_binds", 0) + len(mine)
+
+
+# --------------------------------------------------------------------------
 # Guards that keep this gate from going quietly vacuous.
 # --------------------------------------------------------------------------
 
@@ -2138,6 +2274,7 @@ def assert_table_covers_tree(problems):
     """
     known_dirs = {m["name"] for m in MEMBERS}
     known_lcb = {rel for m in MEMBERS for rel in m["lcb"]}
+    known_lcb |= set(BINDLESS_LCB) | set(TEST_LCB)
     for entry in sorted(os.listdir(ROOT)):
         code = os.path.join(ROOT, entry, "src", "code")
         if os.path.isdir(code) and entry not in known_dirs:
@@ -2680,6 +2817,7 @@ def main(argv=()):
              "mac": 0, "guarded": 0, "wasm": 0}
 
     assert_table_covers_tree(problems)
+    check_non_binding_lcb(problems, stats)
     for member in MEMBERS:
         check_member(member, problems, skips, notes, stats)
 
@@ -2717,7 +2855,9 @@ def main(argv=()):
           f"from committed code (a fat dylib contributes one per slice; "
           f"{stats['guarded']} through the MSVC guarded shape), "
           f"{stats['confirmed']} of them confirmed by loading the library "
-          f"and calling the function")
+          f"and calling the function; {stats.get('bindless', 0)} .lcb modules "
+          f"held to binding nothing, and {stats.get('test_binds', 0)} binds of "
+          f"test-only builds held to their sources")
     return 0
 
 

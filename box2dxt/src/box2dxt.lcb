@@ -480,11 +480,28 @@ private foreign handler _query_fraction(in pIdx as CInt) returns CDouble binds t
 -- libc: glibc >= 2.34 -> "c:libc.so.6>dlopen!cdecl"; older glibc or where
 -- dlopen still lives in libdl -> "c:libdl.so.2>dlopen!cdecl".
 private foreign handler _dlopen(in pPath as ZStringNative, in pFlags as CInt) returns optional Pointer binds to "c:>dlopen!cdecl"
-private foreign handler _dlerror() returns optional ZStringNative binds to "c:>dlerror!cdecl"
+-- dlerror()'s text is libc's, so it comes back as a raw Pointer and is copied
+-- at once: a ZString return is free()d by the engine when the value dies
+-- (engine note 6.16), and glibc frees the same text on the next dlerror(),
+-- which aborted lc-run with "free(): double free" (2026-11-21).
+private foreign handler _dlerror() returns optional Pointer binds to "c:>dlerror!cdecl"
 -- realpath("/proc/self/exe", nil) -> the running engine's own executable path
 -- on Linux; used by the b2LoadNativeLibHere helper below to locate the engine
 -- folder. Returns nothing off Linux (no /proc). Only ever called on Linux.
+-- Its ZString return is safe where dlerror's is not: given no buffer,
+-- realpath() returns malloc'd text that the caller owns and frees, which is
+-- exactly what the engine does with it (engine note 6.16).
 private foreign handler _realpath(in pPath as ZStringNative, in pResolved as optional Pointer) returns optional ZStringNative binds to "c:>realpath!cdecl"
+-- The engine's own calls that copy dlerror()'s text into a String.
+private foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+private foreign handler MCStringCreateWithCString(in pCString as Pointer, out rString as String) returns CBool binds to "<builtin>"
+
+-- The reason the last b2LoadNativeLib or b2LoadNativeLibHere failed, read
+-- from dlerror() at the failure and kept: read later, as it once was, the
+-- first answer was empty (the engine binds a foreign handler on its first
+-- call, through dlsym, which consumes the pending error: engine note 6.17)
+-- and the second aborted the engine (above).
+variable sLoadError as String
 
 -- small bool -> int helper (no foreign call, so no unsafe needed)
 private handler bi(in pB as Boolean) returns Integer
@@ -540,10 +557,12 @@ public handler b2LoadNativeLibHere() returns Integer
    variable tIdx as Integer
    variable tLib as String
    variable tHandle as optional Pointer
+   put the empty string into sLoadError
    unsafe
       put _realpath("/proc/self/exe", nothing) into tExe
    end unsafe
    if tExe is nothing then
+      put "box2dxt: the engine's own path could not be read (/proc/self/exe)" into sLoadError
       return 0
    end if
    put tExe into tPath
@@ -555,14 +574,17 @@ public handler b2LoadNativeLibHere() returns Integer
       end if
    end repeat
    if tCut is 0 then
+      put "box2dxt: the engine's own path has no folder: " & tPath into sLoadError
       return 0
    end if
    put char 1 to tCut of tPath into tLib
    put tLib & "box2dxt.so" into tLib
+   bindLoaderErrorPath()
    unsafe
       put _dlopen(tLib, 258) into tHandle
    end unsafe
    if tHandle is nothing then
+      put loaderErrorNow() into sLoadError
       return 0
    end if
    return 1
@@ -649,10 +671,13 @@ b2LoadNativeLibHere (handler)
 */
 public handler b2LoadNativeLib(in pPath as String) returns Integer
    variable tHandle as optional Pointer
+   put the empty string into sLoadError
+   bindLoaderErrorPath()
    unsafe
       put _dlopen(pPath, 258) into tHandle
    end unsafe
    if tHandle is nothing then
+      put loaderErrorNow() into sLoadError
       return 0
    end if
    return 1
@@ -664,24 +689,61 @@ end handler
 /**
 Summary: Return the loader's last error message (Linux only).
 
-Returns: The dlerror text, or empty if there is none.
+Returns: The reason the last <b2LoadNativeLib> or <b2LoadNativeLibHere>
+returned 0, or empty when the last one loaded the library (or none has
+run).
 
 Example:
 put b2LoadNativeLibError() into tWhy
 
 Description:
 Tells you why <b2LoadNativeLib> returned 0: a wrong path, or a file that
-could not be loaded. Linux only, like it.
+could not be loaded. The reason is read when the load fails and kept
+until the next load, so it can be asked for at any time after, and
+asked again. Linux only, like it.
 
 References: b2LoadNativeLib (handler)
 */
 public handler b2LoadNativeLibError() returns String
-   variable tErr as optional String
+   return sLoadError
+end handler
+
+-- The engine binds a foreign handler on its FIRST call, through dlsym, and
+-- that call consumes the error text of a dlopen that just failed (engine
+-- note 6.17). So the two handlers the error path needs are called once
+-- BEFORE the dlopen whose error they read: the string copy (on a one-byte
+-- empty C string) and dlerror itself, which also clears an older error
+-- first, the POSIX idiom.
+private handler bindLoaderErrorPath()
+   variable tNulByte as Data
+   variable tNulPtr as Pointer
+   variable tEmpty as String
+   variable tOk as Boolean
+   variable tOlder as optional Pointer
+   put the byte with code 0 into tNulByte
    unsafe
-      put _dlerror() into tErr
+      put MCDataGetBytePtr(tNulByte) into tNulPtr
+      put MCStringCreateWithCString(tNulPtr, tEmpty) into tOk
+      put _dlerror() into tOlder
    end unsafe
-   if tErr is nothing then
-      return ""
+end handler
+
+-- dlerror()'s text, COPIED at once (it is libc's, engine note 6.16).
+private handler loaderErrorNow() returns String
+   variable tPtr as optional Pointer
+   variable tErr as String
+   variable tOk as Boolean
+   unsafe
+      put _dlerror() into tPtr
+   end unsafe
+   if tPtr is nothing then
+      return "box2dxt: the library did not load, and the loader gave no reason"
+   end if
+   unsafe
+      put MCStringCreateWithCString(tPtr, tErr) into tOk
+   end unsafe
+   if not tOk then
+      return "box2dxt: the library did not load (its reason could not be read)"
    end if
    return tErr
 end handler

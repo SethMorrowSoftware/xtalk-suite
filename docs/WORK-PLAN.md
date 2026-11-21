@@ -722,7 +722,7 @@ keeping the scaffold for its report.
 ### 2.8 box2dxt
 
 - Box2D v3.1.0: 376 public `b2*` handlers plus the pure-script Kit's 316 `b2k*`. Kit
-  coverage 316/316; the raw binding 131/376, the other 245 held as a floor.
+  coverage 316/316; the raw binding 133/376, the other 243 held as a floor.
 - Records: harness v32 385/0 in the suite paste on Windows (2026-09-24, 09-25 and
   twice on 09-26, `playLoudness` read back exact every time; the 09-26 runs'
   slab-fall y 836.252747 again, and that evening's Windows preflight READ ABI 4
@@ -781,6 +781,14 @@ keeping the scaffold for its report.
   fixed (`pfEmbedPlaceholder` under the build's lock). It needs riptide and
   nostrxt beside box2dxt (the registry's gate siblings). Verified statically +
   headless; needs an OXT pass (engine #7, #8).
+- 2026-11-21: `b2LoadNativeLibError` bound `dlerror` returning a `ZString`, which the
+  engine frees (engine note 6.16). Under lc-run on Linux its first answer after a
+  failed `b2LoadNativeLib` was empty (6.17) and the process then aborted with a double
+  free. The reason is now read at the failure and kept, for `b2LoadNativeLib` and
+  `b2LoadNativeLibHere`; a scratch lc-run probe passed three runs out of three, and
+  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9). The
+  checker's check 24 now refuses the form in every member. Verified under lc-run;
+  needs an OXT pass.
 
 **Coding.**
 
@@ -788,9 +796,10 @@ keeping the scaffold for its report.
 |---|---|---|---|---|
 | 2 | **The x86-linux glibc regression, 2.17 to 2.34:** build that release row in a `manylinux2014_i686` container (as `native-box2dxt.yml` already does), or publish the floor | A silent portability regression | M | dispatch; revisit D-03 |
 | 4 | Platformer polish that can be done in the tree: the dev level-picker behind the debug toggle, or styled as intentional; sweep unused handlers and the dead camera-fallback paths; extend `tools/audit-platformer.py` to the vertical L7; check the win-screen summary (time, falls, gems, stars, coin score, hero, a "flawless run" callout); retune `pfMakeCoin`'s coin-tier thresholds if wanted | The code half of the polish plan | M | none |
-| 5 | The raw `b2*` script ratchet: 245 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
+| 5 | The raw `b2*` script ratchet: 243 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
 | 8 | Point `box2dxt/README.md`'s build badge at the member repository's own `native.yml` once that lane has run | It still points at the suite lane | S | the first member-repository run |
 | 11 | Native shim defects found statically 2026-09-24, each a shim change that needs its binaries rebuilt by a dispatch (rule 5): the per-type joint accessors (`src/box2d_lc.c` near 1610-1712) check that the handle is live, not the joint's type, so a wrong-type joint reaches Box2D, and `b2lc_joint_type` answers 0 for both a distance joint and a stale handle; `b2lc_shape_polygon_update` on a non-polygon zeroes the count but keeps the previous radius; the committed Linux `.so` files carry SONAME `libbox2dxt.so` (`BOX2DXT_BARE_SONAME` is OFF), so `b2LoadNativeLib` / `b2LoadNativeLibHere` cannot preload them. All three are documented in `box2dxt/docs/api-reference.md` | Wrong answers a script cannot tell apart | S + dispatch | dispatch |
+| 13 | An lc-run lane for the binding, as oscxt's and midixt's native lanes have: `native-box2dxt.yml` compiles no LCB, so the loader fix's checks (2026-11-21) ran in a scratch probe only | A binding fix should have a test CI runs on every change | S | none |
 | 12 | Nest the Kit's two slice-reuse guards, `there is an image tName and the uB2kSig of image tName is ...` in `b2kSheetEnsureIcon` and `b2kSheetEnsureFlip` (2026-10-06), as engine note 2.5's rule asks: a Kit change, so a harness assertion and a `kStHarnessV` bump (box2dxt CLAUDE.md rule 2), then `sync-embedded-kit.py` and the suite paste | With persistence on, each throws on every frame's first slice if row P(b) shows `and` evaluating both operands; the engine's source and dictionary say it short-circuits (note 2.5's 2026-10-08 paragraph), and the level gate models that reading, so nothing here would see it | S | none |
 
 Parked by D-19 (2026-08-27, "triggers stand"), not scheduled: Wave 8 builder
@@ -809,6 +818,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A fresh-machine package run: build with `tools/make-release.py`, install on a clean machine, play end to end | S1 (a clean machine) | - | installs and runs |
 | 7 | The platformer's first-run import (harness v33, 2026-10-08): open it from a fresh launch with its art folder present, let the import finish and accept the save; quit, move the art folder away, reopen the SAVED stack and play L1 to L7; then Shift+Reset re-imports | S1 item 5 (Windows, Linux) | 38 | no folder prompt after the save; every sprite, flip and sound present in the saved copy; the paste's box2dxt row at 405/0 |
 | 8 | The platformer's quiet build (2026-10-08): in the saved stack, R on L1 and a flag advance from L1, each with the IDE's project browser open and then closed, noting the debug overlay's (`) build and first-frame times; then play on to the L7 win; once more from a fresh copy with Cancel at the folder prompt (the no-art build, quiet since the level gate's first run) | S1 item 5 (Windows, Linux) | 38 | a flag advance builds once (one card hold); the times recorded; the win screen's totals cover all seven levels |
+| 9 | Harness v36's `stTestLoaderErrorKept` in the suite paste on a Linux engine (2026-11-21's loader fix) | S1 (Linux) | - | its eight lines green, the first reason naming its path |
 
 ### 2.9 curlxt
 
@@ -894,6 +904,83 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
 | 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+
+### 2.12 oscxt
+
+- Joined 2026-11-21 from ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
+  extensions): tinyosc behind the `osc_*` C shim (ABI 2) and the `osc*` binding, a codec
+  over the script's own UDP sockets. The library id, every public handler and the helpers'
+  names are ShowControl's, so an installed ShowControl `osc` extension upgrades in place.
+  Records: the shim's smoke test, the shared vectors and the fuzzer, clean under
+  ASan/UBSan (23 million fuzz inputs, 2026-11-21); the LCB suite under lc-run and the
+  Script suite in OXT-Beyond's standalone engine with `-ui` (real UDP and the interop peer
+  included) on Linux x86_64 over a locally built library (2026-11-21), which its native
+  lane repeats on Linux, Windows and a Mac. No desktop IDE has loaded it: verified
+  statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`), and the change after it lists the platforms in
+  `check-binary-freshness.py`'s `ships` row. No Android build (`tools/build-android.sh`'s
+  `DESKTOP_ONLY`: none has run yet).
+- Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
+  then a publish-members run adopts it (`--adopt oscxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: oscxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `oscxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
+| 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
+| 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
+| 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
+
+### 2.13 midixt
+
+- Joined 2026-11-21 from ShowControl: RtMidi 6.0.0 (ALSA, CoreMIDI or Windows MM) behind
+  the `midi_*` C shim (ABI 2) and the `midi*` binding, with input drained by polling (no
+  callback runs script). ShowControl's names are kept, so an installed ShowControl `midi`
+  extension upgrades in place. Records: the shim against a mock RtMidi that reproduces each
+  backend's failures, clean under ASan/UBSan; the real library's smoke test on its
+  no-service path; the LCB and Script suites on OXT-Beyond's headless Linux engine over
+  locally built libraries (2026-11-21), which its native lane repeats on Linux, Windows and
+  a Mac. No MIDI service has carried a message on the record (no ALSA sequencer where it
+  ran), and no desktop IDE has loaded it: verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (the Linux rows install ALSA's headers in the manylinux containers), and the change
+  after it fills its `ships` row. No Android library: RtMidi's Android backend needs API
+  29 and JNI, above the suite's API 21 floor.
+- Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
+  then a publish-members run adopts it (`--adopt midixt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: midixt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `midixt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
+| 3 | An lce package and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
+| 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
+
+### 2.14 artnetxt
+
+- Joined 2026-11-21 from ShowControl: Art-Net (DMX512 lighting over UDP) in pure LiveCode
+  Builder, with no shim and no native library: the codec packs and parses, and the
+  script's own UDP sockets carry it. ShowControl's names are kept. Records: the LCB suite
+  under lc-compile `-Werror` and lc-run, and the Script suite in OXT-Beyond's standalone
+  engine with `-ui` (real UDP, discovery and DMX against the virtual node
+  `tools/sim/artnet_node.py`), on Linux x86_64 (2026-11-21), which its native lane repeats
+  on Linux, Windows and a Mac. No desktop IDE and no hardware node: verified statically;
+  needs an OXT pass.
+- Binaries: none, ever; there is no `src/code/`. An lce package carries the module alone.
+- Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
+  EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first IDE pass: install the extension, then `examples/artnet-selftest.livecodescript` on Windows, Linux and a Mac | S1 | - | the self-test is green on each |
+| 2 | A real node or desk: ArtPoll discovery finds it and a DMX universe drives a fixture (or a node's own monitor), and a desk's ArtDmx arrives in script | S1 + Art-Net gear | - | the fixture follows the faders, and the desk's levels read back |
+| 3 | An lce package (a pure-LCB row) and a place on the extensions site | coding | - | the package installs from the site |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
+| 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
+| 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
 
 ---
 

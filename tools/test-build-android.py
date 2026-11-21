@@ -114,15 +114,30 @@ def main():
     listed = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
     members = listed.get("members", "").split()
     platforms = listed.get("platforms", "").split()
+    # The native members it names and does NOT build (2026-11-21: oscxt,
+    # midixt), each with its reason in the script. They count toward the
+    # comparison below, so a new native member must land in one list or the
+    # other: never in neither.
+    desktop_only = listed.get("desktop-only", "").split()
     check(rc == 0 and members and platforms, "--list names members and "
           "platform ids", (rc, out, err))
+    check(not set(members) & set(desktop_only),
+          "no member is both built for Android and desktop-only",
+          (members, desktop_only))
     native = [m["name"] for m in freshness.MEMBERS]
-    check(sorted(members) == sorted(native),
-          "it builds exactly the native members the freshness gate knows",
-          (members, native))
-    check(sorted(members) == sorted(installer.MEMBERS),
+    check(sorted(members + desktop_only) == sorted(native),
+          "it builds exactly the native members the freshness gate knows, "
+          "bar the ones it names desktop-only", (members, desktop_only, native))
+    check(sorted(members + desktop_only) == sorted(installer.MEMBERS),
           "  ...which are the members the installer installs",
-          (members, sorted(installer.MEMBERS)))
+          (members, desktop_only, sorted(installer.MEMBERS)))
+    # A desktop-only member declares no Android library either: its `ships`
+    # row names none, so nothing promises a library this script never builds.
+    for row in freshness.MEMBERS:
+        if row["name"] in desktop_only:
+            android = [p for p in row["ships"] if p.endswith("-android")]
+            check(not android, f"desktop-only {row['name']} ships no Android "
+                  "library", android)
     check(sorted(platforms) == sorted(installer.ANDROID_ABIS),
           "its platform ids are the installer's ANDROID_ABIS",
           (platforms, sorted(installer.ANDROID_ABIS)))
@@ -219,6 +234,11 @@ def main():
     rc, out, err = run(["onionxt", "arm64-android"])
     check(rc == 2 and "not a native member" in err,
           "a member with no native library is refused (exit 2)", (rc, err))
+    for member in desktop_only:
+        rc, out, err = run([member, "arm64-android"])
+        check(rc == 2 and "has no Android build" in err and "DESKTOP_ONLY" in err,
+              f"desktop-only {member} is refused, pointing at the reason "
+              "(exit 2)", (rc, err))
     rc, out, err = run(["enetxt", "arm64-linux"])
     check(rc == 2 and "not an Android platform id" in err,
           "a platform id that is not Android's is refused (exit 2)", (rc, err))

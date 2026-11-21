@@ -1,0 +1,391 @@
+/*
+osc_test.lcb - headless behavioural tests for the OSC binding, through the REAL
+osc shim (lc-run loads the freshly built osc library).
+
+Byte-exact encodings are pinned by the shared vectors (tests/vectors/osc.json ->
+the generated vectors module). This file covers what vectors cannot: the
+FFI marshalling itself (Data in, Data out, strings out -- every path that once
+crashed or threw), value-type coercion at the Script->LCB boundary, long values
+that force the caller-buffer grow path, error reporting, nested structure, and
+handle-table churn.
+*/
+-- requires: oscxt
+
+module org.openxtalk.showcontrol.tests.osc
+
+use com.livecode.unittest
+use org.openxtalk.library.osc
+use org.openxtalk.showcontrol.tests.support
+
+public handler TestAbi()
+   test "oscVersion is ABI 2" when oscVersion() is 2
+end handler
+
+-- The regression that started this suite: a Data passed straight to a foreign
+-- Pointer threw "Value is not of correct type", and a returned ZString crashed
+-- the VM. Build -> parse -> every string getter, end to end.
+public handler TestMarshallingRoundTrip()
+   variable tData as Data
+   variable tMsg as Array
+   variable tArgs as List
+   put oscBuildMessage("/marshal", ["s", "out", "b", HexToData("00ff7f80")]) into tData
+   test "build returns bytes (Data -> raw block -> Data)" when the number of bytes in tData is 28
+   put oscParse(tData) into tMsg
+   test "parse address (caller-buffer string)" when tMsg["address"] is "/marshal"
+   test "parse types (caller-buffer string)" when tMsg["types"] is "sb"
+   put tMsg["args"] into tArgs
+   test "string arg (caller-buffer string)" when tArgs[1] is "out"
+   test "blob arg with 00 and ff bytes (raw block -> Data)" when DataToHex(tArgs[2]) is "00ff7f80"
+   test "oscLastError is empty after success (no crash)" when oscLastError() is ""
+end handler
+
+-- The engine hands script values across as Numbers OR Strings. Both must build
+-- identical bytes (the binding normalizes with `is a number` / `formatted as`).
+public handler TestNumbersAndStringsBuildTheSame()
+   test "int: Number == String" when \
+      DataToHex(oscBuildMessage("/n", ["i", -42])) is DataToHex(oscBuildMessage("/n", ["i", "-42"]))
+   test "float: Number == String" when \
+      DataToHex(oscBuildMessage("/n", ["f", 0.5])) is DataToHex(oscBuildMessage("/n", ["f", "0.5"]))
+   test "double: Number == String" when \
+      DataToHex(oscBuildMessage("/n", ["d", 3.25])) is DataToHex(oscBuildMessage("/n", ["d", "3.25"]))
+   test "string arg given a Number is stringified" when \
+      DataToHex(oscBuildMessage("/n", ["s", 7])) is DataToHex(oscBuildMessage("/n", ["s", "7"]))
+   test "int64 from a small Number" when \
+      DataToHex(oscBuildMessage("/n", ["h", 12345])) is DataToHex(oscBuildMessage("/n", ["h", "12345"]))
+end handler
+
+-- Values the build must refuse -- quietly (empty Data), never a throw.
+public handler TestBadArgsFailQuietly()
+   test "unknown type code builds nothing" when the number of bytes in oscBuildMessage("/x", ["x", "1"]) is 0
+   test "blob given a String builds nothing" when the number of bytes in oscBuildMessage("/x", ["b", "not data"]) is 0
+   test "numeric given an Array builds nothing" when the number of bytes in oscBuildMessage("/x", ["i", ["k"]]) is 0
+   test "numeric given a Boolean builds nothing" when the number of bytes in oscBuildMessage("/x", ["i", true]) is 0
+   test "a good build after a bad one still works" when the number of bytes in oscBuildMessage("/x", ["i", "1"]) is 12
+end handler
+
+-- A Number that was COMPUTED is held as a real, and LCB writes a real with
+-- "%g" (six significant digits). The binding used that text: 1234567.0 sent
+-- the integer 1 (from "1.23457e+06"), 0.0000001 sent 1, 1/3 sent 0.333333.
+-- A real literal here is exactly such a Number. Every one now crosses exactly.
+public handler TestComputedNumbersAreExact()
+   variable tArgs as List
+   put oscParse(oscBuildMessage("/n", ["i", 1234567.0, "i", -7654321.0, "i", 0.0000001, \
+         "i", 2.7, "i", -2.7, "i", 3000000000.0, "i", -3000000000.0]))["args"] into tArgs
+   test "i 1234567.0 is 1234567 (was 1)" when tArgs[1] is 1234567
+   test "i -7654321.0 is -7654321 (was -7)" when tArgs[2] is -7654321
+   test "i 0.0000001 is 0 (was 1)" when tArgs[3] is 0
+   test "i 2.7 is 2, as the text 2.7 reads" when tArgs[4] is 2
+   test "i -2.7 is -2, as the text -2.7 reads" when tArgs[5] is -2
+   test "i 3000000000.0 clamps to INT32_MAX (was 3)" when tArgs[6] is 2147483647
+   test "i -3000000000.0 clamps to INT32_MIN" when tArgs[7] is -2147483648
+   put oscParse(oscBuildMessage("/n", ["h", 1795228460477.0, "h", -1795228460477.0, \
+         "t", 9223372036854775808.0, "t", 18446744073709549568.0, "h", 1.0e30, "h", -1.0e30]))["args"] into tArgs
+   test "h milliseconds-sized real is exact (was 1)" when tArgs[1] is "1795228460477"
+   test "h negative real is exact" when tArgs[2] is "-1795228460477"
+   test "t 2^63 is exact" when tArgs[3] is "9223372036854775808"
+   test "t largest double below 2^64 is exact" when tArgs[4] is "18446744073709549568"
+   test "h beyond int64 saturates" when tArgs[5] is "9223372036854775807"
+   test "h below int64 saturates" when tArgs[6] is "-9223372036854775808"
+   put oscParse(oscBuildMessage("/n", ["d", 1/3, "f", 1/3, "d", 123456789.123]))["args"] into tArgs
+   test "d 1/3 keeps every digit (was 0.333333)" when NearlyEqual(tArgs[1], 1/3, 0.0000000000000001)
+   test "f 1/3 is the nearest float (was 0.333333)" when tArgs[2] is 0.3333333432674407958984375
+   test "d 123456789.123 is exact (was 123457000)" when NearlyEqual(tArgs[3], 123456789.123, 0.0000001)
+   put oscParse(oscBuildMessage("/n", ["s", 1234567.0, "s", -42.0, "s", 0.5]))["args"] into tArgs
+   test "s 1234567.0 is '1234567' (was 1.23457e+06)" when tArgs[1] is "1234567"
+   test "s -42.0 is '-42'" when tArgs[2] is "-42"
+   test "s 0.5 is still '0.5'" when tArgs[3] is "0.5"
+end handler
+
+-- A refusal used to return empty with oscLastError() EMPTY too: the shim
+-- clears its error when a build starts, and these are decided in the binding.
+public handler TestRefusalsSayWhy()
+   variable tData as Data
+   variable tParsed as Array
+   put oscBuildMessage("/x", ["q", "1"]) into tData
+   test "unknown type code: empty" when the number of bytes in tData is 0
+   test "unknown type code: oscLastError says so" when oscLastError() contains "unknown type code 'q'"
+   put oscBuildMessage("/x", ["b", "not data"]) into tData
+   test "blob given a String: oscLastError says so" when oscLastError() contains "binary data"
+   put oscBuildMessage("/x", ["i", true]) into tData
+   test "int given a Boolean: oscLastError says so" when oscLastError() contains "number or a string"
+   put oscBuildMessage("/x", ["i", "1", "f"]) into tData
+   test "trailing value type: oscLastError says so" when oscLastError() contains "has no value"
+   put oscBuildMessage("/x", [7, "1"]) into tData
+   test "a Number as the type code: empty, no throw" when the number of bytes in tData is 0
+   test "a Number as the type code: oscLastError says so" when oscLastError() contains "type code must be a string"
+   put oscBuildMessage("/x", ["i", "1"]) into tData
+   test "a good build after refusals clears oscLastError" when oscLastError() is ""
+   put oscBuildMessage("/x", ["q", "1"]) into tData
+   put oscParse(HexToData("01020304")) into tParsed
+   test "a shim refusal after a binding one reports the shim's" when oscLastError() contains "oscParse"
+   test "and oscParse's error field carries it" when tParsed["error"] contains "oscParse"
+end handler
+
+-- A NUL cannot cross as a C string, and the engine THREW ("cannot export char
+-- U+0000 in nul-terminated string buffer") from inside oscBuildMessage and
+-- oscMatch. Each is now a quiet refusal.
+public handler TestNulNeverThrows()
+   variable tNul as String
+   put the char with code 0 into tNul
+   test "NUL in a string arg: empty" when \
+      the number of bytes in oscBuildMessage("/x", ["s", "a" & tNul & "b"]) is 0
+   test "NUL in a string arg: oscLastError says so" when oscLastError() contains "NUL"
+   test "NUL in a numeric text arg: empty" when \
+      the number of bytes in oscBuildMessage("/x", ["i", "1" & tNul]) is 0
+   test "NUL in the address: empty" when \
+      the number of bytes in oscBuildMessage("/x" & tNul & "y", []) is 0
+   test "NUL in the address: oscLastError says so" when oscLastError() contains "address"
+   test "NUL in a bundle timetag: empty" when \
+      the number of bytes in oscBuildBundle("1" & tNul, [oscBuildMessage("/a", [])]) is 0
+   test "NUL in a match pattern: no match" when not oscMatch("/a" & tNul, "/a")
+   test "NUL in a match address: no match" when not oscMatch("/a", "/a" & tNul)
+   test "NUL in a library path: 0" when oscLoadNativeLib("/nope" & tNul) is 0
+end handler
+
+-- No-value types may be passed with an empty value OR left dangling at the end.
+public handler TestNoValueTypes()
+   variable tMsg as Array
+   put oscParse(oscBuildMessage("/flags", ["T", "", "F", "", "N", "", "I", ""])) into tMsg
+   test "TFNI with empty values" when tMsg["types"] is "TFNI"
+   put oscParse(oscBuildMessage("/flags", ["i", "1", "T"])) into tMsg
+   test "a trailing no-value type needs no value" when tMsg["types"] is "iT"
+   test "a trailing VALUE type with no value builds nothing" when \
+      the number of bytes in oscBuildMessage("/x", ["i", "1", "f"]) is 0
+end handler
+
+-- Strings longer than the binding's first 256-byte read force the -needed /
+-- grow / retry path in every string getter.
+public handler TestLongValuesGrowTheBuffer()
+   variable tAddr as String
+   variable tLong as String
+   variable tMsg as Array
+   variable tArgs as List
+   put "/" & RepeatChar("a", 700) into tAddr
+   put RepeatChar("z", 5000) into tLong
+   put oscParse(oscBuildMessage(tAddr, ["s", tLong])) into tMsg
+   test "701-char address survives" when tMsg["address"] is tAddr
+   put tMsg["args"] into tArgs
+   test "5000-char string arg survives" when tArgs[1] is tLong
+   put oscParse(oscBuildMessage("/blob", ["b", RepeatByte(171, 70000)])) into tMsg
+   put tMsg["args"] into tArgs
+   test "70000-byte blob survives" when the number of bytes in tArgs[1] is 70000
+   test "70000-byte blob content" when tArgs[1] is RepeatByte(171, 70000)
+end handler
+
+-- UTF-8 end to end: String -> ZStringUTF8 -> wire bytes -> caller buffer -> String.
+public handler TestUtf8()
+   variable tCafe as String
+   variable tData as Data
+   variable tMsg as Array
+   variable tArgs as List
+   put "caf" & (the char with code (233)) into tCafe     -- e-acute, U+00E9
+   put oscBuildMessage("/u", ["s", tCafe]) into tData
+   test "UTF-8 encodes e-acute as c3 a9" when DataToHex(tData) contains "636166c3a9"
+   put oscParse(tData) into tMsg
+   put tMsg["args"] into tArgs
+   test "UTF-8 string round-trips" when tArgs[1] is tCafe
+   put oscParse(oscBuildMessage("/" & tCafe, [])) into tMsg
+   test "UTF-8 address round-trips" when tMsg["address"] is "/" & tCafe
+end handler
+
+public handler TestNumericExtremes()
+   variable tMsg as Array
+   variable tArgs as List
+   put oscParse(oscBuildMessage("/x", ["i", "2147483647", "i", "-2147483648", "h", "9223372036854775807", "h", "-9223372036854775808", "t", "18446744073709551615"])) into tMsg
+   put tMsg["args"] into tArgs
+   test "int32 max" when tArgs[1] is 2147483647
+   test "int32 min" when tArgs[2] is -2147483648
+   test "int64 max survives as a decimal string" when tArgs[3] is "9223372036854775807"
+   test "int64 min survives as a decimal string" when tArgs[4] is "-9223372036854775808"
+   test "timetag max is UNSIGNED" when tArgs[5] is "18446744073709551615"
+   put oscParse(oscBuildMessage("/x", ["d", "3.141592653589793"])) into tMsg
+   put tMsg["args"] into tArgs
+   test "double keeps full precision" when NearlyEqual(tArgs[1], 3.141592653589793, 0.000000000000001)
+end handler
+
+public handler TestBundles()
+   variable tA as Data
+   variable tB as Data
+   variable tInner as Data
+   variable tOuter as Data
+   variable tP as Array
+   variable tMsgs as List
+   variable tSub as Array
+   put oscBuildMessage("/a", ["i", "1"]) into tA
+   put oscBuildMessage("/b", ["f", "2"]) into tB
+   put oscParse(oscBuildBundle("1", [tA, tB])) into tP
+   test "bundle parses" when tP["isBundle"] is true
+   test "bundle timetag" when tP["timetag"] is "1"
+   put tP["messages"] into tMsgs
+   test "bundle has 2 messages" when the number of elements in tMsgs is 2
+   put tMsgs[1] into tSub
+   test "message 1 address" when tSub["address"] is "/a"
+   put tMsgs[2] into tSub
+   test "message 2 address" when tSub["address"] is "/b"
+   -- nesting is preserved, not flattened
+   put oscBuildBundle("7", [tA]) into tInner
+   put oscBuildBundle("16045690984503098046", [tInner, tB]) into tOuter
+   put oscParse(tOuter) into tP
+   test "outer timetag (top bit set) is unsigned" when tP["timetag"] is "16045690984503098046"
+   put tP["messages"] into tMsgs
+   put tMsgs[1] into tSub
+   test "first element is itself a bundle" when tSub["isBundle"] is true
+   test "inner timetag" when tSub["timetag"] is "7"
+   put tMsgs[2] into tSub
+   test "second element is a message" when tSub["isBundle"] is false and tSub["address"] is "/b"
+   -- an empty bundle is legal
+   put oscParse(oscBuildBundle("1", [])) into tP
+   test "empty bundle parses with 0 messages" when tP["isBundle"] is true and the number of elements in tP["messages"] is 0
+   -- a non-Data element fails the whole bundle quietly
+   test "a String element builds nothing" when the number of bytes in oscBuildBundle("1", [tA, "oops"]) is 0
+end handler
+
+public handler TestParseErrors()
+   variable tP as Array
+   put oscParse(the empty data) into tP
+   test "empty datagram: no address" when tP["address"] is ""
+   test "empty datagram: error reported" when tP["error"] is not ""
+   test "empty datagram: oscLastError agrees" when oscLastError() is tP["error"]
+   put oscParse(HexToData("61626300" & "2c000000")) into tP
+   test "no leading slash is an error" when tP["error"] contains "/"
+   put oscParse(oscBuildMessage("/ok", [])) into tP
+   test "a good parse clears oscLastError" when oscLastError() is ""
+end handler
+
+-- Handle tables must recycle cleanly: thousands of build/parse cycles, each
+-- freeing its handles, never exhaust or corrupt anything.
+public handler TestHandleChurn()
+   variable tI as Integer
+   variable tOk as Boolean
+   variable tP as Array
+   put true into tOk
+   repeat with tI from 1 up to 3000
+      put oscParse(oscBuildMessage("/churn", ["i", tI])) into tP
+      if tP["address"] is not "/churn" then
+         put false into tOk
+      end if
+   end repeat
+   test "3000 build/parse cycles stay correct" when tOk
+   put oscParse(oscBuildMessage("/after", ["i", "5"])) into tP
+   test "still healthy after the churn" when tP["address"] is "/after"
+end handler
+
+public handler TestMatchEdgeCases()
+   test "pattern equals address" when oscMatch("/a/b", "/a/b")
+   test "empty pattern matches only empty" when oscMatch("", "") and not oscMatch("", "/a")
+   -- the ReDoS guard: a pathological many-star pattern answers (false) quickly
+   test "pathological star pattern terminates" when not oscMatch("/*a*a*a*a*a*a*a*a*a*a*a*b", "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+end handler
+
+
+-- Park-Miller minimal standard PRNG: deterministic (same seed, same bytes, so a
+-- failure always reproduces) and exact in LCB's double-backed numbers
+-- (48271 * (2^31 - 1) < 2^53).
+variable sRng as Number
+
+private handler nextRand() returns Number
+   put (sRng * 48271) mod 2147483647 into sRng
+   return sRng
+end handler
+
+private handler randBytes(in pCount as Integer) returns Data
+   variable tOut as Data
+   variable tI as Integer
+   put the empty data into tOut
+   repeat with tI from 1 up to pCount
+      put the byte with code (nextRand() mod 256) after tOut
+   end repeat
+   return tOut
+end handler
+
+-- Mutate pSeed: overwrite a few random bytes, sometimes truncate.
+private handler mutateBytes(in pSeed as Data) returns Data
+   variable tOut as Data
+   variable tN as Integer
+   variable tK as Integer
+   variable tPos as Integer
+   put pSeed into tOut
+   put the number of bytes in tOut into tN
+   if tN is 0 then
+      return randBytes(nextRand() mod 64)
+   end if
+   repeat with tK from 1 up to 1 + (nextRand() mod 4)
+      put 1 + (nextRand() mod tN) into tPos
+      put the byte with code (nextRand() mod 256) into byte tPos of tOut
+   end repeat
+   if nextRand() mod 4 is 0 then
+      put byte 1 to (1 + (nextRand() mod tN)) of tOut into tOut
+   end if
+   return tOut
+end handler
+
+-- Property: random and mutated datagrams through the REAL binding never throw
+-- and never crash the VM; every result is either a parsed message/bundle or a
+-- clean error. (The C fuzzer hammers the shim; this proves the binding's
+-- marshalling and string/blob readback hold up on the same garbage.)
+public handler TestFuzzParseNeverThrows()
+   variable tI as Integer
+   variable tSeed as Data
+   variable tPkt as Data
+   variable tP as Array
+   variable tOk as Boolean
+   variable tParsed as Integer
+   put 20261006 into sRng
+   put oscBuildMessage("/fuzz/seed", ["i", "1", "s", "abc", "b", HexToData("0102030405"), "d", "2.5", "T", ""]) into tSeed
+   put true into tOk
+   put 0 into tParsed
+   repeat with tI from 1 up to 1500
+      if tI mod 3 is 0 then
+         put randBytes(nextRand() mod 96) into tPkt
+      else
+         put mutateBytes(tSeed) into tPkt
+      end if
+      put oscParse(tPkt) into tP
+      if tP["isBundle"] is false and tP["address"] is "" then
+         if tP["error"] is "" then
+            put false into tOk         -- rejected but no reason: a contract break
+         end if
+      else
+         add 1 to tParsed
+      end if
+   end repeat
+   test "1500 hostile datagrams: every one parsed or cleanly rejected" when tOk
+   test diagnostic (tParsed formatted as string) & " of 1500 parsed"
+end handler
+
+-- oscLoadNativeLib's reason is read when the load fails, and kept
+-- (2026-11-21). ShowControl's oscLoadNativeLibError read dlerror() when
+-- asked, but the engine binds a foreign handler on its FIRST call, through
+-- dlsym, and that consumed the pending error: the first answer after a failed
+-- load was empty, and asking again read text glibc had already freed (engine
+-- note 6.17). Each Test* runs in a fresh lc-run, so the first failure here is
+-- the process's first call of every handler on the error path, the case that
+-- broke. POSIX only: Windows has no dlopen for the binding to call.
+public handler TestLoadNativeLibErrorIsKept()
+   variable tOs as String
+   variable tLoads as String
+   put the operating system into tOs
+   if tOs is "linux" then
+      put "libc.so.6" into tLoads
+   else if tOs is "mac" then
+      put "/usr/lib/libSystem.B.dylib" into tLoads
+   else
+      skip test "oscLoadNativeLib keeps its reason" because "no dlopen on " & tOs
+      return
+   end if
+   test "before any load there is no reason" when oscLoadNativeLibError() is ""
+   test "a library that is not there does not load (0)" when \
+      oscLoadNativeLib("/nonexistent/oscxt-first/oscxt.so") is 0
+   test "  and the FIRST reason asked for names it" when oscLoadNativeLibError() contains "oscxt-first"
+   test "  and asking again gives it again" when oscLoadNativeLibError() contains "oscxt-first"
+   test "a second missing library does not load (0)" when \
+      oscLoadNativeLib("/nonexistent/oscxt-second/oscxt.so") is 0
+   test "  and the reason is its own" when oscLoadNativeLibError() contains "oscxt-second"
+   test "a path with a NUL is refused (0)" when \
+      oscLoadNativeLib("/tmp/x" & (the char with code 0) & "y") is 0
+   test "  with a reason that says so" when oscLoadNativeLibError() contains "NUL"
+   test "a library that IS there loads (1)" when oscLoadNativeLib(tLoads) is 1
+   test "  and leaves no reason behind" when oscLoadNativeLibError() is ""
+end handler
+
+end module

@@ -1,0 +1,496 @@
+/*
+midi_test.lcb - the WHOLE MIDI stack, end to end, with NO MIDI hardware.
+
+lc-run loads the MOCK midixt library (tests/mock/rtmidi_mock.c behind the real
+src/midi_shim.c, built as "midixt" -- a drop-in for the shipped library), so
+every call here runs the real .lcb binding, the real FFI marshalling and the real
+shim (handle table, batched drain, stash) against a controllable RtMidi double:
+inject inbound messages, loop outputs back to inputs like a virtual cable, read
+the exact bytes every sender produced, and make RtMidi fail the ways it fails.
+Each Test* handler runs in its own lc-run process, so each starts with the
+shim's state fresh (no port enumerated yet).
+
+The handlers after TestFuzzDecodeTotal pin the midixt fixes; each failed against
+ShowControl's shim and binding, as its comment says.
+
+Encoder byte goldens are pinned by tests/vectors/midi.json (generated vectors
+module); this file covers behaviour and the input path.
+*/
+-- requires: midixt-mock
+
+module org.openxtalk.showcontrol.tests.midi
+
+use com.livecode.unittest
+use org.openxtalk.library.midi
+use org.openxtalk.showcontrol.tests.support
+use org.openxtalk.showcontrol.tests.midimock
+
+public handler TestAbiAndMock()
+   test "midiVersion is ABI 2" when midiVersion() is 2
+   test "the mock backend is loaded (not real hardware)" when MockIsMock()
+end handler
+
+public handler TestEnumeration()
+   variable tIns as List
+   variable tOuts as List
+   MockReset()
+   put midiInputPorts() into tIns
+   put midiOutputPorts() into tOuts
+   test "two mock input ports" when the number of elements in tIns is 2
+   test "two mock output ports" when the number of elements in tOuts is 2
+   test "input port name comes back through the caller buffer" when tIns[1] is "MockPort-0-aLongishName"
+   test "output port 2 name" when tOuts[2] is "MockPort-1-aLongishName"
+   MockSetPortCount(0)
+   test "no ports -> empty list" when the number of elements in midiInputPorts() is 0
+   MockSetPortCount(40)
+   test "40 ports enumerate" when the number of elements in midiOutputPorts() is 40
+   MockReset()
+end handler
+
+-- Note-on out, poll it back in: the full input path via the virtual cable.
+public handler TestLoopbackRoundTrip()
+   variable tIn as Integer
+   variable tOut as Integer
+   variable tEv as List
+   variable tE as Array
+   MockReset()
+   MockSetLoopback(true, 1500)
+   put midiOpenVirtualInput("lb in") into tIn
+   put midiOpenVirtualOutput("lb out") into tOut
+   test "opened a virtual input" when tIn > 0
+   test "opened a virtual output" when tOut > 0
+   test "nothing queued before the send" when the number of elements in midiPoll(tIn) is 0
+   midiNoteOn(tOut, 3, 64, 90)
+   put midiPoll(tIn) into tEv
+   test "one event polled back" when the number of elements in tEv is 1
+   put tEv[1] into tE
+   test "kind noteOn" when tE["kind"] is "noteOn"
+   test "channel 3" when tE["channel"] is 3
+   test "note 64 / velocity 90" when tE["data1"] is 64 and tE["data2"] is 90
+   test "raw bytes preserved" when DataToHex(tE["bytes"]) is "92405a"
+   test "delta 1500us -> 0.0015 s" when NearlyEqual(tE["delta"], 0.0015, 0.0000001)
+   test "the queue is drained" when the number of elements in midiPoll(tIn) is 0
+   midiClose(tIn)
+   midiClose(tOut)
+   MockReset()
+end handler
+
+-- Order and integrity across a batch; the 256-per-poll cap carries the rest over.
+public handler TestBatchedDrain()
+   variable tIn as Integer
+   variable tIndex as Integer
+   variable tEv as List
+   variable tE as Array
+   variable tOk as Boolean
+   MockReset()
+   put midiOpenVirtualInput("batch") into tIn
+   repeat with tIndex from 0 up to 299
+      MockPush(HexToData("b0") & RepeatByte(tIndex mod 128, 1) & RepeatByte((tIndex - (tIndex mod 128)) / 128, 1), tIndex)
+   end repeat
+   test "300 messages queued" when MockQueueDepth() is 300
+   put midiPoll(tIn) into tEv
+   test "first poll is capped at 256" when the number of elements in tEv is 256
+   put true into tOk
+   repeat with tIndex from 1 up to 256
+      put tEv[tIndex] into tE
+      if tE["data1"] is not (tIndex - 1) mod 128 then
+         put false into tOk
+      end if
+   end repeat
+   test "first batch arrives in order" when tOk
+   put midiPoll(tIn) into tEv
+   test "second poll returns the remaining 44" when the number of elements in tEv is 44
+   put tEv[44] into tE
+   test "last message is #299 (data1 43, data2 2)" when tE["data1"] is 43 and tE["data2"] is 2
+   test "per-message delta survives batching" when NearlyEqual(tE["delta"], 0.000299, 0.0000001)
+   midiClose(tIn)
+end handler
+
+-- A message that does not fit the rest of this poll's buffer is STASHED and
+-- delivered next poll -- never dropped (the shim's core invariant), seen from LCB.
+public handler TestStashAcrossPolls()
+   variable tIn as Integer
+   variable tEv as List
+   variable tE as Array
+   MockReset()
+   put midiOpenVirtualInput("stash") into tIn
+   MockPush(HexToData("f0") & RepeatByte(1, 59998) & HexToData("f7"), 0)    -- 60000 B SysEx
+   MockPush(HexToData("f0") & RepeatByte(2, 9998) & HexToData("f7"), 0)     -- 10000 B: will not fit after it
+   MockPush(HexToData("903c64"), 0)
+   put midiPoll(tIn) into tEv
+   test "first poll delivers the 60000-byte SysEx only" when the number of elements in tEv is 1
+   put tEv[1] into tE
+   test "  ...intact" when the number of bytes in tE["bytes"] is 60000 and tE["kind"] is "sysex"
+   put midiPoll(tIn) into tEv
+   test "second poll delivers the stashed SysEx and the note" when the number of elements in tEv is 2
+   put tEv[1] into tE
+   test "  stashed message first, intact" when the number of bytes in tE["bytes"] is 10000
+   put tEv[2] into tE
+   test "  then the note" when tE["kind"] is "noteOn"
+   midiClose(tIn)
+end handler
+
+public handler TestMaxSysexAndOversize()
+   variable tIn as Integer
+   variable tEv as List
+   variable tE as Array
+   MockReset()
+   put midiOpenVirtualInput("big") into tIn
+   MockPush(HexToData("f0") & RepeatByte(5, 65533) & HexToData("f7"), 0)   -- 65535 B: the record max
+   put midiPoll(tIn) into tEv
+   put tEv[1] into tE
+   test "a 65535-byte SysEx is delivered whole" when the number of bytes in tE["bytes"] is 65535
+   MockSetOversizeNext(true)
+   MockPush(HexToData("f8"), 0)
+   MockPush(HexToData("f8"), 0)
+   put midiPoll(tIn) into tEv
+   test "an un-representable (>65535) message is skipped, the next delivered" when the number of elements in tEv is 1
+   test "  and the drop is reported" when midiLastError() contains "dropped"
+   midiClose(tIn)
+end handler
+
+-- Raw midiSend: exact bytes out; an empty send is a no-op, not an error.
+public handler TestRawSend()
+   variable tOut as Integer
+   MockReset()
+   put midiOpenVirtualOutput("raw") into tOut
+   midiSend(tOut, HexToData("f07e7f0601f7"))
+   test "SysEx sent byte-for-byte" when DataToHex(MockSent(1)) is "f07e7f0601f7"
+   midiSend(tOut, the empty data)
+   test "an empty send sends nothing" when MockSentCount() is 1
+   test "  and says why" when midiLastError() contains "nothing to send"
+   MockSetSendFail(true)
+   midiSend(tOut, HexToData("903c64"))
+   test "a failed send is reported via midiLastError" when midiLastError() contains "send failed"
+   MockSetSendFail(false)
+   midiClose(tOut)
+end handler
+
+public handler TestErrorsAndStaleHandles()
+   variable tIn as Integer
+   MockReset()
+   test "out-of-range input index fails (0)" when midiOpenInput(99) is 0
+   test "  with a reason" when midiLastError() contains "out of range"
+   MockSetBackendOk(false)
+   test "no MIDI service: open fails (0)" when midiOpenOutput(0) is 0
+   test "  with a reason" when midiLastError() contains "backend"
+   MockSetBackendOk(true)
+   test "poll on a never-issued handle is empty" when the number of elements in midiPoll(987654) is 0
+   midiSend(987654, HexToData("903c64"))
+   test "send on a stale handle sends nothing" when MockSentCount() is 0
+   test "  and says why" when midiLastError() contains "not an open output port"
+   midiClose(987654)
+   put midiOpenVirtualInput("closeme") into tIn
+   midiClose(tIn)
+   MockPush(HexToData("903c64"), 0)
+   test "poll after close is empty (no crash)" when the number of elements in midiPoll(tIn) is 0
+   midiClose(tIn)
+   test "double close is harmless" when true
+   midiIgnoreTypes(987654, true, true, true)
+   test "ignoreTypes on a stale handle is harmless" when true
+end handler
+
+-- Windows MM cannot make virtual ports; RtMidi only WARNS, so the shim must
+-- refuse (0 + a reason) instead of handing back a handle that sends nowhere.
+-- Found by midi_hw_test on a real Windows box; pinned here on every platform.
+public handler TestVirtualPortsRefusedOnWinMM()
+   MockReset()
+   MockSetApi(4)
+   test "virtual output refused on a WinMM backend (0)" when midiOpenVirtualOutput("v") is 0
+   test "  with a reason that names the fix" when midiLastError() contains "loopMIDI"
+   test "virtual input refused on a WinMM backend (0)" when midiOpenVirtualInput("v") is 0
+   test "hardware ports still open on WinMM" when midiOpenOutput(0) > 0
+   MockSetApi(1)
+   test "virtual output allowed on CoreMIDI" when midiOpenVirtualOutput("v") > 0
+   MockReset()
+end handler
+
+-- Every open must be undone by midiClose: open/close 200 ports, count RtMidi
+-- instances before and after.
+public handler TestNoLeakedPorts()
+   variable tBase as Integer
+   variable tIndex as Integer
+   variable tH as Integer
+   variable tPorts as List
+   MockReset()
+   put midiInputPorts() into tPorts      -- warm the cached enumerators first
+   put midiOutputPorts() into tPorts
+   put MockLiveWrappers() into tBase
+   repeat with tIndex from 1 up to 100
+      put midiOpenVirtualInput("leak") into tH
+      midiClose(tH)
+      put midiOpenOutput(0) into tH
+      midiClose(tH)
+   end repeat
+   test "200 open/close cycles leave no RtMidi instance behind" when MockLiveWrappers() is tBase
+end handler
+
+
+-- Park-Miller minimal standard PRNG: deterministic (same seed, same bytes, so a
+-- failure always reproduces) and exact in LCB's double-backed numbers
+-- (48271 * (2^31 - 1) < 2^53).
+variable sRng as Number
+
+private handler nextRand() returns Number
+   put (sRng * 48271) mod 2147483647 into sRng
+   return sRng
+end handler
+
+private handler randBytes(in pCount as Integer) returns Data
+   variable tOut as Data
+   variable tIndex as Integer
+   put the empty data into tOut
+   repeat with tIndex from 1 up to pCount
+      put the byte with code (nextRand() mod 256) after tOut
+   end repeat
+   return tOut
+end handler
+
+-- Mutate pSeed: overwrite a few random bytes, sometimes truncate.
+private handler mutateBytes(in pSeed as Data) returns Data
+   variable tOut as Data
+   variable tN as Integer
+   variable tRound as Integer
+   variable tPos as Integer
+   put pSeed into tOut
+   put the number of bytes in tOut into tN
+   if tN is 0 then
+      return randBytes(nextRand() mod 64)
+   end if
+   repeat with tRound from 1 up to 1 + (nextRand() mod 4)
+      put 1 + (nextRand() mod tN) into tPos
+      put the byte with code (nextRand() mod 256) into byte tPos of tOut
+   end repeat
+   if nextRand() mod 4 is 0 then
+      put byte 1 to (1 + (nextRand() mod tN)) of tOut into tOut
+   end if
+   return tOut
+end handler
+
+-- Property: midiDecode of ANY bytes never throws and always yields a known kind.
+public handler TestFuzzDecodeTotal()
+   variable tIndex as Integer
+   variable tD as Array
+   variable tOk as Boolean
+   variable tKinds as List
+   put 77 into sRng
+   put ["empty", "noteOn", "noteOff", "controlChange", "programChange", "pitchBend", \
+        "channelPressure", "polyAftertouch", "sysex", "system", "other"] into tKinds
+   put true into tOk
+   repeat with tIndex from 1 up to 2000
+      put midiDecode(randBytes(nextRand() mod 5)) into tD
+      if not (tD["kind"] is in tKinds) then
+         put false into tOk
+      end if
+   end repeat
+   test "2000 random messages decode to a known kind" when tOk
+end handler
+
+-- =====================================================================
+-- The midixt fixes. Each failed against ShowControl's shim and binding.
+-- =====================================================================
+
+-- A MIDI service that is down at the first listing and up later: ShowControl
+-- kept the failed enumerator for the life of the process (no ports, ever).
+public handler TestEnumeratorRetriedAfterNoBackend()
+   MockReset()
+   MockSetBackendOk(false)
+   test "no MIDI service: no inputs" when the number of elements in midiInputPorts() is 0
+   test "  and the error says so" when midiLastError() contains "backend"
+   MockSetBackendOk(true)
+   test "the service comes up: the inputs are seen" when the number of elements in midiInputPorts() is 2
+   test "  and the error is gone" when midiLastError() is ""
+end handler
+
+-- A port count that throws: ShowControl's shim answered -1, then "no backend"
+-- for ever (RtMidi's ok flag is sticky).
+public handler TestCountFailureRecovers()
+   MockReset()
+   MockSetCountFail(true)
+   test "a failing count lists nothing" when the number of elements in midiOutputPorts() is 0
+   test "  and says why" when midiLastError() contains "could not count"
+   MockSetCountFail(false)
+   test "the next listing works" when the number of elements in midiOutputPorts() is 2
+end handler
+
+-- One failed send made every later send report "send failed" (sticky ok).
+public handler TestSendRecoversAfterAFailure()
+   variable tOut as Integer
+   MockReset()
+   put midiOpenVirtualOutput("recover") into tOut
+   MockSetSendFail(true)
+   midiNoteOn(tOut, 1, 60, 100)
+   test "a failed send says so" when midiLastError() contains "send failed"
+   MockSetSendFail(false)
+   midiNoteOn(tOut, 1, 62, 100)
+   test "the next send goes out" when DataToHex(MockSent(1)) is "903e64"
+   test "  and leaves no error behind" when midiLastError() is ""
+   midiClose(tOut)
+end handler
+
+-- The error belongs to the last call (the documented contract ShowControl's
+-- shim never kept: its error stayed until another error replaced it).
+public handler TestErrorIsTheLastCalls()
+   variable tH as Integer
+   MockReset()
+   test "an out-of-range open fails" when midiOpenOutput(99) is 0
+   test "  with a reason" when midiLastError() contains "out of range"
+   put midiOpenOutput(0) into tH
+   test "a good open succeeds" when tH > 0
+   test "  and the old reason is gone" when midiLastError() is ""
+   midiClose(tH)
+end handler
+
+-- A read that throws: ShowControl's drain spun on it for ever (the mock lets
+-- such a loop out after 10000 reads, so this test can count them).
+public handler TestFailingReadEndsThePoll()
+   variable tIn as Integer
+   variable tEv as List
+   MockReset()
+   put midiOpenVirtualInput("readfail") into tIn
+   MockPush(HexToData("903c64"), 0)
+   MockSetReadFail(true)
+   put midiPoll(tIn) into tEv
+   test "a failing read returns no events" when the number of elements in tEv is 0
+   test "  after one read, not a loop" when MockReadFailCalls() is 1
+   test "  and says why" when midiLastError() contains "reading the MIDI input queue failed"
+   MockSetReadFail(false)
+   put midiPoll(tIn) into tEv
+   test "the message is not lost: the next poll has it" when the number of elements in tEv is 1
+   midiClose(tIn)
+end handler
+
+-- RtMidi's default input queue holds 99 messages; a bigger burst between two
+-- polls was cut short without a word.
+public handler TestBurstBiggerThanRtMidisDefaultQueue()
+   variable tIn as Integer
+   variable tIndex as Integer
+   variable tQueued as Integer
+   variable tGot as Integer
+   MockReset()
+   put midiOpenVirtualInput("burst") into tIn
+   test "the input asked RtMidi for a 1024-message queue" when MockQueueLimit() is 1024
+   put 0 into tQueued
+   repeat with tIndex from 1 up to 500
+      if MockPush(HexToData("b007") & RepeatByte(tIndex mod 128, 1), 0) then
+         add 1 to tQueued
+      end if
+   end repeat
+   test "a 500-message burst is held whole" when tQueued is 500
+   put the number of elements in midiPoll(tIn) into tGot
+   add the number of elements in midiPoll(tIn) to tGot
+   test "  and arrives whole over two polls" when tGot is 500
+   midiClose(tIn)
+end handler
+
+-- A virtual port with no name was created with a blank name.
+public handler TestVirtualPortNames()
+   variable tH as Integer
+   MockReset()
+   put midiOpenVirtualInput("") into tH
+   test "an empty name opens" when tH > 0
+   test "  under the default name" when MockLastPortName() is "ShowControl In"
+   midiClose(tH)
+   put midiOpenVirtualOutput("") into tH
+   test "an empty output name gets the default too" when MockLastPortName() is "ShowControl Out"
+   midiClose(tH)
+   put midiOpenVirtualOutput("Stage Left") into tH
+   test "a given name is used as given" when MockLastPortName() is "Stage Left"
+   midiClose(tH)
+end handler
+
+-- A NUL in a port name or a path made the engine THROW into script; now it is
+-- a quiet 0 with a reason, like every other refusal.
+public handler TestNulNeverThrows()
+   variable tNul as String
+   variable tH as Integer
+   MockReset()
+   put "a" & (the char with code 0) & "b" into tNul
+   put midiOpenVirtualInput(tNul) into tH
+   test "a NUL in a virtual input name is refused (0)" when tH is 0
+   test "  with a reason" when midiLastError() contains "NUL"
+   put midiOpenVirtualOutput(tNul) into tH
+   test "a NUL in a virtual output name is refused (0)" when tH is 0
+   test "  naming the handler" when midiLastError() contains "midiOpenVirtualOutput"
+   test "the next good open clears it" when midiOpenVirtualOutput("ok") > 0
+   test "  (no error left)" when midiLastError() is ""
+   test "a NUL in a library path is refused (0)" when midiLoadNativeLib(tNul) is 0
+end handler
+
+-- CoreMIDI and Windows MM send one message per call and drop a longer
+-- non-SysEx message with only a warning: ShowControl reported nothing.
+public handler TestOneMessageBackendsSayWhy()
+   variable tOut as Integer
+   MockReset()
+   MockSetApi(4)
+   put midiOpenOutput(0) into tOut
+   midiSend(tOut, HexToData("903c64904064"))
+   test "WinMM: two messages in one send are refused" when MockSentCount() is 0
+   test "  with a reason" when midiLastError() contains "one message at a time"
+   midiSend(tOut, HexToData("f07e7f0601f7"))
+   test "  SysEx still goes" when MockSentCount() is 1
+   midiClose(tOut)
+   MockSetApi(2)
+   put midiOpenVirtualOutput("alsa") into tOut
+   midiSend(tOut, HexToData("903c64904064"))
+   test "ALSA: the same bytes go (ALSA splits them)" when MockSentCount() is 2
+   midiClose(tOut)
+   MockReset()
+end handler
+
+-- A poll of a port that is not an open input still returns an empty list, and
+-- now says why (ShowControl said nothing): the midi-helpers dispatcher stops a
+-- timer left polling a port that was closed under it.
+public handler TestPollOfAClosedPortSaysWhy()
+   variable tIn as Integer
+   variable tOut as Integer
+   MockReset()
+   put midiOpenVirtualInput("closing") into tIn
+   put midiOpenVirtualOutput("an output") into tOut
+   test "an open, empty input polls empty" when the number of elements in midiPoll(tIn) is 0
+   test "  with no error" when midiLastError() is ""
+   test "polling an OUTPUT gives nothing" when the number of elements in midiPoll(tOut) is 0
+   test "  and says why" when midiLastError() contains "not an open input port"
+   midiClose(tIn)
+   test "polling the closed input gives nothing" when the number of elements in midiPoll(tIn) is 0
+   test "  and says why" when midiLastError() contains "not an open input port"
+   test "polling handle 0 says the same" when the number of elements in midiPoll(0) is 0 and midiLastError() contains "not an open input port"
+   midiClose(tOut)
+end handler
+
+-- midiLoadNativeLib's reason is read when the load fails, and kept
+-- (2026-11-21). ShowControl's midiLoadNativeLibError read dlerror() when
+-- asked, but the engine binds a foreign handler on its FIRST call, through
+-- dlsym, and that consumed the pending error: the first answer after a failed
+-- load was empty, and asking again read text glibc had already freed (engine
+-- note 6.17). Each Test* runs in a fresh lc-run, so the first failure here is
+-- the process's first call of every handler on the error path, the case that
+-- broke. POSIX only: Windows has no dlopen for the binding to call.
+public handler TestLoadNativeLibErrorIsKept()
+   variable tOs as String
+   variable tLoads as String
+   put the operating system into tOs
+   if tOs is "linux" then
+      put "libc.so.6" into tLoads
+   else if tOs is "mac" then
+      put "/usr/lib/libSystem.B.dylib" into tLoads
+   else
+      skip test "midiLoadNativeLib keeps its reason" because "no dlopen on " & tOs
+      return
+   end if
+   test "before any load there is no reason" when midiLoadNativeLibError() is ""
+   test "a library that is not there does not load (0)" when \
+      midiLoadNativeLib("/nonexistent/midixt-first/midixt.so") is 0
+   test "  and the FIRST reason asked for names it" when midiLoadNativeLibError() contains "midixt-first"
+   test "  and asking again gives it again" when midiLoadNativeLibError() contains "midixt-first"
+   test "a second missing library does not load (0)" when \
+      midiLoadNativeLib("/nonexistent/midixt-second/midixt.so") is 0
+   test "  and the reason is its own" when midiLoadNativeLibError() contains "midixt-second"
+   test "a path with a NUL is refused (0)" when \
+      midiLoadNativeLib("/tmp/x" & (the char with code 0) & "y") is 0
+   test "  with a reason that says so" when midiLoadNativeLibError() contains "NUL"
+   test "a library that IS there loads (1)" when midiLoadNativeLib(tLoads) is 1
+   test "  and leaves no reason behind" when midiLoadNativeLibError() is ""
+end handler
+
+end module

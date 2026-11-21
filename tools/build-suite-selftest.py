@@ -201,6 +201,24 @@ NO_HARNESS = {
                "its native smoke and fuzz tests (ASan/UBSan) and its own "
                "engine self-test on the headless server engine run in its "
                "native lane (box3dxt/tests/engine-selftest.lc)",
+    "oscxt": "joined 2026-11-21 with no harness in the paste yet; its own "
+             "runners compile the binding with lc-compile -Werror, run it "
+             "under lc-run and run its Script layer in the standalone engine "
+             "(real UDP and an independent OSC peer) on Linux, Windows and "
+             "macOS in its native lane (oscxt/tools/run-lcb-tests.py, "
+             "run-lcs-tests.py)",
+    "midixt": "joined 2026-11-21 with no harness in the paste yet; its own "
+              "runners compile the binding with lc-compile -Werror, run it "
+              "under lc-run over the real library and a mock RtMidi, and run "
+              "its Script layer in the standalone engine on Linux, Windows "
+              "and macOS in its native lane (midixt/tools/run-lcb-tests.py, "
+              "run-lcs-tests.py)",
+    "artnetxt": "joined 2026-11-21 with no harness in the paste yet; its own "
+                "runners compile the binding with lc-compile -Werror, run it "
+                "under lc-run and run its Script layer in the standalone "
+                "engine (real UDP and an independent Art-Net node) on Linux, "
+                "Windows and macOS in its native lane "
+                "(artnetxt/tools/run-lcb-tests.py, run-lcs-tests.py)",
     "xlsxt": "joined 2026-11-20 with no in-engine harness in the paste yet; "
              "its native smoke and fuzz tests (ASan/UBSan) and its own engine "
              "self-test on the headless server engine run in its native lane "

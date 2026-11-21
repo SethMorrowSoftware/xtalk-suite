@@ -103,6 +103,13 @@ CORPUS = [
     "curlxt/src/curl.lcb",
     "curlxt/src/curl-helpers.livecodescript",
     "curlxt/src/tsnet.livecodescript",
+    # Not shipped by Beyond yet, like box3dxt and xlsxt above: ShowControl's
+    # three bindings (2026-11-21). The IDE's Dictionary reads their blocks
+    # through the same parser whenever the Extension Manager installs one,
+    # so the rules hold for them already.
+    "oscxt/src/osc.lcb",
+    "midixt/src/midi.lcb",
+    "artnetxt/src/artnet.lcb",
 ]
 
 # Script handlers that are public only because the engine or a `send`

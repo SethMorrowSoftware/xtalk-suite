@@ -78,9 +78,10 @@ class Member(object):
         return os.path.join(ROOT, self.name)
 
 
-# The order is the order every generated document lists them in: the eleven
-# extensions first (native before pure-script, as the root README's table
-# has them), then the three apps.
+# The order is the order every generated document lists them in: the
+# fourteen extensions first (native before pure-script, as the root README's
+# table has them; artnetxt, pure LCB with no library, rides with the native
+# ones because it has their lane), then the three apps.
 MEMBERS = [
     Member("sodiumxt", "SodiumXT", "extension", OWNER + "/SodiumXT",
            native=True, siblings=[],
@@ -144,6 +145,25 @@ MEMBERS = [
            siblings=["riptide", "nostrxt"],
            mirror_note="born in the suite (2026-11-14); its repository is "
                        "created empty for the suite to publish into"),
+    # ShowControl's three extensions (Seth Morrow Software's OSC, MIDI and
+    # Art-Net) joined together on 2026-11-21 as three members. Their gates
+    # read their own files only. artnetxt has no native library, but it has a
+    # native-<name>.yml lane: its LCB and Script suites run on an engine.
+    Member("oscxt", "oscxt", "extension", OWNER + "/oscxt",
+           native=True, siblings=[],
+           mirror_note="born in the suite from ShowControl's osc extension "
+                       "(2026-11-21); its repository is to be created empty "
+                       "for the suite to publish into"),
+    Member("midixt", "midixt", "extension", OWNER + "/midixt",
+           native=True, siblings=[],
+           mirror_note="born in the suite from ShowControl's midi extension "
+                       "(2026-11-21); its repository is to be created empty "
+                       "for the suite to publish into"),
+    Member("artnetxt", "artnetxt", "extension", OWNER + "/artnetxt",
+           native=True, siblings=[],
+           mirror_note="born in the suite from ShowControl's artnet extension "
+                       "(2026-11-21); its repository is to be created empty "
+                       "for the suite to publish into"),
     Member("onionxt", "OnionXT", "extension", OWNER + "/OnionXT",
            native=False, siblings=[],
            mirror_note="the pre-suite home"),

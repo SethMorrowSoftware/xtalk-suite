@@ -133,8 +133,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
 # library committed, its manifest created by its first dispatch. XLSXT
 # JOINED 2026-11-20 too, the same way.
+#
+# OSCXT AND MIDIXT JOINED 2026-11-21 (ShowControl's OSC and MIDI) the same
+# way again: rows in release-binaries.yml, no library committed. Their third,
+# artnetxt, is pure LCB with no library, so it is not a native member here.
+# Neither is built for Android (midixt cannot be: RtMidi's Android backend
+# needs API 29 and JNI; oscxt waits on the work plan), and
+# tools/build-android.sh does not list them, so no release bundle carries an
+# Android library of theirs.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt", "xlsxt")
+           "curlxt", "box3dxt", "xlsxt", "oscxt", "midixt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 
