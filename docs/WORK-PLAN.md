@@ -862,11 +862,16 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   scene 4's HEAD tile failed with no reason shown. The HEAD tile was the demo's own server:
   it closed a finished connection by an id Windows had already given to the next one (engine
   note 6.20; one request in four the same day, GETs too, reproduced on that PC). Fixed the
-  same day, and run on Linux only since (26 checks; the boot self-check holds the server, the
-  labels and, where there is a screen, the window's place): the server lets the client close
-  and closes a straggler only by its serial, the window is centred when it is not on a
-  screen, labels have a fixed line height, messages are locked while the window is built,
-  running tiles say so, and a failed tile's reason goes to the log. A Windows re-run is row 6.
+  same day (the server lets the client close and closes a straggler only by its serial, the
+  window is centred when it is not on a screen, messages are locked while the window is
+  built, running tiles say so, and a failed tile's reason goes to the log) and run on that PC
+  again from f5309f5: boot self-check green, the window centred and open in 1.6 s, scene 4
+  seven times with 105 of 105 local requests answered. Its labels were still cut, because a
+  field lays its first line out 6 px above its top margin (engine note 5.19) and the demo's
+  were 2; every field's top margin is 6 since, which on that window read every label whole,
+  and the boot self-check measures each field's first line (it fails all 46 quiet fields with
+  the old margins on Linux). Its WebSocket scenes on Windows wait for curlxt ABI 2 in that
+  IDE (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|

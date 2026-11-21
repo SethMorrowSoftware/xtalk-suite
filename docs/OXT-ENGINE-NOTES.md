@@ -1408,6 +1408,41 @@ reported one unreadable (INFERRED: a dark theme draws its face dark, with its wh
 so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
 dark theme has been run on either (UNEVIDENCED either way).
 
+### 5.19 A field lays out its first line 6 pixels above its top margin
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (the
+maintainer's PC), drawn and measured, and the same day measured on the
+headless Linux desktop engine (nothing drawn); the mechanism is in the engine
+source. curlxt Live's one-line labels, fields with `margins` 2 and
+`borderWidth` 0, showed their words with the tops cut off. `the formattedRect
+of line 1` of one at 16,6,600,24 was 16,2,234,16: its line box began 4 pixels
+ABOVE the field. In `engine/src/fieldf.cpp`, `getcontenty` is `rect.y +
+borderwidth - TEXT_Y_OFFSET`, `TEXT_Y_OFFSET` is 6 (`objdefs.h`), and the first
+line starts at that plus the top margin; the engine's own default margins are
+8, which start it 2 pixels under the top. `formattedHeight` takes off twice 6
+for the same reason, so a one-line field with margins of 2 reports 8 less than
+its line. A fixed line height below the font's own moves the words up further:
+the baseline is put a descent above the line's bottom
+(`MCField::do_recompute`), so the letters rise out of the line's box. curlxt
+Live's first fix did that (each label's `textHeight` set to its field's height
+less the margins), and the picture was no better. Segoe UI's own line, read
+from those boxes, was about 1.4 times the size in bold (15 at 11, 32 at 22) and
+1.5 times at 24.
+**Rule:** give a field a top margin of 6 or more (6 starts its first line at
+its top; the suite UI kit's fields have 6), and give a one-line label the
+font's own line height in a field about 1.5 times its size tall. Measure with
+`the formattedRect of line 1`, plus the field's `vScroll`, against the field's
+`rect`, not with the properties: a check that a fixed line height fitted the
+field passed over the cut-off labels.
+**Gate:** curlxt Live's boot self-check (`cdLineInside`, 2026-11-21) holds each
+of its 47 fields to it; with margins of 2 it failed all 46 that have them on
+the Linux engine (the log, with margins of its own, passed). No suite-wide
+gate.
+**Does NOT mean:** that the same margins cut the same letters everywhere: how
+far a letter rises above the line's box depends on the font, so a field can
+look whole on one platform and cut on another (only Windows has been looked
+at). Nor that a field's lower margin moves its text: it counts only in the
+formatted height and the scroll range.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

@@ -219,12 +219,18 @@ its built-in curlxt 0.1.0 (ABI 1, so scene 4 was the one that could run): the bo
 green and scene 4 ran, but the window opened 430 px off the screen, every one-line label had its
 top cut off, building the window held the IDE for 22.7 s, and the HEAD tile failed. That tile was
 the demo's own server closing a new connection under an id Windows had just given it (the suite's
-engine note 6.20), which cost one request in four on that machine the same day, GETs too. The
+engine note 6.20), which cost one request in four on that machine the same day, GETs too. With the
 fixes (the server lets the client close and closes a straggler only by its serial, the window is
-centred, every label has a fixed line height, messages are locked while the window is built, a
-running tile says so and a failed one's reason goes to the log) ran on Linux the same day, 26
-checks, none failed. On Windows they, the demo's look on Linux, mac and Android, and the demo in
-those IDEs are verified statically; needs an OXT pass.
+centred, messages are locked while the window is built, a running tile says so and a failed one's
+reason goes to the log) the demo ran there again the same day, from commit f5309f5 in a new stack:
+the boot self-check green (26 passed, the WebSocket scenes skipped), the window centred and open in
+1.6 s, and scene 4 run seven times, 105 of 105 local requests answered, HEAD included. The labels
+were still cut: a field lays its first line out 6 px above its top margin (the suite's engine note
+5.19), and the demo's margins were 2. Every field's top margin is 6 since; set so on that window,
+every label read whole, and the boot self-check's new measure of each field's first line passed for
+all 47 (on Linux it fails all 46 with the old margins). The WebSocket scenes on Windows, the demo's
+look on Linux, mac and Android, and the demo in those IDEs are verified statically; needs an OXT
+pass.
 
 The rest (SFTP, SCP, SMTP, FTP, uploads, the Linux IDE and mac) is verified statically; needs an
 OXT pass.

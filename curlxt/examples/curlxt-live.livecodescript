@@ -1895,7 +1895,7 @@ end tsnxStatusTick
 
 -- ---- the demo's own constants and state ----------------------------------
 -- Bump when the built window changes, so a saved stack rebuilds its controls.
-constant kCdUiVersion = "curlxt-live-3"
+constant kCdUiVersion = "curlxt-live-4"
 constant kCdWinW = 1180
 constant kCdWinH = 640
 -- Room left above the window for its title bar when it is placed (the
@@ -1923,7 +1923,7 @@ constant kCdGraphT = 128
 constant kCdGraphR = 764
 constant kCdGraphB = 440
 constant kCdCapT = 444
-constant kCdBigT = 468
+constant kCdBigT = 466
 constant kCdBarL = 32
 constant kCdBarR = 764
 constant kCdBarT = 536
@@ -2118,6 +2118,13 @@ function cdMonoFont
 end cdMonoFont
 
 -- A quiet field: no border, no background, not editable (the tour's setQuiet).
+-- Its top margin is 6 because a field lays out its first line 6 pixels ABOVE
+-- its top margin (TEXT_Y_OFFSET in getcontenty, engine/src/fieldf.cpp; the
+-- engine's own default margins are 8), so 6 starts the line at the field's
+-- top. With margins of 2 every field drew its first line 4 pixels above
+-- itself, and the IDE on Windows (OXT-Beyond 0.2.8-dp.1, 2026-11-21) showed
+-- every label with its top cut off. The bottom margin counts only in the
+-- formattedHeight. The boot self-check measures each line (cdLineInside).
 command cdQuiet pName
    set the lockText of field pName to true
    set the traversalOn of field pName to false
@@ -2125,21 +2132,17 @@ command cdQuiet pName
    set the showBorder of field pName to false
    set the threeD of field pName to false
    set the borderWidth of field pName to 0
-   set the margins of field pName to 2
+   set the margins of field pName to "2,6,2,2"
    set the vScrollbar of field pName to false
    set the autoHilite of field pName to false
 end cdQuiet
 
--- One line of text at a fixed rect. The line's height is the stack's, not
--- the font's: a fixed line height puts the baseline a descent above the
--- line's bottom (MCField::do_recompute), so the words sit in the field
--- whatever the platform says its font's ascent is. With the font's own
--- height, Windows (OXT-Beyond 0.2.8-dp.1, 2026-11-21) drew every label a few
--- pixels too high and its field cut the tops off; the wrapping fields, which
--- always had a fixed height, were whole. The boot self-check holds every
--- label to it (cdLabelFits).
+-- One line of text at a fixed rect, in the font's own line height, so the
+-- line's box is where its letters are and the boot self-check can hold the
+-- box inside the field (cdLineInside). The rect must be as tall as the
+-- tallest font's line: Windows' Segoe UI needs about 1.4 times the size, 1.5
+-- at 24 bold (measured 2026-11-21).
 command cdLabel pName, pText, pRect, pSize, pColor, pStyle
-   local tHeight
    if there is no field pName then
       create field
       set the name of the last field to pName
@@ -2149,24 +2152,31 @@ command cdLabel pName, pText, pRect, pSize, pColor, pStyle
    set the dontWrap of field pName to true
    set the textSize of field pName to pSize
    set the textStyle of field pName to pStyle
-   -- the field's height less its two margins, and never more than one and a
-   -- half times the size (the wrapping fields' line)
-   put min(the height of field pName - 4, round(pSize * 1.5)) into tHeight
-   set the fixedLineHeight of field pName to true
-   set the textHeight of field pName to tHeight
+   set the fixedLineHeight of field pName to false
    set the uCdLabel of field pName to true
    set the foregroundColor of field pName to pColor
    put pText into field pName
 end cdLabel
 
--- True when a label keeps its one line inside it: a fixed line height that
--- its field's height holds with both margins.
-function cdLabelFits pName
-   if the fixedLineHeight of field pName is not true then
+-- True when field pName lays out its first line inside itself: the line's box
+-- (its formattedRect, scrolled back to the top) starts no higher than the
+-- field's top and, for a label (pWhole), ends no lower than its bottom. A
+-- label's line has the font's own height, so this sees what the picture on
+-- Windows showed (2026-11-21), which a check of the properties passed.
+function cdLineInside pName, pWhole
+   local tLine, tField, tTop, tHigh
+   put the formattedRect of line 1 of field pName into tLine
+   put the rect of field pName into tField
+   put (item 2 of tLine) + (the vScroll of field pName) into tTop
+   put (item 4 of tLine) - (item 2 of tLine) into tHigh
+   if tTop < item 2 of tField then
       return false
    end if
-   return the textHeight of field pName + 4 <= the height of field pName
-end cdLabelFits
+   if pWhole is true and tTop + tHigh > item 4 of tField then
+      return false
+   end if
+   return true
+end cdLineInside
 
 -- Text that wraps, with roomy lines (the tour's makeText).
 command cdText pName, pText, pRect, pSize, pColor
@@ -2316,14 +2326,14 @@ command cdBuild
    cdLabel "cdGraphCap", empty, kCdGraphL & "," & kCdCapT & "," & kCdGraphR & "," & (kCdCapT + 18), 11, kCdSoft, "plain"
    -- the four readouts under the graph: a big number over what it counts,
    -- each 178 wide (built by name, so the derived control list sees them)
-   cdLabel "cdBig1", empty, "32," & kCdBigT & ",210," & (kCdBigT + 34), 24, kCdInk, "bold"
-   cdLabel "cdCap1", empty, "32," & (kCdBigT + 34) & ",210," & (kCdBigT + 52), 11, kCdSoft, "plain"
-   cdLabel "cdBig2", empty, "215," & kCdBigT & ",393," & (kCdBigT + 34), 24, kCdInk, "bold"
-   cdLabel "cdCap2", empty, "215," & (kCdBigT + 34) & ",393," & (kCdBigT + 52), 11, kCdSoft, "plain"
-   cdLabel "cdBig3", empty, "398," & kCdBigT & ",576," & (kCdBigT + 34), 24, kCdInk, "bold"
-   cdLabel "cdCap3", empty, "398," & (kCdBigT + 34) & ",576," & (kCdBigT + 52), 11, kCdSoft, "plain"
-   cdLabel "cdBig4", empty, "581," & kCdBigT & ",759," & (kCdBigT + 34), 24, kCdInk, "bold"
-   cdLabel "cdCap4", empty, "581," & (kCdBigT + 34) & ",759," & (kCdBigT + 52), 11, kCdSoft, "plain"
+   cdLabel "cdBig1", empty, "32," & kCdBigT & ",210," & (kCdBigT + 36), 24, kCdInk, "bold"
+   cdLabel "cdCap1", empty, "32," & (kCdBigT + 36) & ",210," & (kCdBigT + 54), 11, kCdSoft, "plain"
+   cdLabel "cdBig2", empty, "215," & kCdBigT & ",393," & (kCdBigT + 36), 24, kCdInk, "bold"
+   cdLabel "cdCap2", empty, "215," & (kCdBigT + 36) & ",393," & (kCdBigT + 54), 11, kCdSoft, "plain"
+   cdLabel "cdBig3", empty, "398," & kCdBigT & ",576," & (kCdBigT + 36), 24, kCdInk, "bold"
+   cdLabel "cdCap3", empty, "398," & (kCdBigT + 36) & ",576," & (kCdBigT + 54), 11, kCdSoft, "plain"
+   cdLabel "cdBig4", empty, "581," & kCdBigT & ",759," & (kCdBigT + 36), 24, kCdInk, "bold"
+   cdLabel "cdCap4", empty, "581," & (kCdBigT + 36) & ",759," & (kCdBigT + 54), 11, kCdSoft, "plain"
    -- the progress bar: how far the scene has come
    cdPanel "cdBarBg", kCdBarL & "," & kCdBarT & "," & kCdBarR & "," & kCdBarB, kCdButton
    cdPanel "cdBarFill", kCdBarL & "," & kCdBarT & "," & (kCdBarL + 8) & "," & kCdBarB, kCdAccent
@@ -2369,7 +2379,10 @@ command cdBuild
    set the showBorder of field "cdLog" to true
    set the borderWidth of field "cdLog" to 1
    set the borderColor of field "cdLog" to kCdButton
-   set the margins of field "cdLog" to "6,4,6,4"
+   -- margins of 8 above and below keep the first line, and the last one
+   -- when the log is scrolled to its end, inside the border (the engine
+   -- lays a field's lines out 6 px above its top margin: cdQuiet)
+   set the margins of field "cdLog" to "6,8,6,8"
    set the vScrollbar of field "cdLog" to true
    set the fixedLineHeight of field "cdLog" to true
    set the textHeight of field "cdLog" to 14
@@ -4824,18 +4837,32 @@ command cdScRun
          (cdSrvKnows(tSock) and sCdConn[tSock]["serial"] is tV)
    cdSrvReap tSock, tV
    scAssert "a connection that outstays its last bytes is let go by its own timer", not cdSrvKnows(tSock)
-   -- every label holds its line (cdLabel: Windows cut the tops off)
+   -- every label lays its whole line out inside itself, and every other
+   -- field its first line from inside its top (cdQuiet, cdLineInside: the
+   -- IDE on Windows showed the labels with their tops cut off)
    put 0 into tN
    put empty into tV
    repeat with tI = 1 to the number of fields of this card
       if the uCdLabel of field tI of this card is true then
          add 1 to tN
-         if not cdLabelFits(the short name of field tI of this card) then
+         if not cdLineInside(the short name of field tI of this card, true) then
             put the short name of field tI of this card & " " after tV
          end if
       end if
    end repeat
-   scAssert "all " & tN & " labels hold their line: a fixed line height inside the field (too tall: " \
+   scAssert "all " & tN & " labels lay their line out inside themselves (outside: " \
+         & scShow(word 1 to -1 of tV) & ")", (tN > 0 and tV is empty)
+   put 0 into tN
+   put empty into tV
+   repeat with tI = 1 to the number of fields of this card
+      if the uCdLabel of field tI of this card is not true then
+         add 1 to tN
+         if not cdLineInside(the short name of field tI of this card, false) then
+            put the short name of field tI of this card & " " after tV
+         end if
+      end if
+   end repeat
+   scAssert "all " & tN & " other fields start their first line inside themselves (outside: " \
          & scShow(word 1 to -1 of tV) & ")", (tN > 0 and tV is empty)
    -- the window's title bar is on a screen (cdPlaceWindow)
    put the working screenRects into tV

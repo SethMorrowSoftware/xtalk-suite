@@ -137,8 +137,11 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   closed closed the next connection (the suite's engine note 6.20; one request in four on
   Windows, 2026-11-21). The server forgets on `socketClosed` without closing, closes a
   straggler only by its serial (`cdSrvReap`), and takes an id it still holds as a new
-  connection (`cdSrvTakeId`); the boot self-check holds both. Its labels have a fixed line
-  height (Windows cut the tops off the font's own) and the window is centred on open.
+  connection (`cdSrvTakeId`); the boot self-check holds both. Every field's top margin is 6
+  or more, because the engine lays a field's first line out 6 px above it (the suite's engine
+  note 5.19: with 2, Windows cut the tops off every label); labels keep the font's own line
+  height, and the boot self-check measures each field's first line (`cdLineInside`). The
+  window is centred on open when it is not wholly on a screen.
 
 ## Gotchas
 
