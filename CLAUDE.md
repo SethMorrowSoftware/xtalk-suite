@@ -213,10 +213,11 @@ because a harness once ran against a stale in-memory library and reported failur
   member with an in-engine harness plus a cross-member row (a pill, its counts, a scoped **Run**,
   **Show**), a results filter and the boot self-check. The members in the generator's
   `NO_HARNESS` (it refuses a registry member with neither a harness nor such a reason) have no
-  row: since 2026-11-21, when pdfxt made a seventeenth member that no pitch could fit, they are
-  names in a band under the rows, and the boot self-check (`suBoardFits`) and
-  `check-suite-ui-boot.py` fail a board whose rows or band overrun the members caption. A row's Run is a subsequence of Run
-  all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
+  row: since 2026-11-21, when pdfxt, the sixteenth member, made a seventeenth row that no pitch
+  could fit, they are names in a band under the rows, and the boot self-check (`suBoardFits`)
+  and `check-suite-ui-boot.py` fail a board whose rows or band overrun the members caption. A
+  row's Run is a subsequence of Run all, never a reordering, and every block tallies into its
+  row. The kit builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and

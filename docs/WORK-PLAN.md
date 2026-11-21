@@ -817,17 +817,46 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   tsNet's public dictionary only (`curlxt/docs/tsnet-compat.md`). Records: the shim's
   smoke test (90 checks, clean under ASan/UBSan) and a headless run of both script
   layers over the built library against loopback HTTP and SMTP servers, in its gates.
-  No engine has loaded it: verified statically; needs an OXT pass.
+  No engine had loaded it when it joined; since then Windows x86-64 has (2026-11-14 and
+  2026-11-15), and OXT-Beyond's headless Linux server engine (2026-11-21, below), by the
+  records in `curlxt/README.md`, Status.
 - Binaries: none committed when it joined; the first release-binaries dispatch lands
   them (its rows ride `cmake-members` and `mac-lipo`), and the change after it lists
-  the platforms in `check-binary-freshness.py`'s `ships` row.
+  the platforms in `check-binary-freshness.py`'s `ships` row. Since 2026-11-21 all ten
+  committed libraries are the ABI 2 build of run 44825160471 (from ac22df8, commit
+  02b4238).
 - Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
+- WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
+  as new handlers only (`cuWs*` in the binding, `cuWsOpen` and its messages in the helpers).
+  Records: the smoke test's WebSocket sections against a server it runs itself, clean
+  under ASan/UBSan, and a headless run of the helpers' calls over the built library
+  against `ws://` and `wss://` servers, in its gates. On 2026-11-21 OXT-Beyond
+  0.2.7-rc.6's headless Linux server engine ran `curlxt/tests/engine-selftest.lc` over a
+  library built from the tree (138 checks, none failed): every public handler of the
+  binding, requests through the binding and the helpers, and `ws://` and `wss://` sockets
+  through the binding and the helpers' timer; the same day again over the committed
+  `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
+  `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
+  opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
+  of it reaches an HTML5 standalone.
+- The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
+  scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
+  the engine's own sockets, launched from `start-here`. It ran start to finish the same day
+  on OXT-Beyond 0.2.7-rc.6's desktop engine with no screen
+  (`curlxt/tests/engine-demo.livecodescript` through `curlxt/tools/run-engine-demo.py`, 26
+  checks, a close and a reopen included; again over the committed `x86_64-linux` library,
+  26 checks; the native lane's `engine` job runs it on every change). The server engine
+  cannot host it (engine note 6.15). What it draws needs an OXT pass on a screen (row 6).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
+| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
+| 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
+| 5 | `cux_ws_wait` pumps once before it answers 1 for a message already waiting, so a loop that waits for a later state with messages unread still moves the socket (curlxt gotcha 6, found by the engine test's first run); today's contract, documented in `cuWsWait`'s block, is to read first or loop on `cuWsPoll`. A shim change: it rides the next curlxt rebuild, and the smoke test and engine test pin both orders | coding, with the next rebuild | - | a `cuWsWait` loop waiting for "closed" with messages unread ends, in the smoke test and on the engine |
+| 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 
 ### 2.10 box3dxt
 
@@ -863,7 +892,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | A demo stack that shows a scene through `b3RenderWorld` (the kit's look) | coding | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board on an engine: box3dxt has no row since 2026-11-21, when pdfxt made a seventeenth member; its name sits in the band of the members with no harness, under the rows (2.11 #10 has the change) | S1 | 48 | the rows and the band clear one another and the members caption |
+| 7 | The suite board on an engine: box3dxt has no row since 2026-11-21, when pdfxt made a seventeenth row; its name sits in the band of the members with no harness, under the rows (2.11 #10 has the change) | S1 | 48 | the rows and the band clear one another and the members caption |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
 
@@ -917,7 +946,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
 | 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
 | 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
-| 10 | The suite board was full: at row pitch 25 its sixteen rows fitted, each touching the next, and a seventeenth fitted at no pitch. CODED 2026-11-21 with pdfxt, the seventeenth member: the members with no harness have no row, their names sit in a band under the rows (three to a line, room for three more), and the eleven rows that keep a Run are back at a pitch of 29; the boot self-check's `suBoardFits` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows or band overrun the members caption. Verified statically; needs an OXT pass | S1 | 48 | the rows and the band clear one another and the members caption on an engine |
+| 10 | The suite board was full: at row pitch 25 its sixteen rows fitted, each touching the next, and a seventeenth fitted at no pitch. CODED 2026-11-21 with pdfxt, the sixteenth member and so the seventeenth row: the members with no harness have no row, their names sit in a band under the rows (three to a line, room for three more), and the eleven rows that keep a Run are back at a pitch of 29; the boot self-check's `suBoardFits` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows or band overrun the members caption. Verified statically; needs an OXT pass | S1 | 48 | the rows and the band clear one another and the members caption on an engine |
 | 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
 | 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
 | 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped, so a stack SAVED before the fix keeps its controls until it is rebuilt. Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
@@ -987,7 +1016,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`, which today packs one library per platform) and a place on the extensions site | coding, after #1 | - | the package installs from the site with both libraries |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
 | 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
-| 7 | The suite board on an engine with pdfxt on it: pdfxt made the seventeenth member, so the members with no harness moved into a band of their own under the rows (2.11 #10), pdfxt's name among them | S1 | 48 | the rows and the band clear one another and the members caption |
+| 7 | The suite board on an engine with pdfxt on it: pdfxt, the sixteenth member, made the seventeenth row, so the members with no harness moved into a band of their own under the rows (2.11 #10), pdfxt's name among them | S1 | 48 | the rows and the band clear one another and the members caption |
 | 8 | Decide whether to build PDFium from source (to bring its floors down to the suite's) or keep the prebuilt | owner | - | recorded in `docs/OPEN-DECISIONS.md` |
 
 ---

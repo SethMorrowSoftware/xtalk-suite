@@ -1210,7 +1210,7 @@ def check_build(c, board):
          repr(rects))
     c.eq("exactly one results view shows",
          sum(1 for v in views if board.visible(v)), 1)
-    # Since pdfxt made the seventeenth member (2026-11-21; work plan 2.11
+    # Since pdfxt made the seventeenth row (2026-11-21; work plan 2.11
     # #10) a member with no harness has no row: its name sits in the band
     # under the rows, between the band's caption and the members caption,
     # with no pill, no count and no Run. The rows' controls end above the

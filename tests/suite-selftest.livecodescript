@@ -295,8 +295,8 @@ constant kSuNoHarness = "box3dxt,curlxt,nocloud,pdfxt,render3dxt,xlsxt"
 -- curlxt made the thirteenth row (2026-11-14), 31 until box3dxt made the
 -- fourteenth (2026-11-20), and 25 once xlsxt, render3dxt and pdfxt joined the
 -- same day: sixteen rows at 25 touched one another, and a seventeenth fitted
--- at no pitch. Since pdfxt made the seventeenth member (2026-11-21, work plan
--- 2.11 #10) only the members WITH an in-engine harness have a row (the cross
+-- at no pitch. Since pdfxt, the sixteenth member, made the seventeenth row
+-- (2026-11-21, work plan 2.11 #10) only the members WITH an in-engine harness have a row (the cross
 -- row last); the others are names in the band below the rows, kSuBandCols to
 -- a line, under one caption. With eleven rows at 29 a row's controls (+5 to
 -- +29) clear the next row's (+34) by five pixels and the last row ends at
@@ -2197,8 +2197,8 @@ end scFinish
 -- member (a status pill, its pass / fail / skip counts, Run and Show), a
 -- results pane with a filter (All, Failures, Skips, Boot check, and one
 -- member's lines), Run all and Copy results; and the demo boot self-check
--- above checks that window every time it opens. Since 2026-11-21, when pdfxt
--- made a seventeenth member and a seventeenth row fitted at no pitch, only
+-- above checks that window every time it opens. Since 2026-11-21, when pdfxt,
+-- the sixteenth member, made a seventeenth row that fitted at no pitch, only
 -- the members with an in-engine harness keep a row; the rest are names in a
 -- band under the rows (kSuBandCols to a line, under one caption), and the
 -- boot self-check's suBoardFits fails a board whose rows or band overrun.

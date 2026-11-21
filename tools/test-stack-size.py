@@ -83,13 +83,15 @@ def main():
     # a board resized and reopened failed its own 1200 x 640 boot check).
     # 53 since 2026-11-20: render3dxt/examples/render3d-physics-demo
     # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
-    # 54 since 2026-11-21: pdfxt/examples/pdfxt-demo.livecodescript, the
-    # PDF viewer, one uiChrome call at kPvWidth x kPvHeight (1180 x 630).
-    # 55 the same day: that demo left the kit for OXT-Beyond's dark look and
-    # sizes its window with a width line and a height line instead, at the
-    # same kPvWidth x kPvHeight.
-    if "55 stack window dimension" not in out:
-        print("test-stack-size: expected 55 measured dimensions, got:\n" + out)
+    # 55 since 2026-11-21 on main: curlxt/examples/curlxt-live.livecodescript,
+    # the first curlxt demo, a width line and a height line at 1180 x 640.
+    # 57 the same day, merged with the pdfxt branch: pdfxt/examples/
+    # pdfxt-demo.livecodescript, the PDF viewer, a width line and a height
+    # line at kPvWidth x kPvHeight (1180 x 630). (It first carried one
+    # uiChrome call at that size, then left the kit for OXT-Beyond's dark
+    # look the same day.)
+    if "57 stack window dimension" not in out:
+        print("test-stack-size: expected 57 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

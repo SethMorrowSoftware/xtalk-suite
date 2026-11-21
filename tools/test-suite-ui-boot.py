@@ -118,8 +118,8 @@ costs 45 s on the model's clock):
      the board's paint, since a slow native poll inside the first tick fits
      the Windows record as well as a slow render does.
 
-And two for the band of the members with no harness (2026-11-21, when pdfxt
-made the seventeenth member and a seventeenth ROW fitted at no pitch; work
+And two for the band of the members with no harness (2026-11-21, when pdfxt,
+the sixteenth member, made a seventeenth ROW that fitted at no pitch; work
 plan 2.11 #10):
 
   ab suBandTop forgets the rows above it, so the band and its names are
