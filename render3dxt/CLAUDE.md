@@ -101,7 +101,9 @@ drift gates are the suite's.
 - **The texture sampler has three paths** (repeating with power-of-two sides, clamped,
   repeating otherwise), the first two in fixed point. `test_texture_paths` walks all of them.
 - **A mesh loaded from an OBJ owns the materials and textures its file made**, and takes
-  them with it when destroyed. A material or texture a script made is the script's.
+  them with it when destroyed, from whatever slot the script has moved them to or out of:
+  both are listed apart from the slots (`ownedMat`, `ownedTex`), and one the script destroys
+  first drops out of its list. A material or texture a script made is the script's.
 - **Text results share ONE static buffer**: the next text call overwrites it. The binding
   copies at once. Numbers are printed with a `.` in every locale.
 - **32-bit x86 is built with SSE2**, so the same scene rounds the same way as on 64-bit.

@@ -701,6 +701,40 @@ static void test_obj(void)
     CHECK(r3x_material_is_valid(red), "ours stays");
     r3x_material_destroy(red);
 
+    /* ... and from wherever the script has moved them: slot 1 given none,
+     * slot 2 ours, slot 2's own moved to a new slot 3 and put on a node */
+    int c4 = r3x_mesh_load_obj(asset("cube.obj"));
+    int front4 = r3x_mesh_slot_material(c4, 1), rest4 = r3x_mesh_slot_material(c4, 2);
+    int tex4 = r3x_material_texture(front4);
+    int green = r3x_material_create(0, 255, 0);
+    char counts[128];
+    snprintf(counts, sizeof counts, "%s", r3x_live_counts());
+    r3x_mesh_set_slot_material(c4, 1, 0);
+    r3x_mesh_set_slot_material(c4, 2, green);
+    r3x_mesh_set_slot_material(c4, 3, rest4);
+    CHECK(r3x_mesh_slot_count(c4) == 3 && r3x_mesh_slot_material(c4, 3) == rest4, "moved to slot 3");
+    int nd4 = r3x_node_create(s, c4);
+    r3x_node_set_material(nd4, rest4);
+    r3x_scene_render(s, 100, 100);
+    r3x_mesh_destroy(c4);
+    CHECK(!r3x_material_is_valid(front4) && !r3x_material_is_valid(rest4) && !r3x_texture_is_valid(tex4),
+          "the model's own materials and texture go with it from any slot");
+    CHECK(r3x_material_is_valid(green), "ours stays again");
+    CHECK(item(r3x_live_counts(), 4) == item(counts, 4) - 2 && item(r3x_live_counts(), 5) == item(counts, 5) - 1,
+          "two materials and a texture fewer: %s, was %s", cp(r3x_live_counts()), counts);
+    r3x_scene_render(s, 100, 100); /* a node naming them draws nothing, harmlessly */
+    /* the script may destroy one first: the mesh forgets it, and a material
+     * made after it (which may reuse its place in the table) stays */
+    int c5 = r3x_mesh_load_obj(asset("cube.obj"));
+    int front5 = r3x_mesh_slot_material(c5, 1), rest5 = r3x_mesh_slot_material(c5, 2);
+    r3x_material_destroy(front5);
+    CHECK(!r3x_material_is_valid(front5) && r3x_mesh_slot_material(c5, 1) == 0, "the script destroyed it");
+    int after = r3x_material_create(1, 2, 3);
+    r3x_mesh_destroy(c5);
+    CHECK(!r3x_material_is_valid(rest5) && r3x_material_is_valid(after), "only what is still the mesh's goes");
+    r3x_material_destroy(after);
+    r3x_material_destroy(green);
+
     /* from text: the MTL as text too, no texture loaded (no disk) */
     int olen = 0, mlen = 0;
     char *obj = (char *)read_file(asset("cube.obj"), &olen);
