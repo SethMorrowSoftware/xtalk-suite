@@ -54,7 +54,10 @@ done
 # that layer's cover) had never run here. Its Box2D comes from FetchContent,
 # so the lane costs a Box2D source build; unlike sodiumxt it copies nothing
 # back into src/code/, so it adds no second case to the NOTE at the top.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt xlsxt)
+# pdfxt (2026-11-20) builds no dependency at all: its configure step fetches
+# one pinned, prebuilt PDFium archive (a few megabytes, held to a SHA-256 by
+# pdfxt/src/pdfium.pin) and the smoke test loads that library at run time.
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt pdfxt xlsxt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -444,7 +447,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt xlsxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt pdfxt xlsxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too

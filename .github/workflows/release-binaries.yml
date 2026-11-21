@@ -80,7 +80,7 @@
 # hold) - the dylibs ship with the linker's ad-hoc signature only, and the
 # installer's refusals keep holding the line for hand-assembled bundles.
 #
-# ANDROID LANES SINCE 2026-11-18. The `android` job builds all nine native
+# ANDROID LANES SINCE 2026-11-18. The `android` job builds all ten native
 # members for the four Android ABIs OXT-Beyond's Android builder packs
 # (arm64-android, armv7-android, x86_64-android, x86-android). The recipe is
 # NOT spelled out here row by row as the desktop lanes are: one toolchain,
@@ -426,6 +426,45 @@ jobs:
             os: windows-2025
             cmake_args: -A Win32
           - member: box3dxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+          # ---- pdfxt: added 2026-11-20. It builds NO dependency: the member's
+          # CMake fetches the prebuilt PDFium archive pdfxt/src/pdfium.pin
+          # names for the row's platform, refuses one whose SHA-256 is not the
+          # pin's, and copies that library beside the shim. So each row lands
+          # TWO files through the member's packager (pdfxt.<ext>, built here,
+          # and pdfium.<ext>, unchanged), and the installer refuses the one
+          # without the other or a pdfium that is not the pinned file. The
+          # floor assertions below read pdfxt.<ext> only: PDFium's floors are
+          # its builders' (macOS 13, glibc 2.16), stated in the member's
+          # README. native-pdfxt.yml builds and tests the same six on every
+          # change to the member.
+          - member: pdfxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: pdfxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: pdfxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: pdfxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: pdfxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: pdfxt
             platform_id: universal-mac
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
@@ -1250,7 +1289,7 @@ jobs:
           if-no-files-found: error
 
   # ------------------------------------------------------------------- Android
-  # All nine native members, one job per Android ABI, each calling
+  # All ten native members, one job per Android ABI, each calling
   # tools/build-android.sh once per member. Per ABI rather than per member
   # and ABI: the three OpenSSL members share one static OpenSSL per ABI (four
   # builds of it instead of twelve), the x86 ABIs share one emulator boot per
@@ -1371,6 +1410,12 @@ jobs:
           for member in $(bash tools/build-android.sh --list | sed -n 's/^members: *//p'); do
             mkdir -p "stage/$member/${{ matrix.platform_id }}"
             cp "$member/src/code/${{ matrix.platform_id }}/$member.so" "stage/$member/${{ matrix.platform_id }}/"
+            # A member's companion (pdfxt's pdfium.so: the prebuilt library
+            # its own loads from beside itself) rides with it; the installer
+            # refuses the one without the other.
+            for companion in $(bash tools/build-android.sh --companion "$member"); do
+              cp "$member/src/code/${{ matrix.platform_id }}/$companion" "stage/$member/${{ matrix.platform_id }}/"
+            done
           done
           find stage -type f | sort
 

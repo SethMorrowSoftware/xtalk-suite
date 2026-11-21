@@ -25,6 +25,15 @@ on Android has loaded any of the twenty-eight.**
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change, and none of its Android libraries
 is committed yet. The counts in this page's dated records are of the seven members of those runs.
+**pdfxt joined the same day**, as a ninth member, with one difference from every other: beside its
+own library it places `pdfium.so`, a PREBUILT PDFium its shim loads at run time, pinned by SHA-256
+in `pdfxt/src/pdfium.pin` and never built or stripped here. That file is its builders' and says
+API 23 (Android 6.0), above the suite's floor, so `--android-check` is not asked of it; the pin is.
+pdfxt's own lane (`native-pdfxt.yml`) runs its tests on an Android 6.0 emulator for the two x86
+ABIs, and once on the Android 5.0 one, where a test that can run only its refusals must say so
+(`XTALK_TEST_PARTIAL`, which `tools/build-android.sh` carries into its last line as "passed IN
+PART"). None of its Android libraries is committed yet, and none of this has run: verified
+statically; the lane's first run is the record.
 **xlsxt joined the same day**, the same way: named in `tools/build-android.sh`, built for the four
 ABIs and tested on the emulator for the two x86 ones by its own lane (`native-xlsxt.yml`), with no
 Android library committed yet.
@@ -151,6 +160,7 @@ engine.
 | torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built and tested by its own lane, not yet by a release run; no library committed |
+| pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built and tested by its own lane, not yet by a release run; no library committed |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built and tested by its own lane, not yet by a release run; no library committed |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |

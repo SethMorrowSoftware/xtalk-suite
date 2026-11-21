@@ -123,6 +123,11 @@ MEMBERS = [
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository is "
                        "created empty for the suite to publish into"),
+    Member("pdfxt", "pdfxt", "extension", OWNER + "/pdfxt",
+           # Its gates read its own files only: no sibling beside it.
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
+                       "created empty for the suite to publish into"),
     Member("coinxt", "CoinXT", "extension", OWNER + "/CoinXT",
            native=True,
            # tools/check-wallet-boot.py REUSES riptide's boot runner rather

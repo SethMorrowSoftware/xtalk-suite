@@ -185,6 +185,37 @@ def main():
           "  ...building every member the script lists, through the script",
           "")
 
+    # The companions (pdfxt's pdfium.so, 2026-11-20): three tables name
+    # them - this script's, the installer's and the freshness gate's - and a
+    # member one of them forgot would build a library whose second file is
+    # refused at install, or land one nothing checks. The workflow's staging
+    # step must carry what the script says, or the bundle arrives without it
+    # and the installer refuses the whole run.
+    for member in native:
+        rc, out, err = run(["--companion", member])
+        named = out.split()
+        inst = installer.COMPANIONS.get(member)
+        gate = next(m for m in freshness.MEMBERS if m["name"] == member).get("companions", {})
+        check(rc == 0 and named == ([inst[0] + ".so"] if inst else [])
+              and sorted(n + ".so" for n in gate) == named
+              and (not inst or [inst[1].replace(os.sep, "/")] == list(gate.values())),
+              f"{member}: the script, the installer and the freshness gate "
+              f"agree on its companion ({named or 'none'})", (named, inst, gate))
+        if named:
+            pin = os.path.join(ROOT, inst[1])
+            rows = {}
+            with open(pin, encoding="utf-8") as fh:
+                for line in fh:
+                    parts = line.split("#", 1)[0].split()
+                    if len(parts) == 4:
+                        rows[parts[0]] = parts[3]
+            check(all(re.fullmatch(r"[0-9a-f]{64}", rows.get(p, "")) for p in platforms),
+                  f"  ...and its pin has a row for every Android platform id",
+                  sorted(rows))
+    check("tools/build-android.sh --companion" in job,
+          "the workflow's staging step carries each member's companion, as "
+          "the script names it", "")
+
     # 2. The pins.
     rc, out, err = run(["--pins"])
     pins = {line.split()[0]: line.split()[1:] for line in out.splitlines()}

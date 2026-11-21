@@ -13,6 +13,10 @@ directory laid out as
 
     <member>/<platform-id>/<member>.<so|dll|dylib>
 
+(and, for a member with a COMPANION, the companion beside it: pdfxt's
+`pdfium.<so|dll|dylib>`, which is not built here and is held to
+pdfxt/src/pdfium.pin by SHA-256 instead of to the checks below).
+
 WHO CALLS THIS. Both paths, and they are the same code on purpose:
 
   * release-binaries.yml's commit job runs it on the runner, so the checks below
@@ -133,9 +137,71 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
 # library committed, its manifest created by its first dispatch. XLSXT
 # JOINED 2026-11-20 too, the same way.
+#
+# PDFXT JOINED 2026-11-20 the same way, and brought the first COMPANION (below).
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt", "xlsxt")
+           "curlxt", "box3dxt", "pdfxt", "xlsxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
+
+# COMPANIONS (2026-11-20): a member whose library LOADS a second library from
+# the folder it is itself in, where that second library is a pinned prebuilt
+# the member does not build. pdfxt's shim opens `pdfium.<ext>` beside it; the
+# file is PDFium's builders' own, copied unchanged from an archive that
+# pdfxt/src/pdfium.pin names by SHA-256.
+#
+# Such a file cannot be held to the checks above, and must not be excused from
+# checking either. Its floors are its builders' (PDFium's Android libraries
+# say API 23, its dylib macOS 13: both would be REFUSED as a member's own
+# library, rightly). What CAN be asked of it is the one thing that matters
+# for a file nobody here built: that it is byte for byte the file the pin
+# names for this platform. So: the companion must be present whenever the
+# member's library is (the shim opens nothing without it), its SHA-256 must
+# be the last column of the pin's row for the platform id, and the two land
+# together or not at all. A pin with no row for the platform is a refusal.
+#
+#   member -> (the companion's bare name, the pin file relative to ROOT)
+COMPANIONS = {"pdfxt": ("pdfium", os.path.join("pdfxt", "src", "pdfium.pin"))}
+
+
+def companion_pin(member, platform_id):
+    """The SHA-256 the member's pin names for its companion on `platform_id`
+    (the last of a row's four fields), or None when the pin is unreadable or
+    has no such row. Read at call time, from ROOT as it is then."""
+    try:
+        with open(os.path.join(ROOT, COMPANIONS[member][1]), encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split("#", 1)[0].split()
+                if len(parts) == 4 and parts[0] == platform_id \
+                        and re.fullmatch(r"[0-9a-f]{64}", parts[3]):
+                    return parts[3]
+    except OSError:
+        return None
+    return None
+
+
+def companion_problem(member, platform_id, pdir, ext):
+    """(companion file name, None) when the companion beside the member's
+    library in `pdir` is the pinned one, else (name, why not)."""
+    name = f"{COMPANIONS[member][0]}.{ext}"
+    src = os.path.join(pdir, name)
+    if not os.path.isfile(src):
+        return name, (f"{member}.{ext} is here without {name}: {member} loads "
+                      f"{name} from beside itself and opens nothing without "
+                      f"it, so the two land together or not at all")
+    want = companion_pin(member, platform_id)
+    if want is None:
+        return name, (f"{COMPANIONS[member][1]} has no readable row for "
+                      f"{platform_id}, so there is nothing to hold this file "
+                      f"to - refusing a library nobody here built and no pin "
+                      f"names")
+    with open(src, "rb") as fh:
+        have = hashlib.sha256(fh.read()).hexdigest()
+    if have != want:
+        return name, (f"its SHA-256 is {have}, and {COMPANIONS[member][1]} "
+                      f"pins {want} for {platform_id}: not the pinned file "
+                      f"(another release, another platform's, or one that was "
+                      f"stripped or re-signed on the way)")
+    return name, None
 
 
 def platform_kind(platform_id):
@@ -597,6 +663,21 @@ def main(argv):
 
     plan, problems, skipped = [], [], []
 
+    def queue(member, platform_id, pdir, src, dst):
+        """Plan a verified library, and with it the member's companion, held
+        to its pin: both are planned or neither is."""
+        if member in COMPANIONS:
+            ext = EXT_FOR[platform_kind(platform_id)]
+            name, why = companion_problem(member, platform_id, pdir, ext)
+            if why:
+                problems.append(f"{member}/{platform_id}/{name}: {why}")
+                return
+            plan.append((member, platform_id, src, dst))
+            plan.append((member, platform_id, os.path.join(pdir, name),
+                         os.path.join(os.path.dirname(dst), name)))
+            return
+        plan.append((member, platform_id, src, dst))
+
     for member in sorted(os.listdir(bundle)):
         mdir = os.path.join(bundle, member)
         if not os.path.isdir(mdir):
@@ -656,7 +737,7 @@ def main(argv):
                             f"without src/coinxt.map")
                         continue
                 dst = os.path.join(ROOT, member, "src", "code", platform_id, want)
-                plan.append((member, platform_id, src, dst))
+                queue(member, platform_id, pdir, src, dst)
                 continue
             if got_kind != kind:
                 problems.append(
@@ -743,7 +824,7 @@ def main(argv):
                         continue
 
             dst = os.path.join(ROOT, member, "src", "code", platform_id, want)
-            plan.append((member, platform_id, src, dst))
+            queue(member, platform_id, pdir, src, dst)
 
     for s in skipped:
         print(f"  note: {s}")
@@ -1331,6 +1412,66 @@ def selftest():
             check("a rebuilt library is reported (REPLACES the committed one)",
                   rc == 0 and out.count("(REPLACES the committed one)") == 1
                   and out.count("(unchanged)") == staged - 1, out)
+            # 5. THE COMPANION (pdfxt, 2026-11-20), against the same throwaway
+            #    ROOT with a pin of its own: the real pin names files of tens
+            #    of megabytes that no gate should fetch, and what is pinned
+            #    here is the RULE (present, the pinned bytes, both or neither),
+            #    which a three-byte stand-in exercises exactly as PDFium does.
+            good, other = b"the pinned pdfium", b"some other pdfium"
+            pin = os.path.join(fake_root, COMPANIONS["pdfxt"][1])
+            _put(pin, ("# a throwaway pin\nrelease chromium/1\n"
+                       "x86_64-linux linux-x64 %s %s\n"
+                       "x86_64-win32 win-x64 %s %s\n"
+                       % ("0" * 64, hashlib.sha256(good).hexdigest(),
+                          "1" * 64, hashlib.sha256(other).hexdigest())
+                       ).encode("ascii"))
+
+            def pdf_bundle(tag, files):
+                root = os.path.join(tmp, "pdf-" + tag)
+                for rel, data in files.items():
+                    _put(os.path.join(root, "pdfxt", rel), data)
+                return root
+
+            shim = _bytes_elf(2, 0x3E)
+            landed = os.path.join(fake_root, "pdfxt", "src", "code", "x86_64-linux")
+            rc, out = _capture([pdf_bundle("alone", {"x86_64-linux/pdfxt.so": shim})])
+            check("pdfxt without its pdfium is REFUSED (both or neither)",
+                  rc == 1 and "without pdfium.so" in out
+                  and not os.path.exists(os.path.join(landed, "pdfxt.so")), out)
+            rc, out = _capture([pdf_bundle("wrong", {
+                "x86_64-linux/pdfxt.so": shim, "x86_64-linux/pdfium.so": other})])
+            check("a pdfium that is not the pinned file is REFUSED, and "
+                  "nothing lands",
+                  rc == 1 and "not the pinned file" in out
+                  and not os.path.exists(os.path.join(landed, "pdfxt.so")), out)
+            rc, out = _capture([pdf_bundle("norow", {
+                "x86-linux/pdfxt.so": _bytes_elf(1, 0x03),
+                "x86-linux/pdfium.so": good})])
+            check("a platform the pin has no row for is REFUSED",
+                  rc == 1 and "no readable row for x86-linux" in out, out)
+            rc, out = _capture([pdf_bundle("only", {"x86_64-linux/pdfium.so": good})])
+            check("a pdfium with no pdfxt beside it is REFUSED (the member's "
+                  "own library is still expected by name)",
+                  rc == 1 and "expected pdfxt.so" in out, out)
+            rc, out = _capture([pdf_bundle("good", {
+                "x86_64-linux/pdfxt.so": shim, "x86_64-linux/pdfium.so": good})])
+            body = ""
+            manifest = os.path.join(fake_root, "pdfxt", "src", "code", "MANIFEST.sha256")
+            if os.path.exists(manifest):
+                with open(manifest, encoding="utf-8") as fh:
+                    body = fh.read()
+            check("pdfxt and the pinned pdfium land TOGETHER, both in the manifest",
+                  rc == 0 and out.count("(new)") == 2
+                  and os.path.exists(os.path.join(landed, "pdfxt.so"))
+                  and os.path.exists(os.path.join(landed, "pdfium.so"))
+                  and "x86_64-linux/pdfium.so" in body
+                  and "x86_64-linux/pdfxt.so" in body, out + body)
+            with open(os.path.join(landed, "pdfium.so"), "rb") as fh:
+                check("  ...the pdfium byte for byte", fh.read() == good)
+            os.remove(pin)
+            rc, out = _capture([pdf_bundle("good", {})])
+            check("with the pin gone, the same bundle is REFUSED",
+                  rc == 1 and "no readable row" in out, out)
         finally:
             ROOT = saved_root
     finally:

@@ -25,7 +25,15 @@
 # tools/build-android.sh as XTALK_ANDROID_SERIAL.
 set -euo pipefail
 
-API="21"
+# XTALK_ANDROID_EMULATOR_API boots another Android instead (2026-11-20).
+# pdfxt's own lane asks for 23: the prebuilt PDFium it loads needs Android
+# 6.0, so on the floor its tests can run only their refusals. The release
+# job never sets it, and every other member is still tested on the floor.
+API="${XTALK_ANDROID_EMULATOR_API:-21}"
+case "$API" in
+  21|23) : ;;
+  *) echo "android-emulator: XTALK_ANDROID_EMULATOR_API=$API is not an API this script boots (21, 23)" >&2; exit 2 ;;
+esac
 IMAGE="system-images;android-$API;google_apis;x86_64"
 AVD="xtalk-api$API"
 SERIAL="emulator-5554"

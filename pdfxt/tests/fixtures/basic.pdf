@@ -1,0 +1,120 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 13 0 R /PageLabels << /Nums [0 << /S /r >> 1 << /S /D >>] >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 9 0 R >> >> /Annots [10 0 R] >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Rotate 90 /Contents 7 0 R /Resources << /Font << /F1 9 0 R >> >> /Annots [11 0 R] >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 8 0 R /Resources << /Font << /F1 9 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 137 >>
+stream
+1 0 0 rg
+100 100 100 100 re
+f
+0 0 0 rg
+BT
+/F1 24 Tf
+72 720 Td
+(Hello pdfxt) Tj
+ET
+BT
+/F1 12 Tf
+72 690 Td
+(second line of page one) Tj
+ET
+
+endstream
+endobj
+7 0 obj
+<< /Length 82 >>
+stream
+0 0 1 rg
+0 0 50 50 re
+f
+0 0 0 rg
+BT
+/F1 18 Tf
+100 400 Td
+(Rotated page two) Tj
+ET
+
+endstream
+endobj
+8 0 obj
+<< /Length 98 >>
+stream
+BT
+/F1 10 Tf
+10 70 Td
+(caf\351 na\357ve) Tj
+ET
+BT
+/F1 10 Tf
+10 40 Td
+(needle Needle needle) Tj
+ET
+
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Link /Rect [72 715 210 745] /Border [0 0 0] /A << /S /URI /URI (https://example.org/pdfxt) >> >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Link /Rect [100 395 260 420] /Border [0 0 0] /Dest [3 0 R /Fit] >>
+endobj
+12 0 obj
+<< /Title (pdfxt test file) /Author (xTalk Suite) /Subject (\376\377\000S\000u\000b\000j\000e\000c\000t\000 \000w\000i\000t\000h\000 \003\251) /Producer (pdfxt tools/build-test-pdfs.py) >>
+endobj
+13 0 obj
+<< /Type /Outlines /First 14 0 R /Last 17 0 R /Count 4 >>
+endobj
+14 0 obj
+<< /Title (Chapter 1) /Parent 13 0 R /Next 16 0 R /First 15 0 R /Last 15 0 R /Count 1 /Dest [3 0 R /Fit] >>
+endobj
+15 0 obj
+<< /Title (Section 1.1) /Parent 14 0 R /Dest [4 0 R /Fit] >>
+endobj
+16 0 obj
+<< /Title (Chapter 2) /Parent 13 0 R /Prev 14 0 R /Next 17 0 R /A << /S /GoTo /D [5 0 R /Fit] >> >>
+endobj
+17 0 obj
+<< /Title (Elsewhere) /Parent 13 0 R /Prev 16 0 R /A << /S /URI /URI (https://example.org/elsewhere) >> >>
+endobj
+xref
+0 18
+0000000000 65535 f 
+0000000015 00000 n 
+0000000135 00000 n 
+0000000204 00000 n 
+0000000347 00000 n 
+0000000501 00000 n 
+0000000627 00000 n 
+0000000815 00000 n 
+0000000947 00000 n 
+0000001095 00000 n 
+0000001192 00000 n 
+0000001331 00000 n 
+0000001440 00000 n 
+0000001645 00000 n 
+0000001719 00000 n 
+0000001843 00000 n 
+0000001920 00000 n 
+0000002036 00000 n 
+trailer
+<< /Size 18 /Root 1 0 R /Info 12 0 R /ID [<101112131415161718191a1b1c1d1e1f> <101112131415161718191a1b1c1d1e1f>] >>
+startxref
+2159
+%%EOF
