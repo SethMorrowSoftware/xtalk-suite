@@ -274,7 +274,21 @@ command testWithBoth pPath
          and field "uiStatus" of stack "rdDemo" begins with "Running", the number of controls of stack "rdDemo" && tCount
    put logCloses() into tLog
    check "opened again, the log holds this run only", linesStarting(tLog, "==") is 1, linesStarting(tLog, "==")
-   check "the corner's badge is as wide as its words", abs(the width of field "rdFps" of stack "rdDemo" - the formattedWidth of field "rdFps" of stack "rdDemo") <= 1 \
+   check "the badge is one line", the dontWrap of field "rdFps" of stack "rdDemo" and the number of lines of the formattedText of field "rdFps" of stack "rdDemo" <= 1, the formattedText of field "rdFps" of stack "rdDemo"
+   -- closed and opened again at once, inside the probe's 400 ms: the first
+   -- run's probe must not close this run's block a second time
+   send "closeStack" to stack "rdDemo"
+   send "openStack" to stack "rdDemo"
+   set the defaultStack to "rdDemo"
+   put logCloses() into tLog
+   wait 600 milliseconds with messages
+   put field "rdLog" of stack "rdDemo" into tLog
+   put 0 into tCount
+   repeat for each line tLine in tLog
+      if tLine contains "boot self-check GREEN" then add 1 to tCount
+   end repeat
+   check "closed and opened at once, the block is closed once", tCount is 1 and linesStarting(tLog, "==") is 1, tCount && linesStarting(tLog, "==")
+   check "the corner's badge is as wide as its words", abs(the width of field "rdFps" of stack "rdDemo" - the formattedWidth of field "rdFps" of stack "rdDemo") <= 3 \
          or field "rdFps" of stack "rdDemo" is empty, the width of field "rdFps" of stack "rdDemo" && the formattedWidth of field "rdFps" of stack "rdDemo"
    send "closeStack" to stack "rdDemo"
    check "and closes clean again", r3LiveCounts() is "0,0,0,0,0,0" and "rdFrame" is not in the pendingMessages, r3LiveCounts()

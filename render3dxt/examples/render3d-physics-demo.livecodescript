@@ -65,7 +65,7 @@ script "RenderThreeDDemo"
 -- ==========================================================================
 
 -- Bumped whenever the generated UI changes so a saved stack rebuilds.
-constant kRdUiVersion = "render3d-kit2-4"
+constant kRdUiVersion = "render3d-kit2-5"
 constant kRdWinW = 980
 constant kRdWinH = 620
 -- The picture: 4 by 3, and small enough that a frame with smooth edges
@@ -939,6 +939,10 @@ command rdBuild
    uiLabel "rdFps", empty, "24,72,176,100", 13
    set the textStyle of field "rdFps" to "bold"
    set the textAlign of field "rdFps" to "center"
+   -- one line, always: a field that wraps says its formattedWidth is the
+   -- width it has, and the badge, sized to that, broke "ms" onto a second
+   -- line on Windows (2026-11-21)
+   set the dontWrap of field "rdFps" to true
    set the opaque of field "rdFps" to true
    set the backgroundColor of field "rdFps" to kRdConsole
    set the foregroundColor of field "rdFps" to "255,255,255"
@@ -1159,6 +1163,7 @@ end rdStart
 command rdStop
    local tHandle
    put false into sRdRunning
+   rdCancelProbe
    if sRdFrameMsg is not empty then
       cancel sRdFrameMsg
       put empty into sRdFrameMsg
@@ -1561,7 +1566,7 @@ command rdShowStats pNow
    -- the badge is as wide as its words, whatever the font: a fixed box had
    -- them off its middle on Windows
    if the formattedWidth of field "rdFps" > 0 then
-      set the rect of field "rdFps" to 24, 72, 24 + the formattedWidth of field "rdFps", 72 + max(20, the formattedHeight of field "rdFps")
+      set the rect of field "rdFps" to 24, 72, 26 + the formattedWidth of field "rdFps", 72 + max(20, the formattedHeight of field "rdFps")
    end if
    -- a smooth picture that takes more than 9 ms leaves too little of a
    -- frame for the rest; a plain one that would be under 7 ms smooth (four
@@ -1749,6 +1754,17 @@ function rdSameNumbers pA, pB
    return true
 end rdSameNumbers
 
+-- Takes back the self-check's delayed probe, if one is still on its way
+-- to this stack.
+command rdCancelProbe
+   local tLine
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine is "scTickProbe" and item 4 to -1 of tLine is the long id of me then
+         cancel item 1 of tLine
+      end if
+   end repeat
+end rdCancelProbe
+
 -- The controls whose colours are the system's to choose, which under a
 -- dark theme means white words on a white panel: there should be none.
 function rdThemed
@@ -1774,8 +1790,11 @@ end rdThemed
 
 command rdScRun
    local tMissing, tFirst, tSpot
-   -- a stack that is opened again has last time's log in it: this run's
-   -- lines are the only ones that belong there
+   -- a stack that is opened again has last time's log in it, and, if it
+   -- was closed within the probe's 400 ms, last time's probe still on its
+   -- way, which would close the block a second time (GREEN twice, seen on
+   -- Windows, 2026-11-21): this run's lines are the only ones that belong
+   rdCancelProbe
    put empty into field "rdLog"
    scBegin "rdLog"
    put scMissing(kRdScControls) into tMissing
