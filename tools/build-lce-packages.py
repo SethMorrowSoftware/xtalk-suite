@@ -81,10 +81,9 @@ EVERY EXTENSION HAS A PACKAGE (2026-11-21)
         Android platform never waits: a lost library is the refusal it
         always was.
 
-    A push to main whose packages the newest published release does not
-    have (a new package, a new version or a new platform; `plan` below),
-    or that drops one, is published by the workflow itself, so the site
-    follows main.
+    A push to main whose packages differ in any way from the newest
+    published release's (`plan` below) is published by the workflow
+    itself, so the site follows main.
 
 USAGE
     python3 tools/build-lce-packages.py table
@@ -107,11 +106,9 @@ USAGE
     python3 tools/build-lce-packages.py plan DIR [--repo OWNER/NAME]
             [--release-json FILE --lce-dir DIR2] [--notes FILE]
             [--github-output FILE]
-        what DIR's packages (pack's output) add to the newest published
-        release: NEW, VERSION, PLATFORMS and GONE lines say what a visitor
-        of the site would get from publishing them, REBUILT what they would
-        not notice. Writes the release notes, and release=true when there is
-        something to publish. Reads the release from GitHub (GITHUB_TOKEN is
+        how DIR's packages (pack's output) differ from the newest published
+        release's: NEW, VERSION, PLATFORMS, REBUILT and GONE lines. Writes
+        the release notes, and release=true when any package differs. Reads the release from GitHub (GITHUB_TOKEN is
         used when set), or offline from FILE and DIR2 as
         tools/build-extensions-site.py does.
 
@@ -1050,26 +1047,31 @@ def check_packages(paths):
 
 # --- plan: what a release would bring to the site -------------------------------
 #
-# Since 2026-11-21 a push to main publishes its packages itself when the
-# site's release lacks something they bring (.github/workflows/lce-packages.yml,
-# the publish job): the owner's rule is that every extension is on the site,
+# Since 2026-11-21 a push to main publishes its packages itself when they
+# differ from the site's release (.github/workflows/lce-packages.yml, the
+# publish job): the owner's rule is that every extension is on the site,
 # and a release that waits for someone to remember is how box3dxt nearly
-# went unlisted. What counts is what a visitor of the site would see:
+# went unlisted. Each difference is named as a visitor would see it:
 #
 #   NEW        a package the release does not have (a new member, a new
 #              helper or script layer)
 #   VERSION    a package whose version changed (the file name says it)
 #   PLATFORMS  the same version for more or fewer platforms (Android, a
 #              member's first Mac library, ...)
+#   REBUILT    the same version and platforms, other bytes: a fix or new
+#              handlers without a version bump (the members rarely bump
+#              one), a refreshed library, a newer OXT-Beyond compiling it
 #   GONE       a package the release has and main no longer builds
 #
-# and only those publish. REBUILT (the same version and platforms, other
-# bytes: a fix without a version bump, a newer OXT-Beyond compiling it) is
-# listed but publishes nothing on its own, or every merge would be a release;
-# a dispatch with a release_tag still publishes a rebuild on purpose.
+# and every one of them publishes, REBUILT included: otherwise a fix would
+# reach OXT-Beyond and never the site. That is safe because a build is
+# deterministic, the same inputs giving the same bytes (built twice from one
+# tree on 2026-11-21, every package identical), so other bytes always mean
+# main changed something a user installs. Lately that is a release or two a
+# day.
 
 PACKAGE_NAME = re.compile(r'^(.+)-([0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?)\.lce$')
-PUBLISHING = ('NEW', 'VERSION', 'PLATFORMS', 'GONE')
+PUBLISHING = ('NEW', 'VERSION', 'PLATFORMS', 'REBUILT', 'GONE')
 SITE_URL = 'https://sethmorrowsoftware.github.io/xtalk-suite/'
 
 
@@ -1169,7 +1171,7 @@ def plan_notes(changes, baseline, commit='', run=''):
     if run:
         built += ' by run %s' % run
     lines = ['The xTalk Suite extensions by Seth Morrow, as .lce packages%s.' % built, '']
-    shown = [c for c in changes if c[0] in PUBLISHING]
+    shown = [c for c in changes if c[0] in PUBLISHING and c[0] != 'REBUILT']
     if shown:
         lines.append('New since %s:' % baseline if baseline else 'In this first release:')
         lines.append('')
@@ -1181,7 +1183,8 @@ def plan_notes(changes, baseline, commit='', run=''):
         lines.append('')
     rebuilt = [c for c in changes if c[0] == 'REBUILT']
     if rebuilt:
-        lines += ['Rebuilt from this commit at the same version: %s.' % ', '.join('`%s`' % c[1] for c in rebuilt), '']
+        lines += ['Changed at the same version (rebuilt from this commit): %s.'
+                  % ', '.join('`%s`' % c[1] for c in rebuilt), '']
     lines += [
         'Install one in any IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,',
         'HyperXTalk, OXT-Beyond): Tools > Extension Manager > + , then choose the .lce file.',
@@ -1226,8 +1229,8 @@ def cmd_plan(args):
     log('Compared with %s:' % (('release ' + baseline) if baseline else 'no published release (none has packages)'))
     for kind, name, words in changes:
         log('  %-9s %s  %s' % (kind, name, words))
-    log('%d packages; %s' % (len(mine), 'publish: the site lacks what is above' if publish else
-                             'nothing to publish: the site has every package, version and platform'))
+    log('%d packages; %s' % (len(mine), 'publish: the site differs as above' if publish else
+                             'nothing to publish: the site has these packages, byte for byte'))
     if args.notes:
         with open(args.notes, 'w', encoding='utf-8', newline='\n') as f:
             f.write(plan_notes(changes, baseline, os.environ.get('GITHUB_SHA', ''),

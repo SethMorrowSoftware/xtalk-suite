@@ -38,13 +38,14 @@
 #      of waiting for someone to remember a dispatch (box3dxt joined with
 #      its libraries and no package, and was not on it). `build-lce-packages.py
 #      plan` compares this run's packages with the newest published release:
-#      when they bring a package, a version or a platform it lacks (or drop
-#      one), this job publishes them as a dated pre-release, vYYYY.MM.DD
-#      (.2, .3, ... for a second the same day), and starts pages.yml, which
-#      a release the workflow token publishes would not start by itself. A
-#      rebuild at the same version and platforms publishes nothing on its
-#      own (a dispatch with a release_tag still does). LCE_AUTO_PUBLISH
-#      'false' leaves each such release a draft for a press of Publish.
+#      when any differs (a new package, version or platform, one dropped,
+#      or other bytes at the same version: a fix must reach the site too,
+#      and the build is deterministic, so only a real change differs), this
+#      job publishes them as a dated pre-release, vYYYY.MM.DD (.2, .3, ...
+#      for a second the same day), and starts pages.yml, which a release
+#      the workflow token publishes would not start by itself. Identical
+#      packages publish nothing. LCE_AUTO_PUBLISH 'false' leaves each such
+#      release a draft for a press of Publish.
 #      Safe to hold contents: write here: it runs only for a push to main,
 #      so on main's own reviewed tree, and attaches only this run's
 #      packages, which this run's engine check passed; a pull request's
@@ -320,7 +321,7 @@ jobs:
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber lce/*.lce lce/SHA256SUMS
 
   publish:
-    name: Publish what the site lacks
+    name: Publish what changed to the extensions site
     needs: packages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
@@ -372,7 +373,7 @@ jobs:
           # not publish over it: when the newest release was built from this
           # commit or a later one, this run has nothing to add. (A release
           # dispatched from a branch is neither: "diverged" publishes, since
-          # the plan found what this commit brings that it lacks.)
+          # the plan found how this commit's packages differ from it.)
           if [ -n "$BASELINE" ]; then
             base=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BASELINE" --jq .sha)
             status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$base...$GITHUB_SHA" --jq .status)

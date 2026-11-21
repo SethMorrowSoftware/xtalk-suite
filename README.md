@@ -224,8 +224,8 @@ cannot be left off; one with no committed library yet waits, and the first build
 libraries land packages it. Take them from the download page,
 <https://sethmorrowsoftware.github.io/xtalk-suite/> (written from the newest published release by
 `tools/build-extensions-site.py` and published by `.github/workflows/pages.yml` each time a release
-is published; since 2026-11-21 a push to main that adds a package, or changes one's version or
-platforms, publishes that release by itself, so the page follows main), from a GitHub release of
+is published; since 2026-11-21 a push to main that changes any package publishes that release by
+itself, so the page follows main), from a GitHub release of
 this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
 IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk, HyperXTalk, OXT-Beyond)
 choose **Tools > Extension Manager > +** and pick the `.lce`. Install a library before its

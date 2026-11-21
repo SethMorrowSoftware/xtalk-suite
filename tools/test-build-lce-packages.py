@@ -434,18 +434,20 @@ def test_plan(tmp):
            'now also for Android ARM64' in words.get('alphaxt-1.0.0.lce', ''), words.get('alphaxt-1.0.0.lce'))
 
     code, log, notes, out = run_plan(tmp, NEW, [rel], OLD)
-    expect('plan: publishes when the site lacks something', code == 0 and out == 'release=true\nbaseline=v9\n',
+    expect('plan: publishes when the site differs', code == 0 and out == 'release=true\nbaseline=v9\n',
            repr((code, out)))
     expect('plan: the notes credit the author and say what is new since the release',
            notes.startswith('The xTalk Suite extensions by Seth Morrow') and 'New since v9:' in notes
            and '`newxt-0.1.0.lce`: NewXT 0.1.0' in notes and '`gammaxt-1.0.0.lce` is no longer offered' in notes
-           and 'Rebuilt from this commit at the same version: `epsxt-1.0.0.lce`' in notes, notes)
-    # a rebuild alone publishes nothing
+           and 'Changed at the same version (rebuilt from this commit): `epsxt-1.0.0.lce`' in notes, notes)
+    # a rebuild alone publishes too: a fix without a version bump must reach
+    # the site, and a deterministic build gives other bytes only for one
     only = dict(OLD)
     only['epsxt-1.0.0.lce'] = NEW['epsxt-1.0.0.lce']
     code, log, notes, out = run_plan(tmp, only, [rel], OLD)
-    expect('plan: a rebuild at the same version and platforms publishes nothing',
-           code == 0 and out == 'release=false\nbaseline=v9\n' and 'REBUILT' in log, repr((code, out)))
+    expect('plan: a rebuild at the same version and platforms publishes',
+           code == 0 and out == 'release=true\nbaseline=v9\n' and 'REBUILT' in log
+           and 'New since' not in notes and '`epsxt-1.0.0.lce`' in notes, repr((code, out, notes)))
     code, log, notes, out = run_plan(tmp, OLD, [rel], OLD)
     expect('plan: the same packages publish nothing', out == 'release=false\nbaseline=v9\n' and 'nothing to publish' in log)
     # the baseline is the newest PUBLISHED release with packages
