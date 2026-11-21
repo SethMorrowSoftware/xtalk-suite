@@ -79,6 +79,13 @@ Joined the suite on 2026-11-20. What has run, and where:
   Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
   passed the ABI check, wrote a workbook with formats, a table, a chart and a picture, read it
   back (text outside ASCII included) and called every public handler once.
+- **The demo stack**, `examples/xlsxt-demo.livecodescript` (paste it into a stack's script
+  and reopen the stack): a tab each for a table in one call, formats, formulas and dates,
+  charts, page setup and pictures, a reader for any `.xlsx`, and one button that checks all
+  of it. `tests/demo-drive.livecodescript` drives it on OXT-Beyond's Linux desktop engine
+  with no display (2026-11-21, a locally built library): its window built, every tab's
+  workbook made and read back, a tick box and a cell clicked, its own checks green. The
+  native lane repeats that on every change. Nobody has used the window by hand yet.
 - **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
   web has run it: on those it is verified statically; needs an OXT pass. No file it wrote has
   been opened in Excel itself on the record: what is checked is that the library's own reader
@@ -151,6 +158,7 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
+- The demo UI kit (`tools/ui-kit.livecodescript`; gate `tools/check-ui-kit-drift.py`) in `examples/xlsxt-demo.livecodescript`.
 - `tools/check-livecodescript.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

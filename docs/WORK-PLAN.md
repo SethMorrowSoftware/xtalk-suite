@@ -879,7 +879,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
-| 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
+| 8 | `xlsxt/examples/xlsxt-demo.livecodescript` used by a person: each tab's Make and Save, Open on a file from Excel, a click on a cell, Run every check (driven without a display on the Linux engine by `xlsxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | the window looks right and the saved files open in Excel |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
 
 ---
