@@ -374,8 +374,14 @@ worse than no gate, because it answers the question nobody asks twice.
   the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
   macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
 - **Android (2026-11-18).** `tools/build-android.sh <member> <abi>-android` is the WHOLE recipe
-  for the native members (bar gamepadxt, which is not built for Android) on `arm64-android`, `armv7-android`, `x86_64-android` and
-  `x86-android`: the NDK revision OXT-Beyond pins, API 21, libc++ inside each library, the desktop
+  for the native members (bar gamepadxt, which is not built for Android) on `arm64-android`,
+  `armv7-android`, `x86_64-android` and
+  `x86-android`: the NDK revision OXT-Beyond pins, API 21 (torrentxt alone API 24 since
+  2026-11-21: below it libtorrent uses a netlink socket Android 11 refuses an app, and a session
+  starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
+  it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its four
+  were rebuilt at API 24 that day, run 44914897842, commit d47060f, tests run on the Android 7.0
+  emulator for the two x86 ABIs, and no app has run them yet), libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
   leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each
