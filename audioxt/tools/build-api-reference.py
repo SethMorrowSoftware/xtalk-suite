@@ -11,7 +11,7 @@ block changed, 2026-11-14).
 
 For each public handler: its signature line, its Summary, one bullet per
 parameter line (`pName: ...`, continuation lines joined), its Returns and its
-Description. The headings are the binding's own section banners, in its
+Description (every paragraph of it). The headings are the binding's own section banners, in its
 order. The count in the first paragraph is counted here, never typed.
 """
 
@@ -28,9 +28,17 @@ BANNER = re.compile(r"^-- =+$")
 
 
 def parse_block(text):
-    """({element: text}, [(param, text)]) of one doc block."""
+    """({element: text}, [(param, text)]) of one doc block.
+
+    A blank line ends an element, bar the Description: the dictionary reads
+    it to the next element, paragraphs and all, so its paragraphs are kept
+    (joined by a blank line). Before 2026-11-21 every paragraph after the
+    first was dropped from the page (auEngineCreate's web note and silent
+    device, auCaptureOpen's permissions), and the --check gate, comparing
+    the page with this same output, could not see it."""
     elements, params = {}, []
     current = None
+    paragraph = False
     for line in text.split("\n"):
         m = ELEMENT.match(line)
         if m and not line.startswith(" ") and (re.match(r"^p[A-Z]", m.group(1))
@@ -42,14 +50,20 @@ def parse_block(text):
             else:
                 elements[name] = rest
                 current = [name, None]
+            paragraph = False
             continue
         if current is None:
             continue
         if line.strip() == "":
+            if current[1] is None and current[0] == "Description":
+                paragraph = bool(elements["Description"])
+                continue
             current = None
             continue
         if current[1] is None:
             sep = "\n" if current[0] == "Example" else " "
+            if paragraph:
+                sep, paragraph = "\n\n", False
             elements[current[0]] = (elements[current[0]] + sep + line.strip()).strip()
         else:
             current[1] = (current[1] + " " + line.strip()).strip()

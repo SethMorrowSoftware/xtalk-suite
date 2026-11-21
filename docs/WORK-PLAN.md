@@ -891,7 +891,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   WebAssembly under node; `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server
   engine over a locally built library (2026-11-20), through miniaudio's silent device; and
   the web archive playing and recording in headless Chromium (`tests/web/`, the same day).
-  Its native lane repeats all three on every change. No machine with a sound card and no
+  Its native lane repeats all three on every change. On 2026-11-21 the archive was linked
+  as OXT-Beyond's web engine links it (Asyncify and the engine's own settings, in Chromium),
+  and two web faults were fixed: on a page with no microphone API (any page served over
+  plain http) or no AudioContext, miniaudio's JavaScript threw through the whole engine; and
+  a key press did not start a device the browser held (miniaudio waits for a click). No machine with a sound card and no
   desktop IDE has run it, and nobody has heard it: for everything beyond those runs it is
   verified statically; needs an OXT pass.
 - Binaries: the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12, the

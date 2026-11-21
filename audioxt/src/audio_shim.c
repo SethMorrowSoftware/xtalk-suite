@@ -62,6 +62,9 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
+#if defined(__EMSCRIPTEN__)
+    #include <emscripten.h>
+#endif
 #include <locale.h>
 #include <math.h>
 #include <stdint.h>
@@ -524,6 +527,99 @@ static void rows_fill(aux_device_row *rows, int *count, const ma_device_info *in
     }
 }
 
+#if defined(__EMSCRIPTEN__)
+/* THE WEB: ASK THE PAGE BEFORE MINIAUDIO DOES. miniaudio opens a Web Audio
+ * device with JavaScript it carries (EM_ASM) that takes two things for
+ * granted, and a JavaScript throw there does not come back as an error: it
+ * unwinds through every WebAssembly frame above it, the web engine's main
+ * loop included, and the engine stops (the web IDE with it). So both are
+ * asked here first, inside a try, and the call is refused with a reason:
+ *
+ *   - new AudioContext() and its createScriptProcessor, which a browser
+ *     with no Web Audio for the page refuses by throwing. Asked ONCE per
+ *     page (a context is made and closed at once, as miniaudio's own
+ *     device-info query does, inside its own try): a context per open
+ *     would count against the few that some browsers allow at a time.
+ *   - navigator.mediaDevices.getUserMedia, for a microphone. A browser
+ *     offers it only in a secure context (https, or this computer), so a
+ *     page served over plain http has no navigator.mediaDevices at all,
+ *     and miniaudio calls getUserMedia on it.
+ *
+ * What is left is asynchronous and miniaudio already catches it: a refused
+ * microphone permission rejects a promise, logged, and the capture simply
+ * delivers nothing. tests/web/run-web-test.cjs takes both away and holds
+ * the refusals.
+ *
+ * A device opened before the visitor's first gesture is held silent by the
+ * browser until a gesture lets it resume. miniaudio resumes its started
+ * devices on the first click or touchend only, so a stack played from the
+ * keyboard stayed silent until something was clicked, and a button held
+ * down was silent until it was let go. Once its checks pass, this also
+ * listens (once per page, in the capture phase, never stopping the event)
+ * for a key or mouse button going down and resumes miniaudio's started
+ * devices then; the first resume that succeeds removes the listener, since
+ * a page that has had a gesture keeps it and miniaudio's own start resumes
+ * a device from then on. A key that is no gesture (Escape) leaves the
+ * resume pending, which the browser settles at the next real one. */
+static int web_device_ok(int capture)
+{
+    int why = EM_ASM_INT({
+        try {
+            if (typeof window === 'undefined') return 1;
+            if (window.__audioxtWebAudio === undefined) {
+                var probe = 0;
+                try {
+                    var C = window.AudioContext || window.webkitAudioContext;
+                    if (!C) {
+                        probe = 1;
+                    } else {
+                        var c = new C();
+                        if (typeof c.createScriptProcessor !== 'function') probe = 1;
+                        if (typeof c.close === 'function') c.close();
+                    }
+                } catch (e) {
+                    probe = 1;
+                }
+                window.__audioxtWebAudio = probe;
+            }
+            if (window.__audioxtWebAudio !== 0) return 1;
+            if ($0 && !(typeof navigator !== 'undefined' && navigator.mediaDevices &&
+                        typeof navigator.mediaDevices.getUserMedia === 'function')) return 2;
+            /* No comma may stand outside parentheses in an EM_ASM block (the
+               preprocessor would split the macro's arguments there). */
+            if (window.__audioxtUnlock === undefined && typeof document !== 'undefined') {
+                window.__audioxtUnlock = function () {
+                    try {
+                        var ma = window.miniaudio;
+                        if (!ma || !ma.devices || !ma.device_state) return;
+                        for (var i = 0; i < ma.devices.length; ++i) {
+                            var d = ma.devices[i];
+                            if (d != null && d.webaudio != null && d.state === ma.device_state.started &&
+                                d.webaudio.state === 'suspended')
+                                d.webaudio.resume().then(function () {
+                                    document.removeEventListener('keydown', window.__audioxtUnlock, true);
+                                    document.removeEventListener('mousedown', window.__audioxtUnlock, true);
+                                }, function () {});
+                        }
+                    } catch (e) {
+                    }
+                };
+                document.addEventListener('keydown', window.__audioxtUnlock, true);
+                document.addEventListener('mousedown', window.__audioxtUnlock, true);
+            }
+            return 0;
+        } catch (e) {
+            return 1;
+        }
+    }, capture);
+    if (why == 2)
+        return fail("this page cannot reach a microphone: a browser offers one only to a page served over https or from this computer");
+    if (why != 0)
+        return fail("this browser has no Web Audio for this page");
+    return 1;
+}
+#endif
+
 /* Which context and device id a device index names. Returns 0 (refused,
  * the error set) or 1; *id is NULL for "the default device". */
 static int device_pick(int device, int capture, ma_context **ctx, ma_device_id **id)
@@ -536,6 +632,9 @@ static int device_pick(int device, int capture, ma_context **ctx, ma_device_id *
     }
     *ctx = real_context();
     if (*ctx == NULL) return fail("this machine has no audio system the library can use");
+#if defined(__EMSCRIPTEN__)
+    if (!web_device_ok(capture)) return 0;
+#endif
     if (device == 0) return 1;
     int count = capture ? s_captureCount : s_playbackCount;
     if (device < 1 || device > count) return fail("no such device (scan first; devices are numbered from 1)");

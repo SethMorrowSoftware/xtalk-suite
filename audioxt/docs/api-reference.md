@@ -159,6 +159,10 @@ Returns: The engine's handle, or 0 if the device could not be opened (`auLastErr
 
 An engine is one mixer playing into one device. Every sound belongs to an engine, and any number of them can play at once. Most stacks need one engine, created when the stack opens and freed with `auEngineFree` or `auShutDown` when it closes. Up to 16 can be open.
 
+In a web browser the sound starts with the visitor's first click, tap or key press on the page, which is the browser's rule; sounds started before that are heard from then on. A browser that gives the page no Web Audio refuses the device.
+
+Device -1 is a silent test device that needs no sound card: everything works and nothing is heard.
+
 ```
 put auEngineCreate(0, 0, 0) into sEngine
 put auSoundLoad(sEngine, specialFolderPath("resources") & "/click.wav", false) into sClick
@@ -1098,6 +1102,8 @@ Opens a microphone or another input device.
 Returns: The capture's handle, or 0 if the device could not be opened (`auLastError` says why).
 
 The samples arrive in exactly the format, sample rate and channel count asked for, whatever the device itself uses. Nothing is recorded until `auCaptureStart`. Read what has arrived with `auCaptureRead`, or write it straight to a file with `auCaptureRecordStart`. Up to 16 captures can be open.
+
+The operating system may ask the person for permission the first time, and an application may need to declare that it uses the microphone (on Android, the RECORD_AUDIO permission; on macOS, a microphone usage description). In a web browser the visitor is asked, and a page reaches a microphone only when it is served over https or from the visitor's own computer: elsewhere this returns 0. Device -1 is a silent test device. The five sample formats are "u8" (8-bit unsigned), "s16", "s24" and "s32" (signed, little-endian) and "f32" (32-bit floating point, -1 to 1). Samples of several channels are interleaved (left, right, left, right).
 
 ```
 put auCaptureOpen(0, "s16", 16000, 1, 5) into sMic

@@ -79,6 +79,17 @@ stack hears is out of bounds.
   pthreads): the resource manager's jobs are pumped by `pump_jobs()` from `aux_poll_ended`
   and `aux_engine_render`. Web Audio is reached through a ScriptProcessorNode on the main
   thread; the AudioWorklet path would need flags on the ENGINE's link line.
+- **On the web the shim asks the page before miniaudio does** (`web_device_ok`): miniaudio's
+  JavaScript calls `new AudioContext()` and `navigator.mediaDevices.getUserMedia` as if both
+  were there, and a JavaScript throw unwinds through every WebAssembly frame above it, the
+  web engine's main loop included. A page with no Web Audio refuses every device, and one
+  with no microphone API (a page served over plain http has none) refuses a capture, each
+  with a reason. Found linking the archive the way the web engine does (2026-11-21).
+- **A key press or a mouse button starts a held web device**: a browser holds a device opened
+  before the visitor's first gesture, and miniaudio resumes it on a click or a touchend only.
+  The shim adds one capture-phase listener per page for `keydown` and `mousedown` that
+  resumes miniaudio's started devices and removes itself after the first resume that
+  succeeds. Escape is no gesture: its resume stays pending until a real one.
 - **JACK is compiled out** (`MA_NO_JACK`): asking for a JACK server can start one.
 - **No Ogg Vorbis.** miniaudio decodes it only through stb_vorbis, which is not in the header
   and has a history of memory-safety reports; WAV, FLAC and MP3 are miniaudio's own.

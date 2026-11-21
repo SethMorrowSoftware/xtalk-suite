@@ -42,6 +42,10 @@ echo "== audioxt: tools/check-lcb-signatures.py =="
 python3 tools/check-lcb-signatures.py
 
 # docs/api-reference.md is generated from the doc blocks; stale is a failure.
+# The fixture first: --check compares the page with the generator's own
+# output, so text the generator drops is invisible to it.
+echo "== audioxt: tools/test-build-api-reference.py =="
+python3 tools/test-build-api-reference.py
 echo "== audioxt: tools/build-api-reference.py --check =="
 python3 tools/build-api-reference.py --check
 

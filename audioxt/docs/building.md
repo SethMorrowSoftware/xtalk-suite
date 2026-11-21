@@ -58,7 +58,13 @@ archive under node, which has no Web Audio: they cover the mixer, the decoders a
 refusal. `tests/web/run-web-test.cjs` covers the device: it opens `tests/web/page.c` (the
 archive behind a few calls) in headless Chromium through Playwright, clicks once, and checks
 that the clock runs, the meter reads the tone and Chromium's fake microphone delivers
-samples. No web engine has linked the archive yet.
+samples. It then takes away, on fresh pages, what miniaudio's own JavaScript takes for
+granted (the microphone API, which a page served over plain http lacks, and the
+AudioContext): the shim must refuse with a reason where miniaudio would have thrown through
+the whole engine. Last, pages that open the device at load, before any gesture, show it held
+silent until a key press, a mouse button or a click, and still held after Escape (no
+gesture); the test never calls into those pages, because in Playwright a `page.evaluate`
+counts as a gesture. No web engine has linked the archive yet.
 
 ## The engine self-test
 

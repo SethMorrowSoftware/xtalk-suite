@@ -136,7 +136,9 @@ recording without holding it in memory, let the library write the file as the so
 it uses the microphone: on Android the `RECORD_AUDIO` permission (and the person's consent,
 asked by the system), on macOS and iOS a microphone usage description in the application's
 property list, in a browser the visitor's answer to the browser's own prompt. Without it the
-open fails or the samples are silence, and `auLastError()` says what the system reported.
+open fails or the samples are silence, and `auLastError()` says what the system reported. A
+browser offers a microphone only to a page served over https or from the visitor's own
+computer: on a plain http page `auCaptureOpen` returns 0 and `auLastError()` says so.
 
 ## Sample formats
 
@@ -162,9 +164,9 @@ right, left, right, four bytes a frame. `binaryDecode("s", ...)` reads an `s16` 
 2. **Auto-free needs the poll.** Nothing is freed behind your back: the `auPollEnded` call
    that reports a sound's end is the one that frees it. A stack that marks sounds auto-free
    and never polls keeps them all (up to 65,536, then loads are refused).
-3. **In a browser, sound waits for a click.** A page may not make sound until the visitor
-   has clicked or pressed a key. Open the engine and start sounds whenever you like; they are
-   heard from the first click on.
+3. **In a browser, sound waits for the visitor.** A page may not make sound until the
+   visitor has clicked, tapped or pressed a key on it. Open the engine and start sounds
+   whenever you like; they are heard from that moment on.
 4. **A stream cannot be cloned, and a tone has no end.** `auSoundClone` works on sounds
    loaded whole or made from samples. A tone or noise plays until stopped; stop it at a time
    with `auSoundStopAt`.

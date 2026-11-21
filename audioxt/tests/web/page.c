@@ -68,6 +68,14 @@ EMSCRIPTEN_KEEPALIVE int w_mic_available(void) { return aux_capture_available(s_
 EMSCRIPTEN_KEEPALIVE int w_mic_read(void) { return aux_capture_read(s_mic); }
 EMSCRIPTEN_KEEPALIVE double w_mic_peak(void) { return aux_capture_peak(s_mic); }
 
+/* For a page that cannot have Web Audio or a microphone (run-web-test.cjs
+ * takes one away before the page loads): a device of each kind opened, as a
+ * stack's script would. Each returns the handle, or 0 when it was refused
+ * (w_error says why). There, miniaudio's own JavaScript would throw, and a
+ * throw unwinds through the whole engine; the shim asks the page first. */
+EMSCRIPTEN_KEEPALIVE int w_try_engine(void) { return aux_engine_create(0, 0, 0); }
+EMSCRIPTEN_KEEPALIVE int w_try_mic(void) { return aux_capture_open(0, "s16", 16000, 1, 2.0); }
+
 /* Returns 1 if everything was closed. */
 EMSCRIPTEN_KEEPALIVE int w_stop(void)
 {

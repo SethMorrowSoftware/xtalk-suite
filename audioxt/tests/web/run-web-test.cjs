@@ -16,7 +16,21 @@
  *   - after one click the engine's clock runs in real time and the meter
  *     reads the tone's level (so Web Audio is pulling sound from the mixer);
  *   - the microphone opens, delivers samples and they are not silence;
- *   - shutdown closes it all, and the page raised no error.
+ *   - shutdown closes it all, and the page raised no error;
+ *   - on a page with no microphone API (as one served over plain http
+ *     has none) a capture is refused with a reason and playback still
+ *     opens; on a page whose AudioContext cannot be made, a device of
+ *     either kind is refused with a reason. miniaudio's own JavaScript
+ *     would throw on both, through every WebAssembly frame above it (the
+ *     web engine's main loop included); neither page may raise an error;
+ *   - a device the page opens at load, before any gesture, is held silent
+ *     (its clock stands at 0) until the visitor's first key press, mouse
+ *     button or click, and Escape, which is no gesture, leaves it held.
+ *     In Playwright a page.evaluate counts as a gesture, so the first
+ *     page, which the test drives through evaluate, cannot show the hold
+ *     (its INFO line prints the clock before the click); these pages
+ *     open the device themselves (index.html?atload) and print their
+ *     clock to the console, and the test never calls into them.
  *
  * What this is NOT: OXT-Beyond's web engine. It is the archive that engine
  * will link, called from C as that engine will call it.
@@ -103,6 +117,82 @@ function check(name, ok, detail) {
     check('shutdown closes everything', (await call('w_stop')) === 1, 'the engine is still valid');
     await page.waitForTimeout(200);
     check('the page raised no error', errors.length === 0, errors.join(' | '));
+
+    // Pages that cannot have what miniaudio's JavaScript takes for granted.
+    // Each is a fresh page with one thing taken away before the archive
+    // loads; a throw would show as a page error or a failed call.
+    const hobbled = async (init, body) => {
+      const p = await context.newPage();
+      const errs = [];
+      p.on('pageerror', (e) => errs.push(String(e.message)));
+      await p.addInitScript(init);
+      await p.goto(origin + '/');
+      await p.waitForFunction(() => window.auReady === true, null, { timeout: 30000 });
+      await body((n, t) => p.evaluate(([n2, t2]) => Module.ccall(n2, t2, [], []), [n, t || 'number']), errs);
+      await p.close();
+    };
+    await hobbled(() => { Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }); },
+      async (c, errs) => {
+        const mic = await c('w_try_mic');
+        const why = await c('w_error', 'string');
+        check('no microphone API (plain http): a capture is refused, with the reason', mic === 0 && why.includes('https'), mic + " '" + why + "'");
+        check('and playback still opens there', (await c('w_start')) >= 8000, await c('w_error', 'string'));
+        check('and closes', (await c('w_stop')) === 1, 'the engine is still valid');
+        check('that page raised no error', errs.length === 0, errs.join(' | '));
+      });
+    await hobbled(() => { window.AudioContext = function () { throw new Error('no audio for this page'); }; window.webkitAudioContext = undefined; },
+      async (c, errs) => {
+        const eng = await c('w_try_engine');
+        const why = await c('w_error', 'string');
+        check('no AudioContext for the page: a playback device is refused, with the reason', eng === 0 && why.includes('Web Audio'), eng + " '" + why + "'");
+        const mic = await c('w_try_mic');
+        check('and so is a microphone', mic === 0 && (await c('w_error', 'string')).includes('Web Audio'), String(mic));
+        check('that page raised no error', errs.length === 0, errs.join(' | '));
+      });
+
+    // A device opened at load, before any gesture, and the gesture that
+    // lets it start. Each page prints its clock; nothing calls into it.
+    const atLoad = async (gesture) => {
+      const p = await context.newPage();
+      const errs = [];
+      let clock = null, refused = null;
+      p.on('pageerror', (e) => errs.push(String(e.message)));
+      p.on('console', (m) => {
+        const t = m.text();
+        if (t.startsWith('auclock refused')) refused = t;
+        else if (t.startsWith('auclock ')) clock = Number(t.slice(8));
+      });
+      await p.goto(origin + '/?atload=1');
+      for (let i = 0; i < 300 && clock === null && refused === null; ++i) await p.waitForTimeout(100);
+      if (refused !== null || clock === null) throw new Error('the page opened no device: ' + refused);
+      await p.waitForTimeout(800);
+      await gesture(p, () => clock);
+      check('that page raised no error', errs.length === 0, errs.join(' | '));
+      await p.close();
+    };
+    await atLoad(async (p, clock) => {
+      check('a device opened before any gesture is held silent', clock() === 0, clock() + ' s');
+      await p.keyboard.press('Escape');
+      await p.waitForTimeout(600);
+      check('Escape, which is no gesture, leaves it held', clock() === 0, clock() + ' s');
+      await p.keyboard.press('a');
+      await p.waitForTimeout(1200);
+      check('a key press starts it (miniaudio itself waits for a click)', clock() > 0.5 && clock() < 5, clock() + ' s');
+    });
+    await atLoad(async (p, clock) => {
+      check('held silent on a second page', clock() === 0, clock() + ' s');
+      await p.mouse.move(400, 300);
+      await p.mouse.down();
+      await p.waitForTimeout(1200);
+      check('a mouse button held down starts it, before any click', clock() > 0.5 && clock() < 5, clock() + ' s');
+      await p.mouse.up();
+    });
+    await atLoad(async (p, clock) => {
+      check('held silent on a third page', clock() === 0, clock() + ' s');
+      await p.click('#go');
+      await p.waitForTimeout(1200);
+      check('a click starts it', clock() > 0.5 && clock() < 5, clock() + ' s');
+    });
   } catch (e) {
     check('the run finished', false, String(e && e.message ? e.message : e) + ' | ' + errors.join(' | '));
   }
