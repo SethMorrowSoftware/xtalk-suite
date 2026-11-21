@@ -2020,12 +2020,12 @@ glibc's dlerror buffer, which glibc frees itself. Fixed the same day (the
 reason is read at the failure as a `Pointer`, copied and kept); box2dxt's
 harness v36 asserts it on Linux (`stTestLoaderErrorKept`), where no engine has
 run it yet. Work plan 2.8.
-**Gate:** none yet. ShowControl's own checker refused a foreign handler that
-returns a `ZString`; the suite's unified checker, which replaced it when
-ShowControl joined (2026-11-21), has no such rule, and box2dxt's bind, which no
-checker of its lineage ever refused, was found while porting it. The rule
-comes to the unified checker in its own change, so that one change touches
-every member's copy (work plan 2.8).
+**Gate:** the unified checker's check 24 (2026-11-21) refuses a foreign handler
+that returns a `ZString` unless its C symbol is in `ZSTRING_RETURN_CALLER_FREES`
+(`realpath` alone), fixture-tested in `tools/test-checker.py`. ShowControl's own
+checker had the rule; the suite's unified checker, which replaced it when
+ShowControl joined, did not, and box2dxt's bind, which no checker of its
+lineage ever refused, was found while restoring it.
 **Does NOT mean:** a `ZString` PARAMETER is unsafe: the engine makes and frees
 its own copy for the call. Nor that `nothing` is a problem: a NULL return is
 `nothing` and frees nothing.

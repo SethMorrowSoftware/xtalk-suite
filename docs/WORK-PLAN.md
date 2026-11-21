@@ -788,10 +788,9 @@ keeping the scaffold for its report.
   failed `b2LoadNativeLib` was empty (6.19) and the process then aborted with a double
   free. The reason is now read at the failure and kept, for `b2LoadNativeLib` and
   `b2LoadNativeLibHere`; a scratch lc-run probe passed three runs out of three, and
-  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9).
-  Verified under lc-run; needs an OXT pass. Still to do: the unified checker refuses
-  the form in every member (ShowControl's checker did; a change of its own, since it
-  touches every member's copy).
+  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9). The
+  checker's check 24 now refuses the form in every member. Verified under lc-run;
+  needs an OXT pass.
 
 **Coding.**
 
