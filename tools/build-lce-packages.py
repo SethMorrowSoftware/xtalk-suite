@@ -27,7 +27,8 @@ WHY THIS EXISTS
            every committed platform (the IDE maps the one for its platform
            into revLibraryMapping, the standalone builder copies the one for
            the target), the Visual C++ runtime DLLs a Windows library
-           imports (enetxt, box2dxt; below), licenses/.
+           imports (enetxt, box2dxt; below), licenses/. A pure LCB module
+           (native=False: it binds no library of its own) has no code/.
       LCS  <stack>.livecodescript (a `script "<stack>"` first line added
            where the file has none, and an extensionInitialize /
            extensionFinalize pair appended, because the IDE loads a script
@@ -79,7 +80,13 @@ EVERY EXTENSION HAS A PACKAGE (2026-11-21)
         pack and list leave it out, and the first build after its libraries
         land makes its package. A member that ships even one desktop or
         Android platform never waits: a lost library is the refusal it
-        always was.
+        always was;
+      - a PURE LCB row (native=False: a module that binds no library of its
+        own, such as showcontrol's Art-Net) has no code/ folder, no `ships`
+        row to consult, and never waits; a committed library under it is
+        refused, since the package would leave it out. Its package passes
+        `check` without code/, and the engine check loads it with nothing
+        mapped.
 
     A push to main whose packages differ in any way from the newest
     published release's (`plan` below) is published by the workflow
@@ -240,7 +247,9 @@ def P(kind, member, ident, main, file, probe, expect, **extra):
 
 
 # THE TABLE: one row per package, in load order (a package after the ones it
-# requires). id, main, stack, title, author, requires, probe and expect are
+# requires). An 'lcb' row carries its member's committed libraries unless it
+# says native=False (a pure LCB module, which needs none on any platform).
+# id, main, stack, title, author, requires, probe and expect are
 # Beyond's builder's, so a package and the built-in copy are one extension;
 # "file" names the .lce (the Extension Manager reads the id and version from
 # the manifest and of the file name only that it ends in .lce). A probe is an
@@ -365,6 +374,8 @@ def waiting():
     out = collections.OrderedDict()
     for row in PACKAGES:
         if row['kind'] == 'lcb':
+            if not native(row):
+                continue  # a pure LCB module owes no library, so never waits
             shipped = ships.get(row['member'])
             if shipped is None:
                 continue  # no freshness row: check_table refuses it
@@ -378,6 +389,12 @@ def waiting():
                     out[row['id']] = 'it requires %s, which waits' % r
                     break
     return out
+
+
+def native(row):
+    """Whether an LCB row carries native libraries (every 'lcb' row does
+    unless it says native=False)."""
+    return row['kind'] == 'lcb' and row.get('native', True) is not False
 
 
 def active():
@@ -553,15 +570,28 @@ def check_table():
                 ident = lcb_module_id(data.decode('utf-8', 'replace'))
                 if ident != row['id']:
                     raise Problem('%s: the .lcb declares %r' % (where, ident))
-                # Whether its libraries are owed is the freshness gate's
-                # `ships` row: without one, a member with none would wait
-                # forever instead of failing
-                if row['member'] not in ships:
-                    raise Problem('%s: %s has no row in tools/check-binary-freshness.py MEMBERS, so nothing '
-                                  'says which libraries it owes' % (where, row['member']))
-                if row['id'] not in wait:   # a row that waits owes nothing yet
-                    check_libraries(where, libraries(row))
+                if row.get('native', True) not in (True, False):
+                    raise Problem('%s: native=%r (True or False)' % (where, row['native']))
+                if not native(row):
+                    # a pure module: the package would leave out a library
+                    # committed under it, so one there is a mistake
+                    if libraries(row):
+                        raise Problem('%s: native=False, but %s has committed libraries (%s): drop '
+                                      'native=False' % (where, row['member'],
+                                                        ', '.join(sorted({p for p, _ in libraries(row)}))))
+                else:
+                    # Whether its libraries are owed is the freshness gate's
+                    # `ships` row: without one, a member with none would wait
+                    # forever instead of failing
+                    if row['member'] not in ships:
+                        raise Problem('%s: %s has no row in tools/check-binary-freshness.py MEMBERS, so '
+                                      'nothing says which libraries it owes (a module that binds no '
+                                      'library of its own says native=False)' % (where, row['member']))
+                    if row['id'] not in wait:   # a row that waits owes nothing yet
+                        check_libraries(where, libraries(row))
             elif row['kind'] == 'lcs':
+                if 'native' in row:
+                    raise Problem('%s: native= is for an lcb row' % where)
                 if not re.match(r'^[A-Za-z][A-Za-z0-9-]*$', row['stack']):
                     raise Problem('%s: stack %r must be a name without dots (the IDE loads a script '
                                   'library under the part of its file name before the first dot)'
@@ -690,7 +720,7 @@ def package_inputs(row):
     m = row['member']
     paths = ['%s/%s' % (m, row['main'])]
     paths += ['%s/%s' % (m, rel) for rel, _, _ in LICENCES.get(m, []) if rel != OPENSSL]
-    if row['kind'] == 'lcb':
+    if native(row):
         libs = libraries(row) or [(PLATFORMS[2], m + '.so')]
         paths += ['%s/src/code/%s/%s' % (m, platform, os.path.basename(lib)) for platform, lib in libs]
     return paths
@@ -903,7 +933,7 @@ def cmd_stage(args):
                 with open(os.path.join(folder, name), 'wb') as f:
                     f.write(data)
                 compile_lcb(row, folder, name, lc_compile, lci_dir, scratch, version)
-                for platform, lib in libraries(row):
+                for platform, lib in (libraries(row) if native(row) else []):
                     dest = os.path.join(folder, 'code', platform)
                     os.makedirs(dest, exist_ok=True)
                     shutil.copyfile(lib, os.path.join(dest, os.path.basename(lib)))
@@ -971,7 +1001,10 @@ def cmd_pack(args):
         made.append(target)
         sums.append('%s  %s' % (sha256_file(target), name))
         main = row['stack'] if row['kind'] == 'lcs' else row['id']
-        lines.append('\t'.join([row['kind'], name, main, row['probe'], row['expect']]))
+        # the sixth column tells the engine check whether an LCB package
+        # must map a library for its platform ("native") or carries none
+        code = '' if row['kind'] == 'lcs' else ('native' if native(row) else 'pure')
+        lines.append('\t'.join([row['kind'], name, main, row['probe'], row['expect'], code]))
         log('%s  %d bytes' % (name, os.path.getsize(target)))
     problems = check_packages(made)
     if problems:
@@ -981,6 +1014,12 @@ def cmd_pack(args):
     with open(os.path.join(out, 'packages.tsv'), 'w', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     log('packed %d packages into %s' % (len(made), out))
+
+
+def rows_by_id():
+    """{package id: row} of the table, for `check`, which reads packages
+    by their manifests."""
+    return {row['id']: row for row in PACKAGES}
 
 
 def check_packages(paths):
@@ -1014,7 +1053,11 @@ def check_packages(paths):
                 if lcb or 'module.lcm' in top:
                     if not (lcb and 'module.lcm' in top):
                         raise Problem('%s: an LCB package needs its .lcb and module.lcm at the root' % where)
-                    if not any(n.startswith('code/') for n in names):
+                    row = rows_by_id().get(root.findtext('name'))
+                    if row is not None and not native(row):
+                        if any(n.startswith('code/') for n in names):
+                            raise Problem('%s: a pure LCB package (native=False) with code/' % where)
+                    elif not any(n.startswith('code/') for n in names):
                         raise Problem('%s: an LCB package without code/' % where)
                     for n in names:
                         if n.startswith('code/'):

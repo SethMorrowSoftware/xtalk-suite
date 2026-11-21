@@ -354,10 +354,11 @@ worse than no gate, because it answers the question nobody asks twice.
   `.lce` per extension (`tools/build-lce-packages.py`) and loads and probes each on OXT-Beyond's
   Linux server engine; on a push to main that changes any package (the build is deterministic,
   so only a real change does), its `publish` job publishes a dated pre-release (crediting Seth
-  Morrow) and starts `pages.yml`, which writes the site from it. `build-lce-packages.py table` (a gate) refuses an
-  extension member of the registry with no package and no `NOT_PACKAGED` reason, and package
-  files the workflow's `paths:` would not notice; a member with no committed library yet WAITs.
-  A new extension member is not done until its package row is in.
+  Morrow) and starts `pages.yml`, which writes the site from it. `build-lce-packages.py table`
+  (a gate) refuses an extension member of the registry with no package and no `NOT_PACKAGED`
+  reason, and package files the workflow's `paths:` would not notice; a member with no committed
+  library yet WAITs, and a pure LCB module (`native=False`) needs none. A new extension member
+  is not done until its package row is in.
 - **macOS:** `macos-15` runners are arm64-only, so a plain build emits a thin dylib. sodiumxt,
   coinxt, enetxt and box2dxt build universal in one pass; torrentxt and datachannelxt use a
   two-slice lipo job. arm64 is tested natively, x86_64 under Rosetta. Unsigned, not notarized

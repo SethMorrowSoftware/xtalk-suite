@@ -332,6 +332,87 @@ def test_workflow_paths():
            lce.filter_takes(['box3dxt/src/**'], 'box3dxt/src/code/x86-win32/box3dxt.dll'))
 
 
+def test_pure(tmp):
+    """A pure LCB row (native=False, 2026-11-21): a module that binds no
+    library of its own, such as showcontrol's Art-Net, is packaged with no
+    code/ folder on any platform and never waits for libraries."""
+    state = saved_state()
+    real = lce.libraries
+    try:
+        row = next(r for r in lce.PACKAGES if r['member'] == 'sodiumxt' and r['kind'] == 'lcb')
+        ident = row['id']
+        row['native'] = False
+        lce.libraries = lambda r: [] if r['member'] == 'sodiumxt' else real(r)
+        del lce._TABLES['ships']['sodiumxt']
+        problems = lce.check_table()
+        expect('pure: a native=False row with no library and no freshness row holds', problems == [],
+               repr(problems))
+        expect('pure: ...never waits, and is packaged',
+               ident not in lce.waiting() and ident in [r['id'] for r in lce.active()])
+        expect('pure: ...made of its source and licences only',
+               not any('/src/code/' in p for p in lce.package_inputs(row)), repr(lce.package_inputs(row)))
+        lce.libraries = real
+        expect('pure: native=False over committed libraries is refused (the package would leave them out)',
+               any('native=False, but sodiumxt has committed libraries' in p for p in lce.check_table()))
+        lce.libraries = lambda r: [] if r['member'] == 'sodiumxt' else real(r)
+        row['native'] = 'no'
+        expect('pure: native is True or False', any("native='no'" in p for p in lce.check_table()))
+        row['native'] = False
+        helper = next(r for r in lce.PACKAGES if r['kind'] == 'lcs')
+        helper['native'] = False
+        expect('pure: native= on a script library row is refused',
+               any('native= is for an lcb row' in p for p in lce.check_table()))
+        del helper['native']
+        # without the flag the same row is what it always was: refused,
+        # since nothing says which libraries it owes
+        row['native'] = True
+        expect('pure: a native row with no freshness row is still refused',
+               any('no row in tools/check-binary-freshness.py' in p for p in lce.check_table()))
+
+        # check: a pure package has no code/, any other LCB package has one
+        manifest = LCB_MANIFEST.replace(b'org.example.x', ident.encode())
+        bare = [('manifest.xml', manifest)] + [e for e in GOOD_LCB[1:] if not e[0].startswith('code/')]
+        coded = [('manifest.xml', manifest)] + GOOD_LCB[1:]
+        row['native'] = False
+        expect('pure: check passes a pure package without code/', lce.check_packages([make(tmp, 'q.lce', bare)]) == [])
+        refuses(tmp, 'a pure package with code/', coded, 'pure LCB package (native=False) with code/')
+        row['native'] = True
+        refuses(tmp, 'the same package without code/ when its row is native', bare, 'without code/')
+        refuses(tmp, 'an LCB package of no row without code/', [e for e in GOOD_LCB if not e[0].startswith('code/')],
+                'without code/')
+
+        # pack tells the engine check which kind it is: packages.tsv's
+        # sixth column, "pure", "native", or empty for a script library
+        row['native'] = False
+        other = copy.deepcopy(next(r for r in state[0] if r['member'] == 'enetxt' and r['kind'] == 'lcb'))
+        helper = copy.deepcopy(next(r for r in state[0] if r['member'] == 'enetxt' and r['kind'] == 'lcs'))
+        lce.PACKAGES[:] = [row, other, helper]
+        stage, out = os.path.join(tmp, 'stage'), os.path.join(tmp, 'packed')
+        folders = {row['file']: bare,
+                   other['file']: [('manifest.xml', LCB_MANIFEST.replace(b'org.example.x', other['id'].encode()))]
+                   + GOOD_LCB[1:],
+                   helper['file']: [('manifest.xml', LCS_MANIFEST.replace(b'xlib', helper['stack'].encode())),
+                                    ('licenses/LICENSE', b'MIT'),
+                                    (helper['stack'] + '.livecodescript',
+                                     ('script "%s"\non a\nend a\n' % helper['stack']).encode())]}
+        for name, entries in folders.items():
+            for rel, data in entries:
+                path = os.path.join(stage, name, *rel.split('/'))
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'wb') as f:
+                    f.write(data)
+        with contextlib.redirect_stdout(io.StringIO()):
+            lce.cmd_pack(type('A', (), {'stage': stage, 'out': out, 'release': False})())
+        with open(os.path.join(out, 'packages.tsv'), encoding='utf-8') as f:
+            rows = [line.split('\t') for line in f.read().splitlines()]
+        expect('pure: packages.tsv says pure, native, and nothing for a script library',
+               [r[0] for r in rows] == ['lcb', 'lcb', 'lcs'] and [r[5] for r in rows] == ['pure', 'native', '']
+               and all(len(r) == 6 for r in rows), repr(rows))
+    finally:
+        lce.libraries = real
+        restore(state)
+
+
 # --- plan: what a release would bring the site --------------------------------
 
 def package(ident, title, version, platforms=(), salt=b''):
@@ -600,6 +681,8 @@ def main():
     test_registry()
     test_waiting()
     test_workflow_paths()
+    with tempfile.TemporaryDirectory() as tmp:
+        test_pure(tmp)
     with tempfile.TemporaryDirectory() as tmp:
         test_plan(tmp)
     with tempfile.TemporaryDirectory() as tmp:
