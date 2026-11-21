@@ -114,6 +114,17 @@ it saves a picture of each moment: copy the drive to `Toolset/home.rev` in the w
 engine's working folder and run the engine with no arguments (`export snapshot` needs a
 window; `-ui` has none).
 
+The window is built with messages locked, and the lock is then RESTORED, not lifted (the
+stack builder calls the build with messages locked already): an IDE answers every control a
+script makes, names or deletes (engine note 5.15), and built with messages on, Sound Stage's
+stack file froze OXT-Beyond 0.2.8-dp.1's IDE on Windows for 59 s (2026-11-21). Its
+`preOpenStack` then places the window on a working screen, title bar included, on the desktop
+only (`adPlaceWindow`; in a browser the Stack Player lays the page out): sized round the
+engine's first centre, the file opened at -320,-140 there (engine note 5.17), and
+`examples/build-demo-stack.livecodescript` now saves it at 160,60. The drive holds both: an
+ear in front of every object hears no create, name or delete during the build (the old
+build sent 520), and in a windowed engine the window opens on the screen.
+
 ## Gotchas
 
 1. **A path ending in `.` is refused by the shim** (`path_ok`): miniaudio's
@@ -140,7 +151,12 @@ from C) and in the IDE on Windows (2026-11-21, the maintainer's 64-bit OXT-Beyon
 stack, passed 89 and failed 0). No engine on macOS, Android or the web has loaded it, and
 nobody has HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
 through the silent device, headless and in a window (`tests/demo-drive.livecodescript`,
-2026-11-21); nobody has used it by hand. Release libraries were committed on 2026-11-21 (six
+2026-11-21). The same day it played in the IDE on the maintainer's Windows PC (0.2.8-dp.1)
+through a real sound device, by its own status line, meters and oscilloscope (nobody
+listened), and opened off the screen and in 59 s there; both were fixed that day, and the
+fixed stack file opened in 0.14 s in that release's IDE on Linux, against 1.8 s before; it
+has not been re-run on Windows yet. Release libraries were committed on 2026-11-21 (six
 desktop platforms and four Android ABIs from the suite's release run; the web archive,
-Emscripten 6.0.12, built separately); no engine has loaded one of them yet. Open work is in
-the suite's `docs/WORK-PLAN.md`.
+Emscripten 6.0.12, built separately). The `x86_64-linux` one was loaded that day by
+OXT-Beyond 0.2.8-dp.1's desktop engine (the drive) and its IDE (Sound Stage opened there);
+no engine has loaded the others yet. Open work is in the suite's `docs/WORK-PLAN.md`.
