@@ -111,7 +111,7 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
 1. **A `Data` does not bridge to a foreign `Pointer`.** Sends pass `MCDataGetBytePtr`; the
    drain fills a raw `MCMemoryAllocate` block copied back with `MCDataCreateWithBytes`.
 2. **Never return a `ZString` from a foreign handler**: the engine frees it (engine note
-   6.16; the checker's check 24 refuses the form). Names and the last error come back
+   6.16; no gate refuses the form yet). Names and the last error come back
    through caller buffers (bytes written, or `-needed`); `dlerror()`'s text as a
    `Pointer`, copied at once.
 3. **A NUL cannot cross as a `ZString`**: the engine throws "cannot export char U+0000". The

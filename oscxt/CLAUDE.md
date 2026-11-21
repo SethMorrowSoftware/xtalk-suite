@@ -90,8 +90,8 @@ not open"), so `scOscSend` opens it first.
    outputs fill a reusable `MCMemoryAllocate` block copied back with `MCDataCreateWithBytes`.
    Only `dataPtr`, `ensureScratch` and `scratchToData` touch raw pointers.
 2. **Never return a `ZString` from a foreign handler**: the engine frees it
-   (`oscLastError()` crashed the VM on ShowControl's first lc-run; engine note 6.16, and
-   the checker's check 24 refuses the form). Strings come back through caller buffers
+   (`oscLastError()` crashed the VM on ShowControl's first lc-run; engine note 6.16; no
+   gate refuses the form yet). Strings come back through caller buffers
    (bytes written, or `-needed`); `dlerror()`'s text as a `Pointer`, copied at once.
 3. **A NUL cannot cross as a `ZString`**: the engine throws "cannot export char U+0000".
    The binding checks first and refuses quietly.
