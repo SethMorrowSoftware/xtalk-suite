@@ -239,7 +239,7 @@ Android's system certificate store; onionxt, nostrxt and the three apps are not 
 **The finished packages.** Every extension the suite makes is built as an installable `.lce`
 package by `.github/workflows/lce-packages.yml`: each LCB library with its native code for every
 committed platform (and, for enetxt and box2dxt, the Visual C++ runtime their Windows DLLs need),
-and each script library (the helpers, the b2k Kit, coinxt's script layer, curlxt's tsNet calls,
+and each script library (the helpers, the b2k and b3k Kits, coinxt's script layer, curlxt's tsNet calls,
 OnionXT and its HTTP server, NostrXT and its relay client); `python3 tools/build-lce-packages.py
 list` names them. Its `table` gate refuses an extension member with no package, so a new one
 cannot be left off; one with no committed library yet waits, and the first build after its

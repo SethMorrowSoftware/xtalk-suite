@@ -205,6 +205,7 @@ VERSION_FROM = {
     'coinxt': ('src/coinxt.lcb', LCB_VERSION),
     'curlxt': ('src/curl.lcb', LCB_VERSION),
     'box3dxt': ('src/box3dxt.lcb', LCB_VERSION),
+    'audioxt': ('src/audioxt.lcb', LCB_VERSION),
     'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
@@ -232,6 +233,9 @@ LICENCES = {
                (OPENSSL, 'OpenSSL-LICENSE.txt', None)],
     # Box3D's MIT text is in the member's LICENSE, below its own
     'box3dxt': [('LICENSE', None, None)],
+    # miniaudio's terms (the public domain or MIT No Attribution, its
+    # author's choice of two) are in the member's LICENSE, below its own
+    'audioxt': [('LICENSE', None, None)],
     # stb_image's and fast_obj's MIT texts are in the member's LICENSE too
     'render3dxt': [('LICENSE', None, None)],
     # libxlsxwriter (and the FreeBSD, tmpfileplus and MD5 code it carries),
@@ -313,6 +317,13 @@ PACKAGES = [
     P('lcs', 'box3dxt', 'box3dxt-kit', 'src/box3dxt-kit.livecodescript', 'box3dxt-kit',
       'b3kVersion()', '^1$', stack='box3dxt-kit', title='Box3Dxt Kit', author='Seth Morrow',
       requires=['org.openxtalk.library.boxthreed']),
+    # audioxt (2026-11-21, the day its libraries were committed, #198):
+    # miniaudio's mixing, streaming, 3-D sound and microphone capture,
+    # beside the engine's own play. auLibraryVersion() checks the ABI first,
+    # so a library of another release fails the probe by name, and it opens
+    # no device, so the probe needs no sound card.
+    P('lcb', 'audioxt', 'org.openxtalk.library.audioxt', 'src/audioxt.lcb', 'audioxt',
+      'auLibraryVersion()', '^audioxt ABI [0-9]+; miniaudio [0-9]+\\.[0-9]+'),
     # render3dxt (2026-11-21, the day after it joined): the textured software
     # renderer that draws what box3dxt simulates. Only its web archive is
     # committed, which no package carries, so this row waits like xlsxt's
