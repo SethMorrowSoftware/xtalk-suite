@@ -94,8 +94,8 @@ Joined the suite on 2026-11-20. What has run, and where:
   Chromium's fake microphone (`tests/web/`).
 - **Not yet:** nobody has HEARD it. No machine with a sound card, no desktop IDE, and no
   engine on Windows, macOS, Android or the web has run it: on those it is verified
-  statically; needs an OXT pass. No library is committed under `src/code/` yet; the suite's
-  release-binaries dispatch lands them.
+  statically; needs an OXT pass. Only the web archive is committed under `src/code/` yet; the
+  suite's release-binaries dispatch lands the desktop and Android libraries.
 
 ## Building and testing
 

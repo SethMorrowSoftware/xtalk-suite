@@ -107,5 +107,5 @@ Verified natively (smoke and fuzz, ASan/UBSan and TSan, x86_64 Linux; wasm under
 the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library, through the silent device) and in headless Chromium (`tests/web/`, the archive
 called from C). No desktop IDE and no other platform's engine has loaded it, and nobody has
-HEARD it: verified statically; needs an OXT pass. No binaries are committed yet. Open work is
+HEARD it: verified statically; needs an OXT pass. Only the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12) is committed; no desktop or Android library yet. Open work is
 in the suite's `docs/WORK-PLAN.md`.

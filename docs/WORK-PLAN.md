@@ -894,7 +894,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   Its native lane repeats all three on every change. No machine with a sound card and no
   desktop IDE has run it, and nobody has heard it: for everything beyond those runs it is
   verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+- Binaries: the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten 6.0.12, the
+  same bytes from two build folders) was committed 2026-11-21 for OXT-Beyond's web engine and
+  is in the `ships` row; no desktop or Android library was committed when it joined: the
+  first release-binaries dispatch lands them
   (six desktop rows in `cmake-members`, four Android ids through `tools/build-android.sh`),
   and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
 - Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a

@@ -380,10 +380,12 @@ MEMBERS = [
         "name": "audioxt",
         "lib": "audioxt",
         "lcb": ["audioxt/src/audioxt.lcb"],
-        # EMPTY until the first release-binaries dispatch lands audioxt's
-        # libraries (joined 2026-11-20 with none committed), as box3dxt's
-        # row above was.
-        "ships": [],
+        # No desktop or Android library until the first release-binaries
+        # dispatch lands them (joined 2026-11-20 with none committed), as
+        # box3dxt's row above was. The web archive is built outside that
+        # workflow (Emscripten 6.0.12, byte for byte the same from two build
+        # folders) and was committed 2026-11-21 for OXT-Beyond's web engine.
+        "ships": ["wasm32-emscripten"],
         "shim": "audioxt/src/audio_shim.c",
         "prefix": "aux_",
         "abi_header": "audioxt/src/audio_shim.c",
@@ -393,7 +395,8 @@ MEMBERS = [
         # (ld64) export aux_* and nothing else; miniaudio is compiled into
         # the shim's one translation unit with hidden visibility (measured
         # on the x86_64-linux build, 2026-11-20).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "xlsxt",

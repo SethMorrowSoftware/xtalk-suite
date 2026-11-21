@@ -17,8 +17,8 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   ancestor), coinxt (trezor-crypto + libsecp256k1), curlxt (libcurl + libssh2, with the tsNet
   calls by name over it; joined 2026-11-14), box3dxt (Box3D, 3D rigid-body physics; joined
   2026-11-20 with no committed library yet), audioxt (miniaudio: mixing, streaming, 3D sound
-  and microphone capture, beside the engine's own `play`; joined 2026-11-20, no committed
-  library yet) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read;
+  and microphone capture, beside the engine's own `play`; joined 2026-11-20, only its web archive
+  committed yet) and xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read;
   joined 2026-11-20 with no committed library yet).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
