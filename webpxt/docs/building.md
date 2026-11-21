@@ -77,7 +77,7 @@ and read the diff: the file's bytes may change, the pixels must not.
 ## Release libraries
 
 The desktop and Android libraries come from the suite's `release-binaries.yml` dispatch, never
-from a developer's machine. The web archive is the exception every member shares: it is built
+from a developer's machine (first on 2026-11-21, run 44846691681). The web archive is the exception every member shares: it is built
 by hand with the Emscripten version OXT-Beyond's web engine is built with (6.0.12), placed in
 `src/code/wasm32-emscripten/` by the build, and committed with its `MANIFEST.sha256` line.
 

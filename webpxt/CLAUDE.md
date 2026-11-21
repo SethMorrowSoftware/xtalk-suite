@@ -77,6 +77,7 @@ self-test's `sweepEveryHandler`. `tools/check-shim-coverage.py` refuses any of t
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built
 library). No desktop IDE and no other platform's engine has loaded it: verified statically;
-needs an OXT pass. Only the web archive is committed (`src/code/wasm32-emscripten/`, built by hand with
-Emscripten 6.0.12, 2026-11-21); the desktop and Android libraries wait for a release
-dispatch. Open work is in the suite's `docs/WORK-PLAN.md`.
+needs an OXT pass. Release libraries were committed on 2026-11-21 (six desktop platforms, four
+Android ABIs, run 44846691681), beside the web archive (`src/code/wasm32-emscripten/`, built by
+hand with Emscripten 6.0.12 the same day); @MEMBERENGINE@ Open work is in the suite's
+`docs/WORK-PLAN.md`.

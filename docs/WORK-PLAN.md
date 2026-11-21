@@ -904,14 +904,16 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   built library (2026-11-20), which its native lane repeats on every change. No desktop IDE
   has loaded it: for everything beyond that server run it is verified statically; needs an
   OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them,
-  and the change after it lists the platforms in `check-binary-freshness.py`'s `ships` row.
+- Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44846691681 from
+  527d109, commit @RELCOMMIT@: six desktop rows and four Android ids, ABI 1), beside the web
+  archive committed before it (527d109), built with emsdk 6.0.12 outside that workflow as the
+  other members' are. The `ships` row lists all eleven. @ENGINELINE@
 - Publishing: `SethMorrowSoftware/webpxt` exists, empty; a publish-members run adopts it
   (`--adopt webpxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: webpxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `webpxt/src/code/` holds every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-21 (run 44846691681, commit @RELCOMMIT@, and the web archive): the first release-binaries dispatch with `members: webpxt`, then the `ships` row | - | - | `webpxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `wpLibraryVersion()`, a WebP file decoded into an image object and that image encoded back, an animation stepped, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `webpxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/webpxt.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `wpLibraryVersion()` answers in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
@@ -933,7 +935,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: barcodext`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `barcodext/src/code/` holds every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-21 (run 44846691681, commit @RELCOMMIT@, and the web archive): the first release-binaries dispatch with `members: barcodext`, then the `ships` row | - | - | `barcodext/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `bcLibraryVersion()`, a QR Code created into an image object and read back from its `imageData`, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `barcodext/docs/api-reference.md` says |
 | 3 | A read of real photographs: a phone picture of a printed QR Code, an EAN-13 on a product, a turned and a poorly lit one | S1, after #1 | - | each is read, or the limit is written into `barcodext/docs/getting-started.md` |
 | 4 | The web archive (`wasm32-emscripten/barcodext.a`) linked into OXT-Beyond's web engine | OXT-Beyond | - | `bcLibraryVersion()` answers in the web IDE |

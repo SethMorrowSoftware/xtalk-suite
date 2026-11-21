@@ -409,11 +409,15 @@ MEMBERS = [
         "name": "barcodext",
         "lib": "barcodext",
         "lcb": ["barcodext/src/barcodext.lcb"],
-        # The web archive alone (built by hand with the pinned Emscripten and
-        # committed 2026-11-21, as every member's is); the desktop and Android
-        # libraries wait for the first release-binaries dispatch, as
-        # box3dxt's row says.
-        "ships": ["wasm32-emscripten"],
+        # Its first release-binaries dispatch (run 44846691681 from 527d109,
+        # 2026-11-21) built the ten desktop and Android libraries; the web
+        # archive is built outside that workflow, with OXT-Beyond's pinned
+        # emsdk, and was committed before it (527d109).
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "barcodext/src/barcode_shim.cpp",
         "prefix": "bcx_",
         "abi_header": "barcodext/src/barcode_shim.cpp",
@@ -429,8 +433,12 @@ MEMBERS = [
         "name": "webpxt",
         "lib": "webpxt",
         "lcb": ["webpxt/src/webpxt.lcb"],
-        # The web archive alone, as above.
-        "ships": ["wasm32-emscripten"],
+        # As barcodext's: the same release run, the web archive beside it.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "webpxt/src/webp_shim.c",
         "prefix": "wpx_",
         "abi_header": "webpxt/src/webp_shim.c",

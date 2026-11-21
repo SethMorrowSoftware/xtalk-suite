@@ -67,9 +67,9 @@ Joined the suite on 2026-11-20. What has run, and where:
   passed the ABI check, wrote and read pictures and animations, set a decoded picture on an
   image object and read it back, and called every public handler once.
 - **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS, Android or the
-  web has run it: on those it is verified statically; needs an OXT pass. Only the web
-  archive is committed under `src/code/`; the suite's release-binaries dispatch lands the
-  desktop and Android libraries.
+  web has run it: on those it is verified statically; needs an OXT pass. The libraries
+  committed under `src/code/` on 2026-11-21 (six desktop platforms, four Android ABIs, a web
+  archive) were tested where they were built; @MEMBERENGINE@
 
 ## Building and testing
 
