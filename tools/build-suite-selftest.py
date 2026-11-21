@@ -206,6 +206,11 @@ NO_HARNESS = {
                "engine self-test on the headless server engine and a browser "
                "run of its web archive are its native lane's "
                "(audioxt/tests/engine-selftest.lc, audioxt/tests/web/)",
+    "gamepadxt": "joined 2026-11-20 with no in-engine harness in the paste "
+                 "yet; its native smoke and fuzz tests (ASan/UBSan, over "
+                 "virtual pads) and its own engine self-test on the headless "
+                 "server engine run in its native lane "
+                 "(gamepadxt/tests/engine-selftest.lc)",
     "render3dxt": "joined 2026-11-20 with no in-engine harness in the paste "
                   "yet; its native smoke and fuzz tests (ASan/UBSan, TSan) "
                   "and its two engine tests on the headless server engine "

@@ -111,7 +111,7 @@ constant kPvOk = "96,214,142"
 constant kPvWarn = "242,193,78"
 constant kPvBad = "255,112,112"
 -- A field's first line begins 6 pixels ABOVE its top margin (the engine's
--- TEXT_Y_OFFSET, engine note 5.18): a top margin of 6 puts the line at the
+-- TEXT_Y_OFFSET, engine note 5.19): a top margin of 6 puts the line at the
 -- field's top edge, and each builder below adds the room it wants to that.
 -- With the 1 of a margin "2,1,2,1", every label's words rose 5 pixels above
 -- it, and on Windows the tops of the letters were cut off (2026-11-21).

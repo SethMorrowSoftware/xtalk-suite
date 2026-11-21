@@ -104,7 +104,7 @@ box3dxt is the member this one was shaped on.
    `libpdfium.so` of its own; `dlopen("libpdfium.so")` finds it, and it is another build. The
    first Android 6.0 emulator run (2026-11-20) caught a bare-name fallback doing exactly that.
 
-7. **A field's first line starts 6 pixels above its top margin** (engine note 5.18). The demo's
+7. **A field's first line starts 6 pixels above its top margin** (engine note 5.19). The demo's
    builders add `kPvLift` (6) to every top margin: with the 1 they had, every label's words
    rose 5 pixels above it and Windows cut their tops off. The drive holds every field that
    does not scroll to its lines (`drUnplaced`).

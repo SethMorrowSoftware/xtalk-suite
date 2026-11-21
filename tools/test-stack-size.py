@@ -85,7 +85,7 @@ def main():
     # .livecodescript, one uiChrome call at kRdWinW x kRdWinH (980 x 620).
     # 55 since 2026-11-21: curlxt/examples/curlxt-live.livecodescript, the
     # first curlxt demo, a width line and a height line at 1180 x 640.
-    # 56 since 2026-11-21: box3dxt/examples/box3dxt-orb-island.livecodescript,
+    # 56 the same day: box3dxt/examples/box3dxt-orb-island.livecodescript,
     # the b3k Kit's example game, one uiChrome call at 1104x640.
     # 58 since 2026-11-21: audioxt/examples/audioxt-demo.livecodescript, a
     # width line and a height line at kAdWidth x kAdHeight (960 x 600).
@@ -96,8 +96,11 @@ def main():
     # line at kPvWidth x kPvHeight (1180 x 630). (It first carried one
     # uiChrome call at that size, then left the kit for OXT-Beyond's dark
     # look the same day.)
-    if "61 stack window dimension" not in out:
-        print("test-stack-size: expected 61 measured dimensions, got:\n" + out)
+    # 63 the same day, when the pdfxt branch met main's gamepadxt:
+    # gamepadxt/examples/gamepad-lab.livecodescript, Gamepad Lab, a width
+    # line and a height line at 1180 x 640.
+    if "63 stack window dimension" not in out:
+        print("test-stack-size: expected 63 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

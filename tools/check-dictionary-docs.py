@@ -103,6 +103,7 @@ CORPUS = [
     "audioxt/src/audioxt.lcb",
     "render3dxt/src/render3dxt.lcb",
     "pdfxt/src/pdfxt.lcb",
+    "gamepadxt/src/gamepadxt.lcb",
     "xlsxt/src/xlsxt.lcb",
     "curlxt/src/curl.lcb",
     "curlxt/src/curl-helpers.livecodescript",

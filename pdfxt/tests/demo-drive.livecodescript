@@ -26,7 +26,7 @@ script "pdfxtDemoDrive"
 -- colours (under Windows' dark appearance a field without them got white
 -- text on a white ground), and no button is a tick box. Every field that
 -- does not scroll holds its words inside itself (a first line starts 6
--- pixels above the top margin, engine note 5.18: the Windows IDE showed
+-- pixels above the top margin, engine note 5.19: the Windows IDE showed
 -- every label's words 5 pixels above it), what each scene shows fits its
 -- box, and a window placed partly off the screen moves onto it, as the
 -- Windows IDE opened it on 2026-11-21. The native lane
@@ -139,7 +139,7 @@ end drUnpainted
 -- The fields of the window whose lines do not sit inside them, a line each,
 -- or empty: a label, a caption or an entry field whose first line rises
 -- above its top or whose last runs below its bottom. The engine starts a
--- field's first line 6 pixels above its top margin (engine note 5.18): with
+-- field's first line 6 pixels above its top margin (engine note 5.19): with
 -- a margin of 1, every label's words rose 5 pixels above it, and on Windows
 -- the tops of the letters were cut off (2026-11-21). The boxes are the ones
 -- the engine lays the lines out in (the formattedRect of the lines), so no
@@ -211,7 +211,7 @@ on startup
             and the hilite of button "side:find" and the visible of field "find:text", \
             "a scene's button says why it cannot play, and the tabs still work", field "show:about"
       -- not the defaultStack when it goes: deleting the defaultStack and then
-      -- creating a stack killed this engine (engine note 5.17)
+      -- creating a stack killed this engine (engine note 5.18)
       set the defaultStack to the short name of me
       delete stack "pdfxtDemoBare"
 

@@ -1032,6 +1032,33 @@ handler (quote its name). **Gate:** none checks visibility at the target.
 **Does NOT mean:** a private handler called DIRECTLY by name from the same
 script is fine.
 
+### 3.6 A single-line `if` followed by `else if` takes that else, whatever the indentation
+**OBSERVED 2026-11-21** (OXT-Beyond's Linux desktop engine, 9.7.1, setting a
+script): `the result` was `190,354,7` (`if: missing 'end if'`) followed by
+`411,354,7`, `319,354,7`, `166,354,7` and `165,354,7`, at the handler's
+`end switch`, far below the cause. The demo window
+`gamepadxt/examples/gamepad-lab.livecodescript` had, inside a block `if`:
+
+```
+   if tPad is sPad then
+      if item 4 of tLine is "down" then glPressed item 3 of tLine
+   else if tPad is not sTouch and item 4 of tLine is "down" then
+      glTakeOver tPad
+   end if
+```
+
+The `else if`, written one indent out to belong to the outer `if`, belongs
+to the single-line `if` just above it; its own `end if` then closes that,
+and the outer `if` has none. A second handler had the same shape. It is
+the bare-`else` trap of the checkers' check 20, in a form they do not see.
+**Rule:** an `if` with an `else` anywhere near it is block-form: `then` ends
+its line, its statement on the next, `end if` after. **Gate:** check 20 of
+the suite checker refuses a BARE `else` after a single-line `if`; nothing
+yet refuses the `else if` form (work plan, suite-wide).
+**Does NOT mean:** `if a then stmt` followed by `else stmt2`, or by an
+`else if b then` block, is an error when that else is MEANT for the
+single-line `if`: that is an ordinary chain and compiles.
+
 ## 4. The FFI boundary (LCB <-> C)
 
 Marshalling bets placed before any engine existed; all **OBSERVED**, dated by
@@ -1193,6 +1220,12 @@ parks a freshly created, still-scriptless stack CLOSED, sets its script and
 lifecycle families); a stack-targeted nudge (5.3 pin), dispatched and never
 sent, stays as the belt. The `go invisible stack` spelling rides the
 launcher's "needs an OXT pass" label.
+Seen again **OBSERVED 2026-11-21** in a `-ui` session of OXT-Beyond's Linux
+desktop engine (9.7.1), with no display: `create stack` left the new stack
+open (its mode 1), and `go` to it sent neither `preOpenStack` nor
+`openStack`, from `startup` and from a later handler alike; after a
+`close stack`, `go` sent both. gamepadxt's `tests/demo-drive.livecodescript`
+closes and reopens the demo window for that reason, as a person does.
 **Does NOT mean:** loading a script-only file into the MESSAGE PATH is fine
 (`start using stack "<name>"`, no window expected; `onionxt/docs/10-usage-guide.md`
 is the worked example), as are `put sxSelfTest()` / `put oxSelfTest()`.
@@ -1411,7 +1444,34 @@ reported one unreadable (INFERRED: a dark theme draws its face dark, with its wh
 so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
 dark theme has been run on either (UNEVIDENCED either way).
 
-### 5.17 Deleting the defaultStack and then creating a stack kills the engine
+### 5.17 A field's scroll bar is drawn in the system's light colours, and a field without one ignores the wheel
+**OBSERVED 2026-11-21** (OXT-Beyond's Linux desktop engine, 9.7.1, under
+xvfb, in an `export snapshot` of the gamepadxt demo window): a field whose
+foreground, background and border colours were all set dark drew its
+vertical scroll bar with light square arrows and a light hatched trough, a
+pale strip down a dark box. On Windows and macOS the engine asks the
+system to draw it (INFERRED from the engine source; not seen there).
+**DOCUMENTED 2026-11-21** (OXT-Beyond's engine source): the mouse wheel
+reaches the control under the pointer as `rawKeyDown` with 65308 (the
+wheel turned towards the person, further down the text) or 65309 (away),
+before the control's own handling (`engine/src/eventqueue.cpp`,
+`desktop.cpp`, `w32dcw32.cpp`, `lnxdclnx.cpp`, `MCObject::kdown`); a field
+with no vertical scroll bar then does nothing with it (`MCField::fscroll`
+returns at once, "Bug 7667", `engine/src/fieldf.cpp`). Its `vScroll` can
+still be set by script, and typing still scrolls it to keep the caret in
+view (`MCField::replacecursor`).
+**Rule:** in a window of its own colours, leave a field's scroll bars off
+and scroll it from script: handle `rawKeyDown` 65308 and 65309 when
+`the target` is the field (set its `vScroll`, clamped to its
+`formattedHeight` less its height) and draw a thin bar of the window's
+own. `gamepadxt/examples/gamepad-lab.livecodescript` does this
+(`glWheel`, `glScrollMark`). **Gate:** for that demo only, its drive
+(`gamepadxt/tests/demo-drive.livecodescript`) refuses a field with a
+scroll bar and drives the wheel by message; no turned wheel has run it.
+**Does NOT mean:** a field WITH a scroll bar needs a handler for the
+wheel: it scrolls itself (the same `fscroll`).
+
+### 5.18 Deleting the defaultStack and then creating a stack kills the engine
 **OBSERVED 2026-11-21** (OXT-Beyond 0.2.7-rc.6, its Linux desktop engine run
 as `LiveCode-Community -ui` with no display, version 9.7.1-OXT build 25923;
 found when `pdfxt/tests/demo-drive.livecodescript` grew a stack it deletes).
@@ -1427,7 +1487,7 @@ delete.
 defaultStack; not tried), or on Windows or macOS (not tried); nor that a
 delete alone, or a create alone, is unsafe.
 
-### 5.18 A field's first line starts 6 pixels above its top margin
+### 5.19 A field's first line starts 6 pixels above its top margin
 **OBSERVED 2026-11-21** on OXT-Beyond's Linux desktop engine (0.2.7-rc.6, `-ui`, no
 display) and on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit), and the engine
 source says why (DOCUMENTED: `MCField::getcontenty` in `engine/src/fieldf.cpp` puts the

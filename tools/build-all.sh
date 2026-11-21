@@ -57,7 +57,7 @@ done
 # pdfxt (2026-11-20) builds no dependency at all: its configure step fetches
 # one pinned, prebuilt PDFium archive (a few megabytes, held to a SHA-256 by
 # pdfxt/src/pdfium.pin) and the smoke test loads that library at run time.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt)
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt gamepadxt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -447,7 +447,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt gamepadxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too
@@ -743,6 +743,21 @@ fi
 if [ -f tools/test-android-run.py ]; then
   echo "== suite: tools/test-android-run.py =="
   python3 tools/test-android-run.py
+fi
+# Named release builds (2026-11-21). release-binaries.yml's `build: named`
+# runs only the named members' lanes, through a plan job that reads the rows
+# of the workflow's own include lists (tools/release-plan.py), so a member's
+# pull request adds its rows in place and nothing else. Like the Android
+# tests, this is held on every push because the workflow itself only runs
+# when someone dispatches it: the reader against the rows (and PyYAML's
+# reading of them, where it is installed), each member's plan against its
+# rows, and every job's `needs` and `if` against a full build that runs and
+# commits exactly as it did before and a named build that runs nothing else,
+# under both readings of a status function. Its mutants prove those checks
+# are not blind.
+if [ -f tools/test-release-plan.py ]; then
+  echo "== suite: tools/test-release-plan.py =="
+  python3 tools/test-release-plan.py
 fi
 
 if [ "$GATES_ONLY" = 1 ]; then

@@ -115,7 +115,7 @@ Joined the suite on 2026-11-20. What has run, and where:
   faults, fixed the same day: the window opened where it was last saved, partly off a smaller
   screen (it now moves onto the screen when it would not fit); every label's words sat 5
   pixels above it, so the tops of some letters were cut off (a field's first line starts 6
-  pixels above its top margin, the suite's engine note 5.18; every margin now allows for it);
+  pixels above its top margin, the suite's engine note 5.19; every margin now allows for it);
   and the toolbar's words sat above the buttons' line, for the same reason. The drive holds
   all three. The fixed window has met Linux only: on Windows it is verified statically; needs
   an OXT pass. Nobody has used the window by hand yet.
