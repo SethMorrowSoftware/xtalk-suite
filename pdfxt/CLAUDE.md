@@ -110,11 +110,15 @@ Verified natively (smoke, ASan/UBSan, x86_64 Linux; and the smoke test on every 
 it ships for by `native-pdfxt.yml`, run 44840908920, 2026-11-21: six desktop rows, the mac
 x86_64 slice under Rosetta, and the Android 6.0 emulator for both x86 ABIs, the ARM ABIs built,
 not run) and on the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a
-locally built library). The demo stack (`examples/pdfxt-demo.livecodescript`, the suite UI kit)
-is driven on the Linux desktop engine without a display by `tests/demo-drive.livecodescript`
-(2026-11-21), and by the native lane on every change; no person has used its window. A click
-or a drag on the page is driven through the handlers the demo's mouse handlers call
-(`pvClickAt`, `pvSelectBox`), since no pointer moves there. The Windows IDE loaded it on
+locally built library). The demo stack (`examples/pdfxt-demo.livecodescript`: OXT-Beyond's dark
+showcase look and a self-running tour of five scenes; it left the suite UI kit on 2026-11-21,
+`tools/check-ui-kit-drift.py` says why) is driven on the Linux desktop engine without a display
+by `tests/demo-drive.livecodescript` (2026-11-21), and by the native lane on every change; no
+person has used its window. A click or a drag on the page is driven through the handlers the
+demo's mouse handlers call (`pvClickAt`, `pvSelectBox`), since no pointer moves there; the tour's
+first frames come from the engine's timer, and each scene is then played to its end through its
+own frames (`pvShowRun`). Its earlier, kit look met the Windows IDE on 2026-11-21 and drew two
+fields white on white under the dark appearance; this look has not met Windows yet. The Windows IDE loaded it on
 2026-11-21 (the maintainer's 64-bit OXT-Beyond, CI's `x86_64-win32` library): the engine
 self-test passed 64 checks and failed its 2 first-load checks, which cannot hold once PDFium
 has been loaded in the process (pdfxt had been used in that session first; loading and

@@ -152,10 +152,13 @@ jobs:
             grep '^INFO ' "$RUNNER_TEMP/engine.log" | sed 's/^INFO /- /' || true
           } >> "$GITHUB_STEP_SUMMARY"
       # The demo stack, driven on the desktop engine with no display (-ui):
-      # its window built, the sample opened, the outline, zoom, scroll,
-      # search, labels, links, a word and a box chosen, a page saved, the
-      # locked sample unlocked, and its own checks run. Green needs an exit
-      # of 0 AND a last line "DRIVE <n> 0" AND the demo's "SUMMARY <n> 0".
+      # its window built with every colour its own, first without pdfxt and
+      # then with it; the tour's first frames played by the engine's timer
+      # and each of its five scenes to its end; then the sample opened, the
+      # outline, zoom, scroll, search, labels, links, a word and a box
+      # chosen, a page saved, the locked sample unlocked, and its own checks
+      # run. Green needs an exit of 0 AND a last line "DRIVE <n> 0" AND the
+      # demo's "SUMMARY <n> 0".
       - name: Drive examples/pdfxt-demo.livecodescript on the engine
         run: |
           set -o pipefail

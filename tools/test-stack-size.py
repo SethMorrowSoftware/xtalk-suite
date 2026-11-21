@@ -83,8 +83,11 @@ def main():
     # a board resized and reopened failed its own 1200 x 640 boot check).
     # 53 since 2026-11-21: pdfxt/examples/pdfxt-demo.livecodescript, the
     # PDF viewer, one uiChrome call at kPvWidth x kPvHeight (1180 x 630).
-    if "53 stack window dimension" not in out:
-        print("test-stack-size: expected 53 measured dimensions, got:\n" + out)
+    # 54 the same day: that demo left the kit for OXT-Beyond's dark look and
+    # sizes its window with a width line and a height line instead, at the
+    # same kPvWidth x kPvHeight.
+    if "54 stack window dimension" not in out:
+        print("test-stack-size: expected 54 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

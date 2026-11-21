@@ -1370,6 +1370,22 @@ handlers. And the IDE stops following: an open project browser keeps listing
 the controls it last heard of until it is closed and reopened (its
 `preOpenStack` rebuilds the tree).
 
+### 5.16 Deleting the defaultStack and then creating a stack kills the engine
+**OBSERVED 2026-11-21** (OXT-Beyond 0.2.7-rc.6, its Linux desktop engine run
+as `LiveCode-Community -ui` with no display, version 9.7.1-OXT build 25923;
+found when `pdfxt/tests/demo-drive.livecodescript` grew a stack it deletes).
+A script made a stack the defaultStack, by `go stack` or by
+`set the defaultStack`, deleted that stack, and then ran `create stack`: the
+engine ended on signal 11, with nothing for a `try` to catch. Each variant
+ran once that day: a stack that was never the defaultStack, deleted and
+followed by a create, ran clean; so did `close stack` in place of the
+delete, and so did setting the defaultStack to another stack before the
+delete.
+**Rule:** before deleting a stack, set the defaultStack to another one.
+**Does NOT mean:** a crash in the IDE (whose own scripts move the
+defaultStack; not tried), or on Windows or macOS (not tried); nor that a
+delete alone, or a create alone, is unsafe.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending

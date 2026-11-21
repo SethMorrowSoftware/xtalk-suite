@@ -81,7 +81,15 @@ def flip_last_byte(root, rel):
 def decoded_block(text):
     """The two PDFs as the demo would rebuild them from its block: the
     constants it declares, joined as pvSampleBase64's two return lines name
-    them, then base64-decoded. None when the block cannot be read so."""
+    them, then base64-decoded. None when the block cannot be read so.
+    Only the lines between the two marker lines are read: the hand-written
+    rest of the demo has return lines of its own that name constants
+    (pvChosenColor, since 2026-11-21), and they are not the block's."""
+    start = text.find(GATE.BEGIN)
+    end = text.find(GATE.END)
+    if start < 0 or end < start:
+        return None
+    text = text[start:end]
     consts = dict(re.findall(r'^constant (kPv\w+) = "([A-Za-z0-9+/=]*)"$', text, re.M))
     joins = re.findall(r"^\s*return (kPv\w+(?: & kPv\w+)*)$", text, re.M)
     if len(joins) != 2:

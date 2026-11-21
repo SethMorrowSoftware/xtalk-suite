@@ -2,15 +2,18 @@ script "pdfxtDemo"
 
 -- pdfxt-demo.livecodescript - the pdfxt showcase: a PDF viewer in one window.
 --
--- It opens a PDF from a file, or from bytes this script carries (the
--- sample, a five-page guide, and a locked page whose password is secret),
--- and shows all of what the library does: a page drawn whole or, zoomed in,
--- only the part in view; the outline; the links (one inside the document is
--- followed, a web address is shown and opened only if you ask); search, with
--- every match marked on the page; the text of a page, of a box you drag out
--- and of the word you click; the document's information and permissions; the
--- drawing flags; a page saved as a BMP picture. The Checks tab runs every
--- check in one click.
+-- It opens on a five-page sample this script carries and plays a short tour
+-- of what the library does, one self-running scene at a time: a page drawn
+-- deep into a zoom, where only the window in view is drawn; a word found,
+-- with every match marked; a page read a character at a time and by a box
+-- dragged over it; the outline and the links followed; a locked PDF opened
+-- with a wrong and then the right password. Any click takes the window
+-- back. Then it is a viewer: open a PDF of your own, turn its pages, zoom
+-- and scroll, follow the outline and the links (a web address is shown, and
+-- opened only if you ask), search, read the text of a page, of a box you
+-- drag out and of the word you click, see the document's information and
+-- permissions, change the drawing flags and save a page as a BMP picture.
+-- The Checks tab runs every check in one click.
 --
 -- HOW TO USE (requires the pdfxt extension, org.openxtalk.library.pdfxt,
 -- with its PDFium library beside it, as the package installs them): paste
@@ -18,35 +21,55 @@ script "pdfxtDemo"
 -- "preOpenStack" to <that stack>` without closing). Opening this file itself
 -- loads the script and builds no window - that is the engine, not this demo:
 -- docs/OXT-ENGINE-NOTES.md 5.5. pdfxt has no browser build, so this stack
--- runs where the desktop libraries do.
+-- runs where the desktop libraries do. Without pdfxt the window still
+-- builds, and says in red what is missing.
 --
 -- Conventions: pages and characters count from 1; sizes and rectangles are
 -- in points (1/72 inch) from the TOP LEFT of the page as displayed. A call
 -- that cannot do what it was asked returns 0 or empty and never throws;
 -- pdfLastError() says why.
 --
+-- THE LOOK is OXT-Beyond's showcase look, the Render3D Tour's palette: a
+-- dark window, the page on a darker stage, orange section labels, buttons
+-- that light up. This script says every colour of every control and leaves
+-- none to the system: under Windows' dark appearance OXT-Beyond gives a
+-- field with no text colour of its own white text, and the suite kit's
+-- white fields then drew white on white (the page number and the outline,
+-- on the maintainer's Windows, 2026-11-21). There is no tick box, since the
+-- system draws a tick box's words in its own theme's colours: a switch is a
+-- button that is lit while it is on. So this stack does not carry the
+-- suite UI kit; tools/check-ui-kit-drift.py records why. The two PDFs are
+-- carried between their own marker lines, which tools/build-test-pdfs.py
+-- writes (its --check is one of the member's gates).
+--
+-- MOTION is driven by a timer: each frame of a scene is one `send ... in`
+-- message that draws with the screen locked and asks for the next, so the
+-- engine is never held in a wait and a click is answered at once.
+-- pvShowRun plays a scene through the same frames without the timer, for a
+-- drive with no person at it (tests/demo-drive.livecodescript).
+--
 -- HONESTY (the suite convention): see the footer line this stack paints,
 -- which is kept true to what has run.
---
--- THE LOOK is the suite UI kit, carried verbatim between the marker lines
--- (master: tools/ui-kit.livecodescript; the drift gate holds every copy
--- byte-identical). Change the look in the master, never here. The two PDFs
--- are carried between their own marker lines, which tools/build-test-pdfs.py
--- writes (its --check is one of the member's gates).
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kPvUiVersion = "pdfxt-kit2-1"
+constant kPvUiVersion = "pdfxt-beyond-1"
 constant kPvWidth = 1180
 constant kPvHeight = 630
 -- The page view on the card: the drawn part of the page sits inside it, the
 -- two scroll bars outside it (right and below).
 constant kPvViewL = 16
-constant kPvViewT = 92
+constant kPvViewT = 96
 constant kPvViewR = 760
-constant kPvViewB = 564
+constant kPvViewB = 568
+-- The column right of the stage, and the top of the scene's progress bar.
+constant kPvSideL = 794
+constant kPvSideR = 1164
+constant kPvBarT = 266
 -- The side panel's tabs, in order: key, then the label on its button.
 constant kPvTabs = "out,find,txt,lnk,draw,info,chk"
 constant kPvTabLabels = "Outline,Search,Text,Links,Draw,Info,Checks"
+-- The switches: buttons the script lights while they are on.
+constant kPvToggles = "find:case,find:words,lnk:show,draw:annots,draw:lcd,draw:gray,draw:print,draw:smooth"
 -- The zooms + and - step through, in percent of a point to a pixel.
 constant kPvZooms = "25,50,75,100,125,150,200,300,400,600,800"
 -- A stranger's file can hold any number of matches, links and outline
@@ -55,9 +78,38 @@ constant kPvHits = 60
 constant kPvLinkMax = 30
 constant kPvFindMax = 300
 constant kPvOutlineMax = 2000
--- The Draw tab's boxes, and the flag each one adds to every drawing.
+-- The Draw tab's switches, and the flag each one adds to every drawing.
 constant kPvFlagBoxes = "draw:annots,draw:lcd,draw:gray,draw:print,draw:smooth"
 constant kPvFlagValues = "1,2,8,2048,28672"
+-- Where the Draw tab's BMP picture sits.
+constant kPvThumbAt = "1052,331"
+-- The password bar over the top of the stage, and its three controls.
+constant kPvLockBg = "24,104,752,138"
+constant kPvLockMsg = "34,111,436,133"
+constant kPvLockPw = "442,108,598,134"
+constant kPvLockGo = "604,108,688,134"
+-- The showcase: its scenes, the frames of each, and a frame's length.
+constant kPvScenes = 5
+constant kPvSceneNames = "Deep zoom,Find a word,Read a page,Outline & links,Unlock"
+constant kPvSceneFrames = "240,280,215,330,140"
+constant kPvFrameMs = 40
+-- The look: OXT-Beyond's showcase palette (the Render3D Tour's), as r,g,b.
+constant kPvPage = "18,21,31"
+constant kPvPanel = "28,33,48"
+constant kPvInk = "238,241,247"
+constant kPvSoft = "169,178,199"
+constant kPvAccent = "255,138,61"
+constant kPvButton = "42,49,70"
+-- and its additions: the stage under the page, a field's ground and line,
+-- a chosen line on a Mac (pvChosenColor), and what the status line says
+-- things with
+constant kPvStage = "10,12,18"
+constant kPvWell = "21,25,37"
+constant kPvLine = "56,64,88"
+constant kPvSelect = "60,76,120"
+constant kPvOk = "96,214,142"
+constant kPvWarn = "242,193,78"
+constant kPvBad = "255,112,112"
 
 local sDoc          -- the open document's handle, or 0
 local sSource       -- where it came from: "sample", "locked" or a file's path
@@ -94,6 +146,16 @@ local sTab          -- the side panel's tab, one of kPvTabs
 local sCkPass       -- Checks: passing checks
 local sCkFail       -- Checks: failing checks
 local sCkLog        -- Checks: the running transcript
+local sShow         -- the scene playing, 1 to kPvScenes, or 0
+local sShowAll      -- true while Play them all runs the scenes in turn
+local sShowStep     -- the frame of the scene playing, from 1
+local sShowMsg      -- the next frame's message, so that it can be cancelled
+local sShowLog      -- what the scenes did, a line each, for a drive to read
+local sShowPeak     -- the deepest zoom of the zoom scene, in percent
+local sShowWindows  -- how many of its frames were drawn as a window
+local sShowFit      -- the zoom that fitted the page when the zoom scene began
+local sShowFromH    -- where the pointer's glide began, on the card
+local sShowFromV
 
 -- >>> BEGIN SAMPLE PDFS (tools/build-test-pdfs.py writes this block: change that script, then run it) >>>
 -- The guide that "The sample" opens (5 pages, written by that script) and
@@ -118,450 +180,6 @@ function pvSampleBase64 pWhich
 end pvSampleBase64
 -- <<< END SAMPLE PDFS <<<
 
--- ==== SUITE UI KIT v2 BEGIN (verbatim copy; master: tools/ui-kit.livecodescript; gate: tools/check-ui-kit-drift.py) ====
--- The family look as one carried block: the kit owns colors, chrome, and
--- control construction; the adopting demo owns layout (explicit rects) and
--- logic. Builders are idempotent (create-if-missing), so a rebuild on
--- reopen is safe. Do not edit this block in place: change the master and
--- re-carry it.
-constant kUiBg = "240,242,246"
-constant kUiCard = "255,255,255"
-constant kUiCardLine = "225,229,236"
-constant kUiAccent = "44,90,160"
-constant kUiAccentText = "255,255,255"
-constant kUiAccentSub = "199,216,241"
-constant kUiInk = "28,34,46"
-constant kUiInkSoft = "95,104,118"
-constant kUiMuted = "138,146,158"
-constant kUiOk = "23,128,63"
-constant kUiWarn = "150,110,40"
-constant kUiBad = "176,58,46"
-constant kUiFieldLine = "203,210,222"
-constant kUiCodeBg = "244,246,250"
-constant kUiCodeLine = "210,217,229"
-
--- The platform's own terminal face for codes, keys, tables and logs, so
--- the monospace surfaces look native instead of typewriter-Courier. A
--- missing face substitutes the engine default - a soft, safe failure.
-function uiMonoFont
-   if the platform is "MacOS" then
-      return "Menlo"
-   else if the platform is "Win32" then
-      return "Consolas"
-   end if
-   return "DejaVu Sans Mono"
-end uiMonoFont
-
--- The window chrome every adopter shares: stack size, page ground, the
--- title band, and the one status line under it (write it with uiStatus).
--- pBandH is optional (default 30); a taller band leaves room for an
--- adopter's tagline or status pill, placed by the adopter.
-command uiChrome pTitle, pWidth, pHeight, pBandH
-   local tFH
-   if pBandH is empty then
-      put 30 into pBandH
-   end if
-   set the width of this stack to pWidth
-   set the height of this stack to pHeight
-   set the backgroundColor of this card to kUiBg
-   set the title of this stack to pTitle
-   uiGfx "uiBand", "0,0," & pWidth & "," & pBandH
-   set the style of graphic "uiBand" to "rectangle"
-   set the filled of graphic "uiBand" to true
-   set the backgroundColor of graphic "uiBand" to kUiAccent
-   set the lineSize of graphic "uiBand" to 0
-   uiLabel "uiTitle", "  " & pTitle, "0,0," & pWidth & "," & pBandH, 15
-   set the foregroundColor of field "uiTitle" to kUiAccentText
-   set the textStyle of field "uiTitle" to "bold"
-   -- center the title on the band midline by MEASURED height (never guess
-   -- font metrics - the family's OXT passes clipped hand-sized labels)
-   put the formattedHeight of field "uiTitle" into tFH
-   if tFH > 0 and tFH < pBandH then
-      set the height of field "uiTitle" to tFH
-      set the top of field "uiTitle" to ((pBandH - tFH) div 2)
-   end if
-   uiLabel "uiStatus", empty, "16," & (pBandH + 4) & "," & (pWidth - 16) & "," & (pBandH + 22), 11
-end uiChrome
-
--- The status line, colored by what it reports: "ok", "warn", "bad", or
--- anything else for neutral/muted. Demos route probe results through this
--- so a stack that cannot run says so in red, at the top, immediately.
-command uiStatus pText, pKind
-   -- PIN THE STACK, THEN CHECK THE FIELD EXISTS. Both halves were missing and
-   -- both are load-bearing on a TIMER-driven call.
-   --
-   -- An unqualified `field "uiStatus"` resolves against the DEFAULTSTACK, not
-   -- against the stack whose script is running. Inside openStack those are the
-   -- same thing, which is why every demo's startup status line always worked.
-   -- A handler arriving from `send ... in` has no such guarantee: with a second
-   -- stack in front, the write lands in the wrong stack or resolves to nothing.
-   --
-   -- THE PIN RESTS ON THE DOCUMENTED RESOLUTION RULE, NOT ON A THROW WE SAW.
-   -- This comment used to cite enet-lan-chat's once-a-second dashboard throwing
-   -- "Chunk: error in object expression" REPEATEDLY on 2026-08-18, and dht-chat
-   -- hiding the same fault behind a guard. Neither half held up: that throw was
-   -- the ARGUMENT at the call site (`the number of keys of sPeers`, which does
-   -- not parse - OXT-ENGINE-NOTES 1.7) and never reached uiStatus at all, and
-   -- the guard credited to the kit was dht-chat's own wxSetStatus wrapper - the
-   -- master had no existence check until the same commit that added this pin.
-   -- What a guarded call site WOULD do if the defaultStack diverged is fail
-   -- silently, which is the argument for a gate rather than for more guards.
-   -- See OXT-ENGINE-NOTES 5.3, now classed DOCUMENTED.
-   --
-   -- The pin is holde-em's idiom, engine-proven there, and its comment names
-   -- this exact hazard. The existence check stays as well: a demo may call the
-   -- status line before its chrome is built, and a cosmetic line must never
-   -- take down a poll chain.
-   set the defaultStack to the short name of this stack
-   if there is no field "uiStatus" then
-      exit uiStatus
-   end if
-   put pText into field "uiStatus"
-   if pKind is "ok" then
-      set the foregroundColor of field "uiStatus" to kUiOk
-   else if pKind is "warn" then
-      set the foregroundColor of field "uiStatus" to kUiWarn
-   else if pKind is "bad" then
-      set the foregroundColor of field "uiStatus" to kUiBad
-   else
-      set the foregroundColor of field "uiStatus" to kUiInkSoft
-   end if
-end uiStatus
-
--- A static caption at a FIXED rect (idempotent, borderless, transparent).
--- Use uiWrap instead when the text may wrap or the exact height matters.
-command uiLabel pName, pText, pRect, pSize
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the borderWidth of field pName to 0
-   set the opaque of field pName to false
-   set the threeD of field pName to false
-   set the textSize of field pName to pSize
-   set the foregroundColor of field pName to kUiInk
-   put pText into field pName
-end uiLabel
-
--- A caption FIT to its measured text height (top pinned). The fit does
--- double duty: it prevents clipping (hand-sized rects clipped text on a
--- real Windows pass), and it makes `the height of field` equal the TEXT
--- height, which midline centering relies on. GUARD: only resize on a sane
--- measurement - a 0/blank formattedHeight (possible before the window is
--- fully realized) would collapse the label. Empty labels are skipped
--- (they receive their text later).
-command uiWrap pName, pText, pRect, pSize
-   local tOldDelim, tTop, tFH
-   uiLabel pName, pText, pRect, pSize
-   if pText is not empty then
-      put the itemDelimiter into tOldDelim
-      set the itemDelimiter to comma
-      put item 2 of pRect into tTop
-      set the itemDelimiter to tOldDelim
-      put the formattedHeight of field pName into tFH
-      if tFH > 0 then
-         set the height of field pName to tFH
-         set the top of field pName to tTop
-      end if
-   end if
-end uiWrap
-
--- A small, muted caption (hints, toggle descriptions, empty states).
-command uiCap pName, pText, pRect
-   uiWrap pName, pText, pRect, 10
-   set the foregroundColor of field pName to kUiMuted
-end uiCap
-
--- A numbered bold section header with a hairline divider placed below the
--- label's ACTUAL (fit-to-text) bottom, so it tracks the real header
--- height on any platform's line metrics.
-command uiSection pName, pText, pRect
-   local tOldDelim, tL, tR, tB
-   uiWrap pName, pText, pRect, 13
-   set the textStyle of field pName to "bold"
-   put the itemDelimiter into tOldDelim
-   set the itemDelimiter to comma
-   put item 1 of pRect into tL
-   put item 3 of pRect into tR
-   set the itemDelimiter to tOldDelim
-   put the bottom of field pName into tB
-   uiGfx (pName & "Line"), (tL & comma & (tB + 1) & comma & tR & comma & (tB + 2))
-   set the style of graphic (pName & "Line") to "rectangle"
-   set the filled of graphic (pName & "Line") to true
-   set the backgroundColor of graphic (pName & "Line") to kUiCardLine
-   set the lineSize of graphic (pName & "Line") to 0
-end uiSection
-
--- A one-line entry field, mono and flat ("modern input" chrome instead of
--- the engine's sunken-3D default), because hex, addresses and paths are
--- what this suite's demos edit.
-command uiInput pName, pRect
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to false
-   set the traversalOn of field pName to true
-   set the threeD of field pName to false
-   set the borderWidth of field pName to 1
-   set the borderColor of field pName to kUiFieldLine
-   set the opaque of field pName to true
-   set the backgroundColor of field pName to kUiCard
-   -- 4-item margins form ONLY: OXT ignored the single-number form on a
-   -- real engine pass
-   set the margins of field pName to "6,6,6,6"
-   set the textSize of field pName to 11
-   set the textFont of field pName to uiMonoFont()
-end uiInput
-
--- A read-only output/log area: mono, flat, scrolling, hairline-bordered.
-command uiArea pName, pRect
-   if there is no field pName then
-      create field
-      set the name of the last field to pName
-   end if
-   set the rect of field pName to pRect
-   set the lockText of field pName to true
-   set the traversalOn of field pName to false
-   set the threeD of field pName to false
-   set the borderWidth of field pName to 1
-   set the borderColor of field pName to kUiCardLine
-   set the opaque of field pName to true
-   set the backgroundColor of field pName to kUiCard
-   set the margins of field pName to "6,6,6,6"
-   set the vScrollbar of field pName to true
-   set the textSize of field pName to 10
-   set the textFont of field pName to uiMonoFont()
-end uiArea
-
--- A row-selectable table: uiArea plus list behavior and tab stops
--- ("230,340"-style comma lists). Pair it with a uiLabel header carrying
--- the same tabStops, set by the adopter.
-command uiTable pName, pRect, pTabStops
-   uiArea pName, pRect
-   set the listBehavior of field pName to true
-   if pTabStops is not empty then
-      set the tabStops of field pName to pTabStops
-   end if
-end uiTable
-
-command uiButton pName, pLabel, pRect
-   if there is no button pName then
-      create button
-      set the name of the last button to pName
-   end if
-   set the rect of button pName to pRect
-   set the label of button pName to pLabel
-end uiButton
-
--- A script-managed checkbox: autoHilite OFF because the family drives
--- toggle state from script locals (a mode the environment cannot honour
--- must never stay silently armed - the quickshare pill lesson), so the
--- hilite is set explicitly by the adopter's state machine.
-command uiCheckbox pName, pLabel, pRect
-   uiButton pName, pLabel, pRect
-   set the style of button pName to "checkbox"
-   set the autoHilite of button pName to false
-end uiCheckbox
-
--- Create-or-reuse a named graphic: the chrome layer (cards, pills,
--- dividers, drop targets). Created BEFORE the controls that sit on it, so
--- it stays behind them in z-order. roundRect + antialiased by default;
--- callers restyle.
-command uiGfx pName, pRect
-   if there is no graphic pName then
-      create graphic
-      set the name of the last graphic to pName
-   end if
-   set the rect of graphic pName to pRect
-   set the style of graphic pName to "roundRect"
-   set the antialiased of graphic pName to true
-end uiGfx
-
--- A dashboard card: a rounded, hairline-bordered, softly shadowed panel
--- placed BEHIND a group of controls. It only groups visually; clicks on
--- it fall through to the adopter's `default: pass mouseUp`.
-command uiPanel pName, pRect
-   local tShadow, tErr
-   uiGfx pName, pRect
-   set the roundRadius of graphic pName to 14
-   set the filled of graphic pName to true
-   set the backgroundColor of graphic pName to kUiCard
-   set the lineSize of graphic pName to 1
-   -- a graphic strokes its outline in the foregroundColor; borderColor is
-   -- set too so whichever the engine honours, the hairline lands
-   set the foregroundColor of graphic pName to kUiCardLine
-   set the borderColor of graphic pName to kUiCardLine
-   -- soft drop shadow is an LC-9-era feature, so it is a PURE
-   -- enhancement: an engine without it just skips it (the try) and the
-   -- hairline still separates the card from the page
-   try
-      put "90,98,114" into tShadow["color"]
-      put 30 into tShadow["opacity"]
-      put 10 into tShadow["size"]
-      put 0 into tShadow["spread"]
-      put 2 into tShadow["distance"]
-      put 90 into tShadow["angle"]
-      set the dropShadow of graphic pName to tShadow
-   catch tErr
-   end try
-end uiPanel
-
--- A status pill: rounded chip + centered label, colored by state kind -
--- "ok" green, "wait" amber, "bad" red, anything else the muted on-band
--- blue. The adopter repaints it from ONE place so its handlers cannot
--- disagree about the colors (the nocloud Tor-pill discipline).
-command uiPill pName, pText, pRect, pKind
-   local tOldDelim, tTop, tBot, tFH
-   put the itemDelimiter into tOldDelim
-   set the itemDelimiter to comma
-   put item 2 of pRect into tTop
-   put item 4 of pRect into tBot
-   set the itemDelimiter to tOldDelim
-   uiGfx (pName & "Bg"), pRect
-   set the roundRadius of graphic (pName & "Bg") to (tBot - tTop)
-   set the filled of graphic (pName & "Bg") to true
-   set the lineSize of graphic (pName & "Bg") to 0
-   if pKind is "ok" then
-      set the backgroundColor of graphic (pName & "Bg") to "205,240,214"
-   else if pKind is "wait" then
-      set the backgroundColor of graphic (pName & "Bg") to "250,240,199"
-   else if pKind is "bad" then
-      set the backgroundColor of graphic (pName & "Bg") to "243,215,213"
-   else
-      set the backgroundColor of graphic (pName & "Bg") to "31,64,116"
-   end if
-   uiLabel pName, pText, pRect, 10
-   set the textAlign of field pName to "center"
-   if pKind is "ok" then
-      set the foregroundColor of field pName to "22,101,52"
-   else if pKind is "wait" then
-      set the foregroundColor of field pName to "133,98,14"
-   else if pKind is "bad" then
-      set the foregroundColor of field pName to "135,44,38"
-   else
-      set the foregroundColor of field pName to kUiAccentSub
-   end if
-   -- center the label on the chip midline by measured height
-   put the formattedHeight of field pName into tFH
-   if tFH > 0 and tFH < (tBot - tTop) then
-      set the height of field pName to tFH
-      set the top of field pName to (tTop + ((tBot - tTop - tFH) div 2))
-   end if
-end uiPill
-
--- Click-to-copy feedback: flash the button's label to "Copied!" for
--- 1200 ms, then restore the real label (stashed in uRealLabel).
-command uiCopyFlash pBtn
-   if there is no button pBtn then
-      exit uiCopyFlash
-   end if
-   if the uRealLabel of button pBtn is empty then
-      set the uRealLabel of button pBtn to the label of button pBtn
-   end if
-   set the label of button pBtn to "Copied!"
-   send ("uiCopyFlashReset" && quote & pBtn & quote) to me in 1200 milliseconds
-end uiCopyFlash
-
-command uiCopyFlashReset pBtn
-   -- Pinned for the same reason uiStatus is: this one arrives 1200ms later by
-   -- `send`, so the defaultStack is whatever is current THEN, not the stack
-   -- that flashed the button. Its existence guard means the failure is silent
-   -- rather than loud - the label just never comes back, or comes back on
-   -- another stack's button - which is why it needed finding rather than
-   -- reporting itself.
-   set the defaultStack to the short name of this stack
-   if there is no button pBtn then
-      exit uiCopyFlashReset
-   end if
-   if the uRealLabel of button pBtn is not empty then
-      set the label of button pBtn to the uRealLabel of button pBtn
-   end if
-end uiCopyFlashReset
-
--- The honesty/custody footer every demo carries: what the stack is, what
--- it is not, and its engine-evidence state.
-command uiFooter pText, pRect
-   uiWrap "uiFooter", pText, pRect, 11
-   set the textStyle of field "uiFooter" to "italic"
-   set the foregroundColor of field "uiFooter" to kUiMuted
-end uiFooter
--- ---- contextual menus -------------------------------------------------------
---
--- A RIGHT-CLICK MENU, as one hidden popup button per menu.
---
--- The engine's contextual menu is a BUTTON whose style is "menu" and whose
--- menuMode is "popup": its text is the item list, one per line, `popup`
--- shows it at a point, and choosing an item sends `menuPick` with the item's
--- LABEL. The button needs no script - with no handler of its own the message
--- walks the hierarchy and arrives at the card and then the stack, which is
--- where an adopter's router already lives.
---
--- OPT-IN, AND THAT IS DELIBERATE. This block is carried byte-identical by
--- every demo in the suite, so a kit that BUILT a menu would change eighteen
--- stacks to serve one. Nothing here runs unless an adopter calls
--- uiContextMenu, and a demo that never does is unchanged in behaviour.
---
--- NONE OF THIS HAS RUN ON AN ENGINE. `popup`, `menuMode` and `menuPick` are
--- documented LiveCode and OpenXTalk is a fork of it, but this suite has never
--- exercised a menu and the headless runners model no mouse button at all - so
--- an adopter's right-click handler belongs in a `try`, and losing the menu
--- must never cost the ordinary click. uiPopupMenu answers whether it worked
--- rather than throwing, so the caller can decide.
-
-command uiContextMenu pName, pItems
-   -- One hidden popup button, created once and refilled on every call so a
-   -- menu can change with the screen it belongs to. The rect is small and
-   -- inside the window because a stack's controls are measured by
-   -- tools/check-stack-size.py whether they are visible or not.
-   if there is no button pName then
-      -- THE KIT'S OWN IDIOM, and not `create button pName`. Every other
-      -- builder in this block creates the control unnamed and then names the
-      -- last one, which is the spelling the family's headless runners model
-      -- and the one every adopter has already been through an engine with.
-      create button
-      set the name of the last button to pName
-   end if
-   set the style of button pName to "menu"
-   set the menuMode of button pName to "popup"
-   set the text of button pName to pItems
-   set the rect of button pName to "2,2,18,18"
-   set the visible of button pName to false
-end uiContextMenu
-
-function uiPopupMenu pName
-   -- WHICH menu, recorded before it opens. menuPick carries the item's label
-   -- and nothing else, so an adopter with two menus would otherwise have to
-   -- keep every label in the stack globally unique - a constraint that is
-   -- invisible until the day two screens both want "Copy".
-   --
-   -- Answers true or false rather than throwing: on an engine without popup
-   -- menus the right thing is for the click to do nothing, not for the
-   -- adopter's mouseDown to die.
-   local tError
-   if there is no button pName then
-      return false
-   end if
-   set the uUiMenu of this stack to pName
-   try
-      popup button pName at the clickLoc
-   catch tError
-      set the uUiMenu of this stack to empty
-      return false
-   end try
-   return true
-end uiPopupMenu
-
-function uiMenuSource
-   -- The name of the menu the last menuPick came from.
-   return the uUiMenu of this stack
-end uiMenuSource
-
--- ==== SUITE UI KIT v2 END ====
-
 on preOpenStack
    if sDoc is empty then
       put 0 into sDoc
@@ -572,77 +190,110 @@ on preOpenStack
       put 0 into sFlags
       put 0 into sFindAt
       put false into sDragging
+      put 0 into sShow
+      put false into sShowAll
    end if
    pvBuildUI
    pvShowTab "out"
    if pvReady() then
       if sDoc is 0 then
-         uiStatus "Ready (" & pdfLibraryVersion() & "). Open a PDF, or click The sample.", "ok"
+         pvOpen "sample", empty
+      else
+         pvShowDocument
       end if
+      pvSay "Ready (" & pdfLibraryVersion() & "). The tour plays by itself: click anything to take over.", "ok"
+      -- The opening motion: the first scene starts as soon as the window
+      -- is up, with nothing to click.
+      pvShowCancel
+      send "pvTourStart" to me in 250 milliseconds
+      put the result into sShowMsg
+   else
+      put "This viewer needs pdfxt, and it is not here: install the pdfxt extension" \
+            && "(org.openxtalk.library.pdfxt, with its PDFium beside it), then open this stack again." into field "view:hint"
+      pvShowDocument
    end if
-   pvShowDocument
 end preOpenStack
 
 on closeStack
    -- Only this window's own document is closed. pdfShutdown would close
    -- every document of every stack in this engine, since PDFium is loaded
    -- once per process; the Checks tab calls it, and says so.
+   pvStopShow
    pvCloseDocument
 end closeStack
 
 -- ==========================================================================
--- UI construction. Every generated control is named "prefix:role": "tb" the
--- toolbar, "view" the page and its marks, "lock" the password bar, "side"
--- the tab buttons, "ui" the chrome, and each tab's key its own controls. So
--- one loop shows a tab and one handler routes a click.
+-- UI construction. Every generated control is named "prefix:role": "ui" the
+-- window's own words, "tb" the toolbar, "view" the page and what lies over
+-- it, "lock" the password bar, "show" the showcase, "side" the tab buttons,
+-- and each tab's key its own controls. So one loop shows a tab and one
+-- handler routes a click.
 -- ==========================================================================
 
 on pvBuildUI
    local tIndex, tKey, tLeft, tTop, tN
    -- Version-guarded rebuild: a saved stack keeps its controls, so only a
-   -- kit or layout bump (kPvUiVersion) rebuilds them.
+   -- layout bump (kPvUiVersion) rebuilds them.
    if the uPvUiVersion of this stack is kPvUiVersion and there is a button "side:out" then
       exit pvBuildUI
    end if
    pvClearUI
    lock screen
-   -- About a hundred controls are made here; with messages locked the IDE
+   -- About two hundred controls are made here; with messages locked the IDE
    -- is not told of each one (engine note 5.15).
    lock messages
    -- 1180 x 630 is held by tools/check-stack-size.py (every window fits 720p).
-   uiChrome "pdfxt - PDF pages, text, search and outline", kPvWidth, kPvHeight
+   set the width of this stack to kPvWidth
+   set the height of this stack to kPvHeight
+   set the title of this stack to "pdfxt - PDF Viewer"
+   -- The stack's own colours are what a control without its own inherits;
+   -- every control below says its own as well.
+   set the backgroundColor of this stack to kPvPage
+   set the foregroundColor of this stack to kPvInk
+   set the hiliteColor of this stack to pvChosenColor()
+   set the borderColor of this stack to kPvLine
+   set the textSize of this stack to 12
+   set the backgroundColor of this card to kPvPage
 
-   uiButton "tb:open", "Open a PDF...", "16,58,124,84"
-   uiButton "tb:sample", "The sample", "130,58,222,84"
-   uiButton "tb:locked", "Locked sample", "228,58,340,84"
-   uiButton "tb:close", "Close", "346,58,404,84"
-   uiButton "tb:prev", "<", "424,58,452,84"
-   uiInput "tb:page", "456,58,500,84"
-   uiLabel "tb:of", empty, "504,62,556,82", 11
-   uiButton "tb:next", ">", "558,58,586,84"
-   uiButton "tb:out", "-", "604,58,632,84"
-   uiLabel "tb:zoom", empty, "634,62,688,82", 11
+   -- The header: OXT-Beyond, the demo's name, what it does, who made it.
+   pvLabel "ui:kicker", "OXT-BEYOND  /  PDFXT", "16,4,600,23", 11, kPvAccent, "bold"
+   pvLabel "ui:title", "PDF Viewer", "16,19,156,56", 22, kPvInk, "bold"
+   pvLabel "ui:about", "Pages drawn, searched and read by PDFium, in an ordinary image." \
+         && "The two sample PDFs are inside this stack.", "160,29,960,51", 12, kPvSoft, empty
+   pvLabel "ui:credit", "by Seth Morrow", "960,29,1164,51", 12, kPvInk, empty
+   set the textAlign of field "ui:credit" to "right"
+
+   pvButton "tb:open", "Open a PDF...", "16,58,124,84"
+   pvButton "tb:sample", "The sample", "130,58,222,84"
+   pvButton "tb:locked", "Locked sample", "228,58,340,84"
+   pvButton "tb:close", "Close", "346,58,404,84"
+   pvButton "tb:prev", "<", "424,58,452,84"
+   pvInput "tb:page", "456,58,500,84"
+   set the textAlign of field "tb:page" to "center"
+   pvLabel "tb:of", empty, "504,60,556,82", 12, kPvSoft, empty
+   pvButton "tb:next", ">", "558,58,586,84"
+   pvButton "tb:out", "-", "604,58,632,84"
+   pvLabel "tb:zoom", empty, "634,60,688,82", 12, kPvInk, "bold"
    set the textAlign of field "tb:zoom" to "center"
-   uiButton "tb:in", "+", "690,58,718,84"
-   uiButton "tb:fitp", "Fit page", "726,58,800,84"
-   uiButton "tb:fitw", "Fit width", "806,58,884,84"
-   uiLabel "tb:doc", empty, "896,62,1164,82", 11
-   set the foregroundColor of field "tb:doc" to kUiInkSoft
+   pvButton "tb:in", "+", "690,58,718,84"
+   pvButton "tb:fitp", "Fit page", "726,58,800,84"
+   pvButton "tb:fitw", "Fit width", "806,58,884,84"
+   pvLabel "tb:doc", empty, "896,60,1164,82", 12, kPvSoft, empty
 
-   -- The page view: a desk, the drawn part of the page on it, then the marks
-   -- drawn over the page (made after the image, so they sit in front of it),
-   -- then the scroll bars. The marks are a fixed set made once and moved,
-   -- never made and deleted per page.
-   uiGfx "ui:desk", kPvViewL & comma & kPvViewT & comma & (kPvViewR + 16) & comma & (kPvViewB + 16)
-   set the style of graphic "ui:desk" to "rectangle"
-   set the filled of graphic "ui:desk" to true
-   set the backgroundColor of graphic "ui:desk" to "206,212,222"
-   set the lineSize of graphic "ui:desk" to 0
+   -- The stage: a frame, the dark desk, the drawn part of the page on it,
+   -- then what lies over the page (made after the image, so it sits in
+   -- front): the marks, the showcase's pointer, the scroll bars, the tag
+   -- that says how the page was drawn, a scene's title, and the hint shown
+   -- with no page. The marks are a fixed set made once and moved, never
+   -- made and deleted per page.
+   pvGfx "ui:frame", "8,90,784,592", kPvPanel, 10
+   pvGfx "ui:desk", kPvViewL & comma & kPvViewT & comma & (kPvViewR + 16) & comma & (kPvViewB + 16), kPvStage, 0
    if there is no image "view:page" then
       create image
       set the name of the last image to "view:page"
    end if
    set the rect of image "view:page" to "100,100,110,110"
+   set the blendLevel of image "view:page" to 0
    set the visible of image "view:page" to false
    repeat with tN = 1 to kPvHits
       pvMark "view:hl" & tN, "255,214,10", 55, 0
@@ -653,37 +304,63 @@ on pvBuildUI
    end repeat
    pvMark "view:char", "44,90,160", 60, 1
    pvMark "view:sel", "44,90,160", 82, 1
+   pvGfx "view:ptr", "0,0,26,26", kPvAccent, 0
+   set the style of graphic "view:ptr" to "oval"
+   set the lineSize of graphic "view:ptr" to 2
+   set the foregroundColor of graphic "view:ptr" to kPvInk
+   set the blendLevel of graphic "view:ptr" to 20
+   set the visible of graphic "view:ptr" to false
    pvBar "view:vs", kPvViewR & comma & kPvViewT & comma & (kPvViewR + 16) & comma & kPvViewB
    pvBar "view:hs", kPvViewL & comma & kPvViewB & comma & kPvViewR & comma & (kPvViewB + 16)
-   uiWrap "view:hint", "Open a PDF, or click The sample: a five-page guide this window carries.", "104,300,688,340", 13
+   pvLabel "view:hud", empty, "24,104,300,125", 11, kPvInk, "bold"
+   pvTag "view:hud", 15
+   pvLabel "view:title", empty, "188,508,588,550", 18, kPvInk, "bold"
+   set the textAlign of field "view:title" to "center"
+   pvTag "view:title", 8
+   pvText "view:hint", "Open a PDF, or click The sample: a five-page guide this window carries.", "104,290,672,390", 14, kPvSoft
    set the textAlign of field "view:hint" to "center"
-   set the foregroundColor of field "view:hint" to kUiInkSoft
 
-   -- The password bar, over the top of the view while a document waits for
-   -- its password (no page is shown then).
-   uiGfx "lock:bg", "24,96,752,126"
-   set the filled of graphic "lock:bg" to true
-   set the backgroundColor of graphic "lock:bg" to kUiCard
-   set the foregroundColor of graphic "lock:bg" to kUiCardLine
+   -- The password bar, over the top of the stage while a document waits
+   -- for its password (no page is shown then).
+   pvGfx "lock:bg", kPvLockBg, kPvPanel, 8
    set the lineSize of graphic "lock:bg" to 1
-   uiLabel "lock:msg", empty, "32,101,440,121", 11
-   uiInput "lock:pw", "444,98,600,124"
-   uiButton "lock:go", "Unlock", "606,98,690,124"
+   set the foregroundColor of graphic "lock:bg" to kPvAccent
+   pvLabel "lock:msg", empty, kPvLockMsg, 12, kPvInk, empty
+   pvInput "lock:pw", kPvLockPw
+   pvButton "lock:go", "Unlock", kPvLockGo
    pvShowLock false, false
 
-   -- The side panel: a card behind seven tab buttons in two rows.
-   uiPanel "ui:side", "788,92,1164,580"
+   -- The showcase: a button a scene (two rows of three, the last one plays
+   -- them all), what the scene shows, and how far it has gone.
+   pvLabel "show:h", "SHOWCASE", "794,86,1164,105", 11, kPvAccent, "bold"
+   repeat with tIndex = 1 to kPvScenes + 1
+      put kPvSideL + ((tIndex - 1) mod 3) * 125 into tLeft
+      put 108 + ((tIndex - 1) div 3) * 30 into tTop
+      if tIndex > kPvScenes then
+         pvButton "show:all", "Play them all", tLeft & comma & tTop & comma & kPvSideR & comma & (tTop + 26)
+      else
+         pvButton "show:" & tIndex, tIndex & "." && item tIndex of kPvSceneNames, \
+               tLeft & comma & tTop & comma & min(kPvSideR, tLeft + 120) & comma & (tTop + 26)
+      end if
+   end repeat
+   repeat with tIndex = 1 to kPvScenes
+      set the autoHilite of button ("show:" & tIndex) to false
+   end repeat
+   set the autoHilite of button "show:all" to false
+   pvLabel "show:wh", "WHAT THIS SHOWS", "794,168,1164,187", 11, kPvAccent, "bold"
+   pvText "show:about", pvSceneAbout(0), "794,188,1164,262", 12, kPvInk
+   pvGfx "show:track", kPvSideL & comma & kPvBarT & comma & kPvSideR & comma & (kPvBarT + 4), kPvButton, 0
+   pvGfx "show:fill", kPvSideL & comma & kPvBarT & comma & (kPvSideL + 1) & comma & (kPvBarT + 4), kPvAccent, 0
+   set the visible of graphic "show:fill" to false
+
+   -- The viewer's tabs: one row of seven, each lit while it is shown.
    put 0 into tIndex
    repeat for each item tKey in kPvTabs
       add 1 to tIndex
-      if tIndex <= 4 then
-         put 798 + (tIndex - 1) * 90 into tLeft
-         put 100 into tTop
-      else
-         put 798 + (tIndex - 5) * 90 into tLeft
-         put 128 into tTop
-      end if
-      uiButton "side:" & tKey, item tIndex of kPvTabLabels, tLeft & comma & tTop & comma & (tLeft + 86) & comma & (tTop + 24)
+      put kPvSideL + (tIndex - 1) * 53 into tLeft
+      pvButton "side:" & tKey, item tIndex of kPvTabLabels, tLeft & comma & "276," & (tLeft + 49) & ",300"
+      set the textSize of button ("side:" & tKey) to 11
+      set the autoHilite of button ("side:" & tKey) to false
    end repeat
    pvBuildOutline
    pvBuildFind
@@ -693,21 +370,21 @@ on pvBuildUI
    pvBuildInfo
    pvBuildChecks
 
-   uiFooter \
-         "PDFium (BSD 3-clause and Apache 2.0) draws and reads every page, through the pdfxt C shim. This window" \
-         & " has been driven on OXT-Beyond's Linux engine without a display, every check green" \
-         & " (tests/demo-drive.livecodescript); used by a person, it is verified statically; needs an OXT pass.", \
-         "16,584,1164,626"
+   -- The status line, and the honesty footer every demo carries.
+   pvLabel "ui:status", empty, "16,592,1164,612", 12, kPvSoft, empty
+   pvLabel "ui:footer", "PDFium (BSD 3-clause, Apache 2.0) draws every page, through the pdfxt shim. Drawn and driven" \
+         && "on OXT-Beyond's Linux engine without a display, every check green (tests/demo-drive); on Windows" \
+         && "and macOS, needs an OXT pass.", "16,612,1164,629", 10, kPvSoft, "italic"
    unlock messages
    set the uPvUiVersion of this stack to kPvUiVersion
    unlock screen
 end pvBuildUI
 
 -- The rebuild's clear pass: a generated control's short name carries a
--- ":", while the kit's own chrome (uiTitle, uiStatus, uiBand, uiFooter) has
--- none - so the colon IS the ownership tag.
+-- ":", so the colon IS the ownership tag. A stack saved by the kit-look
+-- version of this demo also has the kit's own chrome, which had none.
 private command pvClearUI
-   local tI
+   local tI, tOld
    lock screen
    lock messages
    repeat with tI = the number of fields of this card down to 1
@@ -735,17 +412,187 @@ private command pvClearUI
          delete scrollbar tI of this card
       end if
    end repeat
+   repeat for each item tOld in "uiTitle,uiStatus,uiFooter"
+      if there is a field tOld then
+         delete field tOld
+      end if
+   end repeat
+   if there is a graphic "uiBand" then
+      delete graphic "uiBand"
+   end if
    unlock messages
    unlock screen
 end pvClearUI
 
--- One mark of the page view: a rectangle, see-through by pBlend percent.
-private command pvMark pName, pColor, pBlend, pLine
-   uiGfx pName, "20,100,24,104"
-   set the style of graphic pName to "rectangle"
+-- ==========================================================================
+-- The look's builders. Each makes its control if it is missing, then says
+-- every colour it draws with (see THE LOOK at the top). A line of text is
+-- given a height, half again its size: left to the font, a line is as tall
+-- as the system that BUILT the stack wanted, and on Windows the tops of the
+-- capitals were cut off (the Render3D Tour, 2026-11-21).
+-- ==========================================================================
+
+private command pvField pName, pRect, pSize
+   if there is no field pName then
+      create field
+      set the name of the last field to pName
+   end if
+   set the rect of field pName to pRect
+   set the threeD of field pName to false
+   set the showBorder of field pName to false
+   set the borderWidth of field pName to 0
+   set the vScrollbar of field pName to false
+   set the hScrollbar of field pName to false
+   set the textSize of field pName to pSize
+   set the fixedLineHeight of field pName to true
+   set the textHeight of field pName to round(pSize * 1.5)
+   set the foregroundColor of field pName to kPvInk
+   set the backgroundColor of field pName to kPvWell
+   set the hiliteColor of field pName to pvChosenColor()
+   set the borderColor of field pName to kPvLine
+   -- a field's scroll bar is drawn with these, white when they are left to
+   -- the system (OXT-Beyond's Linux engine, 2026-11-21)
+   set the shadowColor of field pName to kPvLine
+   set the topColor of field pName to kPvLine
+   set the bottomColor of field pName to kPvLine
+end pvField
+
+-- The ground of a chosen line or of chosen words. Off a Mac the engine draws
+-- chosen words in the field's ground colour, dark here, so the ground they
+-- sit on must be light (the accent); on a Mac they keep the text colour,
+-- light, so it must be dark.
+function pvChosenColor
+   if the platform is "MacOS" then
+      return kPvSelect
+   end if
+   return kPvAccent
+end pvChosenColor
+
+-- Words nobody types into, on one line (pvLabel) or wrapped (pvText).
+private command pvLabel pName, pText, pRect, pSize, pColor, pStyle
+   pvField pName, pRect, pSize
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the opaque of field pName to false
+   set the dontWrap of field pName to true
+   -- 4-item margins only: OXT ignored the single-number form on an engine
+   -- pass (the suite kit's note)
+   set the margins of field pName to "2,1,2,1"
+   set the foregroundColor of field pName to pColor
+   if pStyle is empty then
+      put "plain" into pStyle
+   end if
+   set the textStyle of field pName to pStyle
+   put pText into field pName
+end pvLabel
+
+private command pvText pName, pText, pRect, pSize, pColor
+   pvLabel pName, pText, pRect, pSize, pColor, empty
+   set the dontWrap of field pName to false
+end pvText
+
+-- A label with a ground of its own, part see-through: a tag over the page.
+private command pvTag pName, pBlend
+   set the opaque of field pName to true
+   set the backgroundColor of field pName to kPvPage
+   set the margins of field pName to "8,2,8,2"
+   set the blendLevel of field pName to pBlend
+   set the visible of field pName to false
+end pvTag
+
+-- A field to type into: dark, outlined, the platform's mono face.
+private command pvInput pName, pRect
+   pvField pName, pRect, 12
+   set the lockText of field pName to false
+   set the traversalOn of field pName to true
+   set the opaque of field pName to true
+   set the dontWrap of field pName to true
+   set the showBorder of field pName to true
+   set the borderWidth of field pName to 1
+   set the margins of field pName to "6,3,6,3"
+   set the textFont of field pName to pvMonoFont()
+end pvInput
+
+-- Words to read and scroll: dark, outlined, mono.
+private command pvArea pName, pRect
+   pvField pName, pRect, 11
+   set the lockText of field pName to true
+   set the traversalOn of field pName to false
+   set the opaque of field pName to true
+   set the dontWrap of field pName to false
+   set the showBorder of field pName to true
+   set the borderWidth of field pName to 1
+   set the margins of field pName to "6,4,6,4"
+   set the vScrollbar of field pName to true
+   set the textFont of field pName to pvMonoFont()
+end pvArea
+
+-- A list to click a line of; pTabStops lines up its columns.
+private command pvList pName, pRect, pTabStops
+   pvArea pName, pRect
+   set the listBehavior of field pName to true
+   set the dontWrap of field pName to true
+   set the tabStops of field pName to pTabStops
+end pvList
+
+-- A button: rounded and dark, its words light, lit (the accent) while it is
+-- pressed. A tab, a scene and a switch are lit by the script instead.
+private command pvButton pName, pLabel, pRect
+   if there is no button pName then
+      create button
+      set the name of the last button to pName
+   end if
+   set the rect of button pName to pRect
+   set the label of button pName to pLabel
+   set the style of button pName to "roundrect"
+   set the opaque of button pName to true
+   set the showBorder of button pName to false
+   set the threeD of button pName to false
+   set the shadow of button pName to false
+   set the hiliteBorder of button pName to false
+   set the traversalOn of button pName to false
+   set the textSize of button pName to 12
+   set the textStyle of button pName to "plain"
+   set the backgroundColor of button pName to kPvButton
+   set the foregroundColor of button pName to kPvInk
+   set the hiliteColor of button pName to kPvAccent
+   set the borderColor of button pName to kPvLine
+   set the autoHilite of button pName to true
+   set the hilite of button pName to false
+end pvButton
+
+-- A switch, lit while it is on. Never a tick box: the system draws a tick
+-- box's words in its own theme's colours, and under a dark theme they came
+-- out white on white (the suite's physics demo on Windows, 2026-11-20).
+private command pvToggle pName, pLabel, pRect, pOn
+   pvButton pName, pLabel, pRect
+   set the autoHilite of button pName to false
+   set the hilite of button pName to pOn
+end pvToggle
+
+-- A filled shape: a rectangle, or rounded by pRadius.
+private command pvGfx pName, pRect, pColor, pRadius
+   if there is no graphic pName then
+      create graphic
+      set the name of the last graphic to pName
+   end if
+   set the rect of graphic pName to pRect
+   if pRadius > 0 then
+      set the style of graphic pName to "roundrect"
+      set the roundRadius of graphic pName to pRadius
+   else
+      set the style of graphic pName to "rectangle"
+   end if
+   set the antialiased of graphic pName to true
    set the filled of graphic pName to true
+   set the lineSize of graphic pName to 0
    set the backgroundColor of graphic pName to pColor
    set the foregroundColor of graphic pName to pColor
+end pvGfx
+
+-- One mark of the page view: a rectangle, see-through by pBlend percent.
+private command pvMark pName, pColor, pBlend, pLine
+   pvGfx pName, "20,100,24,104", pColor, 0
    set the lineSize of graphic pName to pLine
    set the blendLevel of graphic pName to pBlend
    set the visible of graphic pName to false
@@ -758,98 +605,120 @@ private command pvBar pName, pRect
       set the name of the last scrollbar to pName
    end if
    set the rect of scrollbar pName to pRect
+   -- every colour it is drawn with, flat: left to the system its thumb and
+   -- arrows are white (OXT-Beyond's Linux engine, 2026-11-21)
+   set the threeD of scrollbar pName to false
+   set the backgroundColor of scrollbar pName to kPvWell
+   set the foregroundColor of scrollbar pName to kPvButton
+   set the hiliteColor of scrollbar pName to kPvButton
+   set the borderColor of scrollbar pName to kPvLine
+   set the shadowColor of scrollbar pName to kPvLine
+   set the topColor of scrollbar pName to kPvLine
+   set the bottomColor of scrollbar pName to kPvLine
    set the visible of scrollbar pName to false
 end pvBar
 
--- A tick box: its tick and its words, with no button frame. The kit's tick
--- boxes are driven from script (autoHilite off), so mouseUp flips them.
-private command pvTick pName, pLabel, pRect, pOn
-   uiCheckbox pName, pLabel, pRect
-   set the showBorder of button pName to false
-   set the shadow of button pName to false
-   set the opaque of button pName to false
-   set the hiliteBorder of button pName to false
-   set the threeD of button pName to false
-   set the hilite of button pName to pOn
-end pvTick
+-- The platform's own terminal face for text, lists and logs. A missing face
+-- falls back to the engine's default.
+function pvMonoFont
+   if the platform is "MacOS" then
+      return "Menlo"
+   else if the platform is "Win32" then
+      return "Consolas"
+   end if
+   return "DejaVu Sans Mono"
+end pvMonoFont
+
+-- The status line, coloured by what it says: "ok", "warn", "bad", or
+-- anything else for a plain remark. The stack is pinned first, since a
+-- scene's frame arrives by timer (engine note 5.3).
+command pvSay pText, pKind
+   set the defaultStack to the short name of this stack
+   if there is no field "ui:status" then
+      exit pvSay
+   end if
+   put pText into field "ui:status"
+   if pKind is "ok" then
+      set the foregroundColor of field "ui:status" to kPvOk
+   else if pKind is "warn" then
+      set the foregroundColor of field "ui:status" to kPvWarn
+   else if pKind is "bad" then
+      set the foregroundColor of field "ui:status" to kPvBad
+   else
+      set the foregroundColor of field "ui:status" to kPvSoft
+   end if
+end pvSay
 
 on pvBuildOutline
-   uiLabel "out:h", empty, "798,160,1154,178", 11
-   set the textStyle of field "out:h" to "bold"
-   uiTable "out:list", "798,182,1154,546", "290"
-   uiCap "out:note", "pdfOutline: a level, a page and a title for each entry. Click one to go there.", "798,550,1154,572"
+   pvLabel "out:h", empty, "794,308,1164,327", 11, kPvInk, "bold"
+   pvList "out:list", "794,330,1164,556", "290"
+   pvText "out:note", "pdfOutline: a level, a page and a title for each entry. Click one to go there.", "794,560,1164,592", 10, kPvSoft
 end pvBuildOutline
 
 on pvBuildFind
-   uiInput "find:text", "798,162,1040,188"
-   uiButton "find:go", "Find", "1046,161,1154,189"
-   pvTick "find:case", "Capitals must match", "798,194,970,214", false
-   pvTick "find:words", "Whole words", "976,194,1154,214", false
-   uiLabel "find:sum", empty, "798,218,1154,236", 11
-   uiTable "find:list", "798,240,1154,540", "52"
-   set the dontWrap of field "find:list" to true
-   uiButton "find:prev", "Previous", "798,546,900,572"
-   uiButton "find:next", "Next", "906,546,1008,572"
+   pvInput "find:text", "794,308,1060,334"
+   pvButton "find:go", "Find", "1066,308,1164,334"
+   pvToggle "find:case", "Capitals must match", "794,340,976,364", false
+   pvToggle "find:words", "Whole words", "982,340,1164,364", false
+   pvLabel "find:sum", empty, "794,368,1164,387", 11, kPvInk, empty
+   pvList "find:list", "794,390,1164,556", "52"
+   pvButton "find:prev", "Previous", "794,562,890,588"
+   pvButton "find:next", "Next", "896,562,992,588"
 end pvBuildFind
 
 on pvBuildText
-   uiLabel "txt:h", empty, "798,160,1154,178", 11
-   set the textStyle of field "txt:h" to "bold"
-   uiArea "txt:page", "798,182,1154,392"
-   uiLabel "txt:hs", empty, "798,398,1154,416", 11
-   set the textStyle of field "txt:hs" to "bold"
-   uiArea "txt:sel", "798,420,1154,540"
-   uiButton "txt:copy", "Copy", "798,546,900,572"
+   pvLabel "txt:h", empty, "794,308,1164,327", 11, kPvInk, "bold"
+   pvArea "txt:page", "794,330,1164,446"
+   pvLabel "txt:hs", empty, "794,450,1164,469", 11, kPvInk, "bold"
+   pvArea "txt:sel", "794,472,1164,556"
+   pvButton "txt:copy", "Copy", "794,562,890,588"
 end pvBuildText
 
 on pvBuildLinks
-   pvTick "lnk:show", "Outline every link on the page", "798,162,1154,182", true
-   uiLabel "lnk:h", empty, "798,188,1154,206", 11
-   set the textStyle of field "lnk:h" to "bold"
-   uiTable "lnk:list", "798,210,1154,420", empty
-   set the dontWrap of field "lnk:list" to true
-   uiArea "lnk:addr", "798,428,1154,480"
-   uiButton "lnk:open", "Open it in the browser", "798,486,980,512"
-   uiCap "lnk:note", "A link inside the document is followed when you click it. A web link's address" \
-         & " was written by whoever made the file, so it is shown here first and opened only if you ask.", \
-         "798,518,1154,572"
+   pvToggle "lnk:show", "Outline every link on the page", "794,308,1164,332", true
+   pvLabel "lnk:h", empty, "794,338,1164,357", 11, kPvInk, "bold"
+   pvList "lnk:list", "794,360,1164,446", empty
+   pvArea "lnk:addr", "794,452,1164,494"
+   pvButton "lnk:open", "Open it in the browser", "794,500,984,526"
+   pvText "lnk:note", "A link inside the document is followed when you click it. A web link's address" \
+         && "was written by whoever made the file, so it is shown here first and opened only if you ask.", \
+         "794,532,1164,592", 10, kPvSoft
 end pvBuildLinks
 
 on pvBuildDraw
-   uiLabel "draw:h", "Drawing flags (pFlags of every pdfRender call)", "798,160,1154,178", 11
-   set the textStyle of field "draw:h" to "bold"
-   pvTick "draw:annots", "Annotations and form fields (1)", "798,182,1154,202", false
-   pvTick "draw:lcd", "Text sharpened for an LCD screen (2)", "798,204,1154,224", false
-   pvTick "draw:gray", "Gray (8)", "798,226,1154,246", false
-   pvTick "draw:print", "As for print (2048)", "798,248,1154,268", false
-   pvTick "draw:smooth", "No smoothing of text, images or lines (28672)", "798,270,1154,290", false
-   uiLabel "draw:lh", "The last drawing of the page", "798,298,1154,316", 11
-   set the textStyle of field "draw:lh" to "bold"
-   uiArea "draw:last", "798,320,1154,372"
-   uiLabel "draw:th", "The page as a BMP file (pdfRenderPageBMP)", "798,380,1154,398", 11
-   set the textStyle of field "draw:th" to "bold"
+   pvLabel "draw:h", "Drawing flags (pFlags of every pdfRender call)", "794,308,1164,327", 11, kPvInk, "bold"
+   pvToggle "draw:annots", "Annotations and forms (1)", "794,331,1036,353", false
+   pvToggle "draw:lcd", "Text for an LCD screen (2)", "794,357,1036,379", false
+   pvToggle "draw:gray", "Gray (8)", "794,383,1036,405", false
+   pvToggle "draw:print", "As for print (2048)", "794,409,1036,431", false
+   pvToggle "draw:smooth", "No smoothing (28672)", "794,435,1036,457", false
    if there is no image "draw:thumb" then
       create image
       set the name of the last image to "draw:thumb"
    end if
-   set the rect of image "draw:thumb" to "798,404,898,504"
-   uiButton "draw:save", "Save this page as a BMP...", "960,404,1154,430"
-   uiCap "draw:note", "Saved at two pixels to the point (144 dots to the inch), with the flags above.", "960,436,1154,500"
+   set the rect of image "draw:thumb" to kPvThumbAt & comma & (item 1 of kPvThumbAt + 100) & comma & (item 2 of kPvThumbAt + 100)
+   pvLabel "draw:th", "pdfRenderPageBMP", "1044,435,1164,454", 10, kPvSoft, empty
+   set the textAlign of field "draw:th" to "center"
+   pvLabel "draw:lh", "The last drawing of the page", "794,462,1164,481", 11, kPvInk, "bold"
+   -- three lines, the longest a drawing's description runs to: no scroll bar
+   pvArea "draw:last", "794,484,1164,540"
+   set the vScrollbar of field "draw:last" to false
+   pvButton "draw:save", "Save this page as a BMP...", "794,544,1010,570"
+   pvText "draw:note", "Saved at two pixels to the point (144 dots to the inch), with the flags above.", "794,572,1164,592", 10, kPvSoft
 end pvBuildDraw
 
 on pvBuildInfo
-   uiArea "info:area", "798,160,1154,572"
+   pvArea "info:area", "794,308,1164,590"
    set the tabStops of field "info:area" to "92"
-   set the dontWrap of field "info:area" to false
 end pvBuildInfo
 
 on pvBuildChecks
-   uiButton "chk:run", "Run every check", "798,162,950,188"
-   uiLabel "chk:sum", "Not run yet.", "956,166,1154,186", 11
-   uiCap "chk:note", "Every public pdf handler, over the two PDFs this window carries. They end by closing" \
-         & " every document and shutting PDFium down (pdfCloseAll, pdfShutdown); the document shown here" \
-         & " is opened again after.", "798,194,1154,240"
-   uiArea "chk:log", "798,244,1154,572"
+   pvButton "chk:run", "Run every check", "794,308,946,334"
+   pvLabel "chk:sum", "Not run yet.", "952,311,1164,331", 11, kPvInk, empty
+   pvText "chk:note", "Every public pdf handler, over the two PDFs this window carries. They end by closing" \
+         && "every document and shutting PDFium down (pdfCloseAll, pdfShutdown); the document shown here" \
+         && "is opened again after.", "794,338,1164,386", 10, kPvSoft
+   pvArea "chk:log", "794,390,1164,590"
 end pvBuildChecks
 
 -- ==========================================================================
@@ -872,6 +741,7 @@ on pvShowTab pKey
       end if
    end repeat
    repeat for each item tKey in kPvTabs
+      set the hilite of button ("side:" & tKey) to (tKey is pKey)
       if tKey is pKey then
          set the textStyle of button ("side:" & tKey) to "bold"
       else
@@ -884,6 +754,7 @@ on pvShowTab pKey
    end if
    unlock screen
 end pvShowTab
+
 
 -- ==========================================================================
 -- Messages: clicks, keys, the wheel, the scroll bars and a drag on the page.
@@ -902,10 +773,20 @@ on mouseUp pButton
       put item 1 of tName into tPrefix
       put item 2 of tName into tRole
       set the itemDelimiter to comma
-      -- nested, not joined with `and`: an image has no style to ask for, and
-      -- `and` may ask both sides (engine note 2.5)
+      if tPrefix is "show" then
+         if tRole is "all" then
+            pvPlay 1, true
+         else if tRole is an integer then
+            pvPlay tRole, false
+         end if
+         exit mouseUp
+      end if
+      -- Anything else is the person taking the window back from the tour.
+      pvStopShow
+      -- nested, not joined with `and`: the target's name is only asked of a
+      -- button (engine note 2.5)
       if word 1 of the target is "button" then
-         if the style of the target is "checkbox" then
+         if tName is among the items of kPvToggles then
             set the hilite of the target to not the hilite of the target
             pvTicked tName
             exit mouseUp
@@ -946,8 +827,12 @@ on mouseUp pButton
 end mouseUp
 
 -- A press on the drawn page starts a click or a drag; anywhere else is the
--- engine's (a button's highlight, a field's caret).
+-- engine's (a button's highlight, a field's caret). A press anywhere but on
+-- a scene's button stops the tour where it is: the window is the person's.
 on mouseDown pButton
+   if not (the short name of the target begins with "show:") then
+      pvStopShow
+   end if
    if pvOnPage() then
       put true into sDragging
       put the mouseH into sDragH
@@ -972,6 +857,12 @@ on mouseRelease pButton
       pass mouseRelease
    end if
 end mouseRelease
+
+-- A key typed anywhere is the person too.
+on keyDown pKey
+   pvStopShow
+   pass keyDown
+end keyDown
 
 on returnInField
    if pvEntered() is false then
@@ -1005,6 +896,7 @@ end pvEntered
 -- Left and right turn the page and up and down scroll it, unless the caret
 -- is in a field, where the arrows are the field's.
 on arrowKey pWhich
+   pvStopShow
    if word 1 of the focusedObject is "field" then
       pass arrowKey
    end if
@@ -1034,6 +926,7 @@ end arrowKey
 -- The wheel arrives as rawKeyDown 65308 (down) and 65309 (up); over the page
 -- it scrolls the page, anywhere else it is passed on to scroll a list.
 on rawKeyDown pCode
+   pvStopShow
    if pvOnPage() and (pCode is 65308 or pCode is 65309) then
       if pCode is 65308 then
          add 48 to sScrollY
@@ -1048,6 +941,7 @@ end rawKeyDown
 
 on scrollbarDrag pPosition
    local tName
+   pvStopShow
    put the short name of the target into tName
    if tName is "view:hs" then
       put round(pPosition) into sScrollX
@@ -1074,7 +968,7 @@ command pvToolbar pRole
       case "close"
          pvCloseDocument
          pvShowDocument
-         uiStatus "Closed. Open a PDF, or click The sample.", "muted"
+         pvSay "Closed. Open a PDF, or click The sample.", "muted"
          break
       case "prev"
          pvGo sPage - 1
@@ -1123,11 +1017,11 @@ function pvReady
    try
       put pdfLibraryVersion() into tVersion
    catch tError
-      uiStatus "pdfxt is NOT loaded: install org.openxtalk.library.pdfxt and reopen this stack.", "bad"
+      pvSay "pdfxt is NOT loaded: install org.openxtalk.library.pdfxt and reopen this stack.", "bad"
       return false
    end try
    if pdfLoad(empty) is false then
-      uiStatus "pdfxt is loaded, but its PDFium is not: " & pdfLastError(), "bad"
+      pvSay "pdfxt is loaded, but its PDFium is not: " & pdfLastError(), "bad"
       return false
    end if
    return true
@@ -1172,13 +1066,13 @@ command pvOpen pSource, pPassword
          put pSource into sWaiting
          pvShowLock true, (pPassword is not empty)
          if pPassword is empty then
-            uiStatus pvSourceName(pSource) & " is locked: type its password in the bar over the page.", "warn"
+            pvSay "A password opens" && pvSourceName(pSource) & ": type it in the bar over the page.", "warn"
          else
-            uiStatus "That password did not open " & pvSourceName(pSource) & ".", "warn"
+            pvSay "That password did not open " & pvSourceName(pSource) & ".", "warn"
          end if
       else
          pvShowLock false, false
-         uiStatus "Could not open " & pvSourceName(pSource) & ": " & pdfLastError(), "bad"
+         pvSay "Could not open " & pvSourceName(pSource) & ": " & pdfLastError(), "bad"
       end if
       pvShowDocument
       exit pvOpen
@@ -1197,7 +1091,7 @@ command pvOpen pSource, pPassword
    put empty into field "find:list"
    put empty into field "find:sum"
    pvShowDocument
-   uiStatus "Opened " & pvSourceName(pSource) & ": " & sPages & " page(s), PDF " & (pdfFileVersion(tDoc) / 10) & ".", "ok"
+   pvSay "Opened " & pvSourceName(pSource) & ": " & sPages & " page(s), PDF " & (pdfFileVersion(tDoc) / 10) & ".", "ok"
 end pvOpen
 
 command pvUnlock
@@ -1214,8 +1108,10 @@ command pvShowLock pOn, pWrong
    set the visible of field "lock:pw" to pOn
    set the visible of button "lock:go" to pOn
    if pOn then
+      set the foregroundColor of field "lock:msg" to kPvInk
       if pWrong then
          put "That password did not open it. Try again:" into field "lock:msg"
+         set the foregroundColor of field "lock:msg" to kPvWarn
       else if sWaiting is "locked" then
          put "Locked. Its password (the sample's is secret):" into field "lock:msg"
       else
@@ -1294,7 +1190,7 @@ command pvGoTyped pText
          exit pvGoTyped
       end if
    end repeat
-   uiStatus "No page is numbered or labelled " & quote & pText & quote & ".", "warn"
+   pvSay "No page is numbered or labelled " & quote & pText & quote & ".", "warn"
    put sPage into field "tb:page"
 end pvGoTyped
 
@@ -1355,7 +1251,7 @@ end pvZoom
 -- draws only the window of it in view: memory and time follow the window,
 -- not the zoom.
 command pvRender
-   local tW, tH, tViewW, tViewH, tIW, tIH, tData, tStart, tCall
+   local tW, tH, tViewW, tViewH, tIW, tIH, tData, tStart, tCall, tHud
    set the defaultStack to the short name of this stack
    if sDoc is 0 then
       lock screen
@@ -1365,6 +1261,7 @@ command pvRender
       set the visible of field "view:hint" to (sWaiting is empty)
       put empty into field "tb:zoom"
       put empty into sLastDraw
+      pvHud empty
       pvPaintMarks
       unlock screen
       exit pvRender
@@ -1374,7 +1271,7 @@ command pvRender
    put pdfPageWidth(sDoc, sPage) into tW
    put pdfPageHeight(sDoc, sPage) into tH
    if tW <= 0 or tH <= 0 then
-      uiStatus "Page " & sPage & " has no size: " & pdfLastError(), "bad"
+      pvSay "Page " & sPage & " has no size: " & pdfLastError(), "bad"
       exit pvRender
    end if
    if sFit is "page" then
@@ -1392,15 +1289,17 @@ command pvRender
    if tIW is sZoomW and tIH is sZoomH then
       put pdfRenderPage(sDoc, sPage, tIW, tIH, sFlags) into tData
       put "pdfRenderPage: the whole page," && tIW && "x" && tIH && "pixels" into tCall
+      put "the whole page," && tIW && "x" && tIH into tHud
    else
       put pdfRenderPageRegion(sDoc, sPage, sZoomW, sZoomH, sScrollX, sScrollY, tIW, tIH, sFlags) into tData
       put "pdfRenderPageRegion: a window of" && tIW && "x" && tIH && "pixels at" && sScrollX & comma & sScrollY \
             && "of the" && sZoomW && "x" && sZoomH && "page" into tCall
+      put "a" && tIW && "x" && tIH && "window of a" && sZoomW && "x" && sZoomH && "page" into tHud
    end if
    put the milliseconds - tStart into tStart
    if tData is empty then
       set the visible of image "view:page" to false
-      uiStatus "Page " & sPage & " could not be drawn: " & pdfLastError(), "bad"
+      pvSay "Page " & sPage & " could not be drawn: " & pdfLastError(), "bad"
       exit pvRender
    end if
    put tCall & ", at" && round(sZoom * 100) & "%, in" && tStart && "ms" into sLastDraw
@@ -1419,10 +1318,24 @@ command pvRender
    set the visible of field "view:hint" to false
    put round(sZoom * 100) & "%" into field "tb:zoom"
    put sLastDraw into field "draw:last"
+   pvHud round(sZoom * 100) & "%   " & tHud & "   " & tStart && "ms"
    pvSyncBars
    pvPaintMarks
    unlock screen
 end pvRender
+
+-- The tag on the stage's corner: how the page shown was drawn, and how
+-- long that took. Empty hides it.
+private command pvHud pText
+   if pText is empty then
+      set the visible of field "view:hud" to false
+      exit pvHud
+   end if
+   put pText into field "view:hud"
+   set the width of field "view:hud" to the formattedWidth of field "view:hud" + 4
+   set the left of field "view:hud" to kPvViewL + 8
+   set the visible of field "view:hud" to true
+end pvHud
 
 -- The scroll bars follow the view. Their properties are set with messages
 -- locked, so setting a thumb does not come back as a scrollbarDrag.
@@ -1661,7 +1574,7 @@ command pvClickAt pX, pY
       put empty into sCharRect
       put "Clicked at" && pvNum(pX) & comma & pvNum(pY) && "points" into field "txt:hs"
       put "No character there (pdfPageCharAt answered 0)." into field "txt:sel"
-      uiStatus "No text at that point of the page.", "muted"
+      pvSay "No text at that point of the page.", "muted"
       pvPaintMarks
       exit pvClickAt
    end if
@@ -1670,7 +1583,7 @@ command pvClickAt pX, pY
    put "Clicked at" && pvNum(pX) & comma & pvNum(pY) && "points" into field "txt:hs"
    put "Character" && tIndex && "of" && pdfPageCharCount(sDoc, sPage) & ":" && quote & pdfPageTextRange(sDoc, sPage, tIndex, 1) & quote & return \
          & "its box (pdfPageCharBox):" && sCharRect & return & "the word it is in:" && tWord into field "txt:sel"
-   uiStatus "Character" && tIndex && "is in the word" && quote & tWord & quote & ": the Text tab has the rest.", "ok"
+   pvSay "Character" && tIndex && "is in the word" && quote & tWord & quote & ": the Text tab has the rest.", "ok"
    pvPaintMarks
 end pvClickAt
 
@@ -1728,10 +1641,10 @@ command pvSelectBox pLeft, pTop, pRight, pBottom
    put "The text in the box" && sSel && "(pdfPageTextInRect)" into field "txt:hs"
    if tText is empty then
       put "No text inside that box." into field "txt:sel"
-      uiStatus "No text inside that box.", "muted"
+      pvSay "No text inside that box.", "muted"
    else
       put tText into field "txt:sel"
-      uiStatus "Read" && the number of chars of tText && "characters from the box: the Text tab shows them.", "ok"
+      pvSay "Read" && the number of chars of tText && "characters from the box: the Text tab shows them.", "ok"
    end if
    pvShowTab "txt"
    pvPaintMarks
@@ -1805,23 +1718,23 @@ command pvFollow pLink
    set the itemDelimiter to comma
    if tPage > 0 then
       pvGo tPage
-      uiStatus "A link inside the document: this is page" && tPage & pvLabelNote(tPage) & ".", "ok"
+      pvSay "A link inside the document: this is page" && tPage & pvLabelNote(tPage) & ".", "ok"
    else if tAddress is not empty then
       put tAddress into sAddress
       put "This link leads to" & return & tAddress into field "lnk:addr"
       pvShowTab "lnk"
-      uiStatus "A web link: its address is in the Links tab. Nothing was opened.", "warn"
+      pvSay "A web link: its address is in the Links tab. Nothing was opened.", "warn"
    end if
 end pvFollow
 
 command pvOpenAddress
    if sAddress begins with "https://" or sAddress begins with "http://" then
       launch url sAddress
-      uiStatus "Asked the system to open" && sAddress & ".", "ok"
+      pvSay "Asked the system to open" && sAddress & ".", "ok"
    else if sAddress is empty then
-      uiStatus "Click a web link on the page first: its address shows here before anything opens.", "warn"
+      pvSay "Click a web link on the page first: its address shows here before anything opens.", "warn"
    else
-      uiStatus "Only an http or https address is opened from here.", "warn"
+      pvSay "Only an http or https address is opened from here.", "warn"
    end if
 end pvOpenAddress
 
@@ -1885,9 +1798,9 @@ command pvOutlineClick
    set the itemDelimiter to comma
    if tPage > 0 then
       pvGo tPage
-      uiStatus "Outline: went to page" && tPage & pvLabelNote(tPage) & ".", "ok"
+      pvSay "Outline: went to page" && tPage & pvLabelNote(tPage) & ".", "ok"
    else
-      uiStatus "That entry leads outside this document: pdfOutline gives it page 0.", "warn"
+      pvSay "That entry leads outside this document: pdfOutline gives it page 0.", "warn"
    end if
 end pvOutlineClick
 
@@ -1899,12 +1812,12 @@ command pvFind
    local tNeedle, tFlags, tPage, tHits, tLine, tCount, tPages, tList, tFrom, tContext, tLabel, tMore
    set the defaultStack to the short name of this stack
    if sDoc is 0 then
-      uiStatus "Open a PDF first, then search it.", "warn"
+      pvSay "Open a PDF first, then search it.", "warn"
       exit pvFind
    end if
    put field "find:text" into tNeedle
    if tNeedle is empty then
-      uiStatus "Type a word to find.", "warn"
+      pvSay "Type a word to find.", "warn"
       exit pvFind
    end if
    put 0 into tFlags
@@ -1955,7 +1868,7 @@ command pvFind
       put "Not found (pdfPageSearch, flags" && tFlags & ")." into field "find:sum"
       pvComputeHits
       pvPaintMarks
-      uiStatus quote & tNeedle & quote && "is not in this document.", "warn"
+      pvSay quote & tNeedle & quote && "is not in this document.", "warn"
       exit pvFind
    end if
    if tMore then
@@ -2004,7 +1917,7 @@ command pvFindShow pIndex
       end if
    end if
    set the hilitedLine of field "find:list" to pIndex
-   uiStatus "Match" && pIndex && "of" && the number of lines of sFinds & ", on page" && tPage & pvLabelNote(tPage) & ".", "ok"
+   pvSay "Match" && pIndex && "of" && the number of lines of sFinds & ", on page" && tPage & pvLabelNote(tPage) & ".", "ok"
 end pvFindShow
 
 command pvFindStep pDelta
@@ -2049,8 +1962,18 @@ command pvCopy
       exit pvCopy
    end if
    set the clipboardData["text"] to field "txt:sel"
-   uiCopyFlash "txt:copy"
+   set the label of button "txt:copy" to "Copied"
+   send "pvCopyBack" to me in 1200 milliseconds
 end pvCopy
+
+-- The Copy button's own word again, 1.2 seconds later. It arrives by
+-- timer, so the stack is pinned first (engine note 5.3).
+on pvCopyBack
+   set the defaultStack to the short name of this stack
+   if there is a button "txt:copy" then
+      set the label of button "txt:copy" to "Copy"
+   end if
+end pvCopyBack
 
 command pvReadFlags
    local tI
@@ -2084,14 +2007,14 @@ command pvFillDraw
       exit pvFillDraw
    end if
    set the text of image "draw:thumb" to tBmp
-   set the topLeft of image "draw:thumb" to "798,404"
+   set the topLeft of image "draw:thumb" to kPvThumbAt
    set the visible of image "draw:thumb" to (sTab is "draw")
 end pvFillDraw
 
 command pvAskSave
    local tPath
    if sDoc is 0 then
-      uiStatus "Open a PDF first.", "warn"
+      pvSay "Open a PDF first.", "warn"
       exit pvAskSave
    end if
    ask file "Save the page as a BMP picture" with ("page-" & sPage & ".bmp")
@@ -2119,15 +2042,15 @@ command pvSaveBMP pPath
    put min(2, 16384 / tW, 16384 / tH, sqrt(40000000 / (tW * tH))) into tScale
    put pdfRenderPageBMP(sDoc, sPage, max(1, trunc(tW * tScale)), max(1, trunc(tH * tScale)), sFlags) into tBmp
    if tBmp is empty then
-      uiStatus "The page could not be drawn: " & pdfLastError(), "bad"
+      pvSay "The page could not be drawn: " & pdfLastError(), "bad"
       exit pvSaveBMP
    end if
    put tBmp into URL ("binfile:" & pPath)
    if the result is not empty then
-      uiStatus "Could not write " & pPath & ": " & the result, "bad"
+      pvSay "Could not write " & pPath & ": " & the result, "bad"
       exit pvSaveBMP
    end if
-   uiStatus "Saved page" && sPage && "as a" && trunc(tW * tScale) && "x" && trunc(tH * tScale) && "BMP:" && pPath, "ok"
+   pvSay "Saved page" && sPage && "as a" && trunc(tW * tScale) && "x" && trunc(tH * tScale) && "BMP:" && pPath, "ok"
 end pvSaveBMP
 
 command pvFillInfo
@@ -2232,12 +2155,12 @@ command pvRunChecks
    end if
    if sCkFail is 0 then
       put sCkPass && "checks passed, none failed." into field "chk:sum"
-      set the foregroundColor of field "chk:sum" to kUiOk
-      uiStatus "Every check passed.", "ok"
+      set the foregroundColor of field "chk:sum" to kPvOk
+      pvSay "Every check passed.", "ok"
    else
       put sCkPass && "passed," && sCkFail && "FAILED." into field "chk:sum"
-      set the foregroundColor of field "chk:sum" to kUiBad
-      uiStatus sCkFail && "check(s) failed: the failing lines begin with FAIL.", "bad"
+      set the foregroundColor of field "chk:sum" to kPvBad
+      pvSay sCkFail && "check(s) failed: the failing lines begin with FAIL.", "bad"
    end if
 end pvRunChecks
 
@@ -2410,3 +2333,693 @@ function pvCheckAll
    put "SUMMARY" && sCkPass && sCkFail after sCkLog
    return sCkLog
 end pvCheckAll
+
+-- ==========================================================================
+-- The showcase: five scenes, each one thing the library does, played by
+-- the window itself. A scene is a function of its frame number that does
+-- that frame's part and answers false after its last; pvShowTick plays one
+-- frame on a timer and asks for the next, so nothing ever waits. When the
+-- window opens it plays them all, one after another (pvTourStart); a click
+-- on a scene's button plays that one; any other click, key or turn of the
+-- wheel stops it where it is (pvStopShow), and the person has the viewer.
+-- ==========================================================================
+
+-- The words under WHAT THIS SHOWS for a scene, or for none (0).
+function pvSceneAbout pScene
+   switch pScene
+      case 1
+         return "1. Deep zoom. Each frame is a new drawing by PDFium at the zoom asked for. Past the size of the view," \
+               && "pdfRenderPageRegion draws only the window you see, so 1000% costs what the fitted page does, and the letters stay sharp."
+      case 2
+         return "2. Find a word. pdfPageSearch finds every place a word occurs; pdfPageTextRects gives the boxes to mark." \
+               && "Two flags narrow it: capitals must match (2 of 3 here), whole words (2), both (1)."
+      case 3
+         return "3. Read a page. pdfPageText reads it in order and pdfPageCharBox places each character. A box dragged" \
+               && "over the page gives the words inside it; a click finds the character there and its word."
+      case 4
+         return "4. Outline and links. pdfOutline gives the outline, pdfPageLinks each link's box and where it leads." \
+               && "A link inside the document is followed; a web address is only shown, since a stranger wrote it."
+      case 5
+         return "5. Unlock. A locked PDF opens only with its password: a wrong one is refused, and pdfLastError says why." \
+               && "The right one opens it, and pdfPermissions says what its author allows: no printing, here."
+   end switch
+   return "When this window opens it plays the five scenes in turn. Click one to see it again, or take over: open" \
+         && "a PDF of your own, turn its pages, zoom, search, click a word or drag a box over the page to read it."
+end pvSceneAbout
+
+-- The tour, as the window opens: every scene in turn. It arrives by timer,
+-- so the stack is pinned first (engine note 5.3).
+on pvTourStart
+   set the defaultStack to the short name of this stack
+   put empty into sShowMsg
+   pvPlay 1, true
+end pvTourStart
+
+-- Plays scene pScene; with pAll true the scenes after it follow. pArm false
+-- leaves the first frame for the caller to play (pvShowRun).
+command pvPlay pScene, pAll, pArm
+   set the defaultStack to the short name of this stack
+   pvShowCancel
+   if pvReady() is false then
+      put "The scenes need pdfxt, and it is not here: the line under the page says what is missing." into field "show:about"
+      exit pvPlay
+   end if
+   if pScene is not an integer then
+      exit pvPlay
+   end if
+   if pScene < 1 or pScene > kPvScenes then
+      exit pvPlay
+   end if
+   pvShowClean
+   put pScene into sShow
+   put (pAll is true) into sShowAll
+   put 0 into sShowStep
+   put empty into sShowLog
+   pvShowLights
+   put pvSceneAbout(pScene) into field "show:about"
+   if pArm is not false then
+      pvShowArm 20
+   end if
+end pvPlay
+
+-- One frame of the scene playing, by timer, and the next one asked for:
+-- the time the frame took is taken off the wait, so the motion keeps its
+-- pace while the page is drawn.
+on pvShowTick
+   local tStart, tMore
+   set the defaultStack to the short name of this stack
+   put empty into sShowMsg
+   if sShow is 0 then
+      exit pvShowTick
+   end if
+   put the milliseconds into tStart
+   put pvShowFrame() into tMore
+   if sShow is 0 then
+      exit pvShowTick
+   end if
+   if tMore then
+      pvShowArm max(5, kPvFrameMs - (the milliseconds - tStart))
+   else if pvShowNext() then
+      -- a breath between two scenes of the tour
+      pvShowArm 500
+   end if
+end pvShowTick
+
+private command pvShowArm pDelay
+   send "pvShowTick" to me in pDelay milliseconds
+   put the result into sShowMsg
+end pvShowArm
+
+-- The next frame of the scene playing, drawn with the screen locked. True
+-- while the scene has frames to come.
+function pvShowFrame
+   local tMore
+   add 1 to sShowStep
+   lock screen
+   switch sShow
+      case 1
+         put pvSceneZoom(sShowStep) into tMore
+         break
+      case 2
+         put pvSceneFind(sShowStep) into tMore
+         break
+      case 3
+         put pvSceneRead(sShowStep) into tMore
+         break
+      case 4
+         put pvSceneLinks(sShowStep) into tMore
+         break
+      case 5
+         put pvSceneUnlock(sShowStep) into tMore
+         break
+      default
+         put false into tMore
+   end switch
+   pvShowTitle sShowStep
+   pvShowFade
+   pvShowProgress
+   unlock screen
+   return tMore
+end pvShowFrame
+
+-- A scene has ended: the next one of the tour begins (true), or the show
+-- is over (false).
+function pvShowNext
+   if sShowAll and sShow < kPvScenes then
+      pvShowClean
+      add 1 to sShow
+      put 0 into sShowStep
+      pvShowLights
+      put pvSceneAbout(sShow) into field "show:about"
+      return true
+   end if
+   pvShowEnd
+   return false
+end pvShowNext
+
+-- The show is over. After the whole tour the sample is put back on its
+-- cover, as the window opened.
+command pvShowEnd
+   local tWasAll, tWas
+   put sShowAll into tWasAll
+   put sShow into tWas
+   put 0 into sShow
+   put false into sShowAll
+   pvShowCancel
+   pvShowClean
+   pvShowLights
+   pvShowProgress
+   if tWasAll then
+      pvOpen "sample", empty
+      pvShowTab "out"
+      put "That was the tour. Click a scene to see it again, or take over: open a PDF of your own, turn its" \
+            && "pages, zoom, search, click a word or drag a box over the page to read it." into field "show:about"
+      pvSay "The tour is over: the viewer is yours.", "ok"
+   else if tWas > 0 then
+      pvSay "Scene" && tWas && "is over. Everything it did is a click away in the viewer.", "ok"
+   end if
+end pvShowEnd
+
+-- The person took over: the scene stops where it is, and so does a tour
+-- that has not begun yet.
+command pvStopShow
+   set the defaultStack to the short name of this stack
+   pvShowCancel
+   if sShow is 0 then
+      exit pvStopShow
+   end if
+   put 0 into sShow
+   put false into sShowAll
+   pvShowClean
+   pvShowLights
+   pvShowProgress
+   put "Stopped where it was: the viewer is yours. Click a scene to watch one again." into field "show:about"
+end pvStopShow
+
+-- No frame of this stack's show is left queued: the one it knows of, and
+-- any other a re-entry could have left (two chains would race).
+private command pvShowCancel
+   local tLine
+   if sShowMsg is not empty then
+      cancel sShowMsg
+      put empty into sShowMsg
+   end if
+   repeat for each line tLine in the pendingMessages
+      if item 3 of tLine is "pvShowTick" or item 3 of tLine is "pvTourStart" then
+         if item 4 to -1 of tLine is the long id of me then
+            cancel item 1 of tLine
+         end if
+      end if
+   end repeat
+end pvShowCancel
+
+-- What a scene leaves over the page, taken away.
+private command pvShowClean
+   lock screen
+   set the blendLevel of image "view:page" to 0
+   set the visible of graphic "view:ptr" to false
+   set the visible of field "view:title" to false
+   pvShowPulse 78
+   pvLockPlace 0
+   unlock screen
+end pvShowClean
+
+-- The scene's button lit while it plays, and Play them all during the tour.
+private command pvShowLights
+   local tI
+   repeat with tI = 1 to kPvScenes
+      set the hilite of button ("show:" & tI) to (tI is sShow)
+   end repeat
+   set the hilite of button "show:all" to sShowAll
+end pvShowLights
+
+private command pvShowProgress
+   local tTotal, tW
+   if sShow is 0 then
+      set the visible of graphic "show:fill" to false
+      exit pvShowProgress
+   end if
+   put item sShow of kPvSceneFrames into tTotal
+   put round((kPvSideR - kPvSideL) * min(1, sShowStep / tTotal)) into tW
+   if tW < 1 then
+      set the visible of graphic "show:fill" to false
+   else
+      set the rect of graphic "show:fill" to kPvSideL & comma & kPvBarT & comma & (kPvSideL + tW) & comma & (kPvBarT + 4)
+      set the visible of graphic "show:fill" to true
+   end if
+end pvShowProgress
+
+-- The scene's name over the bottom of the stage as it begins, fading.
+private command pvShowTitle pStep
+   if pStep is 1 then
+      put sShow & "." && item sShow of kPvSceneNames into field "view:title"
+      set the blendLevel of field "view:title" to 8
+      set the visible of field "view:title" to true
+   else if pStep > 24 and pStep <= 36 then
+      set the blendLevel of field "view:title" to min(100, 8 + (pStep - 24) * 8)
+   else if pStep is 37 then
+      set the visible of field "view:title" to false
+   end if
+end pvShowTitle
+
+-- A page a scene turns to comes up out of the dark over a few frames.
+private command pvShowFade
+   local tBlend
+   if the visible of image "view:page" then
+      put the blendLevel of image "view:page" into tBlend
+      if tBlend > 0 then
+         set the blendLevel of image "view:page" to max(0, tBlend - 15)
+      end if
+   end if
+end pvShowFade
+
+private command pvShowTurned pWas
+   if sPage is not pWas then
+      set the blendLevel of image "view:page" to 75
+   end if
+end pvShowTurned
+
+private command pvShowGo pPage
+   local tWas
+   put sPage into tWas
+   pvGo pPage
+   pvShowTurned tWas
+end pvShowGo
+
+-- The sample, open and unlocked, for a scene that shows it. False when it
+-- would not open (pvOpen has said why).
+private function pvShowSample
+   if sSource is not "sample" or sDoc is 0 then
+      pvOpen "sample", empty
+   end if
+   return sDoc > 0
+end pvShowSample
+
+-- 0 before frame pFrom, 1 after pTo, and between them a smooth start and
+-- stop (smoothstep).
+function pvEase pStep, pFrom, pTo
+   local tT
+   if pStep <= pFrom then
+      return 0
+   end if
+   if pStep >= pTo then
+      return 1
+   end if
+   put (pStep - pFrom) / (pTo - pFrom) into tT
+   return tT * tT * (3 - 2 * tT)
+end pvEase
+
+-- The page shown at pZoom pixels to the point, with its point pX,pY in the
+-- middle of the view (or as near as the page's edges allow).
+command pvViewAt pZoom, pX, pY
+   put empty into sFit
+   put pZoom into sZoom
+   put round(pX * pZoom - (kPvViewR - kPvViewL) / 2) into sScrollX
+   put round(pY * pZoom - (kPvViewB - kPvViewT) / 2) into sScrollY
+   pvRender
+end pvViewAt
+
+private command pvShowZoomTo pZoom, pX, pY
+   pvViewAt pZoom, pX, pY
+   put max(sShowPeak, round(pZoom * 100)) into sShowPeak
+   if sLastDraw begins with "pdfRenderPageRegion" then
+      add 1 to sShowWindows
+   end if
+end pvShowZoomTo
+
+-- 1. Deep zoom: into the cover's title, along it, and out again. The
+-- title's letters are 48 points tall at 72,92 of the page; at 1000% one
+-- letter fills the view.
+function pvSceneZoom pStep
+   local tE, tF
+   if pStep is 1 then
+      if pvShowSample() is false then
+         return false
+      end if
+      put 0 into sShowPeak
+      put 0 into sShowWindows
+      pvShowTab "draw"
+      pvGo 1
+      pvZoom "page"
+      put sZoom into sShowFit
+   else if pStep >= 8 and pStep <= 80 then
+      put pvEase(pStep, 8, 80) into tE
+      put pvEase(pStep, 8, 56) into tF
+      pvShowZoomTo sShowFit * (10 / sShowFit) ^ tE, 306 + (86 - 306) * tF, 396 + (80 - 396) * tF
+   else if pStep >= 96 and pStep <= 165 then
+      pvShowZoomTo 10, 86 + (182 - 86) * pvEase(pStep, 96, 165), 80
+   else if pStep >= 179 and pStep <= 228 then
+      put pvEase(pStep, 179, 228) into tE
+      pvShowZoomTo 10 * (sShowFit / 10) ^ tE, 182 + (306 - 182) * tE, 80 + (396 - 80) * tE
+   else if pStep is 229 then
+      pvZoom "page"
+   else if pStep >= 240 then
+      put "zoom: deepest" && sShowPeak & "%," && sShowWindows && "frames drawn as a window, back at" \
+            && round(sZoom * 100) & "%" & return after sShowLog
+      return false
+   end if
+   return true
+end pvSceneZoom
+
+-- 2. Find a word: "needle" typed and found, each match chosen in turn, the
+-- two flags switched on and off, then "PDFium" across the document.
+function pvSceneFind pStep
+   local tN, tWas
+   put sPage into tWas
+   if pStep is 1 then
+      if pvShowSample() is false then
+         return false
+      end if
+      pvShowTab "find"
+      set the hilite of button "find:case" to false
+      set the hilite of button "find:words" to false
+      put empty into field "find:text"
+      put empty into field "find:list"
+      put empty into field "find:sum"
+      put empty into sNeedle
+      put empty into sFinds
+      put 0 into sFindAt
+      pvGo 1
+      pvZoom "page"
+   else if pStep >= 8 and pStep <= 25 then
+      put min(6, (pStep - 8) div 3 + 1) into tN
+      put char 1 to tN of "needle" into field "find:text"
+   else if pStep is 28 or pStep is 207 then
+      set the hilite of button "find:go" to true
+   else if pStep is 31 then
+      set the hilite of button "find:go" to false
+      -- close enough to read the marks
+      put empty into sFit
+      put 1.4 into sZoom
+      pvFind
+      pvShowTurned tWas
+      put "find: needle" && pvShowCount() & return after sShowLog
+   else if pStep is 50 or pStep is 66 or pStep is 82 or pStep is 232 or pStep is 254 then
+      pvFindStep 1
+      pvShowTurned tWas
+   else if pStep is 100 then
+      pvShowFlip "find:case"
+      put "find: capitals" && pvShowCount() & return after sShowLog
+   else if pStep is 125 then
+      pvShowFlip "find:words"
+      put "find: capitals and whole words" && pvShowCount() & return after sShowLog
+   else if pStep is 150 then
+      pvShowFlip "find:case"
+      put "find: whole words" && pvShowCount() & return after sShowLog
+   else if pStep is 172 then
+      pvShowFlip "find:words"
+   else if pStep is 186 then
+      put empty into field "find:text"
+   else if pStep >= 188 and pStep <= 203 then
+      put min(6, (pStep - 188) div 3 + 1) into tN
+      put char 1 to tN of "PDFium" into field "find:text"
+   else if pStep is 210 then
+      set the hilite of button "find:go" to false
+      put "page" into sFit
+      pvFind
+      pvShowTurned tWas
+      put "find: PDFium" && pvShowCount() && "on" && pvShowPages() && "pages" & return after sShowLog
+   else if pStep >= 280 then
+      return false
+   end if
+   return true
+end pvSceneFind
+
+-- A switch thrown by the scene, as a click would.
+private command pvShowFlip pName
+   set the hilite of button pName to not the hilite of button pName
+   pvTicked pName
+end pvShowFlip
+
+-- How many matches the last search found, and on how many pages.
+function pvShowCount
+   if sFinds is empty then
+      return 0
+   end if
+   return the number of lines of sFinds
+end pvShowCount
+
+function pvShowPages
+   local tLine, tPages
+   repeat for each line tLine in sFinds
+      if item 1 of tLine is not among the items of tPages then
+         put item 1 of tLine & comma after tPages
+      end if
+   end repeat
+   return the number of items of tPages
+end pvShowPages
+
+-- 3. Read a page: the first sixty characters read one by one, a box dragged
+-- over the Passwords paragraph, then a click on a word.
+function pvSceneRead pStep
+   local tN, tHits, tBox, tE
+   if pStep is 1 then
+      if pvShowSample() is false then
+         return false
+      end if
+      pvShowTab "txt"
+      put empty into sSel
+      put empty into sCharRect
+      pvGo 3
+      pvViewAt 1.5, 280, 160
+      pvFillText
+   else if pStep >= 8 and pStep <= 67 then
+      put pStep - 7 into tN
+      put pdfPageCharBox(sDoc, sPage, tN) into sCharRect
+      put "Reading character" && tN && "of" && pdfPageCharCount(sDoc, sPage) && "(pdfPageCharBox)" into field "txt:hs"
+      put pdfPageTextRange(sDoc, sPage, 1, tN) into field "txt:sel"
+      pvPaintMarks
+   else if pStep is 72 then
+      put empty into sCharRect
+      put "A box dragged over the page..." into field "txt:hs"
+      put empty into field "txt:sel"
+      pvPaintMarks
+   else if pStep >= 74 and pStep <= 120 then
+      put pvEase(pStep, 74, 120) into tE
+      put "66,178," & round(66 + 420 * tE) & comma & round(178 + 74 * tE) into sSel
+      pvPaintMarks
+   else if pStep is 121 then
+      pvSelectBox 66, 178, 486, 252
+      put "read: the box holds" && the number of chars of field "txt:sel" && "characters" & return after sShowLog
+   else if pStep is 160 then
+      -- the middle of the third letter of the first whole word "password"
+      put pdfPageSearch(sDoc, sPage, "password", 2) into tHits
+      if tHits is not empty then
+         put pdfPageCharBox(sDoc, sPage, item 1 of line 1 of tHits + 2) into tBox
+         if the number of items of tBox is 4 then
+            pvClickAt (item 1 of tBox + item 3 of tBox) / 2, (item 2 of tBox + item 4 of tBox) / 2
+         end if
+      end if
+      put "read: the word clicked is" && the last word of the last line of field "txt:sel" & return after sShowLog
+   else if pStep >= 215 then
+      return false
+   end if
+   return true
+end pvSceneRead
+
+-- 4. Outline and links: each outline entry in turn, then the contents
+-- page's links lit, followed by a pointer, and the cover's web link shown.
+function pvSceneLinks pStep
+   local tK, tWas, tPage
+   if pStep is 1 then
+      if pvShowSample() is false then
+         return false
+      end if
+      pvShowTab "out"
+      pvGo 1
+      pvZoom "page"
+      set the hilitedLines of field "out:list" to empty
+   else if pStep >= 8 and pStep <= 134 then
+      if (pStep - 8) mod 18 is 0 then
+         put (pStep - 8) div 18 + 1 into tK
+         if tK <= the number of lines of sOutline then
+            put sPage into tWas
+            set the hilitedLine of field "out:list" to tK
+            pvOutlineClick
+            pvShowTurned tWas
+            set the itemDelimiter to tab
+            put item 2 of line tK of sOutline into tPage
+            set the itemDelimiter to comma
+            if tPage > 0 then
+               put "outline:" && tPage & return after sShowLog
+            else
+               put "outline: web" & return after sShowLog
+            end if
+         end if
+      end if
+   else if pStep is 152 then
+      pvShowTab "lnk"
+      set the hilite of button "lnk:show" to true
+      pvShowGo 2
+      put "links: page 2 has" && the number of lines of sLinks & return after sShowLog
+   else if pStep >= 156 and pStep <= 186 then
+      pvShowPulse round(50 + 28 * cos((pStep - 156) * pi / 7.5))
+   else if pStep is 187 then
+      pvShowPulse 78
+   else if pStep is 188 then
+      set the width of graphic "view:ptr" to 26
+      set the height of graphic "view:ptr" to 26
+      set the loc of graphic "view:ptr" to the loc of image "view:page"
+      set the visible of graphic "view:ptr" to true
+   else if pStep >= 190 and pStep <= 212 then
+      pvShowGlide pStep, 190, 212, 200, 189
+   else if pStep >= 214 and pStep <= 217 then
+      pvShowPress pStep - 213
+   else if pStep is 218 then
+      pvShowClick 200, 189
+   else if pStep >= 226 and pStep <= 248 then
+      pvShowGlide pStep, 226, 248, 133, 328
+   else if pStep >= 250 and pStep <= 253 then
+      pvShowPress pStep - 249
+   else if pStep is 254 then
+      pvShowClick 133, 328
+   else if pStep is 266 then
+      pvShowGo 1
+   else if pStep >= 270 and pStep <= 292 then
+      pvShowGlide pStep, 270, 292, 138, 448
+   else if pStep >= 294 and pStep <= 297 then
+      pvShowPress pStep - 293
+   else if pStep is 298 then
+      pvShowClick 138, 448
+   else if pStep is 320 then
+      set the visible of graphic "view:ptr" to false
+   else if pStep >= 330 then
+      return false
+   end if
+   return true
+end pvSceneLinks
+
+-- The links outlined on the page, all at one see-through level.
+private command pvShowPulse pBlend
+   local tI
+   repeat with tI = 1 to kPvLinkMax
+      set the blendLevel of graphic ("view:ln" & tI) to pBlend
+   end repeat
+end pvShowPulse
+
+-- The pointer glides, frame pFrom to pTo, to the point pX,pY of the page.
+private command pvShowGlide pStep, pFrom, pTo, pX, pY
+   local tE, tH, tV
+   if pStep is pFrom then
+      put item 1 of the loc of graphic "view:ptr" into sShowFromH
+      put item 2 of the loc of graphic "view:ptr" into sShowFromV
+   end if
+   put pvEase(pStep, pFrom, pTo) into tE
+   put sImgL + round(pX * sZoom) - sScrollX into tH
+   put sImgT + round(pY * sZoom) - sScrollY into tV
+   set the loc of graphic "view:ptr" to round(sShowFromH + (tH - sShowFromH) * tE) & comma & round(sShowFromV + (tV - sShowFromV) * tE)
+   set the visible of graphic "view:ptr" to true
+end pvShowGlide
+
+-- A press, in four frames: the pointer shrinks and comes back.
+private command pvShowPress pN
+   local tLoc, tSize
+   put the loc of graphic "view:ptr" into tLoc
+   put item pN of "22,17,17,22" into tSize
+   set the width of graphic "view:ptr" to tSize
+   set the height of graphic "view:ptr" to tSize
+   set the loc of graphic "view:ptr" to tLoc
+end pvShowPress
+
+-- The click the pointer made: pvClickAt, as the mouse handlers call it.
+private command pvShowClick pX, pY
+   local tWas, tLoc
+   put the loc of graphic "view:ptr" into tLoc
+   set the width of graphic "view:ptr" to 26
+   set the height of graphic "view:ptr" to 26
+   set the loc of graphic "view:ptr" to tLoc
+   put sPage into tWas
+   put empty into sAddress
+   pvClickAt pX, pY
+   if sAddress is not empty then
+      put "link: web" && sAddress & return after sShowLog
+   else
+      pvShowTurned tWas
+      put "link: page" && sPage & return after sShowLog
+   end if
+end pvShowClick
+
+-- 5. Unlock: the locked sample asks for its password; a wrong one is typed
+-- and refused (the bar shakes), then the right one opens it.
+function pvSceneUnlock pStep
+   local tN
+   if pStep is 1 then
+      pvShowTab "info"
+      pvOpen "locked", empty
+      if sWaiting is not "locked" then
+         put "unlock: the locked sample did not ask for a password" & return after sShowLog
+         return false
+      end if
+      put "unlock: it asks for its password" & return after sShowLog
+   else if pStep >= 8 and pStep <= 29 then
+      put min(11, (pStep - 8) div 2 + 1) into tN
+      put char 1 to tN of "open sesame" into field "lock:pw"
+   else if pStep is 33 or pStep is 81 then
+      set the hilite of button "lock:go" to true
+   else if pStep is 36 then
+      set the hilite of button "lock:go" to false
+      pvUnlock
+      if sDoc is 0 and sWaiting is "locked" then
+         put "unlock: a wrong password is refused" & return after sShowLog
+      end if
+   else if pStep >= 37 and pStep <= 52 then
+      pvLockPlace round(10 * sin((pStep - 37) * pi / 2.5) * (52 - pStep) / 15)
+   else if pStep is 53 then
+      pvLockPlace 0
+   else if pStep >= 60 and pStep <= 77 then
+      put min(6, (pStep - 60) div 3 + 1) into tN
+      put char 1 to tN of "secret" into field "lock:pw"
+   else if pStep is 84 then
+      set the hilite of button "lock:go" to false
+      pvUnlock
+      if sDoc > 0 then
+         set the blendLevel of image "view:page" to 90
+         put "unlock: secret opens it; permissions" && pdfPermissions(sDoc) & return after sShowLog
+      end if
+   else if pStep >= 140 then
+      return false
+   end if
+   return true
+end pvSceneUnlock
+
+-- The password bar, pDX pixels to the side of where it lives.
+private command pvLockPlace pDX
+   set the rect of graphic "lock:bg" to pvMoved(kPvLockBg, pDX)
+   set the rect of field "lock:msg" to pvMoved(kPvLockMsg, pDX)
+   set the rect of field "lock:pw" to pvMoved(kPvLockPw, pDX)
+   set the rect of button "lock:go" to pvMoved(kPvLockGo, pDX)
+end pvLockPlace
+
+function pvMoved pRect, pDX
+   return (item 1 of pRect + pDX) & comma & item 2 of pRect & comma & (item 3 of pRect + pDX) & comma & item 4 of pRect
+end pvMoved
+
+-- For a drive with no person at it: plays scene pScene (and with pAll the
+-- scenes after it) to the end through the same frames, without the timer.
+-- pUntil, when it is a frame number, stops the first scene there, mid-way:
+-- a picture of a scene at work.
+command pvShowRun pScene, pAll, pUntil
+   local tMore, tGuard
+   set the defaultStack to the short name of this stack
+   pvPlay pScene, pAll, false
+   put 0 into tGuard
+   repeat while sShow > 0 and tGuard < 5000
+      add 1 to tGuard
+      put pvShowFrame() into tMore
+      if pUntil is an integer and sShowStep >= pUntil then
+         exit repeat
+      end if
+      if tMore is false then
+         get pvShowNext()
+      end if
+   end repeat
+end pvShowRun
+
+-- The scene playing and its frame, and whether the tour is on.
+function pvShowNow
+   return sShow & comma & sShowStep & comma & sShowAll
+end pvShowNow
+
+function pvShowLog
+   return sShowLog
+end pvShowLog

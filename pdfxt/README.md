@@ -94,14 +94,22 @@ Joined the suite on 2026-11-20. What has run, and where:
   passed the ABI check, opened both PDFs, drew pages into real images both ways, read text and
   searched it, walked the outline and links, and called every public handler once.
 - **The demo stack**, `examples/pdfxt-demo.livecodescript` (paste it into a stack's script and
-  reopen the stack): a PDF viewer, with a five-page sample built in and a locked one. Zoom and
-  scroll (only the part in view is drawn), the outline, links, search with every match marked,
-  a page's text, the word you click and the text in a box you drag, the document's information
-  and permissions, the drawing flags, a page saved as a BMP, and one button that checks all of
-  it. `tests/demo-drive.livecodescript` drives it on OXT-Beyond's Linux desktop engine with no
-  display (2026-11-21, a locally built library): its window built, the sample opened and used
-  the way a person would, the locked one unlocked, its own checks green. The native lane
-  repeats that on every change. Nobody has used the window by hand yet.
+  reopen the stack): a PDF viewer in OXT-Beyond's dark showcase look, with a five-page sample
+  built in and a locked one. It opens playing a tour of five self-running scenes (a deep zoom
+  where only the window in view is drawn, a word found with every match marked, a page read by
+  character, by box and by click, the outline and the links followed, a locked PDF unlocked),
+  and any click hands the window over: zoom and scroll, the outline, links, search, a page's
+  text, the word you click and the text in a box you drag, the document's information and
+  permissions, the drawing flags, a page saved as a BMP, and one button that checks all of it.
+  Without pdfxt it still opens, and says in red what is missing. `tests/demo-drive.livecodescript`
+  drives it on OXT-Beyond's Linux desktop engine with no display (2026-11-21, a locally built
+  library): the window built with every colour its own, the tour started by the engine's timer,
+  each scene played to its end, the window used the way a person would, the locked sample
+  unlocked, its own checks green, and the same window without pdfxt. The native lane repeats
+  that on every change. The window's earlier look (the suite UI kit) was opened in the
+  maintainer's Windows IDE on 2026-11-21: it built and opened the sample, and under Windows'
+  dark appearance its page number and outline drew white on white, which this look was made to
+  end; this look has not met Windows yet. Nobody has used the window by hand yet.
 - **In the Windows IDE**, on 2026-11-21: the maintainer's 64-bit OXT-Beyond (engine 9.7.1)
   loaded the module, compiled there from this source, over CI's `x86_64-win32` library (run
   44840908920), and `tests/engine-selftest.lc`, run inside the IDE as a script-only stack,
@@ -181,7 +189,6 @@ that hold every copy byte-identical to them, live in the suite and do
 not travel with this member; refresh a copy from the suite (the marker
 lines name the master) rather than editing inside the markers.
 
-- The demo UI kit (`tools/ui-kit.livecodescript`; gate `tools/check-ui-kit-drift.py`) in `examples/pdfxt-demo.livecodescript`.
 - `tools/check-livecodescript.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
 
 **What this repository cannot check on its own.** The suite-wide gates -

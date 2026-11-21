@@ -59,7 +59,6 @@ ADOPTERS = [
     os.path.join("torrentxt", "examples", "torrent-dht-channels.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-quickshare.livecodescript"),
     os.path.join("torrentxt", "examples", "torrent-rp1-chat.livecodescript"),
-    os.path.join("pdfxt", "examples", "pdfxt-demo.livecodescript"),
     os.path.join("nocloud", "src", "nocloudquickshare.livecodescript"),
     os.path.join("tests", "suite-closing-pass.livecodescript"),
     os.path.join("nostrxt", "examples", "nostrxt-demo.livecodescript"),
@@ -122,6 +121,15 @@ EXEMPT = {
     # carry, D-18 (2026-08-27; holde-em/CLAUDE.md rule 10).
     os.path.join("holde-em", "src", "holdem.livecodescript"):
         "game table on the b2k Kit; permanent by D-18",
+    # pdfxt's demo is a showcase in OXT-Beyond's dark look (the Render3D
+    # Tour's palette), to the owner's ask of 2026-11-21 that the suite's
+    # demos match its polished showcase demos. It left the kit that day: the
+    # kit's palette is light and fixed, and under Windows' dark appearance
+    # OXT-Beyond gave the kit's fields white text on their white ground
+    # (the maintainer's Windows, 2026-11-21). It says every colour of every
+    # control itself, and its drive holds that (pdfxt/tests/demo-drive).
+    os.path.join("pdfxt", "examples", "pdfxt-demo.livecodescript"):
+        "a showcase in OXT-Beyond's dark look, every colour its own (2026-11-21)",
 }
 
 # The three spellings that mean "this file builds a window". Until the
