@@ -21,7 +21,7 @@
 #include <string.h>
 
 /* >>> BEGIN SHIM DECLARATIONS (generated: tools/check-smoke-coverage.py --write) >>> */
-/* 399 exports, in the shim's order. Plain declarations: the test is a client of
+/* 401 exports, in the shim's order. Plain declarations: the test is a client of
  * the built library, exactly as the engine's FFI is. */
 extern int b3x_abi_version(void);
 extern const char*b3x_library_version(void);
@@ -407,6 +407,8 @@ extern void b3x_render_set_camera(double ex, double ey, double ez, double tx, do
 extern const char*b3x_render_camera(void);
 extern void b3x_render_set_light(double dx, double dy, double dz);
 extern void b3x_render_set_background(int red, int green, int blue);
+extern void b3x_render_set_sky(int topRed, int topGreen, int topBlue, int bottomRed, int bottomGreen, int bottomBlue);
+extern const char*b3x_render_sky(void);
 extern void b3x_shape_set_color(int s, int red, int green, int blue);
 extern void b3x_shape_clear_color(int s);
 extern const char*b3x_shape_color(int s);
@@ -497,8 +499,8 @@ static int make_world(int *ground)
 static void test_library(void)
 {
     double v[4];
-    CHECK(b3x_abi_version() == 2, "abi %d", b3x_abi_version());
-    CHECK(strncmp(b3x_library_version(), "box3dxt ABI 2; Box3D ", 21) == 0, "version '%s'", b3x_library_version());
+    CHECK(b3x_abi_version() == 3, "abi %d", b3x_abi_version());
+    CHECK(strncmp(b3x_library_version(), "box3dxt ABI 3; Box3D ", 21) == 0, "version '%s'", b3x_library_version());
     CHECK(b3x_has_avx2() == 0 || b3x_has_avx2() == 1, "has_avx2");
     CHECK(b3x_world_create(NAN, 0, 0, 1) == 0, "NaN gravity must refuse");
     CHECK(strlen(b3x_last_error()) > 0, "a refusal leaves an error text");
@@ -2386,6 +2388,36 @@ static void test_render(void)
               "view %d: balls with fewer sides are still what rays see (%d pixels, %d drawn; %d name another shape, %d another depth; %d triangles)",
               view, compared, covered, shapeBad, depthBad, b3x_render_triangle_count());
     }
+    b3x_world_destroy(w);
+
+    /* 9. the sky (ABI 3): where there is no shape, each row is one colour
+     * and the rows run from the top colour to the bottom one. An empty
+     * world, 5 rows: row y is top + (bottom - top) * y / 4 to the nearest
+     * whole number, by hand below, rising and falling in one picture. */
+    w = b3x_world_create(0, -10, 0, 1);
+    b3x_render_set_background(7, 8, 9);
+    CHECK(strcmp(b3x_render_sky(), "7,8,9,7,8,9") == 0, "one background colour is a sky of that colour twice: '%s'", b3x_render_sky());
+    b3x_render_set_sky(0, 200, 10, 100, 0, 13);
+    CHECK(strcmp(b3x_render_sky(), "0,200,10,100,0,13") == 0, "a sky is kept: '%s'", b3x_render_sky());
+    b3x_render_set_sky(256, 0, 0, 0, 0, 0);
+    b3x_render_set_sky(0, 0, 0, 0, -1, 0);
+    b3x_render_set_sky(1, 2, 3, 4, 5, 256);
+    CHECK(b3x_last_error()[0] != 0 && strcmp(b3x_render_sky(), "0,200,10,100,0,13") == 0,
+          "a sky with a colour outside a byte is refused whole and the old one stays: '%s'", b3x_render_sky());
+    CHECK(b3x_render_world(w, 3, 5, 0) == 1, "an empty world rendered under a sky");
+    {
+        static const int want[5][3] = { { 0, 200, 10 }, { 25, 150, 11 }, { 50, 100, 12 }, { 75, 50, 12 }, { 100, 0, 13 } };
+        int bad = 0;
+        for (int y = 0; y < 5; y++)
+            for (int x = 0; x < 3; x++)
+                if (b3x_render_pixel(x, y) != rgb(want[y][0], want[y][1], want[y][2]) || b3x_render_shape_at(x, y) != 0) bad++;
+        CHECK(bad == 0, "every row of the sky is its own colour, top to bottom (%d pixels are not; rows %06x %06x %06x %06x %06x)",
+              bad, b3x_render_pixel(0, 0), b3x_render_pixel(0, 1), b3x_render_pixel(0, 2), b3x_render_pixel(0, 3), b3x_render_pixel(0, 4));
+    }
+    CHECK(b3x_render_world(w, 4, 1, 0) == 1 && b3x_render_pixel(3, 0) == rgb(0, 200, 10), "a picture one row tall is the top colour");
+    b3x_render_set_background(7, 8, 9);
+    CHECK(b3x_render_world(w, 3, 5, 0) == 1 && b3x_render_pixel(1, 0) == rgb(7, 8, 9) && b3x_render_pixel(1, 2) == rgb(7, 8, 9) && b3x_render_pixel(1, 4) == rgb(7, 8, 9),
+          "a background set after a sky is one colour on every row again");
     b3x_world_destroy(w);
     b3x_render_set_background(0x20, 0x24, 0x2A);
     b3x_render_set_camera(0, 4, 12, 0, 1, 0, 50);

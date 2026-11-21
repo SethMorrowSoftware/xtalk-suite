@@ -1,6 +1,6 @@
 # box3dxt API reference
 
-The 398 public handlers, from the doc blocks in `src/box3dxt.lcb` (the IDE dictionary reads the
+The 400 public handlers, from the doc blocks in `src/box3dxt.lcb` (the IDE dictionary reads the
 same blocks; `tools/build-api-reference.py` writes this file from them, and its `--check` is a
 gate). Read [getting-started.md](getting-started.md) first: it has the units, the limits every
 call is held to, and the handful of rules that decide whether a scene works.
@@ -21,7 +21,7 @@ Returns: The ABI number; this binding needs 2.
 
 Returns the versions of the native library and of Box3D inside it.
 
-Returns: Text such as "box3dxt ABI 2; Box3D 0.2.0".
+Returns: Text such as "box3dxt ABI 3; Box3D 0.2.0".
 
 The first call that reaches the native library. It throws if the library on disk has a different ABI from this binding, which means the two come from different releases.
 
@@ -4153,7 +4153,32 @@ Sets the colour the renderer paints where there is no shape.
 - pGreen: Green, 0 to 255.
 - pBlue: Blue, 0 to 255.
 
-A number outside 0 to 255 is refused and the colour stays.
+A number outside 0 to 255 is refused and the colour stays. One colour for the whole picture; `b3RenderSetSky` paints two that run into each other.
+
+### `b3RenderSetSky`
+
+`b3RenderSetSky(in pTopRed as Integer, in pTopGreen as Integer, in pTopBlue as Integer, in pBottomRed as Integer, in pBottomGreen as Integer, in pBottomBlue as Integer) returns nothing`
+
+Sets a sky: the colours the renderer paints where there is no shape, from the picture's top to its bottom.
+
+- pTopRed: Red of the picture's top row, 0 to 255.
+- pTopGreen: Green of the top row, 0 to 255.
+- pTopBlue: Blue of the top row, 0 to 255.
+- pBottomRed: Red of the picture's bottom row, 0 to 255.
+- pBottomGreen: Green of the bottom row, 0 to 255.
+- pBottomBlue: Blue of the bottom row, 0 to 255.
+
+Each row of the picture is one colour, and the rows run evenly from the top colour to the bottom one. A number outside 0 to 255 is refused and both colours stay. `b3RenderSetBackground` sets one colour for the whole picture again. New with ABI 3 of the library.
+
+### `b3RenderSky`
+
+`b3RenderSky() returns String`
+
+Returns the colours the renderer paints where there is no shape.
+
+Returns: Six numbers as text: "topRed,topGreen,topBlue,bottomRed,bottomGreen,bottomBlue".
+
+What `b3RenderSetSky` or `b3RenderSetBackground` last accepted; after the second, the two colours are the same.
 
 ### `b3ShapeSetColor`
 

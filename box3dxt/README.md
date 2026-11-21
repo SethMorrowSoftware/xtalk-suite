@@ -115,6 +115,10 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **A real model** (2026-11-20): the Utah teapot, 3644 points and 6320 triangles, is loaded
   as a static mesh and as falling hulls by the smoke test, which checks rays at it against
   a ray-triangle test of its own, and from its `.obj` file by the engine self-test.
+- **The sky** (ABI 3, 2026-11-21): `b3RenderSetSky` paints the picture behind the shapes
+  from one colour at the top to another at the bottom; `b3RenderSetBackground` is unchanged.
+  Held natively by hand-worked rows and on the headless Linux server engine over a locally
+  built library; no IDE has drawn one yet: verified statically; needs an OXT pass.
 - **The renderer** (ABI 2, 2026-11-20): the smoke test holds a picture to Box3D itself (the
   shape and the distance at a pixel against a ray cast through it, over every shape kind and
   the teapot, from five cameras) and to arithmetic done by hand for one square-on box; the
