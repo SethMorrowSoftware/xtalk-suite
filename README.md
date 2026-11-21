@@ -38,6 +38,7 @@ it is developed here, and each member is also published into its own repository
 | [box2dxt](box2dxt/) | `b2*` / `b2k*` | Box2D v3.1.0 | Rigid-body physics (bodies, shapes, joints, motors, sensors, queries) plus the pure-script b2k game Kit: bodies in pixels and degrees, sprites, input, a player controller, a camera, sound |
 | [box3dxt](box3dxt/) | `b3*` | Box3D (pre-release, pinned to a commit) | 3D rigid-body physics: bodies, eight shape kinds (sphere to triangle mesh and height field), eight joint kinds with limits, springs and motors, ray casts and overlaps, contact, sensor and move events read by polling |
 | [render3dxt](render3dxt/) | `r3*` | its own C renderer, with stb_image and fast_obj compiled in | A textured 3D picture for an ordinary image control: OBJ models with their materials and pictures, boxes to capsules made to measure, PNG / JPEG / BMP / TGA textures, sun and lamp lights, fog, smooth edges, a camera that projects and casts rays, clicking on things; drawn on the processor across its cores, and made to draw what box3dxt simulates |
+| [xlsxt](xlsxt/) | `xl*` | libxlsxwriter 1.2.4 + zlib 1.4 + Expat 2.10.0 | Excel `.xlsx` workbooks written and read: sheets, text, numbers, formulas, dates, links, cell formats, merged cells, pictures and charts; a whole tab-delimited table in or out in one call; files from Excel, LibreOffice, Numbers and Google Sheets read back |
 | [coinxt](coinxt/) | `cx*` | trezor-crypto + bitcoin-core/secp256k1 | Bitcoin and Ethereum primitives: hashes, secp256k1 ECDSA (RFC 6979, recoverable), BIP-340 Schnorr and the BIP-341 Taproot tweak and sighash, encodings and addresses, BIP-39/32/44 HD wallets, WIF, Bitcoin legacy / SegWit / Taproot and Ethereum EIP-155 / EIP-1559 transactions |
 | [curlxt](curlxt/) | `cu*` / `tsNet*` | libcurl 8.22.0 + libssh2 1.11.1 | HTTP(S), FTP(S), SFTP, SCP and SMTP(S) requests as handles, sync or in the background, large transfers straight to and from files; plus the tsNet calls by name, so stacks written for LiveCode's closed tsNet external run unchanged |
 
@@ -68,6 +69,10 @@ Design facts that decide how you use them (each member's own docs have the rest)
   as they stand, so a physics step reaches the picture in one call
   (`r3SceneApplyMoves(scene, b3MovesText())`); neither extension needs the other. Models and
   pictures are files from anywhere, so every index and size in one is checked before use.
+- **xlsxt** writes a workbook when it is closed and reads the DATA of one (values, formulas,
+  number formats), not its looks. It does not edit a file in place or calculate formulas, and the
+  reader treats every file as a stranger's: every size in one is bounded
+  (`xlsxt/docs/getting-started.md`).
 - **curlxt** is "pump or nothing" like enetxt: libcurl runs inside `cuPoll` / `cuWait`, and the
   helpers keep a timer only while something waits. It never touches libURL: `get url` behaves as
   before. Its tsNet layer was written from tsNet's public dictionary only.
@@ -131,6 +136,7 @@ holds every dated record); open work is in [docs/WORK-PLAN.md](docs/WORK-PLAN.md
 | curlxt | 6 platforms, ABI 1 | Windows x86-64 only, on the 2026-11-14 DLL: the three extensions loaded and probed in OXT-Beyond's Windows CI, 2026-11-14; `tsNetGetSync`, an async `tsNetGet`, a refused expired certificate and five concurrent `cuRequestAsync` calls on the maintainer's PC through the MCP bridge, 2026-11-15 | the 2026-11-15 rebuild; SFTP, SCP, SMTP, FTP and uploads on an engine; Linux and mac on an engine |
 | box3dxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed and every public handler was called (`box3dxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a committed library; a row in the suite paste |
 | render3dxt | none yet (the first release dispatch lands them), ABI 1 | three engine tests on OXT-Beyond's headless Linux server engine, 2026-11-20, over locally built libraries: the binding alone (`render3dxt/tests/engine-selftest.lc`: the module loaded, pictures drawn from script checked pixel by pixel, every public handler called), with box3dxt beside it (`engine-interop.lc`: a Box3D simulation drawn where Box3D says the bodies are) and its demo stack opened and driven by message (`engine-demo.lc`); all three run again by its native lane on every change. The same day the demo ran in a desktop IDE (OXT-Beyond 0.2.8-dp.2 on Linux, locally built libraries): seen, recorded, dragged, kicked, every button pressed, 57 pictures a second | Windows, macOS, Android and the web; a committed library; a row in the suite paste |
+| xlsxt | none yet (the first release dispatch lands them), ABI 1 | its own engine self-test on OXT-Beyond's headless Linux server engine, 2026-11-20, over a locally built library: the module loaded, the ABI check passed, a workbook with formats, a table, a chart and a picture was written and read back, and every public handler was called (`xlsxt/tests/engine-selftest.lc`, run again by its native lane on every change) | any desktop IDE; Windows, macOS, Android and the web; a file of its own opened in Excel, on the record; a committed library; a row in the suite paste |
 | onionxt | pure script | live-Tor core and `oxh*` hosting at bring-up (pre-suite, undated); offline self-test 74/0/1 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26; Esplora and Electrum over Tor from the coin wallet, 2026-09-02 and 09-03 | launching tor from the library (Mode B); four inline probes; an OnionXT-to-OnionXT round trip; live negative paths |
 | nostrxt | pure script | core 277/0/2 in the suite paste, Linux 2026-09-25 and 09-26 and Windows 2026-09-24 to 09-26 (the NIP-44 cipher round trip included); relay connect, publish and ok-confirm live against wss://nos.lol, 2026-08-24 | the relay receive leg; NIP-42; `ws://`; bad-certificate TLS (engine note 6.8) |
 | box2dxt | 5 platforms, ABI 4 | Kit harness v32: 385/0 in the suite paste on its 1200-wide card, Linux 2026-09-25 and 09-26 (run 12's `x86_64-linux` file, by the maintainer's account) and Windows 2026-09-24 to 09-26 (on the 2026-09-12 DLL there); every run settles the itemDelimiter half of engine note 2.3 (handler-local). `playLoudness` reads back 0 on Linux and exact on Windows (engine note 5.4), a printed note since v31 | the five game stacks since the 2026-08-14 fold; risk R1 on Linux and macOS |
@@ -170,8 +176,8 @@ alignment). Every member's own tests ran on an Android 5.0 emulator for the two 
 not run. The twenty-eight libraries were committed the same day by a second release run (each
 member's `src/code/<abi>-android/`). No OXT engine on Android has loaded one: needs an OXT pass
 on Android.
-box3dxt and render3dxt joined on 2026-11-20 and are in the recipe; none of their Android
-libraries is committed yet.
+box3dxt, render3dxt and xlsxt joined on 2026-11-20 and are in the recipe; none of their
+Android libraries is committed yet.
 [docs/ANDROID.md](docs/ANDROID.md) has the method and what differs per member (curlxt reads
 Android's system certificate store; onionxt, nostrxt and the three apps are not examined there).
 
@@ -246,6 +252,7 @@ put cxKeccak256Len()     -- coinxt: prints 32
 put cuLibraryVersion()   -- curlxt
 put b3LibraryVersion()   -- box3dxt
 put r3LibraryVersion()   -- render3dxt
+put xlLibraryVersion()   -- xlsxt
 put oxVersion()          -- onionxt (its library in use)
 put nxVersion()          -- nostrxt (after start using stack "nostrxt")
 ```

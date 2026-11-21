@@ -107,6 +107,8 @@ LCB_LIBS = {
     # bindings, and no other prefix begins with "r3".
     "render3dxt/src/render3dxt.lcb": ("r3",),
     "curlxt/src/curl.lcb": ("cu",),
+    # xlsxt joined 2026-11-20. No other library's prefix begins with "xl".
+    "xlsxt/src/xlsxt.lcb": ("xl",),
 }
 
 ENGINE_MESSAGES = ("socketError", "socketClosed", "socketTimeout")
