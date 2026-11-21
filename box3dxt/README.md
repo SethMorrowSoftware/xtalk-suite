@@ -130,8 +130,10 @@ Joined the suite on 2026-11-20. What has run, and where:
   `b3RenderShapeAt` and `b3RenderRay` named the body under it; about 30 frames a second
   solid at 640 by 400 with the engine's default paintCompression and about 48 with "rle"
   (`docs/getting-started.md`, "Seeing the world");
-  four minutes with up to 150 spheres counted no assert. One stack on one machine; on
-  Windows and macOS the renderer in an IDE is verified statically; needs an OXT pass.
+  four minutes with up to 150 spheres counted no assert. One stack on one machine. On
+  Windows the renderer has run in the IDE from script, its picture read as data and never
+  shown (below); in a window there, and on macOS, it is verified statically; needs an OXT
+  pass.
 - **The game Kit and Orb Island** (2026-11-21): `tests/engine-kit.lc` runs the Kit as a
   library on the headless Linux server engine (9.7.1-OXT, a locally built library) and checks
   it scene by scene, hand-stepped so every number is reproducible, with box3dxt's renderer and
@@ -144,12 +146,29 @@ Joined the suite on 2026-11-20. What has run, and where:
   nothing in the console; its keys were not driven. Neither has run in an IDE: a real
   window, keyboard and mouse are verified statically; needs an OXT pass (the game's header
   lists what to look at).
-- **Not yet:** no engine on Windows, macOS or Android has run it, nor a released web engine
-  (the one browser run is above), and no IDE has loaded a release library or an installed
-  extension: on those it is verified statically; needs an OXT pass. The libraries
-  committed under `src/code/` on 2026-11-20 (six desktop platforms, four Android ABIs, a web
-  archive) were tested where they were built; of them only the web archive has met an engine
-  (the browser run above), and no engine has loaded a desktop or Android one yet.
+- **On Windows, the release library** (2026-11-21): OXT-Beyond 0.2.8-dp.1's IDE on the
+  maintainer's Windows PC (engine 9.7.1-BeyondEngine build 25923, x86_64), with box3dxt
+  installed as an extension from the ABI 2 files then on the suite's main branch: the file
+  the IDE had loaded was the committed `x86_64-win32/box3dxt.dll` of release run 44806507517
+  (its SHA-256 read there, 257e576f...). From script in a hidden stack: `b3ABIVersion()` 2
+  and `b3LibraryVersion()` "box3dxt ABI 2; Box3D 0.2.0"; a 0.5 m ball dropped on a box floor
+  fell 1.26 m in 30 steps of 1/60 s, moving at 5 m/s, and rested at a height of 0.49993
+  after 270; a ray straight down hit a box and then the floor; a ball with events on gave one
+  begin-touch event naming it; a 200 by 100 picture crossed as 80,000 bytes of data, its
+  centre pixel named the box at 9 m, a corner landed where the arithmetic says and the ray
+  through a pixel found the shape that pixel showed; Box3D counted no assert. The steps ran
+  in a loop, not on a timer, and nothing was drawn in a window.
+- **Not yet:** no engine on macOS has run it, nor a released web engine (the one browser run
+  is above); on Windows only the script checks above have run (no window, frame loop or
+  game) and on Android one call (below): beyond those it is verified statically; needs an
+  OXT pass. Of the ABI 2 libraries committed on 2026-11-20 (six desktop platforms, four
+  Android ABIs, a web archive) three met an engine: the web archive in that browser, the
+  `x86_64-win32` one in that Windows IDE, and the `x86_64-android` one, which answered
+  `b3LibraryVersion()` ("box3dxt ABI 2; Box3D 0.2.0") in an app that OXT-Beyond's pull
+  request 606 built and ran on x86_64 emulators (Android 13, and Android 16 with 16 KB pages;
+  its run 44863595033). The libraries committed now are ABI 3, from release run 44914775780
+  on 2026-11-21 (the web archive built separately), tested where they were built; no engine
+  has loaded one of them yet.
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins
 it to a commit and why the shim holds every argument to stated limits before Box3D sees it.

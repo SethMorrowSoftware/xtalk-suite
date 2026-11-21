@@ -391,7 +391,9 @@ worse than no gate, because it answers the question nobody asks twice.
   with the seven extensions on x86_64 emulators, each library answering ONE call; no member's
   selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
   one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238);
-  the engine load was of its ABI 1 files. The four members that open sockets declare
+  the engine load was of its ABI 1 files. box3dxt's ABI 2 `x86_64-android` library answered one
+  call in OXT-Beyond's pull request 606 app the same day, and its four were then rebuilt at ABI
+  3 (run 44914775780), which no app has carried. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
   builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and

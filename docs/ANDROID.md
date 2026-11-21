@@ -31,7 +31,10 @@ Android engine has loaded the ABI 2 ones committed now.
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change. Its four libraries were
 committed on 2026-11-20 by its own release run (run 44806507517, commit 6d132d3; the x86 ones
-tested on the emulator, the ARM ones built and checked, not run). The counts in this page's dated records are of the seven members of those runs.
+tested on the emulator, the ARM ones built and checked, not run), and the `x86_64-android` one
+answered one call in an app on 2026-11-21 (the record is below). The four were rebuilt at ABI 3
+the same day by release run 44914775780 (the x86 ones tested on the emulator again, the ARM ones
+built and checked, not run); no engine has loaded those. The counts in this page's dated records are of the seven members of those runs.
 **audioxt joined the same day**, the same way: a member of `tools/build-android.sh`, built
 for the four ABIs and tested on the emulator for the two x86 ones by `native-audioxt.yml`. Its
 four libraries were committed on 2026-11-21 from release run 44847619287 (commit 78223d8; the x86
@@ -181,8 +184,17 @@ the package, the binding resolves and that call returns; no socket was opened, n
 started, no world stepped. And the device was x86_64: the
 `x86-android` and the ARM libraries rode in the package and were not loaded.
 
+**box3dxt in an app, 2026-11-21** (OXT-Beyond pull request 606, head 52cd87d, merged the same
+day; its Android builder job on linux-x86_64, run 44863595033). The same probe app with
+box3dxt's extension added, its libraries taken from the suite at 46ad996 and each checked
+against its pinned SHA-256: on the Android 13 and the Android 16 (16 KB pages) x86_64
+emulators, `b3LibraryVersion()` answered `box3dxt ABI 2; Box3D 0.2.0` (both read back from the
+job's log). One call, as above: no world was stepped. Those were the ABI 2 files of 6d132d3;
+the ABI 3 ones committed now (release run 44914775780) have not been in an app.
+
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app.
+selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's and xlsxt's,
+in an app.
 
 ## What differs on Android, per member
 
@@ -192,7 +204,7 @@ selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libra
 | coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | torrentxt | None in the library. An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
-| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before every call returns. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built and tested by its own lane, not yet by a release run; no library committed |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |

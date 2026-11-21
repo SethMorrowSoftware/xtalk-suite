@@ -158,9 +158,14 @@ engine on 2026-11-21 (`tests/engine-kit.lc`, `tests/engine-demo.lc`; a local lib
 box3dxt's renderer and with a render3dxt built from its pull request); no IDE has run them.
 Orb Island has played once in a browser, on a web engine built locally from OXT-Beyond's pull
 request 606 with the committed web archives of box3dxt and render3dxt linked in (2026-11-21;
-its keys not driven). No engine on Windows, macOS or Android has loaded it, and no IDE has
-loaded a release library or an installed extension: verified statically; needs an OXT pass.
-Release libraries were committed on 2026-11-20 (six desktop platforms, four Android ABIs; the
-web archive built separately with emsdk 6.0.12); of them only the web archive has met an
-engine (that browser run), and no engine has loaded a desktop or Android one yet. Open work is
-in the suite's `docs/WORK-PLAN.md`.
+its keys not driven). On Windows, OXT-Beyond 0.2.8-dp.1's IDE ran the committed ABI 2
+`x86_64-win32` library as an installed extension (2026-11-21): from script in a hidden stack,
+the version calls, a drop that came to rest, ray casts, a contact event, and a picture read as
+data with picking and a ray through a pixel (README "Status"); no window, frame loop or game
+has run there. On Android the ABI 2 `x86_64-android` library answered one call in an app that
+OXT-Beyond's pull request 606 built (2026-11-21). No engine on macOS has loaded it: verified
+statically; needs an OXT pass. Release libraries were committed on 2026-11-20 at ABI 2 (six
+desktop platforms, four Android ABIs; the web archive built separately with emsdk 6.0.12), and
+the browser, Windows and Android records are of those files; the ones committed now are ABI 3
+(release run 44914775780, 2026-11-21; the web archive again built separately), and no engine
+has loaded one of them yet. Open work is in the suite's `docs/WORK-PLAN.md`.
