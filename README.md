@@ -238,19 +238,25 @@ Android's system certificate store; onionxt, nostrxt and the three apps are not 
 
 ## Install
 
-**The finished packages.** Every extension is built as an installable `.lce` package by
-`.github/workflows/lce-packages.yml`: the six LCB libraries with their native code for every
+**The finished packages.** Every extension the suite makes is built as an installable `.lce`
+package by `.github/workflows/lce-packages.yml`: each LCB library with its native code for every
 committed platform (and, for enetxt and box2dxt, the Visual C++ runtime their Windows DLLs need),
-and the nine script libraries (the torrentxt, enetxt and datachannelxt helpers, the b2k Kit,
-coinxt's script layer, OnionXT and its HTTP server, NostrXT and its relay client). Take them from
-the download page, <https://sethmorrowsoftware.github.io/xtalk-suite/> (written from the newest
-published release by `tools/build-extensions-site.py` and published by `.github/workflows/pages.yml`
-each time a release is published), from a GitHub release of this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
+and each script library (the helpers, the b2k and b3k Kits, coinxt's script layer, curlxt's tsNet calls,
+OnionXT and its HTTP server, NostrXT and its relay client); `python3 tools/build-lce-packages.py
+list` names them. Its `table` gate refuses an extension member with no package, so a new one
+cannot be left off; one with no committed library yet waits, and the first build after its
+libraries land packages it. Take them from the download page,
+<https://sethmorrowsoftware.github.io/xtalk-suite/> (written from the newest published release by
+`tools/build-extensions-site.py` and published by `.github/workflows/pages.yml` each time a release
+is published; since 2026-11-21 a push to main that changes any package publishes that release by
+itself, so the page follows main), from a GitHub release of
+this repository, or from the `xtalk-suite-lce` artifact of a run, then in any
 IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk, HyperXTalk, OXT-Beyond)
 choose **Tools > Extension Manager > +** and pick the `.lce`. Install a library before its
 helpers or script layer (`torrentxt` before `torrentxt-helpers`, `onionxt` before
-`onionxt-httpd`). OXT-Beyond already has every one of them built in; an installed package
-replaces the built-in copy. `tools/build-lce-packages.py` says what a package holds; each run
+`onionxt-httpd`). OXT-Beyond has built in every member its `tools/oxt/xtalk-extensions.json`
+names (a member that joined lately, from its first release after it is added there); an installed
+package replaces the built-in copy. `tools/build-lce-packages.py` says what a package holds; each run
 loads and probes every package on OXT-Beyond's engine (Linux x86-64), and the other platforms'
 libraries in a package are the committed ones (verified statically; needs an IDE pass on each, bar one: the sodiumxt package installed through OXT-Beyond's Extension Manager on Windows x86-64 and answered `sxVersion()` on 2026-10-21, work plan 1.2 #29).
 
