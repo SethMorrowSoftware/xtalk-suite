@@ -491,6 +491,41 @@ jobs:
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
+          # ---- audioxt: added 2026-11-20. miniaudio is ONE header the
+          # member's CMake fetches (an exact commit, held to a SHA-256) and
+          # compiles into the shim; it links no audio library (it finds the
+          # system's at run time), so every row is box3dxt's shape and needs
+          # no audio package on the runner. Its tests play and record through
+          # miniaudio's silent null device. native-audioxt.yml builds and
+          # tests the same six on every change to the member.
+          - member: audioxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: audioxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: audioxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: audioxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: audioxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: audioxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- render3dxt: added 2026-11-20. The renderer is this member's
           # own C with two single-file readers compiled in (stb_image and
           # fast_obj, FetchContent at pinned commits) and no dependency, so
@@ -524,6 +559,7 @@ jobs:
             platform_id: universal-mac
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- xlsxt: added 2026-11-20. libxlsxwriter, zlib and Expat build
           # from source inside the member's CMake (FetchContent, each pinned
           # to a commit) and need nothing from the runner, not even its zlib,

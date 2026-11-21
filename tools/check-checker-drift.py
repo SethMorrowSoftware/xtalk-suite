@@ -34,7 +34,8 @@ COPY_SETS = {
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
                                 "holde-em", "nostrxt", "curlxt", "box3dxt",
-                                "render3dxt", "xlsxt", "barcodext", "webpxt"],
+                                "audioxt", "render3dxt", "xlsxt", "barcodext",
+                                "webpxt"],
     # The shim-coverage gate and its fixture (2026-11-20): written once for
     # barcodext and webpxt, which find their own files by name, so the two
     # copies are one file and stay one.
