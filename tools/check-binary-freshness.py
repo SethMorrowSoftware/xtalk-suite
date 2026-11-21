@@ -438,6 +438,33 @@ MEMBERS = [
                     "wasm": WASM_CLOSURE_REASON},
     },
     {
+        "name": "gamepadxt",
+        "lib": "gamepadxt",
+        "lcb": ["gamepadxt/src/gamepadxt.lcb"],
+        # Its first release-binaries dispatch (run 44848412320, commit
+        # fdcb830, 2026-11-21) landed the six desktop libraries. The web
+        # archive is not that workflow's: it was built with Emscripten 6.0.12
+        # and committed the same day, for OXT-Beyond's web engine to link.
+        # No Android ids: SDL reaches controllers there through its own Java
+        # layer, which an OXT app does not have (tools/test-build-android.py,
+        # NO_ANDROID).
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
+        "shim": "gamepadxt/src/gamepad_shim.c",
+        "prefix": "gpx_",
+        # The ABI define lives in the shim itself.
+        "abi_header": "gamepadxt/src/gamepad_shim.c",
+        "abi_define": "GPX_ABI_VERSION",
+        "abi_symbol": "gpx_abi_version",
+        # src/gamepadxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export gpx_* and nothing else; SDL is linked in static
+        # (measured on the x86_64-linux build, 2026-11-20: 55 exports, all
+        # gpx_*).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
         "name": "xlsxt",
         "lib": "xlsxt",
         "lcb": ["xlsxt/src/xlsxt.lcb"],
