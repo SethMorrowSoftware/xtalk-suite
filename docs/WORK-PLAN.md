@@ -906,7 +906,6 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
 | 6 | DONE 2026-11-21: Orb Island, `examples/box3dxt-orb-island.livecodescript`, a game on the b3k Kit in the UI kit's look, drawn by `b3RenderWorld` when render3dxt is not loaded | - | - | a paste-and-run example in `box3dxt/examples/` |
-| 7 | The suite board at its row pitch (25 since render3dxt and xlsxt both joined the same day; 29 and 27 for some hours before): sixteen rows clear the members caption | S1 | 48 | the last row ends above the caption on an engine |
 | 8 | The renderer in an IDE: an image set from `b3RenderPixels()` in a frame loop shows the scene, a click through `b3RenderShapeAt` and `b3RenderRay` finds the body under it, and the frame rate is recorded. (Linux did, 2026-11-20, over a library loaded by hand.) | S1 | - | the picture matches the scene on Windows, Linux and a Mac |
 | 9 | Renderer speed: back-face culling for the closed shapes (a small ball already gets fewer sides and one outside the picture none, which halved a scene of 150 balls natively; not yet measured in an IDE); the engine's `set the imageData` was the larger cost until `the paintCompression` "rle" (13 ms to 1 ms on the Linux IDE, 2026-11-20; the guide says so) | coding; OXT-Beyond | - | the teapot scene of row 8 draws solid at 640 by 400 in under 8 ms on that machine |
 | 10 | Orb Island and the Kit in an IDE: the eight checks under "WHAT TO VERIFY" in the game's header (the window, walking, the orbs, the toys, falling, the mouse, the keys and buttons, the light and dark appearance), with box3dxt alone and with render3dxt, on Windows, Linux and a Mac | S1 | - | each check answers as the header says, or the Kit is fixed |
@@ -964,12 +963,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | The interop test started by a box3dxt change too (a `paths:` entry the member-workflow generator and `tools/test-native-lane-paths.py` accept, or a suite-level job) | coding | - | a box3dxt change that breaks a shared text is red before it merges |
 | 8 | Draw what box3dxt simulates exactly: a mesh from `b3ShapeTrianglesText` (box3dxt's ABI 2) through `r3MeshFromTrianglesText`, in the demo and the interop test, and the camera text check there no longer skipped | coding, after box3dxt's ABI 2 lands | - | a hull or mesh shape is drawn without a hand-made twin |
 | 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
-| 10 | The suite board is full: at row pitch 25 its sixteen rows fit, each touching the next, and a seventeenth does not fit at any pitch. Move the rows of the members with no harness into a compact band of their own and give the pitch back | coding (in hand with the next member to join), then S1 | 48 | the rows clear one another on an engine, with room for the next member |
 | 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
 | 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
 | 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped, so a stack SAVED before the fix keeps its controls until it is rebuilt. Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
 
-### 2.11 xlsxt
+### 2.12 xlsxt
 
 - Joined 2026-11-20: libxlsxwriter 1.2.4, zlib 1.4 (with its minizip) and Expat 2.10.0, each
   pinned to a commit, behind the `xlx_*` C shim (ABI 1) and the `xl*` binding, whose names
@@ -996,6 +994,47 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
 | 8 | A demo stack: a table field exported to a workbook and a workbook imported into one, in the kit's look | coding | - | a paste-and-run example in `xlsxt/examples/` |
 | 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+
+### 2.13 audioxt
+
+- Joined 2026-11-20: miniaudio 0.11.26 (one header, fetched at a commit and held to a
+  SHA-256) behind the `aux_*` C shim (ABI 1) and the `au*` binding, whose names are
+  mechanical. Additive: the engine's `play` and player object are untouched. Records: the
+  shim's smoke test and random-call test, clean under ASan/UBSan and TSan, also as
+  WebAssembly under node; `tests/engine-selftest.lc` on OXT-Beyond's headless Linux server
+  engine over a locally built library (2026-11-20), through miniaudio's silent device; and
+  the web archive playing and recording in headless Chromium (`tests/web/`, the same day).
+  Its native lane repeats all three on every change. On 2026-11-21 the archive was linked
+  as OXT-Beyond's web engine links it (Asyncify and the engine's own settings, in Chromium),
+  and two web faults were fixed: on a page with no microphone API (any page served over
+  plain http) or no AudioContext, miniaudio's JavaScript threw through the whole engine; and
+  a key press did not start a device the browser held (miniaudio waits for a click). The
+  same day the IDE on the maintainer's Windows PC (64-bit OXT-Beyond) loaded a CI-built
+  `x86_64-win32` DLL on WASAPI, and `tests/engine-selftest.lc`, run there as a script-only
+  stack, passed 89 and failed 0; and the demo was driven on the Linux desktop engine (row 7).
+  Nobody has heard it: for everything beyond those runs it is verified statically; needs an
+  OXT pass.
+- Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
+  first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
+  later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
+  those platforms), and the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten
+  6.0.12, the same bytes from two build folders) was built outside that workflow, as the other
+  members' are. The `ships` row lists all eleven. No engine has loaded a committed one yet:
+  the runs above used locally built or CI-built libraries.
+- Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
+  publish-members run adopts it (`--adopt audioxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | DONE 2026-11-21 (run 44847619287, commit 78223d8, and the web archive): the first release-binaries dispatch, then the `ships` row | - | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass, with ears: install the extension, `auLibraryVersion()`, the README's music-and-click stack, a tone, a clone played several times at once, and a microphone recorded to a WAV and played back, on Windows, Linux and a Mac | S1, after #1 | - | each is HEARD and answers as `audioxt/docs/api-reference.md` says |
+| 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | a tone is heard in the web IDE after one click |
+| 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
+| 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site | coding, after #1 | - | the package installs from the site |
+| 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
+| 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the six members with no harness (audioxt, box3dxt, curlxt, nocloud, render3dxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29 | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
 
 ---
 
