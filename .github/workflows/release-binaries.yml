@@ -532,6 +532,47 @@ jobs:
             os: windows-2025
             cmake_args: -A Win32
 
+          # ---- gamepadxt: added 2026-11-20. SDL builds from source inside
+          # the member's CMake (FetchContent, pinned to a release commit, only
+          # its joystick parts switched on), so the rows are box3dxt's shape
+          # plus ONE build-time package on Linux: the udev headers, without
+          # which SDL would poll for controllers instead of being told (the
+          # member's configure stops rather than build that quietly). SDL
+          # loads libudev.so.1 itself at run time, so the library still needs
+          # nothing but glibc. No Android rows: docs/ANDROID.md says why.
+          # native-gamepadxt.yml builds and tests the same six on every change
+          # to the member.
+          - member: gamepadxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            dnf: systemd-devel
+          - member: gamepadxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            dnf: systemd-devel
+          - member: gamepadxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            apt_i386: libudev-dev:i386
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: gamepadxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: gamepadxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: gamepadxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- datachannelxt: OpenSSL, including the i386 one for the 32-bit lane
           #
           # The 64-bit Linux rows take torrentxt's container and its pinned,
@@ -667,6 +708,17 @@ jobs:
           ln -sf "$PYBIN/cmake"   /usr/local/bin/cmake
           ln -sf "$PYBIN/ctest"   /usr/local/bin/ctest
           ln -sf "$PYBIN/ninja"   /usr/local/bin/ninja
+
+      # A distribution package a containerized row needs at BUILD time only
+      # (gamepadxt: the udev headers, 2026-11-20). The image's own package, so
+      # it is the glibc-2.28-era one the row links against.
+      - name: Acquire dnf packages (manylinux lanes)
+        if: matrix.dnf
+        shell: bash
+        working-directory: /
+        run: |
+          set -euo pipefail
+          dnf install -y ${{ matrix.dnf }}
 
       # torrentxt's dependencies are PINNED DOWNLOADS, hash-checked before use
       # (the libsodium discipline: the pin is the integrity gate). Boost is
