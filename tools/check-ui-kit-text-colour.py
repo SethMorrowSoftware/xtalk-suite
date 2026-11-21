@@ -11,10 +11,10 @@ WHY THIS EXISTS
     fields the kit's white (kUiCard) and no text colour, and the engine gave
     the words the dark appearance's white.
     The kit's labels never had the fault, because uiLabel always set kUiInk;
-    a check box had it too, its label on the page's kUiBg. OXT-Beyond after
-    0.2.8-dp.2 draws such words black, as LiveCode Community did (its pull
-    request 608), but a demo must read the same on every engine the suite
-    supports, 0.2.8-dp.1 among them: the kit names its colours.
+    a check box had it too, its label on the page's kUiBg. OXT-Beyond's pull
+    request 608 has the engine draw such words black, as LiveCode Community
+    did, but a demo must read the same on every engine the suite supports,
+    0.2.8-dp.1 among them: the kit names its colours.
 
 WHAT IT HOLDS, in the master's carried block (check-ui-kit-drift.py holds
 every adopter's copy byte-identical to it, so the master is the one place):
