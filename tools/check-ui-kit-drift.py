@@ -67,6 +67,9 @@ ADOPTERS = [
     # one image the stack itself builds
     os.path.join("render3dxt", "examples",
                  "render3d-physics-demo.livecodescript"),
+    # box3dxt's Kit game wears the demos' look: its view is the Kit's image and
+    # its side panel is form chrome (unlike box2dxt's canvas games, D-18)
+    os.path.join("box3dxt", "examples", "box3dxt-orb-island.livecodescript"),
     # the suite paste's hand-written half: it wears the demos' look since D-23
     # (2026-09-24) and keeps the harness scaffold for its report plumbing
     os.path.join("tests", "suite-selftest.core.livecodescript"),
