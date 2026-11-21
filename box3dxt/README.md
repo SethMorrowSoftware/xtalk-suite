@@ -133,13 +133,19 @@ Joined the suite on 2026-11-20. What has run, and where:
   it scene by scene, hand-stepped so every number is reproducible, with box3dxt's renderer and
   again with render3dxt (built from its pull request); `tests/engine-demo.lc` builds Orb
   Island's window there and plays the game through, both ways and with no extension loaded.
-  Neither has run in an IDE: a real window, keyboard and mouse are verified statically; needs
-  an OXT pass (the game's header lists what to look at).
-- **Not yet:** no engine on Windows, macOS, Android or the web has run it, and no IDE has
-  loaded a release library or an installed extension: on those it is verified statically;
-  needs an OXT pass. The libraries
+  Orb Island has also played in a browser once (2026-11-21, Chromium): a web engine built
+  locally from OXT-Beyond's pull request 606, with the committed web archives of box3dxt and
+  render3dxt linked in (each SHA-256 checked against its pin), opened it and ran its frame
+  loop, render3dxt drawing about 12 pictures a second, the orb counter and timer running and
+  nothing in the console; its keys were not driven. Neither has run in an IDE: a real
+  window, keyboard and mouse are verified statically; needs an OXT pass (the game's header
+  lists what to look at).
+- **Not yet:** no engine on Windows, macOS or Android has run it, nor a released web engine
+  (the one browser run is above), and no IDE has loaded a release library or an installed
+  extension: on those it is verified statically; needs an OXT pass. The libraries
   committed under `src/code/` on 2026-11-20 (six desktop platforms, four Android ABIs, a web
-  archive) were tested where they were built; no engine has loaded one of them yet.
+  archive) were tested where they were built; of them only the web archive has met an engine
+  (the browser run above), and no engine has loaded a desktop or Android one yet.
 
 Box3D itself is young (no tagged release yet; `b3LibraryVersion()` reports what it calls itself), which is why this member pins
 it to a commit and why the shim holds every argument to stated limits before Box3D sees it.

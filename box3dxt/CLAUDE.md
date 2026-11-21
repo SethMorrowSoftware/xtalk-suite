@@ -152,9 +152,11 @@ engine (the picture as data, its bytes read) and in that Linux IDE (an image sho
 teapot scene, picking by pixel and by ray, 2026-11-20, from 9b7b59a; README "Status"). The game Kit and its example game ran on the server
 engine on 2026-11-21 (`tests/engine-kit.lc`, `tests/engine-demo.lc`; a local library, with
 box3dxt's renderer and with a render3dxt built from its pull request); no IDE has run them.
-No other platform's engine has loaded it and no
-IDE has loaded a release library or an installed extension: verified statically; needs an
-OXT pass. Release libraries were committed on 2026-11-20 (six desktop platforms, four Android
-ABIs; the web archive built separately with emsdk 6.0.12); no engine has loaded one of them
-yet. Open work is in the suite's
-`docs/WORK-PLAN.md`.
+Orb Island has played once in a browser, on a web engine built locally from OXT-Beyond's pull
+request 606 with the committed web archives of box3dxt and render3dxt linked in (2026-11-21;
+its keys not driven). No engine on Windows, macOS or Android has loaded it, and no IDE has
+loaded a release library or an installed extension: verified statically; needs an OXT pass.
+Release libraries were committed on 2026-11-20 (six desktop platforms, four Android ABIs; the
+web archive built separately with emsdk 6.0.12); of them only the web archive has met an
+engine (that browser run), and no engine has loaded a desktop or Android one yet. Open work is
+in the suite's `docs/WORK-PLAN.md`.
