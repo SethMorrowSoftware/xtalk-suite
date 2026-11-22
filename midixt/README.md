@@ -109,12 +109,14 @@ Joined the suite on 2026-11-21. What has run, and where:
   over locally built libraries: the LCB suite under lc-run (the binding over the double and
   over the real library), and the Script suite in the standalone engine with `-ui` (the
   Script-to-LCB boundary, the helper's listener with real timers, and the shipped
-  self-test).
+  self-test); on 2026-11-22 both again over the committed `x86_64-linux` library.
+- **Committed libraries:** the six desktop ones under `src/code/`, from the suite's
+  release-binaries dispatch of 2026-11-22. No Android library: RtMidi's Android backend
+  needs API 29.
 - **Not yet:** no MIDI service has carried a message on the record (where these ran there
   was no ALSA sequencer, so the self-test's loopback skipped); no desktop IDE has loaded it,
   and no engine on Windows or macOS has run it: there it is verified statically; needs an
-  OXT pass. No library is committed under `src/code/` yet; the suite's release-binaries
-  dispatch lands them.
+  OXT pass.
 
 ## Building and testing
 

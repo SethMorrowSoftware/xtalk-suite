@@ -138,9 +138,11 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
 Verified natively on x86_64 Linux (the mock tests under ASan/UBSan; the real library's smoke
 test on its no-service path) and on OXT-Beyond's headless engine (9.7.1-OXT, Linux x86_64,
 2026-11-21): the LCB suite under lc-run, and the Script suite in the standalone engine with
-`-ui`, over locally built libraries. No MIDI service has carried a message on the record yet
-(the self-test's Tier 3 skipped: no ALSA sequencer where it ran). No desktop IDE and no
-Windows or macOS engine has loaded it: verified statically; needs an OXT pass. Its showcase
-has opened without it in OXT-Beyond 0.2.8-dp.1's IDE on Windows (2026-11-21): it said what
-was missing, and that run found the two faults above. No libraries are committed yet. Open
-work is in the suite's `docs/WORK-PLAN.md`.
+`-ui`, over locally built libraries, and both again on 2026-11-22 over the committed
+`x86_64-linux` library. Its six desktop libraries were committed that day (release run
+44985328988); no engine has loaded the other five. No MIDI service has carried a message on
+the record yet (the self-test's Tier 3 skipped: no ALSA sequencer where it ran). No desktop
+IDE and no Windows or macOS engine has loaded it: verified statically; needs an OXT pass.
+Its showcase has opened without it in OXT-Beyond 0.2.8-dp.1's IDE on Windows (2026-11-21):
+it said what was missing, and that run found the two faults above. Open work is in the
+suite's `docs/WORK-PLAN.md`.

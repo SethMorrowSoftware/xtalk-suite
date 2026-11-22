@@ -128,7 +128,9 @@ Verified natively on x86_64 Linux (smoke, vectors and the fuzzer under ASan/UBSa
 million fuzz inputs clean on 2026-11-21) and on OXT-Beyond's headless engine (9.7.1-OXT,
 Linux x86_64, 2026-11-21): the LCB suite under lc-run, and the Script suite in the
 standalone engine with `-ui`, real UDP and the interop peer included, over a locally built
-library. No desktop IDE and no Windows, macOS or Android engine has loaded it: verified
-statically; needs an OXT pass. Its showcase has opened without it in OXT-Beyond 0.2.8-dp.1's
-IDE on Windows (2026-11-21): it said what was missing, and that run found the two faults
-above. No libraries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+library, and both again on 2026-11-22 over the committed `x86_64-linux` library. Its six
+desktop libraries were committed that day (release run 44985328988); no engine has loaded
+the other five. No desktop IDE and no Windows, macOS or Android engine has loaded it:
+verified statically; needs an OXT pass. Its showcase has opened without it in OXT-Beyond
+0.2.8-dp.1's IDE on Windows (2026-11-21): it said what was missing, and that run found the
+two faults above. Open work is in the suite's `docs/WORK-PLAN.md`.

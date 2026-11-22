@@ -28,10 +28,10 @@ reads; the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` se
   2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game
   controllers; joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21;
   desktop and web only), webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
-  their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21 with no
-  committed library yet: oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and
-  artnetxt (Art-Net DMX lighting in pure LCB, with no native library at all, but a native lane:
-  its suites run on an engine).
+  their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21: oscxt
+  (tinyosc: Open Sound Control) and midixt (RtMidi: realtime MIDI), their libraries committed
+  2026-11-22 (desktop only), and artnetxt (Art-Net DMX lighting in pure LCB, with no native
+  library at all, but a native lane: its suites run on an engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
