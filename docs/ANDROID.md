@@ -56,8 +56,11 @@ refusals must say so (`XTALK_TEST_PARTIAL`, which `tools/build-android.sh` carri
 line as "passed IN PART"); the release job tests pdfxt on the floor, so there it passes IN PART. The lane's run of 2026-11-21 (run 44840908920, from `3f3a348`) RAN it: the smoke
 test's 183 checks passed on the Android 6.0 emulator for both x86 ABIs, the Android 5.0 one ran
 its 12 refusal checks and said "passed IN PART", and the ARM libraries were built and checked,
-not run. None of its Android libraries is committed yet, and no OXT engine on Android has
-loaded one.
+not run. Its four Android libraries were committed on 2026-11-22 by its first release run (run
+44990932105, commit c7acd39), each with the pinned `pdfium.so` beside it; that run's Android 5.0
+emulator tested the x86 ones IN PART (their 12 refusal checks), as the release job tests pdfxt
+on the floor, from the sources whose whole test the lane had run on Android 6.0 that day (run
+44983372687, from `f484709`). No OXT engine on Android has loaded one.
 **xlsxt, webpxt and barcodext joined the same day**, the same way: named in
 `tools/build-android.sh`, built for the four ABIs and tested on the emulator for the two x86 ones
 by their own lanes (`native-xlsxt.yml`, `native-webpxt.yml`, `native-barcodext.yml`) on every
@@ -201,9 +204,9 @@ level, the job stops the first emulator and boots that one where torrentxt comes
 refuses, before it builds, a member whose level is above the device's. The script boots one more
 level, 23 (Android 6.0), for pdfxt's own lane: pdfxt is built for API 21, but the prebuilt PDFium
 it loads was built for API 23, and only there do its tests open a PDF (above, and
-`companion-api-pdfxt` in `--pins`). None of that has run in CI
-yet: it is held by `tools/test-build-android.py` against a fake adb, and the next release dispatch
-with the Android lane is its first run.
+`companion-api-pdfxt` in `--pins`). Both have run in CI since, and `tools/test-build-android.py`
+holds them against a fake adb: torrentxt's level in its release run of 2026-11-21 (run
+44914897842, above), pdfxt's in its own lane from 2026-11-21 (run 44840908920, above).
 
 What the emulator cannot show is the failure this floor exists for. A test runs there as the shell
 user (`tools/android-run.sh`), and the refusal is Android's rule for an APP, so torrentxt's API 21
@@ -386,7 +389,7 @@ torrentxt session on Android with a peer, a tracker or the DHT.
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before the call that draws returns, or, for a picture begun, by the next call that names a handle; none runs script. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built by the 2026-11-21 release run and committed (f6c0b1a); tested on the emulator for the two x86 ABIs. In an app 2026-11-21 (x86_64, Android 13 and 16; OXT-Beyond pull request 620, above): `r3LibraryVersion()` answered `render3dxt 0.1.0 ABI 1` and the app's drawing test passed. ARM: built, not run |
-| pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built and tested by its own lane, not yet by a release run; no library committed |
+| pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built by release run 44990932105 and committed 2026-11-22 (c7acd39), each beside the pinned `pdfium.so`; its own lane tests the x86 ones on Android 6.0, and the release run tested them on Android 5.0 IN PART (the refusals); the ARM ones not run; no engine has loaded one |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. Android has no `/tmp` an app may write to, so there a workbook's temporary files go in the folder of the workbook's path unless `xlSetTempFolder` names another (the engine's cache or documents folder). | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs. In an app 2026-11-21 (x86_64, Android 13 and 16): `xlLibraryVersion()` and a workbook written and read back, no temporary folder set. ARM: built, not run |
 | webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8), rebuilt by the 2026-11-22 one (3d35c4a); tested on the emulator for the two x86 ABIs, the ARM ones not run |

@@ -1492,8 +1492,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   opening partly off the screen and every label's words 5 pixels above it (engine note 5.19),
   both fixed the same day and held by `pdfxt/tests/demo-drive.livecodescript`, and the fixed
   window met the same PC that day: put back where it had opened off the screen, it moved itself
-  onto the screen, and no label was cut. For everything beyond those runs it is verified
-  statically; needs an OXT pass.
+  onto the screen, and no label was cut. The runs over its committed libraries are under
+  Binaries. For everything beyond those runs it is verified statically; needs an OXT pass.
 - Form fields: until 2026-11-21 a filled-in form drew blank, because PDFium's page drawing
   leaves widgets out (a review of the pull request found it). Since then flag 1 draws them
   through PDFium's form module, started when a document opens, its callbacks doing nothing, and
@@ -1505,22 +1505,32 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 - Floors: PDFium's builders', above the suite's: macOS 13.0 (the suite: 10.15 and 11.0),
   Android API 23 (21), glibc 2.16. On an older system the extension loads and refuses with a
   reason. No web build: the prebuilt wasm PDFium is a whole Emscripten program.
-- Binaries: none committed when it joined. The first release-binaries dispatch lands TWO
-  files per platform (six desktop rows in `cmake-members`, four Android ids through
-  `tools/build-android.sh`), 4 to 8 MB of PDFium each (16 MB for the universal mac one), 80 MB across the ten
-  platforms; the change after it lists the platforms in `check-binary-freshness.py`'s `ships`
-  row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
-  installer, the freshness gate and the Android script, by fixtures; no dispatch has
-  exercised it yet.
+- Binaries: committed 2026-11-22 by its first release-binaries dispatch (run 44990932105
+  from 65e722d, `build: named`, `members: pdfxt`, commit c7acd39): TWO files on each of the
+  six desktop rows and the four Android ids, 80 MB in all, nearly all of it PDFium (4 to 8 MB
+  a platform, 16 MB for the universal mac one), and the `ships` row lists all ten. The
+  installer took each pair through its companion check, and every committed `pdfium.<ext>`
+  is the pinned file byte for byte (the freshness gate's companion leg). The run's desktop
+  lanes ran the smoke test on each row (the mac x86_64 slice under Rosetta); its Android job
+  tested the x86 pairs on the Android 5.0 emulator, where the test runs only its 12 refusal
+  checks and says "passed IN PART", as designed (PDFium needs API 23; the whole test is the
+  native lane's, on Android 6.0, which had passed for the same sources that day, run
+  44983372687 from f484709); the ARM ones built and checked, not run. The same day, over the
+  committed `x86_64-linux` pair on OXT-Beyond 0.2.7-rc.6's Linux engines: the engine
+  self-test passed 70 checks, none failed, and the demo drive 84 and the demo's own checks
+  50, none failed; and the extensions site's package, built from the committed libraries
+  by `tools/build-lce-packages.py` (both files a platform), was installed by OXT-Beyond's
+  extension-utils, loaded and probed (`pdfLibraryVersion()`), and the same self-test passed
+  over the installed copy, 70, none failed.
 - Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
   publish-members run adopts it (`--adopt pdfxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: pdfxt`, then the `ships` row | owner (pressing Run is rule 5's decision; it adds 80 MB of PDFium to the repository) | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
+| 1 | DONE 2026-11-22 (run 44990932105, commit c7acd39): the first release-binaries dispatch with `members: pdfxt`, then the `ships` row | - | - | `pdfxt/src/code/` holds both files for every platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `pdfLibraryVersion()`, open a PDF, a page into an image both ways (`pdfRenderPageBMP` as its text, `pdfRenderPage` as its imageData), `pdfPageText`, a search with its highlight rectangles, on Windows, Linux and a Mac | S1, after #1 | - | each answers as `pdfxt/docs/api-reference.md` says, and the colours are right (red is red) on each platform |
 | 3 | A standalone on each desktop platform and on Android 6.0 or later: the builder carries BOTH libraries and the shim finds PDFium beside itself (on Android as `libpdfium.so`) | S1, after #1 | - | a built app opens a PDF |
-| 4 | The extensions site's package, installed: `tools/build-lce-packages.py` has pdfxt's row since 2026-11-21 (it WAITs for #1's libraries; a package carries every file of a platform's folder, so both go in, and GDI32.dll, which the pinned `pdfium.dll` imports, is a system DLL there), and its first build after #1 publishes it | S1, after #1 | - | the package installs from the site in an IDE on each desktop platform, with both libraries, and `pdfLibraryVersion()` answers |
+| 4 | The extensions site's package, installed: `tools/build-lce-packages.py` has pdfxt's row since 2026-11-21 (it waited for #1's libraries; a package carries every file of a platform's folder, so both go in, and GDI32.dll, which the pinned `pdfium.dll` imports, is a system DLL there). Since they landed the package builds (2026-11-22: built here from the committed libraries, 40 MB, installed and loaded on the pinned Linux server engine, the probe answering, and the engine self-test passing over the installed copy, Binaries above); the first lce-packages run on main after them publishes it. No IDE has installed it from the site yet | S1, after #1 | - | the package installs from the site in an IDE on each desktop platform, with both libraries, and `pdfLibraryVersion()` answers |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's pdfxt row has a pill and a Run |
 | 6 | `pdfxt/examples/pdfxt-demo.livecodescript` used by a person: the tour it opens playing (five scenes; any click stops it), each scene's button and Play them all, then Open on a PDF of your own, zoom and scroll, the outline, a search, a click on a link and on a word, a box dragged out, the locked sample, Save page, Run every check (driven without a display on the Linux engine by `pdfxt/tests/demo-drive.livecodescript` since 2026-11-21; its earlier kit look drew two fields white on white in the Windows IDE's dark appearance that day, which the dark look of the same day was made to end; the dark look then played its whole tour there and opened partly off the screen with every label's words 5 pixels above it, both fixed that day, and the fixed window seen there the same day, on the screen with no label cut; nobody has used it by hand yet) | S1, after #1 | - | the window looks right on each desktop platform in both the light and the dark system appearance, the tour moves smoothly, the pages draw in the right colours, and the saved BMP opens |
 | 7 | The suite board on an engine with pdfxt's name in the band of the members with no harness (2.13 #9 has the band) | S1 | 48 | pdfxt's name shows whole in the band, and the band ends above the members caption |

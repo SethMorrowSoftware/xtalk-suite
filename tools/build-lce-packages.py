@@ -397,9 +397,9 @@ PACKAGES = [
     # own library and the pinned prebuilt PDFium beside it, which the shim
     # loads from its own folder at run time (so no import names it); a
     # package carries every file of a platform's folder, so both go in. It
-    # joined with no library committed, so the row waits for its first
-    # release-binaries dispatch. pdfLibraryVersion() checks the ABI first
-    # and does not load PDFium.
+    # joined with no library committed and the row waited until its first
+    # release-binaries dispatch landed them (run 44990932105, 2026-11-22).
+    # pdfLibraryVersion() checks the ABI first and does not load PDFium.
     P('lcb', 'pdfxt', 'org.openxtalk.library.pdfxt', 'src/pdfxt.lcb', 'pdfxt',
       'pdfLibraryVersion()', '^pdfxt ABI [0-9]+; PDFium chromium/[0-9]+'),
     # webpxt (2026-11-21, landed with its libraries, #199): WebP pictures
