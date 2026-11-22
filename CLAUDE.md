@@ -406,7 +406,9 @@ worse than no gate, because it answers the question nobody asks twice.
   starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
   it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its four
   were rebuilt at API 24 that day, run 44914897842, commit d47060f, tests run on the Android 7.0
-  emulator for the two x86 ABIs, and no app has run them yet), libc++ inside each library, the desktop
+  emulator for the two x86 ABIs; on 2026-11-22 OXT-Beyond's app started a session of the
+  `x86_64-android` one unpaused, listening on every address and seeding, on Android 13 and 16
+  emulators, its pull request 625), libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
   leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each

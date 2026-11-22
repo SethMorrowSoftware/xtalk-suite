@@ -229,7 +229,9 @@ torrentxt's Android libraries as first committed did not work inside an app on A
 libtorrent built for API 21 uses a socket those Androids refuse an app). The recipe now builds
 torrentxt alone for API 24 (Android 7.0), where it does not, and its four libraries were rebuilt
 that day (commit d47060f): their tests ran on an Android 7.0 emulator for the two x86 ABIs, and
-no app has run them yet, so the fix itself still needs an OXT pass on Android.
+on 2026-11-22 OXT-Beyond's app, with the `x86_64-android` one, started a session unpaused,
+listening on every address, and seeded a file on Android 13 and Android 16 emulators
+(`docs/ANDROID.md`, "torrentxt in an app at API 24"). No peer has connected on Android yet.
 box3dxt joined on 2026-11-20; its four Android libraries were committed that day by its own release run
 (6d132d3), tested on the emulator for the two x86 ABIs, the ARM ones built and checked, not run.
 OXT-Beyond pinned them in its pull request 606, whose app on the same two emulators had the
