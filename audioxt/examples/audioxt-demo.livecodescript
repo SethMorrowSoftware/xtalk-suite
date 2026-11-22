@@ -48,7 +48,7 @@ script "audioxtDemo"
 -- true to what has run.
 
 -- Bump when the generated window changes, so a saved stack rebuilds it.
-constant kAdUiVersion = "audioxt-stage-2"
+constant kAdUiVersion = "audioxt-stage-3"
 constant kAdWidth = 960
 constant kAdHeight = 600
 
@@ -427,6 +427,8 @@ function adProbe pWhat
          return sMicSound
       case "micfacts"
          return sMicFacts
+      case "micnosound"
+         return adMicNoSoundLine()
       case "ckpass"
          return sCkPass
       case "ckfail"
@@ -564,8 +566,8 @@ on adBuildUI
 
    -- the foot of the window
    adLabel "Status", empty, "16,552,944,570", 12, kAdSoft, "plain"
-   adLabel "Footer", "Made in script with audioxt (miniaudio inside). Played through the silent device on Linux and a sound card " \
-         & "on Windows (2026-11-21); not yet heard: needs an OXT pass.", "16,572,944,590", 11, kAdSoft, "italic"
+   adLabel "Footer", "Made in script with audioxt (miniaudio inside). Played on Linux's silent device, a sound card on Windows " \
+         & "(2026-11-21) and in a browser (2026-11-22); not yet heard: needs an OXT pass.", "16,572,944,590", 11, kAdSoft, "italic"
 
    -- the sound devices, a panel over the stage (last, so it is on top)
    adBuildDevices
@@ -3057,14 +3059,34 @@ command adMicEnd
    put 0 into sMicSound
 end adMicEnd
 
--- No microphone: said plainly, and the scene ends soon after.
-command adMicNone pWhy
+-- No microphone: said plainly, and the scene ends four seconds later. The
+-- scene's clock starts again here: after the wait for sound that never
+-- came (nine seconds), the scene ended on the next frame, and the reason
+-- was on the stage for one frame (seen in a community gallery play page,
+-- which gives no microphone, 2026-11-22). The stage says it in full; the
+-- status line says pLine when there is one, so that it stays one line
+-- whatever the device is called.
+command adMicNone pWhy, pLine
+   local tLine
    put "none" into sScenePhase
+   put adClock() into sSceneT0
    put pWhy & return & return & "Every other scene works without one." into field "mFacts"
    put "No microphone here" into field "Caption"
    set the visible of graphic "mRec" to false
-   adStatus pWhy, "warn"
+   put empty into field "mRecText"
+   put pLine into tLine
+   if tLine is empty then
+      put pWhy into tLine
+   end if
+   adStatus tLine, "warn"
 end adMicNone
+
+-- The status line when no sound came from the microphone: one line,
+-- whatever the device is called (the stage names it).
+function adMicNoSoundLine
+   return "No sound arrived from the microphone: a browser asks you first, and a page that may not use one " \
+         & "(the community gallery's) gets none."
+end adMicNoSoundLine
 
 command adMicFrame
    local tT, tGot, tSeconds, tLevel, tWaited
@@ -3178,6 +3200,9 @@ command adMicStopListening
    end if
    put auCaptureDropped(sMic) into tDropped
    put auCaptureDeviceLabel(sMic) into tLabel
+   if tLabel is empty then
+      put "the microphone" into tLabel
+   end if
    auCaptureStop sMic
    auCaptureClose sMic
    put 0 into sMic
@@ -3185,7 +3210,7 @@ command adMicStopListening
    set the rect of graphic "mLevel" to 24, 134, 25, 152
    if sMicData is empty then
       adMicNone "No sound arrived from " & tLabel & ". A browser asks you first, and one told no, or a page that may not " \
-            & "use a microphone (the community gallery's), never gets any."
+            & "use a microphone (the community gallery's), never gets any.", adMicNoSoundLine()
       exit adMicStopListening
    end if
    put "Heard " & format("%.1f", (the number of bytes in sMicData) / (2 * kAdMicRate)) & " s from " & tLabel \
