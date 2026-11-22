@@ -13,7 +13,7 @@ call is held to, and the handful of rules that decide whether a scene works.
 
 Returns the ABI number of the native library that is loaded.
 
-Returns: The ABI number; this binding needs 2.
+Returns: The ABI number; this binding needs 3.
 
 ### `b3LibraryVersion`
 

@@ -617,7 +617,7 @@ end handler
 /**
 Summary: Returns the ABI number of the native library that is loaded.
 
-Returns: The ABI number; this binding needs 2.
+Returns: The ABI number; this binding needs 3.
 */
 public handler b3ABIVersion() returns Integer
    variable tR as Integer

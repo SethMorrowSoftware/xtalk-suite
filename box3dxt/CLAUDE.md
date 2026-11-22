@@ -50,9 +50,11 @@ member's CLAUDE.md for the reasons behind the shared shape.
    a binding change passes `lc-compile -Werror` and `tests/engine-selftest.lc` on the server
    engine; a Kit change passes `tests/engine-kit.lc` with and without render3dxt and
    `tests/engine-demo.lc` with box3dxt, with render3dxt and with `-` (no extension); all pass
-   `bash tools/run-gates.sh`. An ABI change bumps `B3X_ABI_VERSION` and
-   the two literals in `checkABI()` together. Native-library changes refresh the committed
-   binaries through the suite's `release-binaries.yml`; `native-box3dxt.yml` never commits.
+   `bash tools/run-gates.sh`. An ABI change bumps `B3X_ABI_VERSION`, the two literals in
+   `checkABI()` and the one in `b3ABIVersion`'s doc block together (the signature gate holds
+   all four; the sky's bump left the doc block at 2 until 2026-11-22). Native-library
+   changes refresh the committed binaries through the suite's `release-binaries.yml`;
+   `native-box3dxt.yml` never commits.
 
 ## Generated text: edit the source, then regenerate
 
