@@ -298,7 +298,11 @@ which resumes across an OXT restart (2.2 Engine #4).
 **Publishing is live.** `publish-members.yml` run 3, attempt 2, adopted and published
 all eleven member repositories at 16:11 UTC on 2026-09-23 (recorded in
 [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md)). CoinXT's own `gates.yml` pays the
-multi-hour wallet-gate cost on every publish (that file's section 9).
+multi-hour wallet-gate cost on every publish (that file's section 9). Members that
+joined later are adopted one dispatch at a time (that file's section 6): curlxt on
+2026-11-15, box3dxt on 2026-11-21, and audioxt, xlsxt, render3dxt, gamepadxt, webpxt and
+barcodext on 2026-11-22. pdfxt's repository waits empty for its adoption, and that day's
+publish run found none for oscxt, midixt or artnetxt (sections 2.17 to 2.20).
 
 **Permanent exemptions, recorded rather than open:** onionxt's 11 engine-socket
 coverage exemptions (only the engine can mint a socket id); `release-binaries.yml`'s
@@ -836,8 +840,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   the platforms in `check-binary-freshness.py`'s `ships` row. Since 2026-11-21 all ten
   committed libraries are an ABI 2 build: run 44825160471's (from ac22df8, commit 02b4238),
   then, with the 0.2.1 shim, run 44925581646's (from eadc350, commit a336ba5).
-- Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
-  EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
+- Publishing: `SethMorrowSoftware/curlxt` was adopted on 2026-11-15 (publish-members run
+  43681066515 at 3a5a9e0, 1 commit), and each green main publishes it from then on.
 - WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
   as new handlers only (`cuWs*` in the binding, `cuWsOpen` and its messages in the helpers).
   Records: the smoke test's WebSocket sections against a server it runs itself, clean
@@ -936,8 +940,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   938befc), and of those only the `x86_64-linux` library has met an engine: OXT-Beyond
   0.2.8-dp.1's Linux server engine loaded it (its SHA-256 as committed) and passed the engine
   self-test, the Kit's test and Orb Island's with it, with render3dxt and without.
-- Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
-  (`--adopt box3dxt`) once this member's changes are on main.
+- Publishing: `SethMorrowSoftware/box3dxt` was adopted on 2026-11-21 (publish-members run
+  44920434025 at 59b4072, 3 commits), and each green main publishes it from then on.
 - The b3k game Kit (2026-11-21): `src/box3dxt-kit.livecodescript`, box2dxt's b2k Kit in 3D,
   drawing through render3dxt when it is loaded and through box3dxt's own renderer when it is
   not, and its example game, Orb Island (`examples/box3dxt-orb-island.livecodescript`, which
@@ -1020,9 +1024,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   compiled from f6c0b1a, and passed OXT-Beyond's Android functional test for render3dxt with it (a
   box, and a model read from an OBJ, its MTL and a TGA on disk, drawn, clicked and freed, nothing
   left). The engine and IDE runs above used locally built ones.
-- Publishing: `SethMorrowSoftware/render3dxt` exists (created empty by the owner on
-  2026-11-20); a publish-members run adopts it (`--adopt render3dxt`) now that the member is
-  on main.
+- Publishing: `SethMorrowSoftware/render3dxt` (created empty by the owner on 2026-11-20) was
+  adopted on 2026-11-22 (publish-members run 45057822892 at 75d0713, 5 commits), and each
+  green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1083,15 +1087,16 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   two emulators and `x86_64-linux` on 0.2.8-dp.2's Linux standalone engine. No engine has
   loaded the Windows, Mac, 32-bit or ARM ones yet: the Windows runs above used the native
   lane's DLL.
-- Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
-  2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
+- Publishing: `SethMorrowSoftware/xlsxt` (created empty by the owner, 2026-11-20) was
+  adopted on 2026-11-22 (publish-members run 45057822892 at 75d0713, 6 commits; row 4), and
+  each green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44838679488, commit 0be6db1, beside the web archive): the first release-binaries dispatch with `members: xlsxt`, then the `ships` row | - | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain; OXT-Beyond 0.2.8-dp.2.1 builds the release libraries in, so its IDE needs no install) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
 | 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
-| 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
+| 4 | DONE 2026-11-22 (publish-members run 45057822892 at 75d0713, 6 commits): the adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | - | - | the repository holds the member's history |
 | 5 | DONE 2026-11-22: the web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is, by OXT-Beyond's pull request 620 (0.2.8-dp.2.1, carrying 618, which replaced 605), whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit (run 44955451513, 2026-11-21, as 605's had). OXT-Beyond 0.2.8-dp.2.1, published 2026-11-22, carries it in its web IDE and its Stack Player, whose `xlLibraryVersion()` answered in Chromium that day (row 10) | - | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package and a place on the extensions site. PACKAGED 2026-11-21: its row in `tools/build-lce-packages.py` waited until #1's libraries landed, and `xlsxt-0.1.0.lce` (`org.openxtalk.library.xlsxt`, the six desktop rows and the four Android ids; the web archive is in no package) built from that tree passed the workflow's engine check run locally (validated, loaded and `xlLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine). The site lists it from the release the first push to main after that publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
@@ -1136,8 +1141,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   `x86_64-linux` one, by OXT-Beyond 0.2.8-dp.1's desktop engine and IDE, running the demo
   (2026-11-21), and the web archive, by OXT-Beyond 0.2.8-dp.2.1's web engine, running the
   demo (2026-11-22); the earlier runs above used locally built or CI-built libraries.
-- Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
-  publish-members run adopts it (`--adopt audioxt`).
+- Publishing: `SethMorrowSoftware/audioxt` (created empty by the owner on 2026-11-20) was
+  adopted on 2026-11-22 (publish-members run 45057822892 at 75d0713, 5 commits), and each
+  green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1193,8 +1199,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   162 checks over it (run locally, 2026-11-21). The other Linux runs used a locally built
   library, and no engine has loaded the committed 32-bit Windows, 32-bit or arm64 Linux or
   Mac ones.
-- Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
-  2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
+- Publishing: `SethMorrowSoftware/gamepadxt` (created empty by the owner on 2026-11-20) was
+  adopted on 2026-11-22 (publish-members run 45057822892 at 75d0713, 3 commits), and each
+  green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1230,8 +1237,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   `tests/engine-selftest.lc` passed over the rebuilt `x86_64-linux` library on the same server
   engine (93 checks, none failed). The Windows IDE and Android app records above are of the
   2026-11-21 libraries; no engine has loaded the other rebuilt ones.
-- Publishing: `SethMorrowSoftware/webpxt` exists, empty; a publish-members run adopts it
-  (`--adopt webpxt`).
+- Publishing: `SethMorrowSoftware/webpxt` was adopted on 2026-11-22 (publish-members run
+  45057822892 at 75d0713, 3 commits; row 7), and each green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1241,7 +1248,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site. PACKAGED 2026-11-21: `webpxt-0.1.0.lce` (`org.openxtalk.library.webpxt`, the six desktop rows and the four Android ids; the web archive is in no package) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `wpLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine, no picture read). Its Windows DLLs import only DLLs every Windows has, so no Visual C++ runtime goes beside them. The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's webpxt row has a pill and a Run |
 | 6 | A demo stack (open a WebP file, show it, save an image as WebP; the kit's look) | coding | - | a paste-and-run example in `webpxt/examples/` |
-| 7 | Adopt and publish `SethMorrowSoftware/webpxt` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+| 7 | DONE 2026-11-22 (publish-members run 45057822892 at 75d0713, 3 commits): adopt and publish `SethMorrowSoftware/webpxt` | - | - | the repository holds the member with its `Suite-Commit:` trailers |
 | 8 | DONE 2026-11-22 (run 44965414934, commit 3d35c4a, and the web archive): the animation-length limit (found by Codex in review of the pull request that brought webpxt in): a whole animation ends by 2,147,483,647 ms (about 24.8 days), written or read, because libwebp keeps a frame's start in a 32-bit int both ways. Fixed 2026-11-22: `wpx_animenc_add` refuses the frame that would end an animation later (before, the 3,580th frame of ten minutes overflowed and the file read back with a frame of 0 ms) and `wpx_anim_open` refuses a file whose frames add up to more (before, libwebp's decoder overflowed). The smoke test and `tests/engine-selftest.lc` hold both sides; the engine test passes on the server engine over the rebuilt `x86_64-linux` library (93 checks, none failed) and fails exactly its five new checks over the libraries committed 2026-11-21. The web archive was rebuilt by hand with emsdk 6.0.12, the other ten by the release-binaries dispatch (`build: named`, `members: webpxt`) | - | - | `webpxt/src/code/` holds libraries built from the fix |
 
 ### 2.16 barcodext
@@ -1255,13 +1262,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   Every picture read so far was drawn by the library's own writer. The engine loads of
   2026-11-21 are under Binaries; beyond those runs it is verified statically; needs an OXT
   pass.
-- Binaries and publishing: as webpxt's (`SethMorrowSoftware/barcodext` exists, empty); its
-  engine self-test passed over the committed `x86_64-linux` library on 2026-11-21 too (80
-  checks, none failed). The same day its `x86_64-win32` library loaded in the Windows IDE as
-  webpxt's did (`bcLibraryVersion()` answered, and the gallery's Barcode Studio made a QR Code
-  and read it back; runbook section 8), and its `x86_64-android` one answered
-  `bcLibraryVersion()` in OXT-Beyond's Android check app. No engine has loaded the other
-  committed libraries.
+- Binaries and publishing: as webpxt's (`SethMorrowSoftware/barcodext` was adopted in the
+  same publish run, 2 commits; row 8); its engine self-test passed over the committed
+  `x86_64-linux` library on 2026-11-21 too (80 checks, none failed). The same day its
+  `x86_64-win32` library loaded in the Windows IDE as webpxt's did (`bcLibraryVersion()`
+  answered, and the gallery's Barcode Studio made a QR Code and read it back; runbook
+  section 8), and its `x86_64-android` one answered `bcLibraryVersion()` in OXT-Beyond's
+  Android check app. No engine has loaded the other committed libraries.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1272,7 +1279,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site. PACKAGED 2026-11-21: `barcodext-0.1.0.lce` (`org.openxtalk.library.barcodext`, the six desktop rows and the four Android ids; the web archive is in no package) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `bcLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine, no picture read). Its Windows DLLs import only DLLs every Windows has, so no Visual C++ runtime goes beside them. The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's barcodext row has a pill and a Run |
 | 7 | A demo stack (type text, see its QR Code; drop a picture, see what it holds; the kit's look) | coding | - | a paste-and-run example in `barcodext/examples/` |
-| 8 | Adopt and publish `SethMorrowSoftware/barcodext` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+| 8 | DONE 2026-11-22 (publish-members run 45057822892 at 75d0713, 2 commits): adopt and publish `SethMorrowSoftware/barcodext` | - | - | the repository holds the member with its `Suite-Commit:` trailers |
 
 ### 2.17 oscxt
 
