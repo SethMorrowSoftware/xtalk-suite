@@ -76,7 +76,7 @@ window with messages locked and centres it. Built so, it opened there that after
 messages locked too: after each close in that IDE a frame of its loop was still queued,
 and it now stops itself once its stack is closed, which a second Windows pass saw the same
 day. A closed show also left one socket listed, named by the address it sent from (the
-suite's engine note 6.20, seen there in the Art-Net showcase and here on Linux); it now
+suite's engine note 6.21, seen there in the Art-Net showcase and here on Linux); it now
 closes that too (that fix needs a Windows pass). With oscxt loaded, its look and its feel
 are verified statically; need an OXT pass.
 

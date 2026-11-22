@@ -363,7 +363,7 @@ local sNextAt, sStep      -- a scene's own schedule
 local sTour, sPaused
 local sHaveArt, sWhyNot   -- artnetxt answers; why not, when it does not
 local sPort, sDest        -- the rig's UDP port; "127.0.0.1:<port>"
-local sPeers              -- each sender the rig heard, a key (engine note 6.20)
+local sPeers              -- each sender the rig heard, a key (engine note 6.21)
 local sNoNet              -- why the rig cannot listen, when it cannot
 local sAlso, sAlsoWhy     -- the real node to drive too ("host:port"); why not
 local sTrouble            -- an error the loop caught
@@ -898,7 +898,7 @@ on albReceived pSender, pData, pSocket
    -- A datagram from a sender the rig has not heard makes the engine list
    -- one more socket, named by that sender ("127.0.0.1:41273") and sharing
    -- the listener's descriptor, so that a reply can be written to it. Closing
-   -- the listener leaves that name listed (the suite's engine notes, 6.20), so
+   -- the listener leaves that name listed (the suite's engine notes, 6.21), so
    -- the rig remembers each sender, and the show closes them when it stops.
    put true into sPeers[pSender]
    add 1 to sArrived

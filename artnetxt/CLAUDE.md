@@ -27,7 +27,7 @@ cannot leave it running unseen in the IDE's memory with its sockets open (after 
 a frame was still queued; `TestAClosedWindowStopsItsShow`). A Windows pass of that fix found
 nothing queued after either kind of close, and one socket still listed, named by the address
 the board sent from: the engine lists one per sender a datagram listener hears, and closing
-the listener leaves it (the suite's engine note 6.20). Its stop now closes each sender's name
+the listener leaves it (the suite's engine note 6.21). Its stop now closes each sender's name
 first (the same test, strengthened, failed first on Linux too), and a Windows pass of that
 fix found nothing of the show listed a second after either kind of close (the same day).
 
@@ -95,7 +95,7 @@ plus `scArtnetEnsureSocket`, `scArtnetSetChannel`, `scArtnetChannel`, `scArtnetP
   (engine `opensslsocket.cpp`); `write ... to socket "h:p"` sends NOTHING unless `h:p` was
   opened, so every send opens first. An accepted socket is named by its port alone.
 - **Each sender a listener hears becomes a socket name** (`ip:port`, sharing the listener's
-  descriptor; the suite's engine note 6.20), and closing the listener leaves it listed, with
+  descriptor; the suite's engine note 6.21), and closing the listener leaves it listed, with
   an engine thread spinning a whole core on Linux: close those names first, as the
   showcase's `albStop` and the self-test's `artnetStopSelfTest` do (held by
   `TestAClosedWindowStopsItsShow` and `TestShippedSelfTestTier2`). At quit the engine frees

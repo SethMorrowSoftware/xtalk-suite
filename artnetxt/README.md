@@ -71,7 +71,7 @@ in 5 seconds and ran, wholly on the screen. Closing its window stops the show, b
 made with messages locked too: after each close in that IDE a frame of its loop was still
 queued, and it now stops itself once its stack is closed, which a second Windows pass saw
 the same day. That pass found one socket still listed after each close, named by the
-address the board sent from (the suite's engine note 6.20); the show now closes it too,
+address the board sent from (the suite's engine note 6.21); the show now closes it too,
 which a third Windows pass saw the same day. Its look and feel on a Mac and on Linux, and a
 real node or desk, are verified statically; need an OXT pass.
 

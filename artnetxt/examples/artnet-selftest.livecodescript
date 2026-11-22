@@ -205,7 +205,7 @@ command artnetStopSelfTest
    -- The senders the listener heard first: the engine lists one socket for
    -- each, on the listener's descriptor, and one left listed after the
    -- listener closes kept the engine's socket thread spinning, a whole core
-   -- on Linux (the suite's engine notes, 6.20).
+   -- on Linux (the suite's engine notes, 6.21).
    repeat for each key tFrom in sArtnetStLoopFrom
       if tFrom is among the lines of the openSockets then
          try

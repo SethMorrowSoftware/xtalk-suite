@@ -21,7 +21,7 @@ script "ArtnetDemoTest"
 --     stops itself at its next frame (after each close in that IDE a frame was
 --     still queued, 2026-11-21); and no socket of the show's is left listed,
 --     the name the engine lists for each sender it heard included (the
---     suite's engine notes, 6.20: one was left after each close, there and
+--     suite's engine notes, 6.21: one was left after each close, there and
 --     here);
 --   * every scene plays with nothing going wrong, and each does what its
 --     words say: the rig's lamps are drawn from the levels that ARRIVED, the
@@ -529,7 +529,7 @@ on TestAlsoToSendsOnlyWhenItNamesANode
    TestAssert "and the footer says why (" & the text of field "albStatus" of stack sDemo & ")", the text of field "albStatus" of stack sDemo contains "never broadcasts"
    -- This listener's senders first: the engine lists one socket for each, on
    -- the listener's descriptor, and one left listed after the listener closes
-   -- keeps the engine's socket thread spinning (the suite's engine notes, 6.20)
+   -- keeps the engine's socket thread spinning (the suite's engine notes, 6.21)
    repeat for each key tFrom in gAlsoFrom
       if tFrom is among the lines of the openSockets then
          close socket tFrom
@@ -673,7 +673,7 @@ end TestTheWindowOpensCentredOnTheScreen
 -- 0.2.8-dp.1's IDE on Windows a frame was still queued, 2026-11-21). And
 -- none of its sockets is left listed: the engine lists one more for each
 -- sender a datagram listener hears and keeps it after the listener closes
--- (the suite's engine notes, 6.20), so the show closes those names too
+-- (the suite's engine notes, 6.21), so the show closes those names too
 on TestAClosedWindowStopsItsShow
    local tState, tPort, tBefore
    put demoSocketList() into tBefore

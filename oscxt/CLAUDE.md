@@ -28,7 +28,7 @@ cannot leave it running unseen in the IDE's memory with its port open (after eac
 frame was still queued; `TestAClosedWindowStopsItsShow`), and a Windows pass of that fix found
 nothing queued after either kind of close. Its stop also closes the name the engine lists for
 each sender the rig heard, which closing the listener leaves listed (the suite's engine note
-6.20: one more name per open, here on Linux and in the Art-Net showcase on Windows; the same
+6.21: one more name per open, here on Linux and in the Art-Net showcase on Windows; the same
 test, strengthened, failed first).
 
 It is the OSC third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
@@ -115,7 +115,7 @@ not open"), so `scOscSend` opens it first.
    delivers each datagram as its own message: nothing needs a `read`.
 7. **It also lists one socket per sender it hears** (`127.0.0.1:41273`, on the listener's
    descriptor), and closing the listener leaves that name listed, with an engine thread
-   spinning a whole core on Linux (the suite's engine note 6.20). The showcase's
+   spinning a whole core on Linux (the suite's engine note 6.21). The showcase's
    `osdStop` and the self-test's `oscStopSelfTest` close each sender's name first, held by
    `TestAClosedWindowStopsItsShow` and `TestShippedSelfTestTier2`; the test runner closes
    whatever a test left listed before its engine quits (`scCloseLeftSockets`, held by

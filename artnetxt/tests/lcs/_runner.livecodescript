@@ -449,7 +449,7 @@ end scProbeArrived
 -- listener's descriptor, and keeps it after the listener closes. Left listed,
 -- it keeps the engine's socket thread spinning over a closed descriptor, and at
 -- quit the engine frees its sockets without that thread's lock (the suite's
--- engine notes, 6.20): artnetxt's also-to test, which left one, never exited in
+-- engine notes, 6.21): artnetxt's also-to test, which left one, never exited in
 -- about one run in seventy, its output lost with it. So before it quits the
 -- runner closes every name still listed, the ones with a host first, and names
 -- them in a diagnostic. This is the runner's hygiene, not a check: a test that

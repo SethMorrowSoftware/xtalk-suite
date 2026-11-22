@@ -122,7 +122,7 @@ end TestOscBurstOverUdp
 -- lists one more for each sender a datagram listener hears, on the listener's
 -- descriptor, and one left listed after the listener closes kept the engine's
 -- socket thread spinning, a whole core on Linux (the suite's engine notes,
--- 6.20; a self-test left open in an IDE would have kept it so)
+-- 6.21; a self-test left open in an IDE would have kept it so)
 on TestShippedSelfTestTier2
    local tPath, tLog, tBefore
    put udpSocketList() into tBefore
@@ -145,7 +145,7 @@ end TestShippedSelfTestTier2
 -- tests/lcs/_runner.livecodescript): a sender's name left listed after its
 -- listener closed keeps the engine's socket thread spinning, and at quit the
 -- engine frees its sockets without that thread's lock (the suite's engine
--- notes, 6.20). This leaves one on purpose, as a test that closes only its
+-- notes, 6.21). This leaves one on purpose, as a test that closes only its
 -- listener does, and has the runner's handler close it.
 on TestTheRunnerClosesWhatARunLeftListed
    global gLeftFrom

@@ -1959,7 +1959,7 @@ every handler it uses has been called: the loss is only the error text pending
 across a first bind. Windows has no `dlerror`, and none of these loaders is
 called there.
 
-### 6.20 A datagram listener lists ONE MORE socket per sender it hears, and closing the listener leaves them listed, with a thread spinning
+### 6.21 A datagram listener lists ONE MORE socket per sender it hears, and closing the listener leaves them listed, with a thread spinning
 **OBSERVED 2026-11-21** on Windows (OXT-Beyond 0.2.8-dp.1's IDE on the
 maintainer's PC, runbook section 8) and the same day on Linux x86_64
 (OXT-Beyond's headless engine 9.7.1-OXT build 25923, `-ui`). The Art-Net and
@@ -2034,7 +2034,7 @@ only an ACCEPTING datagram socket does, for a sender it has not seen, and one
 sender makes one name, however many datagrams it sends (each showcase sent
 hundreds and left one per open).
 
-### 6.21 Two engines can both accept datagrams on one port, and neither hears that the other has it
+### 6.22 Two engines can both accept datagrams on one port, and neither hears that the other has it
 **OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond's headless engine 9.7.1-OXT
 build 25923, `-ui`): two engine processes each ran `accept datagram
 connections on port 47555`, and `the result` was empty for both; a third sent
