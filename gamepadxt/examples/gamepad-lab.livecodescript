@@ -29,12 +29,15 @@ script "GamepadLab"
 -- still opens, says so in words, and plays the showcases as a recording.
 --
 -- HONESTY (the suite convention): this script has run on OXT-Beyond's Linux
--- desktop engine with no display, over a locally built library and virtual
--- pads (tests/demo-drive.livecodescript, 2026-11-21): the window built, the
--- showcases played, a second pad took over, and every control was driven
--- by message, with and without the library. No real controller, no person
--- at a screen and no other platform has run it: verified statically; needs
--- an OXT pass.
+-- desktop engine with no display, over virtual pads, with the library and
+-- without it (tests/demo-drive.livecodescript, 2026-11-21: the window built,
+-- the showcases played, a second pad took over, every control was driven by
+-- message); in the IDE on Windows (2026-11-21: it opened and played its
+-- first showcase on the software pad); and in OXT-Beyond 0.2.8-dp.2.1's web
+-- Stack Player in headless Chromium (2026-11-22: the showcases played, and a
+-- pad the test put into the browser's Gamepad API took over). No real
+-- controller has driven it and no Mac has run it: verified statically;
+-- needs an OXT pass.
 --
 -- THE LOOK is this stack's own, a dark stage like the suite's 3D demos:
 -- every field and button says its own colours, so a dark system theme
