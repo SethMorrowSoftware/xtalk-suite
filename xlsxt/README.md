@@ -92,7 +92,8 @@ Joined the suite on 2026-11-20. What has run, and where:
   (run 44847676839) in headless Chromium, Firefox and WebKit. `xlLibraryVersion()`
   answered; a workbook with a table, a formula, a date, a boolean, text outside ASCII and a
   chart was written to the engine's in-memory file system and read back; a file that is no
-  workbook was refused; nothing was left open. The other handlers have not run in a browser.
+  workbook was refused; nothing was left open. The demo stack's run in a browser (below)
+  reached more of the handlers; no browser run has called every one.
   Pull request 605 did not merge: OXT-Beyond 0.2.8-dp.2.1 builds xlsxt in instead (its pull
   request 620, merged 2026-11-22, pinned to 9ebbd6e), and that pull request's check passed
   the same step in the three browsers (run 44955451513).
@@ -129,8 +130,12 @@ Joined the suite on 2026-11-20. What has run, and where:
   passed 39/0, and every word was readable. The one fault it showed, the ten-thousand-cell
   scene's last column cutting a five-digit number to four, was fixed that day; the drive
   now measures every cell a scene shows against its column, and the fix is checked on
-  Linux only. On macOS and in a browser the new window is verified statically; needs an
-  OXT pass.
+  Linux only. On 2026-11-22 the window played in a browser: saved as a stack for the
+  community gallery (oxt-community-stacks pull request 19, merged that day) and opened in
+  OXT-Beyond 0.2.8-dp.2.1's Stack Player in headless Chromium, it played its tour to the
+  end and About's checks passed 39/0; nothing else in it was clicked there. On macOS, and
+  in Firefox and WebKit, the new window is verified statically; needs an OXT pass. The
+  gallery lists it at https://oxt-stacks.github.io/oxt-community-stacks/s/spreadsheet-studio/.
 - **Not yet:** no engine on macOS or on an ARM Android has run it, and no desktop IDE but
   the Windows one above: on macOS, on an ARM Android and in an IDE on Linux, it is verified
   statically; needs an OXT pass. No file it wrote has been opened in Excel itself on the

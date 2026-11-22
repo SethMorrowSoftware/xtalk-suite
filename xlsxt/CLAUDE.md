@@ -141,12 +141,16 @@ OXT-Beyond's dark look), was rebuilt on 2026-11-21 to open playing a tour of fou
 the new window is driven on the Linux desktop engine by `tests/demo-drive.livecodescript`
 (that day, headless and under xvfb) and ran the same day on the maintainer's Windows PC
 under its dark theme (the tour's four scenes, About's checks 39/0, every word readable; the
-one fault, a clipped column, fixed after and checked on Linux only). On macOS and in a
-browser it is verified statically; needs an OXT pass. Its builders read the window's fields through
-`xdTyped` and `xdTicked`, which fall back to defaults, so `xdCheckAll` is the same code with
-or without a window. No file it wrote has been opened in Excel on the record (openpyxl read
-the demo's complete workbook on 2026-11-21: its chart, picture, drop-down list, protection,
-frozen row, filter, defined name, link and note were all there). Release libraries were
-committed on 2026-11-21 (six desktop platforms, four Android ABIs; the web archive built
-separately with emsdk 6.0.12, and the one the browser run linked). Open work is in the
-suite's `docs/WORK-PLAN.md`.
+one fault, a clipped column, fixed after and checked on Linux only). On 2026-11-22 it
+played in a browser: saved as a stack by `examples/build-demo-stack.livecodescript` for the
+community gallery (oxt-community-stacks pull request 19, merged that day) and opened in
+OXT-Beyond 0.2.8-dp.2.1's Stack Player in headless Chromium, it played its tour to the end
+and About's checks passed 39/0; nothing else in the window was clicked there. On macOS, and
+in Firefox and WebKit, it is verified statically; needs an OXT pass. Its builders read the
+window's fields through `xdTyped` and `xdTicked`, which fall back to defaults, so
+`xdCheckAll` is the same code with or without a window. No file it wrote has been opened in
+Excel on the record (openpyxl read the demo's complete workbook on 2026-11-21: its chart,
+picture, drop-down list, protection, frozen row, filter, defined name, link and note were
+all there). Release libraries were committed on 2026-11-21 (six desktop platforms, four
+Android ABIs; the web archive built separately with emsdk 6.0.12, and the one the browser
+run linked). Open work is in the suite's `docs/WORK-PLAN.md`.
