@@ -26,7 +26,12 @@ opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQui
 frame once its stack is closed, so a close made with messages locked, which sends no closeStack,
 cannot leave it running unseen in the IDE's memory with its ports open (after each close there a
 frame was still queued; `TestAClosedWindowStopsItsShow`), and a Windows pass of that fix found
-nothing queued after either kind of close (the same day).
+nothing queued after either kind of close (the same day). Its stop leaves it no mode to send
+through, so it opens again after either kind of close: closed while it played over a cable, it
+kept the mode "cable" with the cable's handles emptied, the next open's own stop silenced
+through an empty handle into a typed `Integer` (engine note 6.4), and the reopen threw "can't
+find handler midiControlChange" on the maintainer's Linux PC (2026-11-22, its ALSA virtual
+port the cable; `TestTheStageOpensAgainAfterAClose` failed against it).
 
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -154,8 +159,10 @@ port among them: the first MIDI service on the record to carry its messages. On 
 the GS Wavetable synth, and the self-test passed (29; 2 skipped, Windows MM having no
 virtual ports). The showcase opened hidden on both and left no port and nothing queued when
 closed; on Linux it offered for Sound the port that reads its own cable, fixed the same day
-(`mdsReads`). It had opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and
-said what was missing; that run found the two faults above. No message through CoreMIDI,
+(`mdsReads`). Rebuilt there with that fix, it offered no output ("There is no MIDI output
+here to play through."), and a reopen after a close threw, fixed the same day (above). It
+had opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and said what was
+missing; that run found the two Windows faults above. No message through CoreMIDI,
 Windows MM or a MIDI keyboard is on the record, and no engine has loaded the mac, 32-bit or
 ARM libraries: verified statically; needs an OXT pass. Open work is in the suite's
 `docs/WORK-PLAN.md`.
