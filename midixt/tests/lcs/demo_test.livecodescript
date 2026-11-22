@@ -597,6 +597,14 @@ on TestFindsTheCableOnEverySystem
    TestAssertEqual "Linux: a synth, never the loop", demoFind("mdsFindSound", tLinux, "Midi Through:Midi Through Port-0 14:0"), 1
    TestAssertEqual "never the cable itself", demoFind("mdsFindSound", "loopMIDI Port 1", "loopMIDI Port 0"), -1
    TestAssertEqual "never this demo's own port", demoFind("mdsFindSound", "RtMidi Input Client:MIDI Stage 129:0", empty), -1
+   -- ALSA lists the port RtMidi makes to READ the cable among the outputs,
+   -- under midixt's name for it: on a Linux PC with no synth (2026-11-22)
+   -- Sound offered it, and would have played the player's notes into the
+   -- stage's own input. The names are the ones that PC listed.
+   TestAssertEqual "never the port that reads the cable", demoFind("mdsFindSound", "Midi Through:Midi Through Port-0 14:0" & return & "RtMidi Input Client:ShowControl In 130:0", "RtMidi Output Client:MIDI Stage 128:0"), -1
+   TestAssertEqual "nor another program's RtMidi input", demoFind("mdsFindSound", "RtMidi Input Client:Reader 131:0", empty), -1
+   TestAssertEqual "nor an unnamed virtual input (CoreMIDI)", demoFind("mdsFindSound", "ShowControl In", empty), -1
+   TestAssertEqual "a synth after them is still found", demoFind("mdsFindSound", "RtMidi Input Client:ShowControl In 130:0" & return & "FLUID Synth (1234):Synth input port (1234:0) 128:0", "RtMidi Output Client:MIDI Stage 128:0"), 1
    TestAssertEqual "and none where there is no output", demoFind("mdsFindSound", empty, empty), -1
 end TestFindsTheCableOnEverySystem
 

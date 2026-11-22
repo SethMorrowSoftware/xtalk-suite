@@ -637,7 +637,11 @@ function mdsBaseName pName
 end mdsBaseName
 
 -- The output to play through: the synth every Windows has, else the first
--- output that is not a cable (sending to a loopback would play nothing)
+-- output that is neither a cable (sending to a loopback would play nothing)
+-- nor a program's input. ALSA lists the port RtMidi makes to READ the cable
+-- among the outputs, as "RtMidi Input Client:ShowControl In 130:0": taken
+-- for a synth on a Linux PC with none (2026-11-22), Sound would have played
+-- the player's notes into the stage's own input.
 function mdsFindSound pOuts, pCableName
    local tI, tName
    repeat with tI = 1 to the number of lines of pOuts
@@ -647,13 +651,20 @@ function mdsFindSound pOuts, pCableName
    end repeat
    repeat with tI = 1 to the number of lines of pOuts
       put line tI of pOuts into tName
-      if tName contains kMdsPortName or mdsLoops(tName) or (pCableName is not empty and mdsBaseName(tName) is mdsBaseName(pCableName)) then
+      if tName contains kMdsPortName or mdsLoops(tName) or mdsReads(tName) or (pCableName is not empty and mdsBaseName(tName) is mdsBaseName(pCableName)) then
          next repeat
       end if
       return tI - 1
    end repeat
    return -1
 end mdsFindSound
+
+-- A port a program reads MIDI through with RtMidi: the one midixt makes for
+-- each input it opens and for a virtual input left unnamed ("ShowControl
+-- In"), and any input of RtMidi's own client name. Never a synth.
+function mdsReads pName
+   return pName contains "ShowControl In" or pName contains "RtMidi Input Client"
+end mdsReads
 
 -- Sound on and off. On opens the output the footer names; off silences it.
 command mdsSoundSwitch
