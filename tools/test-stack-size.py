@@ -91,16 +91,19 @@ def main():
     # width line and a height line at kAdWidth x kAdHeight (960 x 600).
     # 59 since 2026-11-21: xlsxt/examples/xlsxt-demo.livecodescript, one
     # uiChrome call at kXdWidth x kXdHeight (960 x 640).
-    # 61 the same day, merged with the pdfxt branch: pdfxt/examples/
+    # 61 the same day: gamepadxt/examples/gamepad-lab.livecodescript,
+    # Gamepad Lab, a width line and a height line at 1180 x 640.
+    # 67 the same day: the three ShowControl showcases, each a width line
+    # and a height line at 1100 x 620 (oscxt's osc-show-surface at kOsdW x
+    # kOsdH, midixt's midi-stage at kMdsW x kMdsH, artnetxt's
+    # artnet-light-board at kAlbW x kAlbH).
+    # 69 the same day, merged with the pdfxt branch: pdfxt/examples/
     # pdfxt-demo.livecodescript, the PDF viewer, a width line and a height
     # line at kPvWidth x kPvHeight (1180 x 630). (It first carried one
     # uiChrome call at that size, then left the kit for OXT-Beyond's dark
     # look the same day.)
-    # 63 the same day, when the pdfxt branch met main's gamepadxt:
-    # gamepadxt/examples/gamepad-lab.livecodescript, Gamepad Lab, a width
-    # line and a height line at 1180 x 640.
-    if "63 stack window dimension" not in out:
-        print("test-stack-size: expected 63 measured dimensions, got:\n" + out)
+    if "69 stack window dimension" not in out:
+        print("test-stack-size: expected 69 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

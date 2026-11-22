@@ -47,14 +47,6 @@ TAG = "test-build-android"
 # libdatachannel's ICE and SCTP, libtorrent's listeners and DHT). The other
 # three (sodiumxt, coinxt, box2dxt) compute and never touch the network.
 NETWORK_MEMBERS = ("enetxt", "curlxt", "datachannelxt", "torrentxt")
-# The native members that are NOT built for Android, each with its reason
-# (2026-11-20). Such a member is held to the opposite of every Android rule
-# below: build-android.sh must not name it and its packager must name no
-# Android id, so "not built" can never drift into "half built".
-NO_ANDROID = {
-    "gamepadxt": "SDL reads controllers on Android through its own Java "
-                 "activity, which an OXT app does not have (docs/ANDROID.md)",
-}
 FAILURES = []
 
 
@@ -129,26 +121,43 @@ def main():
     listed = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
     members = listed.get("members", "").split()
     platforms = listed.get("platforms", "").split()
+    # The native members it names and does NOT build (gamepadxt since
+    # 2026-11-20, oscxt and midixt since 2026-11-21), each with its reason in
+    # the script. They count toward the comparison below, so a new native
+    # member must land in one list or the other: never in neither.
+    desktop_only = listed.get("desktop-only", "").split()
     check(rc == 0 and members and platforms, "--list names members and "
           "platform ids", (rc, out, err))
+    check(not set(members) & set(desktop_only),
+          "no member is both built for Android and desktop-only",
+          (members, desktop_only))
     every_native = [m["name"] for m in freshness.MEMBERS]
-    check(set(NO_ANDROID) <= set(every_native),
-          "every member in NO_ANDROID is a native member", sorted(NO_ANDROID))
-    native = [m for m in every_native if m not in NO_ANDROID]
-    check(sorted(members) == sorted(native),
+    check(sorted(members + desktop_only) == sorted(every_native),
           "it builds exactly the native members the freshness gate knows, "
-          "bar NO_ANDROID's", (members, native))
-    check(sorted(members) == sorted(m for m in installer.MEMBERS
-                                    if m not in NO_ANDROID),
-          "  ...which are the members the installer installs, bar NO_ANDROID's",
-          (members, sorted(installer.MEMBERS)))
-    for member in sorted(NO_ANDROID):
-        packer = os.path.join(ROOT, member, "tools", "package-extension.py")
+          "bar the ones it names desktop-only", (members, desktop_only, every_native))
+    check(sorted(members + desktop_only) == sorted(installer.MEMBERS),
+          "  ...which are the members the installer installs",
+          (members, desktop_only, sorted(installer.MEMBERS)))
+    # A desktop-only member is held to the opposite of every Android rule
+    # below (gamepadxt's rule, 2026-11-20): its `ships` row names no Android
+    # library and its packager names no Android id, so "not built" can
+    # never drift into "half built" and nothing promises a library this
+    # script never builds.
+    for row in freshness.MEMBERS:
+        if row["name"] not in desktop_only:
+            continue
+        android = [p for p in row["ships"] if p.endswith("-android")]
+        check(not android, f"desktop-only {row['name']} ships no Android "
+              "library", android)
+        packer = os.path.join(ROOT, row["name"], "tools", "package-extension.py")
         with open(packer, encoding="utf-8") as fh:
             text = fh.read()
-        check("-android" not in text,
-              f"{member} is not built for Android, so its packager names no "
-              f"Android id")
+        # An id as the packager would hold it, a quoted string: a comment
+        # naming build-android.sh is not an id.
+        named = [p for p in platforms if f'"{p}"' in text or f"'{p}'" in text]
+        check(not named, f"  ...and its packager names no Android id", named)
+    # The rules below are for the members it does build.
+    native = [m for m in every_native if m in members]
     check(sorted(platforms) == sorted(installer.ANDROID_ABIS),
           "its platform ids are the installer's ANDROID_ABIS",
           (platforms, sorted(installer.ANDROID_ABIS)))
@@ -177,8 +186,9 @@ def main():
     # a member that opens none declares nothing: a permission that appears
     # in a crypto or physics library is a question for a reviewer, not a
     # default. WHICH members open sockets is this table, by hand; nothing
-    # in a compiler-free gate can derive it.
-    for member in native:
+    # in a compiler-free gate can derive it. A desktop-only member is asked
+    # too, and must declare nothing: no app of its has an Android build.
+    for member in every_native:
         folder = os.path.join(ROOT, member, "src")
         lcbs = [f for f in sorted(os.listdir(folder)) if f.endswith(".lcb")]
         lines = []
@@ -297,6 +307,12 @@ def main():
     check(rc == 2 and not out and "not a native member" in err,
           "  ...and refuses a name that is not a native member (exit 2)",
           (rc, out, err))
+    for member in desktop_only:
+        rc, out, err = run(["--api", member])
+        check(rc == 2 and not out and "has no Android build" in err
+              and "DESKTOP_ONLY" in err,
+              f"  ...and refuses desktop-only {member}, pointing at the reason "
+              "(exit 2)", (rc, out, err))
     done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
                            "--apis"], capture_output=True, text=True,
                           timeout=60)
@@ -341,6 +357,11 @@ def main():
     rc, out, err = run(["onionxt", "arm64-android"])
     check(rc == 2 and "not a native member" in err,
           "a member with no native library is refused (exit 2)", (rc, err))
+    for member in desktop_only:
+        rc, out, err = run([member, "arm64-android"])
+        check(rc == 2 and "has no Android build" in err and "DESKTOP_ONLY" in err,
+              f"desktop-only {member} is refused, pointing at the reason "
+              "(exit 2)", (rc, err))
     rc, out, err = run(["enetxt", "arm64-linux"])
     check(rc == 2 and "not an Android platform id" in err,
           "a platform id that is not Android's is refused (exit 2)", (rc, err))

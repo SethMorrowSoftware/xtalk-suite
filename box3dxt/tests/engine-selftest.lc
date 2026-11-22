@@ -64,8 +64,8 @@ end stepWorld
 -- The scenes
 -- ---------------------------------------------------------------------
 command testLibrary
-   check "ABI", b3ABIVersion() is 2, b3ABIVersion()
-   check "version text", b3LibraryVersion() begins with "box3dxt ABI 2; Box3D ", b3LibraryVersion()
+   check "ABI", b3ABIVersion() is 3, b3ABIVersion()
+   check "version text", b3LibraryVersion() begins with "box3dxt ABI 3; Box3D ", b3LibraryVersion()
    check "a Boolean comes back as a Boolean", b3HasAVX2() is true or b3HasAVX2() is false, b3HasAVX2()
    check "no asserts at load", b3AssertCount() is 0 and b3AssertText() is empty, b3AssertText()
 end testLibrary
@@ -410,6 +410,20 @@ command testRender
    b3WorldDestroy tWorld
    check "the world gone, the picture stays", b3RenderWidth() is 320 and b3RenderShapeAt(160, 120) is 0 and the number of bytes in b3RenderPixels() is 307200, \
          b3RenderWidth()
+   -- the sky (ABI 3): a colour for the top row and one for the bottom
+   put b3WorldCreate(0, -10, 0, 1) into tWorld
+   b3RenderSetBackground 7, 8, 9
+   check "one background colour is a sky of that colour twice", b3RenderSky() is "7,8,9,7,8,9", b3RenderSky()
+   b3RenderSetSky 0, 200, 10, 100, 0, 13
+   b3RenderSetSky 0, 200, 10, 100, 0, 256
+   check "a sky is kept, and a colour outside a byte refused", b3RenderSky() is "0,200,10,100,0,13", b3RenderSky()
+   check "the rows run from the top colour to the bottom one", b3RenderWorld(tWorld, 3, 5, 0) and b3RenderPixel(0, 0) is 200 * 256 + 10 \
+         and b3RenderPixel(2, 2) is 50 * 65536 + 100 * 256 + 12 and b3RenderPixel(1, 4) is 100 * 65536 + 13, \
+         b3RenderPixel(0, 0) && b3RenderPixel(2, 2) && b3RenderPixel(1, 4)
+   put b3RenderPixels() into tData
+   check "and so do the bytes of the picture", the number of bytes in tData is 60 and byteToNum(byte 3 of tData) is 200 and byteToNum(byte 50 of tData) is 100 \
+         and byteToNum(byte 60 of tData) is 13, byteToNum(byte 3 of tData) && byteToNum(byte 50 of tData) && byteToNum(byte 60 of tData)
+   b3WorldDestroy tWorld
    b3RenderSetBackground 32, 36, 42
    b3RenderSetCamera 0, 4, 12, 0, 1, 0, 50
 end testRender
@@ -1202,6 +1216,10 @@ command sweepEveryHandler
       b3RenderSetLight 0, 0, 0
       put "b3RenderSetBackground" into tName
       b3RenderSetBackground 0, 0, 0
+      put "b3RenderSetSky" into tName
+      b3RenderSetSky 0, 0, 0, 0, 0, 0
+      put "b3RenderSky" into tName
+      get b3RenderSky()
       put "b3ShapeSetColor" into tName
       b3ShapeSetColor 0, 0, 0, 0
       put "b3ShapeClearColor" into tName
@@ -1236,7 +1254,7 @@ command sweepEveryHandler
       check "sweep: " & tName, false, oneLine(tError)
       exit sweepEveryHandler
    end try
-   check "sweep: all 398 public handlers called with zeros, none threw", true
+   check "sweep: all 400 public handlers called with zeros, none threw", true
 end sweepEveryHandler
 -- <<< END SWEEP <<<
 

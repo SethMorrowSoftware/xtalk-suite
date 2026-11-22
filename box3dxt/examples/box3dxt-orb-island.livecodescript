@@ -63,8 +63,12 @@
 --
 -- STATUS: the game's build and its rules ran on the headless Linux server
 -- engine (box3dxt/tests/engine-demo.lc, OXT-Beyond 9.7.1, with and without
--- render3dxt). The window, the mouse and the feel: verified statically;
--- needs an OXT pass.
+-- render3dxt). In a web Stack Player (the web-2026.11.21 pre-release's, in
+-- Chromium, 2026-11-21, box3dxt alone) the window built at its size, W
+-- walked to an orb that was counted, C dropped crates, V said render3dxt is
+-- not loaded, a click knocked crates over and a drag turned the camera.
+-- The rest of the list above, render3dxt in a window, a desktop IDE and
+-- the feel: verified statically; needs an OXT pass.
 -- =====================================================================
 
 -- The suite's UI kit, carried verbatim (master tools/ui-kit.livecodescript,
@@ -1089,7 +1093,7 @@ command oiBuildUI
    set the margins of field "oiBanner" to "8,24,8,8"
    hide field "oiBanner"
    uiFooter "Orb Island: a demo of the b3k Kit, carried below its game code from box3dxt/src/box3dxt-kit.livecodescript. " & \
-         "Its build and rules ran on the headless server engine; the window, the mouse and the feel need an OXT pass.", \
+         "It has played in a web Stack Player, keys and mouse included; a desktop IDE and the feel still need an OXT pass.", \
          "16,524,784,600"
    set the uOiUIVersion of this stack to kOiUIVersion
    set the loc of this stack to the screenLoc

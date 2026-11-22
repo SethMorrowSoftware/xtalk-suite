@@ -7,7 +7,7 @@ anything disagrees, the code and this file win.
 
 **box3dxt** binds Box3D (Erin Catto's 3D rigid-body engine, MIT, C17) for OXT: Box3D (static,
 FetchContent, pinned to a COMMIT in `CMakeLists.txt` because it has no release tag yet) -> the
-C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 2**: `B3X_ABI_VERSION` there equals the
+C shim `src/box3d_shim.c` (exports `b3x_*`, **ABI 3**: `B3X_ABI_VERSION` there equals the
 literal in `checkABI()` of the binding) -> ONE library `box3dxt.{so,dll,dylib}` (bare token),
 or `box3dxt.a` for the web -> the LCB binding `src/box3dxt.lcb`
 (`org.openxtalk.library.boxthreed`, public `b3*`). box2dxt is its ancestor; read that
@@ -93,6 +93,10 @@ member's CLAUDE.md for the reasons behind the shared shape.
   from the top left with pixel centres at +0.5, a ray as origin and unit direction, y up,
   the fallback up of world -z looking straight down) is in the shim's comments: change
   neither side alone.
+- **The sky (ABI 3, 2026-11-21)**: `b3x_render_set_sky` gives the picture's top row one
+  colour and its bottom row another, each row between them one colour, in whole numbers.
+  `b3x_render_set_background` is a sky of one colour twice, so what it painted before is
+  what it paints now, byte for byte (the smoke test holds both by hand-worked rows).
 - **Box3D re-pairs shapes only when one leaves its fat bounding box**: destroying a filter
   joint does not make two resting bodies collide until one of them moves far enough.
 - **32-bit x86 is built with SSE2**, not scalar: Box3D's determinism test fails on x87.
@@ -154,9 +158,17 @@ engine on 2026-11-21 (`tests/engine-kit.lc`, `tests/engine-demo.lc`; a local lib
 box3dxt's renderer and with a render3dxt built from its pull request); no IDE has run them.
 Orb Island has played once in a browser, on a web engine built locally from OXT-Beyond's pull
 request 606 with the committed web archives of box3dxt and render3dxt linked in (2026-11-21;
-its keys not driven). No engine on Windows, macOS or Android has loaded it, and no IDE has
-loaded a release library or an installed extension: verified statically; needs an OXT pass.
-Release libraries were committed on 2026-11-20 (six desktop platforms, four Android ABIs; the
-web archive built separately with emsdk 6.0.12); of them only the web archive has met an
-engine (that browser run), and no engine has loaded a desktop or Android one yet. Open work is
-in the suite's `docs/WORK-PLAN.md`.
+its keys not driven), and again that day in the web-2026.11.21 pre-release's Stack Player,
+keys and mouse driven, built into a stack file for the community gallery (README "Status"). On Windows, OXT-Beyond 0.2.8-dp.1's IDE ran the committed ABI 2
+`x86_64-win32` library as an installed extension (2026-11-21): from script in a hidden stack,
+the version calls, a drop that came to rest, ray casts, a contact event, and a picture read as
+data with picking and a ray through a pixel (README "Status"); no window, frame loop or game
+has run there. On Android the ABI 2 `x86_64-android` library answered one call in an app that
+OXT-Beyond's pull request 606 built (2026-11-21). No engine on macOS has loaded it: verified
+statically; needs an OXT pass. Release libraries were committed on 2026-11-20 at ABI 2 (six
+desktop platforms, four Android ABIs; the web archive built separately with emsdk 6.0.12), and
+the browser, Windows and Android records are of those files; the ones committed now are ABI 3
+(release run 44914775780, 2026-11-21; the web archive again built separately), and of them only
+the `x86_64-linux` library has met an engine (OXT-Beyond 0.2.8-dp.1's Linux server engine,
+2026-11-21: `tests/engine-selftest.lc`, `tests/engine-kit.lc` and `tests/engine-demo.lc`
+passed with it, with render3dxt and without). Open work is in the suite's `docs/WORK-PLAN.md`.

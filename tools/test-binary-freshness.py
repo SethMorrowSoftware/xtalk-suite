@@ -77,6 +77,10 @@ WHAT IT PROVES, in five legs:
      decoder on synthesized bodies, each committed archive green through the
      gate and red when its table misses a bind, its ABI moved or its table
      function is gone, and the ar container refusals.
+  7. THE .lcb FILES THAT ARE NOT A BINDING (2026-11-21): BINDLESS_LCB and
+     TEST_LCB on files written here, each way an entry can lie refused by
+     name, the live tables clean, and the coverage guard naming an entry of
+     either that is left out.
 
 None of this is an engine result: it settles what the committed bytes do on a
 CPU, which is what the gate claims, and nothing about an OXT engine.
@@ -874,6 +878,95 @@ def leg6():
           f"refusals hold")
 
 
+# --------------------------------------------------------------------------
+# Leg 7: the .lcb files that are not a member's binding (2026-11-21).
+# --------------------------------------------------------------------------
+
+def leg7():
+    """BINDLESS_LCB and TEST_LCB, on files written here: a clean pair of each
+    passes, and each way an entry can lie is refused by name. Then the live
+    tables, which must be clean, and the coverage guard, which must know
+    every entry of both."""
+    good_lcb = "module t\nhandler T()\nend handler\nend module\n"
+    bind = ('private foreign handler _r() returns nothing '
+            'binds to "c:lib>tm_reset!cdecl"\n')
+    with tempfile.TemporaryDirectory(prefix="test-binary-freshness-7-") as root:
+        def put(rel, text):
+            path = os.path.join(root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        put("m/a.lcb", good_lcb)
+        put("m/b.lcb", "module b\n" + bind + "end module\n")
+        put("m/c.lcb", "module c\n" + bind.replace("tm_reset", "tm_gone")
+            + "end module\n")
+        put("m/d.lcb", "module d\n" + bind.replace("c:lib>", "c:other>")
+            + "end module\n")
+        put("m/mock.c", "/* int tm_gone(void) is named in a comment only */\n"
+            "int tm_reset(void) { return 0; }\n"
+            "static int tm_hidden(void) { return 1; }\n")
+        cases = [
+            ("a bindless module with no bind is clean",
+             {"m/a.lcb": "x"}, {}, None),
+            ("a bindless module that binds is refused",
+             {"m/b.lcb": "x"}, {}, "BINDLESS_LCB says it binds nothing"),
+            ("a stale bindless entry is refused",
+             {"m/gone.lcb": "x"}, {}, "BINDLESS_LCB names m/gone.lcb"),
+            ("a test module whose binds its source defines is clean",
+             {}, {"m/b.lcb": ("lib", "m/mock.c", "tm_", "x")}, None),
+            ("a test bind its source names only in a comment is refused",
+             {}, {"m/c.lcb": ("lib", "m/mock.c", "tm_", "x")},
+             "does not define"),
+            ("a test bind into another library is refused",
+             {}, {"m/d.lcb": ("lib", "m/mock.c", "tm_", "x")},
+             "TEST_LCB says its binds name lib"),
+            ("a test module that binds nothing is refused",
+             {}, {"m/a.lcb": ("lib", "m/mock.c", "tm_", "x")},
+             "parsed 0 binds"),
+            ("a test module whose source is missing is refused",
+             {}, {"m/b.lcb": ("lib", "m/none.c", "tm_", "x")},
+             "does not exist"),
+            ("a stale test entry is refused",
+             {}, {"m/gone.lcb": ("lib", "m/mock.c", "tm_", "x")},
+             "TEST_LCB names m/gone.lcb"),
+        ]
+        for label, bindless, test_lcb, want in cases:
+            problems, stats = [], {}
+            GATE.check_non_binding_lcb(problems, stats, root=root,
+                                       bindless=bindless, test_lcb=test_lcb)
+            if want is None:
+                check(not problems, f"leg 7: {label}: {problems[:2]}")
+            else:
+                check(any(want in p for p in problems),
+                      f"leg 7: {label}: not refused for it ({problems[:2]})")
+    problems, stats = [], {}
+    GATE.check_non_binding_lcb(problems, stats)
+    check(not problems, f"leg 7: the live tables are not clean: {problems[:3]}")
+    check(stats.get("bindless", 0) == len(GATE.BINDLESS_LCB),
+          f"leg 7: the gate held {stats.get('bindless', 0)} bindless modules, "
+          f"the table names {len(GATE.BINDLESS_LCB)}")
+    # The coverage guard must know both tables: drop one entry of each and it
+    # must name the file it no longer knows.
+    for table in ("BINDLESS_LCB", "TEST_LCB"):
+        live = getattr(GATE, table)
+        if not live:
+            continue
+        dropped = sorted(live)[0]
+        setattr(GATE, table, {k: v for k, v in live.items() if k != dropped})
+        try:
+            problems = []
+            GATE.assert_table_covers_tree(problems)
+        finally:
+            setattr(GATE, table, live)
+        check(any(dropped in p and "no MEMBERS row names" in p
+                  for p in problems),
+              f"leg 7: with {dropped} left out of {table}, the coverage guard "
+              f"did not name it")
+    print(f"{TAG}: leg 7 - {len(cases)} cases of BINDLESS_LCB and TEST_LCB on "
+          f"files written here, the live tables clean, and the coverage guard "
+          f"naming an entry of each that is left out")
+
+
 def main():
     # Leg 1 + the leaf classes.
     for vec in VECTORS:
@@ -1479,6 +1572,7 @@ def main():
              "function, not a SKIP" if int3_caught else ""))
 
     leg6()
+    leg7()
 
     for skip in SKIPS:
         print(f"{TAG}: SKIP {skip}")

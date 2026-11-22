@@ -61,7 +61,7 @@ library org.openxtalk.library.curl
 
 use com.livecode.foreign
 
-metadata version is "0.2.0"
+metadata version is "0.2.1"
 metadata author is "Seth Morrow Software"
 metadata title is "curlxt"
 
@@ -1032,7 +1032,10 @@ Returns: 0, or a negative error.
 Description:
 The other side answers a ping with a pong. <cuInfo>(pSocket, "wsPongs")
 counts the pongs received. Pings FROM the other side are answered for
-you.
+you. When they come faster than the socket can send, the answer still
+waiting is replaced by the answer to the latest ping, as the WebSocket
+standard (RFC 6455) allows, so a peer that pings without reading cannot
+fill memory.
 
 References: cuWsNew (handler), cuInfo (handler)
 */
@@ -1176,10 +1179,12 @@ error.
 Description:
 The script pauses while it waits. Other sockets and requests move too.
 
-It answers 1 at once, and moves nothing, while a message is already
-waiting to be read. To wait for something that comes after those
-messages, such as the socket closing, read them first with <cuWsRead> or
-<cuWsReadText>, or call <cuWsPoll> in a loop instead.
+While a message is already waiting to be read, it moves everything once,
+without waiting, and answers 1 at once. So a loop that waits for
+something that comes after those messages, such as the socket closing,
+still moves the socket on, but it never pauses: read the messages first
+with <cuWsRead> or <cuWsReadText>, or call <cuWsPoll> in a loop with a
+short wait, to let the script rest between passes.
 
 References: cuWsPoll (handler), cuWsRead (handler), cuWsReadText (handler)
 */

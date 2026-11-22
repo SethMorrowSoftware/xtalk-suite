@@ -9,8 +9,8 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Twenty members, all in `tools/member-registry.py` (the one table the split tooling reads;
-the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
+suite. Twenty-three members, all in `tools/member-registry.py` (the one table the split tooling
+reads; the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
   datachannelxt (libdatachannel), box2dxt (Box2D v3 plus the pure-script b2k game Kit; the family
@@ -21,14 +21,17 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   beside the engine's own `play`; joined 2026-11-20, its libraries committed 2026-11-21),
   render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
-  transform, move and camera texts it reads, its libraries committed 2026-11-21), pdfxt
-  (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
-  yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
-  beside itself, see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written
-  and read; joined 2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad
-  subsystem: game controllers; joined 2026-11-20, its desktop libraries and web archive
-  committed 2026-11-21; desktop and web only), and webpxt (libwebp) and barcodext (zxing-cpp),
-  which joined 2026-11-20 too, their libraries committed 2026-11-21.
+  transform, move and camera texts it reads, its libraries committed 2026-11-21), pdfxt (PDFium,
+  read-only: draw, text, search, outline; joined 2026-11-20 with no committed library yet; the one
+  member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from beside itself,
+  see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
+  2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game
+  controllers; joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21;
+  desktop and web only), webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
+  their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21 with no
+  committed library yet: oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and
+  artnetxt (Art-Net DMX lighting in pure LCB, with no native library at all, but a native lane:
+  its suites run on an engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -186,7 +189,9 @@ The gates whose reason is not in their name:
   hands to the NEXT entry it recognises. Every public handler of its `CORPUS` has its own block
   (a Summary, its own parameters), no block is orphaned, a script library's first block is its
   library entry, and every `<link>` resolves; `EXEMPT` names the send targets left out, each
-  with a reason. Comments only: no handler changes for it.
+  with a reason. The parser reads a plain `/* */` comment as source, so no line of one may
+  start with a word that opens an entry there (`library`, `handler`, `on`, ...): on 2026-11-21
+  oscxt's and midixt's swallowed their library entries. Comments only: no handler changes for it.
 - `build-preflight.py --check`: `tests/preflight.livecodescript` is GENERATED from the shims' C ABI
   macros, cross-checked against each `.lcb` literal and each guard's throw text (`ABI `); it reads
   the mac ABI from the one `universal-mac` row of `sodiumxt/CLAUDE.md`'s table.
@@ -216,15 +221,16 @@ their real names: coinxt, onionxt, the b2k Kit, riptide and the nostrxt core. (T
 because a harness once ran against a stale in-memory library and reported failures already fixed.)
 
 - **The board (D-23).** The paste wears the demos' look: one row per `tools/member-registry.py`
-  member with an in-engine harness plus a cross-member row (a pill, its counts, a scoped **Run**,
-  **Show**), a results filter and the boot self-check. The members in the generator's
-  `NO_HARNESS` (it refuses a registry member with neither a harness nor such a reason) have no
-  row: since 2026-11-21, when a seventeenth row would have fitted at no pitch, they are names in
-  a band under the rows (`suNoteCell`), three to a line with room for twelve, so a new
-  harness-less member costs a third of a line, and the boot self-check
-  (`suRowsFit`) fails a board whose rows or names reach the members caption. A row's Run is a
-  subsequence of Run all, never a reordering, and every block tallies into its row. The kit
-  builds the scaffold's four report controls under their own
+  member with a harness plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a
+  results filter and the boot self-check. A member with no in-engine harness (the generator's
+  `NO_HARNESS`, which refuses a registry member with neither a harness nor such a reason) takes no
+  row: it is a name in a three-column band under the rows (`suNoteCell`), so a new harness-less
+  member costs a third of a line. Twelve names filled its four lines above the members caption
+  once webpxt, barcodext and ShowControl's three had joined (2026-11-21); pdfxt's, the
+  thirteenth (2026-11-22), took the rows' pitch from 29 to 28, which leaves the band five lines,
+  room for fifteen, and the boot self-check (`suRowsFit`) and `check-suite-ui-boot.py` fail a
+  name that ends below the caption. A row's Run is a subsequence of Run
+  all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
   `test-build-suite-selftest.py`), the drift fixtures `test-ui-kit-drift.py` and
@@ -306,8 +312,8 @@ vector gates. Run it for the ratio; never copy the ratio into prose. Two advisor
 the ratchet, each with an armed floor (a new gap, a promoted or a stale entry fails):
 
 - **box2dxt's raw `b2*` binding.** By the gate's convention (comments stripped, literals blanked)
-  131 of 376 handlers are named by a script and 245 are not; a raw token count gives 132/244. Both
-  are real; the convention decides. (An older "374 foreign declarations" was a `grep -c` that also
+  133 of 376 handlers are named by a script and 243 are not; a raw token count gives 134/242 (both
+  since 2026-11-21: 131/245 and 132/244 before). Both are real; the convention decides. (An older "374 foreign declarations" was a `grep -c` that also
   counted a line of header prose at `box2dxt.lcb:16`.) The C side is measured by gcov, not grep:
   `box2dxt/tests/smoke_test.c` entered all 370 LC_API exports on 2026-08-23 (about 92% line
   coverage), in build-all's Release walk and the ASan/UBSan job of `native-box2dxt.yml`. A
@@ -343,7 +349,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt, gamepadxt, barcodext, webpxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt, gamepadxt, barcodext, webpxt, oscxt, midixt; midixt needs ALSA's headers on Linux) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.
@@ -393,8 +399,8 @@ worse than no gate, because it answers the question nobody asks twice.
   the runner's 15.0), the torrentxt and datachannelxt dylibs committed before 2026-10-16 needed
   macOS 15 and enetxt's 11; that day's dispatch rebuilt all six at 10.15 and 11.0 (work plan 1.1).
 - **Android (2026-11-18).** `tools/build-android.sh <member> <abi>-android` is the WHOLE recipe
-  for the native members (bar gamepadxt, which is not built for Android) on `arm64-android`,
-  `armv7-android`, `x86_64-android` and
+  for the native members (bar gamepadxt, oscxt and midixt, which it names desktop-only, each with
+  its reason) on `arm64-android`, `armv7-android`, `x86_64-android` and
   `x86-android`: the NDK revision OXT-Beyond pins, API 21 (torrentxt alone API 24 since
   2026-11-21: below it libtorrent uses a netlink socket Android 11 refuses an app, and a session
   starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
@@ -417,8 +423,11 @@ worse than no gate, because it answers the question nobody asks twice.
   on 2026-11-19: OXT-Beyond pinned the twenty-eight (its pull request 572) and its CI ran an app
   with the seven extensions on x86_64 emulators, each library answering ONE call; no member's
   selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
-  one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238);
-  the engine load was of its ABI 1 files. The four members that open sockets declare
+  one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238, and
+  for its 0.2.1 shim run 44925581646, commit a336ba5); the engine load was of its ABI 1 files.
+  box3dxt's ABI 2 `x86_64-android` library answered one call in OXT-Beyond's pull request 606 app
+  the same day, and its four were then rebuilt at ABI 3 (run 44914775780), which no app has
+  carried. The four members that open sockets declare
   `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
   builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **Companions (2026-11-20).** pdfxt does not build or link PDFium: each platform folder holds

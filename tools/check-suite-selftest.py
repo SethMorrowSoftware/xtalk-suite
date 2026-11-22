@@ -1071,8 +1071,8 @@ def main(argv):
     # ---- 17. the board has one row per registry member, in its order -------
     # A LiveCodeScript paste cannot read tools/member-registry.py, so the core
     # spells the members as constants: kSuKeys (the rows, then "cross"),
-    # kSuNames (their titles, then the cross row's) and kSuNoHarness (the rows
-    # with a caption instead of a Run). Those are hand-copied lists, and root
+    # kSuNames (their titles, then the cross row's) and kSuNoHarness (the
+    # members named in the band under the rows instead of a row with a Run). Those are hand-copied lists, and root
     # CLAUDE.md's lesson is that hand-copied lists go stale silently: a twelfth
     # member would get no row, a renamed one a row that counts nothing. The
     # generator already refuses a registry member with neither a harness nor a
