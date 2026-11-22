@@ -356,9 +356,24 @@ selftest, an ARM library, or the `x86-android` one. Android 5.0 and 6.0 are INFE
 the library (it imports `getifaddrs`, which bionic has from API 24); no device that old has been
 asked.
 
+**xlsxt in an app, 2026-11-21** (OXT-Beyond pull request 620, head e5d79df, merged 2026-11-22
+as 0.2.8-dp.2.1; its `Android builder on linux-x86_64` job, run 44955451306). That change pins
+xlsxt at 9ebbd6e, whose Android libraries are the ones 0be6db1 committed (the `x86_64-android`
+one's pinned SHA-256 equals the manifest's, compared 2026-11-22), and gives the check app a
+functional test for it beside pull request 609's. On the Android 13 x86_64 emulator and the
+Android 16 one with 16 KB pages the probe printed (read back from the job's log, both)
+`xlsxt ABI 1; libxlsxwriter 1.2.4; zlib 1.4; Expat 2.10.0` for `xlLibraryVersion()`, and the
+test passed: a workbook of 5409 bytes written in the app's documents folder with no temporary
+folder set, so the shim made its temporary files beside it (on Android it uses the folder of
+the workbook's path unless `xlSetTempFolder` names another), checked to be a zip, and read
+back cell for cell and as one grid, nothing left open. The same run, on both emulators,
+passed the app's tests of box3dxt (its ABI 2 files), render3dxt, audioxt, webpxt and
+barcodext too, each line in the same log. What this is NOT: a member's selftest, a folder
+named with `xlSetTempFolder`, or an ARM or `x86-android` library.
+
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's, pdfxt's and xlsxt's,
-in an app; a torrentxt session on Android with a peer, a tracker or the DHT.
+selftest or demo on an Android engine; box3dxt's ABI 3 libraries and pdfxt's in an app; a
+torrentxt session on Android with a peer, a tracker or the DHT.
 
 ## What differs on Android, per member
 
@@ -370,10 +385,10 @@ in an app; a torrentxt session on Android with a peer, a tracker or the DHT.
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
-| render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before the call that draws returns, or, for a picture begun, by the next call that names a handle; none runs script. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built by the 2026-11-21 release run and committed (f6c0b1a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before the call that draws returns, or, for a picture begun, by the next call that names a handle; none runs script. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built by the 2026-11-21 release run and committed (f6c0b1a); tested on the emulator for the two x86 ABIs. In an app 2026-11-21 (x86_64, Android 13 and 16; OXT-Beyond pull request 620, above): `r3LibraryVersion()` answered `render3dxt 0.1.0 ABI 1` and the app's drawing test passed. ARM: built, not run |
 | pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built and tested by its own lane, not yet by a release run; no library committed |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
-| xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| xlsxt | None in the library: three C libraries built from source, with no per-processor path. Android has no `/tmp` an app may write to, so there a workbook's temporary files go in the folder of the workbook's path unless `xlSetTempFolder` names another (the engine's cache or documents folder). | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs. In an app 2026-11-21 (x86_64, Android 13 and 16): `xlLibraryVersion()` and a workbook written and read back, no temporary folder set. ARM: built, not run |
 | webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8), rebuilt by the 2026-11-22 one (3d35c4a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | barcodext | None. zxing-cpp is C++20; the NDK's libc++ is linked into the library like every C++ member's. | built by the 2026-11-21 release run and committed (21f75b8); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |

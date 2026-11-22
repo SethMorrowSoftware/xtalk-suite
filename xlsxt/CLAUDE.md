@@ -126,8 +126,16 @@ library). On 2026-11-21 it ran in the IDE on the maintainer's Windows PC, over t
 lane's DLL from run 44845807163 (the engine self-test 64/0 in the IDE, the demo's checks
 39/0, before the demo was rebuilt that day), and in a browser: the committed web archive, linked into OXT-Beyond's web engine by
 that repository's pull request 605, wrote and read back one workbook in Chromium, Firefox
-and WebKit (run 44847676839). No engine on macOS or Android has loaded it, nor has any
-engine loaded a release library: verified statically; needs an OXT pass. The demo stack,
+and WebKit (run 44847676839). OXT-Beyond 0.2.8-dp.2.1 builds it in (that repository's pull
+request 620, merged 2026-11-22, pinned to 9ebbd6e), and on 2026-11-21 that pull request's
+checks ran the committed files: the web archive, the same step in the three browsers (run
+44955451513), and the `x86_64-android` library in its Android check app on Android 13 and 16
+x86_64 emulators, where `xlLibraryVersion()` answered and a workbook written in the app's
+folder with no temporary folder set read back cell for cell (run 44955451306). The same test
+passed that day over the committed `x86_64-linux` library on 0.2.8-dp.2's Linux standalone
+engine, headless. No engine on macOS or on ARM (Linux or Android) has loaded it, nor has any
+engine loaded the Windows or 32-bit release libraries: verified statically; needs an OXT
+pass. The demo stack,
 Spreadsheet Studio (`examples/xlsxt-demo.livecodescript`, the suite UI kit dressed in
 OXT-Beyond's dark look), was rebuilt on 2026-11-21 to open playing a tour of four scenes;
 the new window is driven on the Linux desktop engine by `tests/demo-drive.livecodescript`
