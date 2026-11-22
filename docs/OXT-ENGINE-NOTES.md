@@ -1547,21 +1547,24 @@ the controls it last heard of until it is closed and reopened (its
 ### 5.16 A control that names no text colour takes the system theme's, and a dark theme's is white
 **OBSERVED 2026-11-21** (Windows, OXT-Beyond 64-bit, the maintainer's PC under its dark
 theme; the day before, render3dxt's physics demo showed the same there, by that member's
-record). No error: a field's text and a tick box's label do not show, and selecting the
-text shows it is there. xlsxt's demo had its table (a kit `uiInput`) and every tick box's
-words white on the white the UI kit paints. On the same window every control that names a
-colour of its own drew right: the kit's labels, captions, status line and footer. The
-colour is inherited, control then card then stack, and reaches the theme only when none of
-them names one: OBSERVED the same day on Linux under xvfb with a stand-in, where the demo's
-stack named white and every field and tick box that named nothing drew white words, and
-each that named a colour drew its own.
+record, and the same day pdfxt's demo, in its first look on the kit, drew its page number
+and outline white on white, by pdfxt's record). No error: a field's text and a tick box's
+label do not show, and selecting the text shows it is there. xlsxt's demo had its table (a
+kit `uiInput`) and every tick box's words white on the white the UI kit paints. On the same
+window every control that names a colour of its own drew right: the kit's labels, captions,
+status line and footer. The colour is inherited, control then card then stack, and reaches
+the theme only when none of them names one: OBSERVED the same day on Linux under xvfb with
+a stand-in, where the demo's stack named white and every field and tick box that named
+nothing drew white words, and each that named a colour drew its own.
 **Rule:** give every control whose words sit on a fill you paint a `foregroundColor` of
 its own; a window that paints its own backgrounds cannot leave its text to the theme.
 OBSERVED to hold on that PC the same day: xlsxt's rebuilt demo, which names the colour of
 every field, label and tick box and the background of every entry field and list, and
 draws its own push buttons, read right throughout under the dark theme.
-**Gate:** for xlsxt's demo only, `xlsxt/tests/demo-drive.livecodescript` (2026-11-21),
-which fails a window where a field or tick box names no colour; no suite-wide gate.
+**Gate:** none suite-wide; two demos each hold their own window on the Linux engine:
+`xlsxt/tests/demo-drive.livecodescript` (2026-11-21) fails a window where a field or tick
+box names no colour, and `pdfxt/tests/demo-drive.livecodescript` (2026-11-21) one where a
+field or button names no colour of its own, or where any tick box or radio button is drawn.
 **Does NOT mean:** that a push button needs one. The theme draws a push button, and no run
 reported one unreadable (INFERRED: a dark theme draws its face dark, with its white words),
 so a dark ink set on one would sit on that dark face. Nor that Linux or macOS behave so: no
@@ -1636,39 +1639,64 @@ the centre the window has, wherever it is; only a stack whose centre is still th
 first one, near the screen's corner, is pushed off it.
 
 ### 5.19 A field lays out its first line 6 pixels above its top margin
-**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (the
-maintainer's PC), drawn and measured, and the same day measured on the
-headless Linux desktop engine (nothing drawn); the mechanism is in the engine
-source. curlxt Live's one-line labels, fields with `margins` 2 and
-`borderWidth` 0, showed their words with the tops cut off. `the formattedRect
-of line 1` of one at 16,6,600,24 was 16,2,234,16: its line box began 4 pixels
-ABOVE the field. In `engine/src/fieldf.cpp`, `getcontenty` is `rect.y +
-borderwidth - TEXT_Y_OFFSET`, `TEXT_Y_OFFSET` is 6 (`objdefs.h`), and the first
-line starts at that plus the top margin; the engine's own default margins are
-8, which start it 2 pixels under the top. `formattedHeight` takes off twice 6
-for the same reason, so a one-line field with margins of 2 reports 8 less than
-its line. A fixed line height below the font's own moves the words up further:
-the baseline is put a descent above the line's bottom
-(`MCField::do_recompute`), so the letters rise out of the line's box. curlxt
-Live's first fix did that (each label's `textHeight` set to its field's height
-less the margins), and the picture was no better. Segoe UI's own line, read
-from those boxes, was about 1.4 times the size in bold (15 at 11, 32 at 22) and
-1.5 times at 24.
-**Rule:** give a field a top margin of 6 or more (6 starts its first line at
-its top; the suite UI kit's fields have 6), and give a one-line label the
-font's own line height in a field about 1.5 times its size tall. Measure with
-`the formattedRect of line 1`, plus the field's `vScroll`, against the field's
-`rect`, not with the properties: a check that a fixed line height fitted the
-field passed over the cut-off labels.
-**Gate:** curlxt Live's boot self-check (`cdLineInside`, 2026-11-21) holds each
-of its 47 fields to it; with margins of 2 it failed all 46 that have them on
-the Linux engine (the log, with margins of its own, passed). No suite-wide
-gate.
-**Does NOT mean:** that the same margins cut the same letters everywhere: how
-far a letter rises above the line's box depends on the font, so a field can
-look whole on one platform and cut on another (only Windows has been looked
-at). Nor that a field's lower margin moves its text: it counts only in the
+**OBSERVED 2026-11-21** in two demos: pdfxt's on OXT-Beyond's Linux desktop engine
+(0.2.7-rc.6, `-ui`, no display: measured, nothing drawn) and on the maintainer's Windows PC
+(OXT-Beyond 0.2.8-dp.1, 64-bit: drawn), and curlxt Live on that PC (drawn and measured) and
+on the same Linux engine (measured). The engine source says why (DOCUMENTED:
+`MCField::getcontenty` in `engine/src/fieldf.cpp` puts the content's top at the field's top
+plus its border less `TEXT_Y_OFFSET`, which `objdefs.h` sets to 6, and the first line starts
+the top margin below that). On Linux, `the formattedRect of line 1` of a borderless field
+with margins "2,1,2,1" began 5 pixels above the field's top, and with a top margin of 7, 1
+pixel below it; pdfxt's demo had 28 fields whose lines began above them, every label 5 pixels
+so. On Windows the same window showed it: the kicker's capitals touched the top edge of its
+field, and a 10-point caption lost the tops of its tall letters, while every field had room
+to spare below its words. curlxt Live's one-line labels (margins 2, `borderWidth` 0) showed
+their words there with the tops cut off: the line box of one at 16,6,600,24 was
+16,2,234,16, 4 pixels ABOVE the field. No error. `formattedHeight` takes off twice 6 for the
+same reason, so a one-line field with margins of 2 reports 8 less than its line. A fixed line
+height below the font's own moves the words up further: the baseline is put a descent above
+the line's bottom (`MCField::do_recompute`), so the letters rise out of the line's box.
+curlxt Live's first fix did that (each label's `textHeight` set to its field's height less
+the margins), and the picture was no better. Segoe UI's own line, read from those boxes, was
+about 1.4 times the size in bold (15 at 11, 32 at 22) and 1.5 times at 24.
+**Rule:** a top margin places the first line only from 6 pixels up: a margin of 6 puts the
+line's box at the inside of the field's border (the suite kit's "6,6,6,6"), so give a field 6
+plus the room wanted above its first line. The engine's default margin, 8, leaves 2. Give a
+one-line label the font's own line height, in a field about 1.5 times its size tall. Measure
+with `the formattedRect` of its lines, plus the field's `vScroll`, against the field's
+`rect`, not with the properties: a check that a fixed line height fitted the field passed
+over the cut-off labels.
+**Gate:** two demos, each its own; no suite-wide gate. `pdfxt/tests/demo-drive.livecodescript`
+(2026-11-21): every field of the window that does not scroll must hold its lines (the
+formattedRect of them) inside its rect, and a line that does not wrap must fit across it. It
+named all 28 fields of the window before the fix, and with the 6 added to every top margin
+the window met the same Windows PC that day with no label cut (OBSERVED). curlxt Live's boot
+self-check (`cdLineInside`, 2026-11-21) holds each of its 47 fields to it; with margins of 2
+it failed all 46 that have them on the Linux engine (the log, with margins of its own,
+passed), and with margins of 6 that window read every label whole on the same Windows PC
+(OBSERVED).
+**Does NOT mean:** that a field that scrolls must keep its lines inside (they are meant to run
+on); nor that the same margins cut the same letters everywhere: how far a letter rises above
+the line's box depends on the font, so a field can look whole on one platform and cut on
+another (only Windows has been looked at); nor that the bottom margin moves the words: by the
+engine's own comment (`exec-interface-field.cpp`, `GetFormattedHeight`) it counts only in the
 formatted height and the scroll range.
+
+### 5.20 Deleting the defaultStack and then creating a stack kills the engine
+**OBSERVED 2026-11-21** (OXT-Beyond 0.2.7-rc.6, its Linux desktop engine run
+as `LiveCode-Community -ui` with no display, version 9.7.1-OXT build 25923;
+found when `pdfxt/tests/demo-drive.livecodescript` grew a stack it deletes).
+A script made a stack the defaultStack, by `go stack` or by
+`set the defaultStack`, deleted that stack, and then ran `create stack`: the
+engine ended on signal 11, with nothing for a `try` to catch. Each variant
+ran once that day: a stack that was never the defaultStack, deleted and
+followed by a create, ran clean; so did `close stack` in place of the
+delete, and so did setting the defaultStack to another stack before the
+delete.
+**Rule:** before deleting a stack, set the defaultStack to another one.
+**Does NOT mean:** a crash in the IDE (whose own scripts move the
+defaultStack; not tried), or on Windows or macOS (not tried); nor that a
+delete alone, or a create alone, is unsafe.
 
 ## 6. Sockets and processes
 

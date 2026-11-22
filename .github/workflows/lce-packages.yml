@@ -80,6 +80,7 @@ on:
       - 'render3dxt/src/**'
       - 'xlsxt/src/**'
       - 'gamepadxt/src/**'
+      - 'pdfxt/src/**'
       - 'webpxt/src/**'
       - 'barcodext/src/**'
       - 'oscxt/src/**'

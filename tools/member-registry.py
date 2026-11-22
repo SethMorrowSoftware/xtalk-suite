@@ -137,6 +137,11 @@ MEMBERS = [
            native=True, siblings=[],
            mirror_note="born in the suite (2026-11-20); its repository was "
                        "created empty for the suite to publish into"),
+    Member("pdfxt", "pdfxt", "extension", OWNER + "/pdfxt",
+           # Its gates read its own files only: no sibling beside it.
+           native=True, siblings=[],
+           mirror_note="born in the suite (2026-11-20); its repository was "
+                       "created empty for the suite to publish into"),
     Member("gamepadxt", "gamepadxt", "extension", OWNER + "/gamepadxt",
            # Its gates read its own files only: no sibling beside it.
            native=True, siblings=[],

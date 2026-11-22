@@ -97,8 +97,13 @@ def main():
     # and a height line at 1100 x 620 (oscxt's osc-show-surface at kOsdW x
     # kOsdH, midixt's midi-stage at kMdsW x kMdsH, artnetxt's
     # artnet-light-board at kAlbW x kAlbH).
-    if "67 stack window dimension" not in out:
-        print("test-stack-size: expected 67 measured dimensions, got:\n" + out)
+    # 69 the same day, merged with the pdfxt branch: pdfxt/examples/
+    # pdfxt-demo.livecodescript, the PDF viewer, a width line and a height
+    # line at kPvWidth x kPvHeight (1180 x 630). (It first carried one
+    # uiChrome call at that size, then left the kit for OXT-Beyond's dark
+    # look the same day.)
+    if "69 stack window dimension" not in out:
+        print("test-stack-size: expected 69 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()

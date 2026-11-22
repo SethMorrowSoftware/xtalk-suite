@@ -35,7 +35,7 @@ COPY_SETS = {
                                 "datachannelxt", "onionxt", "coinxt",
                                 "riptide", "nocloud", "box2dxt",
                                 "holde-em", "nostrxt", "curlxt", "box3dxt",
-                                "audioxt", "render3dxt", "xlsxt", "gamepadxt",
+                                "audioxt", "render3dxt", "pdfxt", "xlsxt", "gamepadxt",
                                 "barcodext", "webpxt", "oscxt", "midixt",
                                 "artnetxt"],
     # The shim-coverage gate and its fixture (2026-11-20): written once for

@@ -224,6 +224,10 @@ NO_HARNESS = {
               "its native smoke and fuzz tests (ASan/UBSan) and its own "
               "engine self-test on the headless server engine run in its "
               "native lane (webpxt/tests/engine-selftest.lc)",
+    "pdfxt": "joined 2026-11-20 with no in-engine harness in the paste yet; "
+             "its native smoke test (ASan/UBSan) and its own engine self-test "
+             "on the headless server engine run in its native lane "
+             "(pdfxt/tests/engine-selftest.lc)",
     "oscxt": "joined 2026-11-21 with no harness in the paste yet; its own "
              "runners compile the binding with lc-compile -Werror, run it "
              "under lc-run and run its Script layer in the standalone engine "

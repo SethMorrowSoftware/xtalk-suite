@@ -145,6 +145,15 @@ EXEMPT = {
     # own uiStatus, in the dark palette.
     os.path.join("curlxt", "examples", "curlxt-live.livecodescript"):
         "OXT-Beyond's dark showcase look at the owner's request (2026-11-21); carries the boot self-check",
+    # pdfxt's demo is a showcase in OXT-Beyond's dark look (the Render3D
+    # Tour's palette), to the owner's ask of 2026-11-21 that the suite's
+    # demos match its polished showcase demos. It left the kit that day: the
+    # kit's palette is light and fixed, and under Windows' dark appearance
+    # OXT-Beyond gave the kit's fields white text on their white ground
+    # (the maintainer's Windows, 2026-11-21). It says every colour of every
+    # control itself, and its drive holds that (pdfxt/tests/demo-drive).
+    os.path.join("pdfxt", "examples", "pdfxt-demo.livecodescript"):
+        "a showcase in OXT-Beyond's dark look, every colour its own (2026-11-21)",
     # gamepadxt's Gamepad Lab is a showcase in the dark look of the 3D demos
     # (Render3D Tour, the physics demo, Box3D Playground), to the bar the
     # owner set on 2026-11-21: a dark stage, the OXT-Beyond header, and every

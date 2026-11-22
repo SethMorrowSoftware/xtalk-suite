@@ -232,11 +232,42 @@ def main():
           "  ...and booting the emulator each member's API level asks for, "
           "read from the script", "")
 
+    # The companions (pdfxt's pdfium.so, 2026-11-20): three tables name
+    # them - this script's, the installer's and the freshness gate's - and a
+    # member one of them forgot would build a library whose second file is
+    # refused at install, or land one nothing checks. The workflow's staging
+    # step must carry what the script says, or the bundle arrives without it
+    # and the installer refuses the whole run.
+    for member in native:
+        rc, out, err = run(["--companion", member])
+        named = out.split()
+        inst = installer.COMPANIONS.get(member)
+        gate = next(m for m in freshness.MEMBERS if m["name"] == member).get("companions", {})
+        check(rc == 0 and named == ([inst[0] + ".so"] if inst else [])
+              and sorted(n + ".so" for n in gate) == named
+              and (not inst or [inst[1].replace(os.sep, "/")] == list(gate.values())),
+              f"{member}: the script, the installer and the freshness gate "
+              f"agree on its companion ({named or 'none'})", (named, inst, gate))
+        if named:
+            pin = os.path.join(ROOT, inst[1])
+            rows = {}
+            with open(pin, encoding="utf-8") as fh:
+                for line in fh:
+                    parts = line.split("#", 1)[0].split()
+                    if len(parts) == 4:
+                        rows[parts[0]] = parts[3]
+            check(all(re.fullmatch(r"[0-9a-f]{64}", rows.get(p, "")) for p in platforms),
+                  f"  ...and its pin has a row for every Android platform id",
+                  sorted(rows))
+    check("tools/build-android.sh --companion" in job,
+          "the workflow's staging step carries each member's companion, as "
+          "the script names it", "")
+
     # 2. The pins.
     rc, out, err = run(["--pins"])
     pins = {line.split()[0]: line.split()[1:] for line in out.splitlines()}
-    check(rc == 0 and set(pins) == {"ndk", "api", "api-torrentxt", "openssl",
-                                    "boost"},
+    check(rc == 0 and set(pins) == {"ndk", "api", "api-torrentxt",
+                                    "companion-api-pdfxt", "openssl", "boost"},
           "--pins names the NDK, the API levels, OpenSSL and Boost", out)
     check(pins.get("api") == [str(installer.ANDROID_API_FLOOR)],
           "the API level it builds for is the installer's floor",
@@ -251,6 +282,20 @@ def main():
           "  ...and the members with a level of their own, and those "
           "levels, are the installer's ANDROID_API_FOR",
           (own, installer.ANDROID_API_FOR))
+    # A companion's level (pdfxt's pdfium.so: PDFium's builders' API 23).
+    # Nothing is BUILT for it, so the installer has no row for it; it is a
+    # pin because pdfxt's own lane tests on that Android, the oldest where
+    # the companion loads, so the emulator script must boot it. Exactly the
+    # members with a companion have one, and it lies above the floor (at the
+    # floor the floor's emulator would do).
+    with_companion = sorted(m for m in members if run(["--companion", m])[1].split())
+    levels = {k[len("companion-api-"):]: v for k, v in pins.items()
+              if k.startswith("companion-api-")}
+    check(with_companion and sorted(levels) == with_companion
+          and all(len(v) == 1 and v[0].isdigit()
+                  and int(v[0]) > installer.ANDROID_API_FLOOR for v in levels.values()),
+          "  ...and the members with a companion, and the level each "
+          "companion was built for, above the floor", (levels, with_companion))
     asked = {}
     for member in members:
         rc, out, err = run(["--api", member])
@@ -272,12 +317,16 @@ def main():
                            "--apis"], capture_output=True, text=True,
                           timeout=60)
     boots = done.stdout.split()
+    tested_on = {a for _rc, a in asked.values()} | {v[0] for v in levels.values()}
     check(done.returncode == 0 and boots[:1] == ["apis"]
-          and sorted(boots[1:], key=int) == sorted({a for _rc, a in asked.values()}, key=int),
+          and sorted(boots[1:], key=int) == sorted(tested_on, key=int),
           "the emulator script boots exactly the API levels the members "
-          "are built for", (done.returncode, done.stdout, asked))
+          "are built for, and their companions' levels",
+          (done.returncode, done.stdout, asked, levels))
+    # A level in neither set (22: between the floor and every level above
+    # it), so the refusal is the script's, not a missing image's.
     done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
-                           "start", "23"], capture_output=True, text=True,
+                           "start", "22"], capture_output=True, text=True,
                           timeout=60)
     check(done.returncode == 2 and "not an Android this script boots" in done.stderr,
           "  ...and refuses any other level (exit 2)",
