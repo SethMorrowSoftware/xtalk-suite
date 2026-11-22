@@ -63,6 +63,23 @@ WHAT IT CHECKS, per CORPUS file
        of the handler's parameters, and no element but Example may appear
        twice in one block (a second one replaces the first). Rewrap the
        prose so another word leads the line.
+    8. NO PLAIN COMMENT LINE READS AS AN ENTRY: the parser skips only
+       `/** */` blocks. A plain `/* */` comment is source to it, line by
+       line, so a line of one led by a word its entry switch names
+       (PARSER_ENTRY_WORDS, compared case blind as the engine compares)
+       starts an entry the compiler never sees. `library` makes a second
+       library entry with no block ("Required documentation not found
+       for library implements ..."); `handler` or `on` makes one that
+       runs to the next line led by `end`, swallowing the `library` line
+       and its block on the way, so the parser finds no library at all
+       ("No extension name found"), the extensions site's docs step
+       fails the package and an IDE's Dictionary has no page for it.
+       Found 2026-11-21 by running that step (tools/lce-engine-check.lc
+       docs, Beyond's real parser) over ShowControl's three bindings:
+       each header comment had one such line (oscxt's `handler
+       brackets ...`, midixt's `on the wire ...`, artnetxt's `library
+       implements ...`). Rewrap the comment so another word leads the
+       line.
 
     It does not judge the prose; that is review. It mirrors the parser's
     entry rules, so a change to Beyond's revdocsparser can outdate it.
@@ -102,11 +119,21 @@ CORPUS = [
     "box3dxt/src/box3dxt-kit.livecodescript",
     "audioxt/src/audioxt.lcb",
     "render3dxt/src/render3dxt.lcb",
+    "pdfxt/src/pdfxt.lcb",
     "gamepadxt/src/gamepadxt.lcb",
     "xlsxt/src/xlsxt.lcb",
+    "barcodext/src/barcodext.lcb",
+    "webpxt/src/webpxt.lcb",
     "curlxt/src/curl.lcb",
     "curlxt/src/curl-helpers.livecodescript",
     "curlxt/src/tsnet.livecodescript",
+    # Not shipped by Beyond yet, like box3dxt and xlsxt above: ShowControl's
+    # three bindings (2026-11-21). The IDE's Dictionary reads their blocks
+    # through the same parser whenever the Extension Manager installs one,
+    # so the rules hold for them already.
+    "oscxt/src/osc.lcb",
+    "midixt/src/midi.lcb",
+    "artnetxt/src/artnet.lcb",
 ]
 
 # Script handlers that are public only because the engine or a `send`
@@ -184,6 +211,13 @@ ELEMENT_LINE = re.compile(r"^ *([tT]he [rR]esult|\w+) *(?:\(( *(?:optional |in |
 LIBRARY_ELEMENTS = {"Title", "Author", "Summary", "Description", "Tags"}
 ENTRY_ELEMENTS = {"Summary", "Description", "Returns", "Example", "References", "Tags"}
 REPEATABLE = {"Example"}
+# The first words on which Beyond's revDocsExtractDocBlocks switches to
+# start an entry, verbatim from its switch (check 8). Some are harmless
+# there in most spellings (`tail` outside LCIDL, `private` not followed by
+# `handler`); the rule names them all, which costs a rewrap at most.
+PARSER_ENTRY_WORDS = {"external", "module", "library", "widget", "metadata",
+                      "handler", "private", "public", "syntax", "property",
+                      "on", "tail", "command", "function"}
 
 
 def lcb_params(text):
@@ -211,7 +245,9 @@ def lcs_params(rest):
 
 def scan(path, text):
     """Yield ("block", lineno, body) and ("code", lineno, line) items,
-    skipping blank lines, line comments and non-doc block comments."""
+    skipping blank lines, line comments and non-doc block comments, bar
+    ("plain", lineno, line) for a line of a non-doc block comment that the
+    docs parser reads as the start of an entry (check 8)."""
     lines = text.split("\n")
     i = 0
     while i < len(lines):
@@ -239,6 +275,11 @@ def scan(path, text):
                 if i >= len(lines):
                     return
                 rest = lines[i]
+                # the parser's `word 1 of tLine`: the opening line's is
+                # "/*...", which starts nothing; every later line's counts
+                words = rest.split()
+                if words and words[0].lower() in PARSER_ENTRY_WORDS:
+                    yield ("plain", i + 1, rest)
         elif s and not COMMENT_LINE.match(line):
             yield ("code", i + 1, line)
         i += 1
@@ -300,6 +341,12 @@ def check_file(path, text, exempt, problems, documented_names, links):
     for kind, lineno, item in scan(path, text):
         if kind == "error":
             problems.append(f"{path}:{lineno}: {item}")
+            continue
+        if kind == "plain":
+            problems.append(f"{path}:{lineno}: Beyond's docs parser reads this line of a "
+                            f"/* */ comment as source, and {item.split()[0]!r} starts an "
+                            f"entry there: {item.strip()[:50]} (rewrap so another word "
+                            f"leads the line)")
             continue
         if kind == "block":
             blocks_seen += 1

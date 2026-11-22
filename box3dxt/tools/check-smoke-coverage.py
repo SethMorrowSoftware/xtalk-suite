@@ -191,6 +191,8 @@ FUZZ_INT = {
     "width": "small(-1, 48)", "height": "small(-1, 48)", "mode": "small(-1, 3)",
     "x": "small(-2, 50)", "y": "small(-2, 50)",
     "red": "small(-2, 257)", "green": "small(-2, 257)", "blue": "small(-2, 257)",
+    "topRed": "small(-2, 257)", "topGreen": "small(-2, 257)", "topBlue": "small(-2, 257)",
+    "bottomRed": "small(-2, 257)", "bottomGreen": "small(-2, 257)", "bottomBlue": "small(-2, 257)",
     "sides": "small(0, 34)", "substeps": "small(-1, 9)", "countX": "small(0, 9)", "countZ": "small(0, 9)",
 }
 FUZZ_DOUBLE = {

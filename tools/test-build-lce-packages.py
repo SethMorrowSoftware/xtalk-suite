@@ -165,6 +165,10 @@ def test_table():
     # ...but SDL itself, linked as a DLL instead of statically, ships with
     # nothing, so a library importing it is refused
     expect('SDL3.dll is not a system DLL', not lce.is_system_dll('SDL3.dll'))
+    # what PDFium's prebuilt pdfium.dll imports (pdfxt), by the case it has
+    for dll in ('KERNEL32.dll', 'USER32.dll', 'ADVAPI32.dll', 'GDI32.dll'):
+        expect('%s counts as a system DLL' % dll, lce.is_system_dll(dll))
+    expect('pdfium.dll is not a system DLL', not lce.is_system_dll('pdfium.dll'))
     expect('a pinned runtime DLL is not a system DLL', not lce.is_system_dll('vcruntime140.dll'))
     pins = copy.deepcopy(lce.VC_RUNTIME_PINS)
     try:

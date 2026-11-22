@@ -280,15 +280,15 @@ constant kStHeight = 640
 -- hand-copied number that let coin-wallet's controls of 2026-09-02..04 never
 -- appear in a stack that already existed. The "suite-board-" prefix keeps the
 -- `is` in suBuild a TEXT compare (engine note 2.11).
-constant kSuUiVersion = "suite-board-b277b2baf2ea"
+constant kSuUiVersion = "suite-board-57e6e42b9f81"
 -- One entry per tools/member-registry.py member, IN ITS ORDER AND ITS SPELLING,
 -- then the cross-member row. check-suite-selftest.py holds all three lists to
 -- the registry, so a new member cannot be missing from the board.
-constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,audioxt,render3dxt,gamepadxt,coinxt,xlsxt,curlxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
-constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,audioxt,render3dxt,gamepadxt,CoinXT,xlsxt,curlxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
+constant kSuKeys = "sodiumxt,torrentxt,enetxt,datachannelxt,box2dxt,box3dxt,audioxt,render3dxt,pdfxt,gamepadxt,coinxt,xlsxt,curlxt,barcodext,webpxt,oscxt,midixt,artnetxt,onionxt,nostrxt,riptide,nocloud,holde-em,cross"
+constant kSuNames = "SodiumXT,TorrentXT,enetxt,DataChannelXT,Box2Dxt,box3dxt,audioxt,render3dxt,pdfxt,gamepadxt,CoinXT,xlsxt,curlxt,barcodext,webpxt,oscxt,midixt,artnetxt,OnionXT,NostrXT,Riptide Social,No Cloud Quick Share,holde-em,Cross-member + teardown"
 -- The members with no in-engine harness (tools/build-suite-selftest.py's
 -- NO_HARNESS): a name in the band under the rows, and no pill or Run.
-constant kSuNoHarness = "audioxt,box3dxt,curlxt,gamepadxt,nocloud,render3dxt,xlsxt"
+constant kSuNoHarness = "artnetxt,audioxt,barcodext,box3dxt,curlxt,gamepadxt,midixt,nocloud,oscxt,pdfxt,render3dxt,webpxt,xlsxt"
 -- Row geometry: the first row's top, and the pitch. The pitch was 34 until
 -- curlxt made the thirteenth row (2026-11-14): at 34 its last row ran into the
 -- members caption at 546; at 31 a row's controls (+5 to +30) still clear the
@@ -307,12 +307,27 @@ constant kSuNoHarness = "audioxt,box3dxt,curlxt,gamepadxt,nocloud,render3dxt,xls
 -- press, so it no longer takes a row: the rows are the members that have a
 -- Run (and the cross row), at a pitch of 29 again, and the others are names
 -- in a band under the last row, kSuNoteColumns to a line, kSuNoteStep
--- apart. suRowTop and suNoteRect are the whole geometry; suRowsFit (the
+-- apart. suRowTop and suNoteCell are the whole geometry; suRowsFit (the
 -- boot self-check) and tools/check-suite-ui-boot.py hold it. With eleven
--- rows the band has room for four lines above the caption at 546: twelve
--- such members. Verified statically; the band needs an OXT pass.
+-- rows at 29 the band had room for four lines above the caption at 546:
+-- twelve such members. oscxt, midixt and artnetxt (2026-11-21) made nine,
+-- three lines whose names end at 523, and gamepadxt, landed beside them,
+-- ten: four lines, whose names end at 539. webpxt and barcodext, landed
+-- first, made twelve, and the four lines were full. pdfxt made the
+-- thirteenth (2026-11-22), so the pitch is 28: a row's controls (+5 to
+-- +29, its buttons) still clear the next row's (+33), the last row's end
+-- at 445, and the band has five lines above the caption, room for
+-- fifteen, the fifth line's names ending at 544 (drawn so on OXT-Beyond's
+-- Linux engine under a virtual display, 2026-11-22, runbook section 8).
+-- suRowsFit and tools/check-suite-ui-boot.py fail a name that ends below
+-- the caption. A name takes its whole cell, 152 wide: a
+-- muted "gates" beside each left it 108, and the band's first engine draw
+-- (Linux, 2026-11-21, runbook section 8) showed "No Cloud Quick Share" as
+-- "No Cloud Quick", its last word wrapped out of sight (124 pixels wanted at
+-- 10 bold); the caption above the names already says where their tests run.
+-- Drawn on that engine; a desktop IDE's fonts need an OXT pass.
 constant kSuRowTop = 136
-constant kSuRowStep = 29
+constant kSuRowStep = 28
 constant kSuNoteStep = 16
 constant kSuNoteColumns = 3
 -- Every control this script names, DERIVED by tools/check-demo-control-lists.py
@@ -1818,13 +1833,16 @@ command suPaintRows
       if not suNoHarness(tKey) then
          put suRowTop(tI) into tTop
          put suRowState(tKey, false) into tState
-         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",296," & (tTop + 27)), (line 1 of tState)
+         uiPill ("suPill" & tKey), (line 2 of tState), ("200," & (tTop + 7) & ",280," & (tTop + 27)), (line 1 of tState)
          if suInScope(tKey) then
             put suNum(sSuP[tKey]) && "/" && suNum(sSuF[tKey]) && "/" && suNum(sSuS[tKey]) into tCounts
          else
             put "-" into tCounts
          end if
-         uiLabel ("suCount" & tKey), tCounts, ("300," & (tTop + 9) & ",376," & (tTop + 25)), 10
+         -- 94 x 18 since 2026-11-21: at 76 a three-figure count wrapped on
+         -- the Linux engine and hid its skips (the pill gave up 16 for it),
+         -- and at 16 tall the line's 17 pixels were cut by one
+         uiLabel ("suCount" & tKey), tCounts, ("284," & (tTop + 8) & ",378," & (tTop + 26)), 10
          set the textFont of field ("suCount" & tKey) to uiMonoFont()
          set the foregroundColor of field ("suCount" & tKey) to kUiInkSoft
       end if
@@ -1843,9 +1861,7 @@ function suRowControls
    set the itemDelimiter to comma
    repeat for each item tKey in tKeys
       put "suName" & tKey & comma after tOut
-      if suNoHarness(tKey) then
-         put "suNote" & tKey & comma after tOut
-      else
+      if not suNoHarness(tKey) then
          put "suPill" & tKey & comma & "suPill" & tKey & "Bg" & comma & "suCount" & tKey & comma & "suRun" & tKey & comma & "suShow" & tKey & comma after tOut
       end if
    end repeat
@@ -1947,8 +1963,8 @@ command suBuildAll
 
    -- 1. the members, one row each, in tools/member-registry.py's order
    uiSection "suSecMembers", "1.  Members: one row per member with an in-engine self-test", "20,96,488,114"
-   uiCap "suHeadStatus", "status", "200,118,296,132"
-   uiCap "suHeadCounts", "pass / fail / skip", "300,118,378,132"
+   uiCap "suHeadStatus", "status", "200,118,280,132"
+   uiCap "suHeadCounts", "pass / fail / skip", "284,118,378,132"
    uiCap "suHeadRun", "this member", "380,118,488,132"
    put kSuKeys into tKeys
    put kSuNames into tNames
@@ -1958,14 +1974,13 @@ command suBuildAll
       put item tI of tKeys into tKey
       if suNoHarness(tKey) then
          -- a name in the band: uiLabel, not uiCap, so a cell keeps the height
-         -- it was given whatever the platform's line metrics are
+         -- it was given whatever the platform's line metrics are, and the
+         -- whole cell's width, so a long title does not wrap out of sight
          put suNoteCell(tI) into tCell
          put item 1 of tCell into tLeft
          put item 2 of tCell into tTop
-         uiLabel ("suName" & tKey), (item tI of tNames), (tLeft & comma & tTop & comma & (tLeft + 108) & comma & (tTop + 14)), 10
+         uiLabel ("suName" & tKey), (item tI of tNames), (tLeft & comma & tTop & comma & (tLeft + 152) & comma & (tTop + 14)), 10
          set the textStyle of field ("suName" & tKey) to "bold"
-         uiLabel ("suNote" & tKey), "gates", ((tLeft + 110) & comma & tTop & comma & (tLeft + 150) & comma & (tTop + 14)), 10
-         set the foregroundColor of field ("suNote" & tKey) to kUiMuted
       else
          put suRowTop(tI) into tTop
          uiLabel ("suName" & tKey), (item tI of tNames), ("20," & (tTop + 7) & ",196," & (tTop + 27)), 12

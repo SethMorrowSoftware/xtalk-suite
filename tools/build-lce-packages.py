@@ -176,10 +176,12 @@ WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win3
 # setupapi.dll, ole32.dll and shell32.dll are what SDL, inside gamepadxt,
 # imports besides those (SetupAPI lists the controllers plugged in, ole32 is
 # COM), all three in every Windows since 2000. Beyond's list gained the same
-# three for gamepadxt (its pull requests 612 and 620)
+# three for gamepadxt (its pull requests 612 and 620); gdi32.dll is GDI,
+# which PDFium's prebuilt pdfium.dll (pdfxt ships it beside its own library)
+# imports besides kernel32, user32 and advapi32, in every Windows there is
 SYSTEM_DLLS = frozenset(('kernel32.dll', 'user32.dll', 'advapi32.dll', 'ws2_32.dll', 'winmm.dll',
                          'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll',
-                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll'))
+                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll', 'gdi32.dll'))
 SYSTEM_DLL_PREFIXES = ('api-ms-win-crt-',)
 
 # The runtime DLLs copied next to the libraries that import them, as
@@ -228,6 +230,12 @@ VERSION_FROM = {
     'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
+    'pdfxt': ('src/pdfxt.lcb', LCB_VERSION),
+    'webpxt': ('src/webpxt.lcb', LCB_VERSION),
+    'barcodext': ('src/barcodext.lcb', LCB_VERSION),
+    'oscxt': ('src/osc.lcb', LCB_VERSION),
+    'midixt': ('src/midi.lcb', LCB_VERSION),
+    'artnetxt': ('src/artnet.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -264,6 +272,21 @@ LICENCES = {
     # SDL 3's zlib terms, and the BSD terms of the HIDAPI copy SDL carries,
     # are in the member's LICENSE, below its own
     'gamepadxt': [('LICENSE', None, None)],
+    # PDFium's own licence and those of what it compiles in, from the
+    # licenses/ folder of the pinned archives
+    'pdfxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    # libwebp's BSD terms, and the patent grant that comes with it, are in
+    # the member's LICENSE, below its own
+    'webpxt': [('LICENSE', None, None)],
+    # zxing-cpp's Apache 2.0 text, and the BSD terms of the Zint backend its
+    # writer is built on (with the two fonts Zint embeds), are in the
+    # member's LICENSE, below its own
+    'barcodext': [('LICENSE', None, None)],
+    # tinyosc's terms (oscxt) and RtMidi's (midixt), the one component each
+    # library compiles in
+    'oscxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'midixt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'artnetxt': [('LICENSE', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -370,6 +393,42 @@ PACKAGES = [
     # no device and needs no controller.
     P('lcb', 'gamepadxt', 'org.openxtalk.library.gamepadxt', 'src/gamepadxt.lcb', 'gamepadxt',
       'gpLibraryVersion()', '^SDL 3\\.[0-9]+\\.[0-9]+$'),
+    # pdfxt (#191): read-only PDF through PDFium. Two files a platform: its
+    # own library and the pinned prebuilt PDFium beside it, which the shim
+    # loads from its own folder at run time (so no import names it); a
+    # package carries every file of a platform's folder, so both go in. It
+    # joined with no library committed, so the row waits for its first
+    # release-binaries dispatch. pdfLibraryVersion() checks the ABI first
+    # and does not load PDFium.
+    P('lcb', 'pdfxt', 'org.openxtalk.library.pdfxt', 'src/pdfxt.lcb', 'pdfxt',
+      'pdfLibraryVersion()', '^pdfxt ABI [0-9]+; PDFium chromium/[0-9]+'),
+    # webpxt (2026-11-21, landed with its libraries, #199): WebP pictures
+    # read and written through libwebp, compiled in. wpLibraryVersion()
+    # checks the ABI first, so a library of another release fails the probe
+    # by name, and it reads no picture.
+    P('lcb', 'webpxt', 'org.openxtalk.library.webpxt', 'src/webpxt.lcb', 'webpxt',
+      'wpLibraryVersion()', '^webpxt ABI [0-9]+; libwebp [0-9]+\\.[0-9]+'),
+    # barcodext (2026-11-21, landed with its libraries, #199): barcodes and
+    # QR codes read from pictures and made into them through zxing-cpp,
+    # compiled in. bcLibraryVersion() checks the ABI first and reads no
+    # picture.
+    P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
+      'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
+    # ShowControl (#200): OSC, MIDI and Art-Net. oscxt and midixt joined with
+    # no library committed, so their rows wait for their first
+    # release-binaries dispatch. Each probe answers the loaded library's ABI
+    # number, 2 for this binding (box2dxt's b2Version() is the precedent), so
+    # a library of another release fails it by name; neither opens a socket
+    # or a port.
+    P('lcb', 'oscxt', 'org.openxtalk.library.osc', 'src/osc.lcb', 'oscxt', 'oscVersion()', '^2$'),
+    P('lcb', 'midixt', 'org.openxtalk.library.midi', 'src/midi.lcb', 'midixt', 'midiVersion()', '^2$'),
+    # artnetxt binds no library of its own: it builds and reads Art-Net
+    # packets in LCB and the engine's datagram sockets carry them. So it is
+    # a pure module (native=False): no code/ folder, nothing to wait for. Its
+    # probe builds an ArtPoll, which is 14 bytes (the ID, the OpCode, the
+    # protocol version, the flags and the diagnostic priority).
+    P('lcb', 'artnetxt', 'org.openxtalk.library.artnet', 'src/artnet.lcb', 'artnetxt',
+      'the number of bytes in artnetBuildPoll()', '^14$', native=False),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),

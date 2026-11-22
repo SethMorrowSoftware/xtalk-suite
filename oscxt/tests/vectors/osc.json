@@ -1,0 +1,623 @@
+{
+ "_comment": "Shared OSC 1.0 wire-format vectors. Checked by tests/vectors_reference_test.py (clean-room Python + python-osc), the C smoke test (via tests/vectors/vectors.h from tools/gen_vectors.py) and the LCB binding under lc-run (tools/run-lcb-tests.py). Arg values are decimal STRINGS (as the binding passes them); blobs are hex.",
+ "messages": [
+  {
+   "name": "spec 1.0 example: /oscillator/4/frequency f 440.0",
+   "address": "/oscillator/4/frequency",
+   "args": [
+    [
+     "f",
+     "440.0"
+    ]
+   ],
+   "hex": "2f6f7363696c6c61746f722f342f6672657175656e6379002c66000043dc0000",
+   "source": "OSC 1.0 specification, 'OSC Message' example 1"
+  },
+  {
+   "name": "spec 1.0 example: /foo iisff",
+   "address": "/foo",
+   "args": [
+    [
+     "i",
+     "1000"
+    ],
+    [
+     "i",
+     "-1"
+    ],
+    [
+     "s",
+     "hello"
+    ],
+    [
+     "f",
+     "1.234"
+    ],
+    [
+     "f",
+     "5.678"
+    ]
+   ],
+   "hex": "2f666f6f000000002c69697366660000000003e8ffffffff68656c6c6f0000003f9df3b640b5b22d",
+   "source": "OSC 1.0 specification, 'OSC Message' example 2"
+  },
+  {
+   "name": "no arguments",
+   "address": "/ping",
+   "args": [],
+   "hex": "2f70696e670000002c000000"
+  },
+  {
+   "name": "address length a multiple of 4 needs a full NUL word",
+   "address": "/abc",
+   "args": [],
+   "hex": "2f616263000000002c000000"
+  },
+  {
+   "name": "one int32",
+   "address": "/i",
+   "args": [
+    [
+     "i",
+     "42"
+    ]
+   ],
+   "hex": "2f6900002c6900000000002a"
+  },
+  {
+   "name": "int32 extremes",
+   "address": "/ext",
+   "args": [
+    [
+     "i",
+     "2147483647"
+    ],
+    [
+     "i",
+     "-2147483648"
+    ]
+   ],
+   "hex": "2f657874000000002c6969007fffffff80000000"
+  },
+  {
+   "name": "three args: the type-tag terminator regression",
+   "address": "/three",
+   "args": [
+    [
+     "i",
+     "1"
+    ],
+    [
+     "f",
+     "2.5"
+    ],
+    [
+     "d",
+     "3.25"
+    ]
+   ],
+   "hex": "2f746872656500002c696664000000000000000140200000400a000000000000",
+   "source": "argCount % 4 == 3 once lost the type-tag NUL"
+  },
+  {
+   "name": "seven args: terminator again at 8",
+   "address": "/seven",
+   "args": [
+    [
+     "i",
+     "1"
+    ],
+    [
+     "i",
+     "2"
+    ],
+    [
+     "i",
+     "3"
+    ],
+    [
+     "i",
+     "4"
+    ],
+    [
+     "i",
+     "5"
+    ],
+    [
+     "i",
+     "6"
+    ],
+    [
+     "i",
+     "7"
+    ]
+   ],
+   "hex": "2f736576656e00002c696969696969690000000000000001000000020000000300000004000000050000000600000007"
+  },
+  {
+   "name": "string padding 1..4",
+   "address": "/s",
+   "args": [
+    [
+     "s",
+     "a"
+    ],
+    [
+     "s",
+     "ab"
+    ],
+    [
+     "s",
+     "abc"
+    ],
+    [
+     "s",
+     "abcd"
+    ]
+   ],
+   "hex": "2f7300002c737373730000006100000061620000616263006162636400000000"
+  },
+  {
+   "name": "empty string",
+   "address": "/e",
+   "args": [
+    [
+     "s",
+     ""
+    ]
+   ],
+   "hex": "2f6500002c73000000000000"
+  },
+  {
+   "name": "blob padding 0..5 bytes",
+   "address": "/b",
+   "args": [
+    [
+     "b",
+     ""
+    ],
+    [
+     "b",
+     "01"
+    ],
+    [
+     "b",
+     "0102"
+    ],
+    [
+     "b",
+     "010203"
+    ],
+    [
+     "b",
+     "01020304"
+    ],
+    [
+     "b",
+     "0102030405"
+    ]
+   ],
+   "hex": "2f6200002c62626262626200000000000000000101000000000000020102000000000003010203000000000401020304000000050102030405000000"
+  },
+  {
+   "name": "blob containing NUL bytes",
+   "address": "/bn",
+   "args": [
+    [
+     "b",
+     "00ff00ff00"
+    ]
+   ],
+   "hex": "2f626e002c6200000000000500ff00ff00000000"
+  },
+  {
+   "name": "double",
+   "address": "/d",
+   "args": [
+    [
+     "d",
+     "3.141592653589793"
+    ]
+   ],
+   "hex": "2f6400002c640000400921fb54442d18"
+  },
+  {
+   "name": "float fractions",
+   "address": "/f",
+   "args": [
+    [
+     "f",
+     "0.5"
+    ],
+    [
+     "f",
+     "-0.25"
+    ],
+    [
+     "f",
+     "0.1"
+    ]
+   ],
+   "hex": "2f6600002c666666000000003f000000be8000003dcccccd"
+  },
+  {
+   "name": "int64 extremes",
+   "address": "/h",
+   "args": [
+    [
+     "h",
+     "9223372036854775807"
+    ],
+    [
+     "h",
+     "-9223372036854775808"
+    ]
+   ],
+   "hex": "2f6800002c6868007fffffffffffffff8000000000000000"
+  },
+  {
+   "name": "timetags: immediate, NTP with top bit set, max",
+   "address": "/t",
+   "args": [
+    [
+     "t",
+     "1"
+    ],
+    [
+     "t",
+     "16045690984503098046"
+    ],
+    [
+     "t",
+     "18446744073709551615"
+    ]
+   ],
+   "hex": "2f7400002c747474000000000000000000000001deadbeefcafebabeffffffffffffffff",
+   "source": "unsigned NTP-64: a 'now' timetag has the top bit set"
+  },
+  {
+   "name": "no-value types",
+   "address": "/flags",
+   "args": [
+    [
+     "T"
+    ],
+    [
+     "F"
+    ],
+    [
+     "N"
+    ],
+    [
+     "I"
+    ]
+   ],
+   "hex": "2f666c61677300002c54464e49000000"
+  },
+  {
+   "name": "every type in one message",
+   "address": "/all",
+   "args": [
+    [
+     "i",
+     "-42"
+    ],
+    [
+     "f",
+     "0.5"
+    ],
+    [
+     "s",
+     "hello"
+    ],
+    [
+     "b",
+     "deadbeef"
+    ],
+    [
+     "h",
+     "-1"
+    ],
+    [
+     "t",
+     "2"
+    ],
+    [
+     "d",
+     "-2.5"
+    ],
+    [
+     "T"
+    ],
+    [
+     "F"
+    ],
+    [
+     "N"
+    ],
+    [
+     "I"
+    ]
+   ],
+   "hex": "2f616c6c000000002c6966736268746454464e4900000000ffffffd63f00000068656c6c6f00000000000004deadbeefffffffffffffffff0000000000000002c004000000000000"
+  },
+  {
+   "name": "TouchOSC-style fader",
+   "address": "/1/fader1",
+   "args": [
+    [
+     "f",
+     "0.75"
+    ]
+   ],
+   "hex": "2f312f6661646572310000002c6600003f400000"
+  },
+  {
+   "name": "QLab-style cue go",
+   "address": "/cue/12.5/start",
+   "args": [],
+   "hex": "2f6375652f31322e352f7374617274002c000000"
+  }
+ ],
+ "bundles": [
+  {
+   "name": "empty bundle, immediate",
+   "timetag": "1",
+   "elements": [],
+   "hex": "2362756e646c65000000000000000001"
+  },
+  {
+   "name": "two messages",
+   "timetag": "1",
+   "elements": [
+    "one int32",
+    "TouchOSC-style fader"
+   ],
+   "hex": "2362756e646c650000000000000000010000000c2f6900002c6900000000002a000000142f312f6661646572310000002c6600003f400000"
+  },
+  {
+   "name": "NTP timetag with the top bit set",
+   "timetag": "16045690984503098046",
+   "elements": [
+    "no arguments"
+   ],
+   "hex": "2362756e646c6500deadbeefcafebabe0000000c2f70696e670000002c000000"
+  },
+  {
+   "name": "nested bundle",
+   "timetag": "2",
+   "elements": [
+    "2362756e646c650000000000000000010000000c2f6900002c6900000000002a",
+    "no arguments"
+   ],
+   "hex": "2362756e646c65000000000000000002000000202362756e646c650000000000000000010000000c2f6900002c6900000000002a0000000c2f70696e670000002c000000"
+  }
+ ],
+ "matches": [
+  {
+   "pattern": "/1/fader*",
+   "address": "/1/fader1",
+   "match": true
+  },
+  {
+   "pattern": "/*",
+   "address": "/a/b",
+   "match": false
+  },
+  {
+   "pattern": "/*/b",
+   "address": "/a/b",
+   "match": true
+  },
+  {
+   "pattern": "/fader?",
+   "address": "/fader7",
+   "match": true
+  },
+  {
+   "pattern": "/fader?",
+   "address": "/fader",
+   "match": false
+  },
+  {
+   "pattern": "/fader?",
+   "address": "/fader12",
+   "match": false
+  },
+  {
+   "pattern": "/ch[0-9]",
+   "address": "/ch5",
+   "match": true
+  },
+  {
+   "pattern": "/ch[0-9]",
+   "address": "/chx",
+   "match": false
+  },
+  {
+   "pattern": "/ch[!0-9]",
+   "address": "/ch5",
+   "match": false
+  },
+  {
+   "pattern": "/ch[!0-9]",
+   "address": "/chx",
+   "match": true
+  },
+  {
+   "pattern": "/ch[abc]",
+   "address": "/chb",
+   "match": true
+  },
+  {
+   "pattern": "/{foo,bar}/x",
+   "address": "/bar/x",
+   "match": true
+  },
+  {
+   "pattern": "/{foo,bar}/x",
+   "address": "/baz/x",
+   "match": false
+  },
+  {
+   "pattern": "/a/b",
+   "address": "/a/b",
+   "match": true
+  },
+  {
+   "pattern": "/a/b",
+   "address": "/a/c",
+   "match": false
+  },
+  {
+   "pattern": "/a/b",
+   "address": "/a/b/c",
+   "match": false
+  },
+  {
+   "pattern": "/a/*/c",
+   "address": "/a/zz/c",
+   "match": true
+  },
+  {
+   "pattern": "/a**b",
+   "address": "/axyb",
+   "match": true
+  },
+  {
+   "pattern": "/*/*",
+   "address": "/a/b",
+   "match": true
+  },
+  {
+   "pattern": "/*",
+   "address": "/",
+   "match": true
+  }
+ ],
+ "malformed": [
+  {
+   "name": "empty datagram",
+   "hex": ""
+  },
+  {
+   "name": "3 bytes",
+   "hex": "2f6100"
+  },
+  {
+   "name": "length not a multiple of 4",
+   "hex": "2f6100002c00"
+  },
+  {
+   "name": "no leading slash",
+   "hex": "616263002c000000"
+  },
+  {
+   "name": "address not terminated",
+   "hex": "2f616263"
+  },
+  {
+   "name": "missing type tag comma",
+   "hex": "2f61000069000000"
+  },
+  {
+   "name": "type tag not terminated",
+   "hex": "2f6100002c696969"
+  },
+  {
+   "name": "truncated int32",
+   "hex": "2f6100002c690000"
+  },
+  {
+   "name": "truncated double",
+   "hex": "2f6100002c64000000000000"
+  },
+  {
+   "name": "unknown type tag",
+   "hex": "2f6100002c78000000000000"
+  },
+  {
+   "name": "blob size past the end",
+   "hex": "2f6100002c6200000000001001020304"
+  },
+  {
+   "name": "blob size negative",
+   "hex": "2f6100002c620000ffffffff"
+  },
+  {
+   "name": "blob size near INT32_MAX",
+   "hex": "2f6100002c6200007ffffffc"
+  },
+  {
+   "name": "string runs off the end",
+   "hex": "2f6100002c73000061626364"
+  },
+  {
+   "name": "bundle too short",
+   "hex": "2362756e646c650000000000"
+  },
+  {
+   "name": "bundle element size past the end",
+   "hex": "2362756e646c65000000000000000001000000102f610000"
+  },
+  {
+   "name": "bundle element size near INT32_MAX",
+   "hex": "2362756e646c650000000000000000017ffffff02f610000"
+  },
+  {
+   "name": "bundle nesting 65 deep",
+   "hex": "2362756e646c65000000000000000001000005082362756e646c65000000000000000001000004f42362756e646c65000000000000000001000004e02362756e646c65000000000000000001000004cc2362756e646c65000000000000000001000004b82362756e646c65000000000000000001000004a42362756e646c65000000000000000001000004902362756e646c650000000000000000010000047c2362756e646c65000000000000000001000004682362756e646c65000000000000000001000004542362756e646c65000000000000000001000004402362756e646c650000000000000000010000042c2362756e646c65000000000000000001000004182362756e646c65000000000000000001000004042362756e646c65000000000000000001000003f02362756e646c65000000000000000001000003dc2362756e646c65000000000000000001000003c82362756e646c65000000000000000001000003b42362756e646c65000000000000000001000003a02362756e646c650000000000000000010000038c2362756e646c65000000000000000001000003782362756e646c65000000000000000001000003642362756e646c65000000000000000001000003502362756e646c650000000000000000010000033c2362756e646c65000000000000000001000003282362756e646c65000000000000000001000003142362756e646c65000000000000000001000003002362756e646c65000000000000000001000002ec2362756e646c65000000000000000001000002d82362756e646c65000000000000000001000002c42362756e646c65000000000000000001000002b02362756e646c650000000000000000010000029c2362756e646c65000000000000000001000002882362756e646c65000000000000000001000002742362756e646c65000000000000000001000002602362756e646c650000000000000000010000024c2362756e646c65000000000000000001000002382362756e646c65000000000000000001000002242362756e646c65000000000000000001000002102362756e646c65000000000000000001000001fc2362756e646c65000000000000000001000001e82362756e646c65000000000000000001000001d42362756e646c65000000000000000001000001c02362756e646c65000000000000000001000001ac2362756e646c65000000000000000001000001982362756e646c65000000000000000001000001842362756e646c65000000000000000001000001702362756e646c650000000000000000010000015c2362756e646c65000000000000000001000001482362756e646c65000000000000000001000001342362756e646c65000000000000000001000001202362756e646c650000000000000000010000010c2362756e646c65000000000000000001000000f82362756e646c65000000000000000001000000e42362756e646c65000000000000000001000000d02362756e646c65000000000000000001000000bc2362756e646c65000000000000000001000000a82362756e646c65000000000000000001000000942362756e646c65000000000000000001000000802362756e646c650000000000000000010000006c2362756e646c65000000000000000001000000582362756e646c65000000000000000001000000442362756e646c65000000000000000001000000302362756e646c650000000000000000010000001c2362756e646c65000000000000000001000000082f7800002c000000"
+  }
+ ],
+ "parse_only": [
+  {
+   "name": "comma hidden in address padding (fuzz crash, seed 7 iteration 360207)",
+   "source": "tests/fuzz/osc_fuzz.c -- tinyosc located the type tag at that comma, desynchronizing its cursor from the validated layout: an out-of-bounds blob read",
+   "hex": "2f616c6c002c00002c6966736268746454464e4900000000ffffffd63f00000068656c6c6f00000000000004deadbeefffffffffffffffff0000000020000002c004000000000000",
+   "address": "/all",
+   "types": "ifsbhtdTFNI",
+   "args": [
+    [
+     "i",
+     "-42"
+    ],
+    [
+     "f",
+     "0.5"
+    ],
+    [
+     "s",
+     "hello"
+    ],
+    [
+     "b",
+     "deadbeef"
+    ],
+    [
+     "h",
+     "-1"
+    ],
+    [
+     "t",
+     "536870914"
+    ],
+    [
+     "d",
+     "-2.5"
+    ],
+    [
+     "T"
+    ],
+    [
+     "F"
+    ],
+    [
+     "N"
+    ],
+    [
+     "I"
+    ]
+   ]
+  }
+ ]
+}

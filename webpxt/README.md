@@ -1,0 +1,160 @@
+# webpxt
+
+**WebP images - read and write, still and animated - for OpenXTalk / the xTalk family.**
+
+[WebP](https://developers.google.com/speed/webp) is the format most pictures on the web are
+in today, and the engine does not read it. webpxt binds Google's reference codec,
+[libwebp](https://chromium.googlesource.com/webm/libwebp) (BSD 3-Clause), behind the family's
+flat C shim and a thin LCB layer:
+
+```
+libwebp 1.6.0 (pinned to a commit, static)        the codec
+   |- C shim   src/webp_shim.c  ->  webpxt.{so,dll,dylib}     (ABI: wpx_*, v1)
+        |- LCB binding  src/webpxt.lcb     (org.openxtalk.library.webpxt; public wp*)
+```
+
+A picture crosses in the engine's own layout: the `imageData` and `alphaData` of an image
+object, with a width and a height. A script sets them on an image and reorders nothing.
+
+## What it can do
+
+- **Read** any WebP file: lossy, lossless, with or without transparency. `wpInfo` reads the
+  size and kind without decoding; `wpDecodeScaled` decodes straight to a smaller size (a
+  thumbnail without ever holding the full picture).
+- **Write** lossy (quality 0 to 100) or lossless, with transparency kept.
+- **Animations** both ways: read one frame at a time, each already composed and with its
+  duration; write from a series of pictures.
+- **The family's rules.** Nothing runs off the caller's thread (rule 1). The shim is C, so
+  nothing can throw across the boundary, and every buffer's length is checked against the
+  stated size before a byte is read (rule 2). An open animation is a generation-tagged integer
+  handle, and a stale one is a harmless no-op (rule 4). No call throws on a bad file: a
+  refused call returns empty and `wpLastError()` says why.
+
+## Quick taste
+
+```livecodescript
+on showWebP pPath
+   local tPicture
+   put wpDecode(url ("binfile:" & pPath)) into tPicture
+   if tPicture is empty then
+      answer "Not a WebP image:" && wpLastError()
+      exit showWebP
+   end if
+   set the width of image "photo" to tPicture["width"]
+   set the height of image "photo" to tPicture["height"]
+   set the imageData of image "photo" to tPicture["imageData"]
+   set the alphaData of image "photo" to tPicture["alphaData"]
+end showWebP
+
+on saveWebP pPath
+   put wpEncode(the imageData of image "photo", the alphaData of image "photo", \
+         the width of image "photo", the height of image "photo", 80) into url ("binfile:" & pPath)
+end saveWebP
+```
+
+[docs/getting-started.md](docs/getting-started.md) carries on from there.
+
+## Status
+
+Joined the suite on 2026-11-20. What has run, and where:
+
+- **Natively**, on x86_64 Linux: the smoke test calls every export of the shim and checks what
+  comes back (lossless byte for byte, a known file's pixels, animations, every refusal), clean
+  under ASan/UBSan; a second test (`tests/fuzz_test.c`) damages real files and makes random
+  calls. Both also pass as a 32-bit build and as WebAssembly under node.
+- **On an engine**, the same day: `tests/engine-selftest.lc` ran on OXT-Beyond's headless
+  Linux server engine (9.7.1-OXT, x86_64) over a locally built library. It loaded the module,
+  passed the ABI check, wrote and read pictures and animations, set a decoded picture on an
+  image object and read it back, and called every public handler once.
+- **The committed libraries** under `src/code/` (2026-11-21: six desktop platforms, four
+  Android ABIs, a web archive) were tested where they were built. The same day the engine
+  self-test ran again on that server engine over the committed `x86_64-linux` library (79
+  checks, none failed), and two more engines loaded committed ones:
+  - **In the IDE on Windows**: OXT-Beyond 0.2.8-dp.1 (64-bit) on the maintainer's PC loaded
+    the `x86_64-win32` library as an installed extension, and `wpLibraryVersion()` answered
+    `webpxt ABI 1; libwebp 1.6.0`. WebP Studio, the community gallery's demo, then played its
+    first scene there: `wpEncode` at quality 70 wrote its picture (277,708 bytes as a PNG) as
+    7,222 bytes in 40 ms, and `wpDecode` read it back in 4 ms.
+  - **On Android**: OXT-Beyond's Android check built the extension into an app (its pull
+    request 614), and on an Android 16 x86_64 emulator `wpLibraryVersion()` answered the same.
+- **Not yet:** no IDE on Linux or a Mac has loaded it; no engine on macOS or the web, and no
+  ARM or 32-bit library on any engine, has run it; and on Windows and Android only what is
+  listed above ran. Beyond these records it is verified statically; needs an OXT pass.
+
+## Building and testing
+
+```sh
+cmake -S . -B build -DWEBPXT_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j && (cd build && ctest)
+cmake -S . -B build-asan -DWEBPXT_BUILD_TESTS=ON -DWEBPXT_SANITIZE=address && cmake --build build-asan -j && (cd build-asan && ctest)
+bash tools/run-gates.sh
+```
+
+A C compiler and CMake 3.22 are all it needs; libwebp is fetched at configure time.
+[docs/building.md](docs/building.md) has the details.
+
+## Documentation
+
+- [docs/getting-started.md](docs/getting-started.md) - pictures, files, animations, the limits.
+- [docs/api-reference.md](docs/api-reference.md) - every `wp*` handler, generated from the
+  binding's doc blocks.
+- [docs/building.md](docs/building.md) - builds, sanitizers, the tests, the gates.
+- [CLAUDE.md](CLAUDE.md) - rules and gotchas for anyone changing this member.
+
+<!-- ==== SUITE RELATIONSHIP BEGIN (generated by tools/sync-member-readmes.py in the xTalk suite from tools/member-registry.py and the carried-copy registries; do not edit inside the markers) ==== -->
+
+## Relationship to the xTalk suite
+
+webpxt is developed in the **xTalk suite** monorepo at https://github.com/SethMorrowSoftware/xtalk-suite, as its
+`webpxt/` member, and PUBLISHED from there into this repository,
+https://github.com/SethMorrowSoftware/webpxt: once a change lands on the suite's `main` and
+the suite's gates pass, the suite's `tools/publish-members.py` replays it
+here as a commit carrying a `Suite-Commit:` trailer that names the suite
+commit it came from. The suite is the source of truth; this repository is
+its published copy, one commit for each change to `webpxt/` that landed on
+the suite's `main`.
+
+**Contributing.** Please open issues and pull requests at the suite. A pull
+request opened here is not lost - the suite brings it home with
+`python3 tools/publish-members.py port webpxt --ref pull/<n>/head`, keeping its
+author - but a commit made here directly holds up the next publish until
+it has been ported, because publishing never overwrites work it did not
+write. The suite's `docs/MEMBER-REPO-SPLIT.md` is the whole workflow.
+
+**Suite-level paths cited from here.** This member's `CLAUDE.md` and
+`docs/` cite files that live at the suite root, not in this tree:
+`docs/OXT-ENGINE-NOTES.md` (engine behaviour, the authoritative list),
+`docs/OXT-PASS-RUNBOOK.md`, `tools/build-all.sh`,
+`tests/suite-selftest.livecodescript` and the suite-level `docs/`
+index. Read them at `https://github.com/SethMorrowSoftware/xtalk-suite/blob/main/<path>`. A path of the
+form `../<member>/...` names a sibling member of the suite; each has its
+own repository, listed in `tools/member-registry.py` there.
+
+**Sibling members this member's gates need beside it.** None: `bash
+tools/run-gates.sh` (this member's own gate list, the one CI runs)
+needs nothing but this checkout and Python 3.
+
+**Carried copies inside this member, and where their masters are.**
+Every runnable stack here is one paste-and-run file, so it carries what
+it needs verbatim between marker lines. The masters, and the drift gates
+that hold every copy byte-identical to them, live in the suite and do
+not travel with this member; refresh a copy from the suite (the marker
+lines name the master) rather than editing inside the markers.
+
+- `tools/check-livecodescript.py`, `tools/check-shim-coverage.py`, `tools/test-shim-coverage.py`: byte-identical copies of the family's unified tooling, held identical across members by the suite's `tools/check-checker-drift.py` and fixture-tested there by `tools/test-checker.py`.
+
+**What this repository cannot check on its own.** The suite-wide gates -
+cross-library name disjointness (`tools/check-cross-library-names.py`),
+the carried-copy drift gates above, embed freshness, the cross-member
+handler-call and typed-boundary checks (`tools/check-handler-calls.py`,
+`tools/check-lcb-call-types.py`), the timer-pin closure, and the suite
+paste's coverage ratchet (`tools/check-suite-coverage.py`) - run only in
+the suite. `tools/run-gates.sh` here is this member's own list, and the
+suite's `tools/build-all.sh` runs that same script, so the two cannot
+disagree about what this member's gates are.
+
+<!-- ==== SUITE RELATIONSHIP END ==== -->
+
+## License
+
+MIT (see [LICENSE](LICENSE)). libwebp is Google's, under the BSD 3-Clause license with an
+additional patent grant; both texts are in the same file.

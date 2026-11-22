@@ -5,9 +5,11 @@
 #   bash tools/build-android.sh --list          # the members and platform ids
 #   bash tools/build-android.sh --pins          # the pinned versions, one a line
 #   bash tools/build-android.sh --api <member>  # the Android API level it is built for
+#   bash tools/build-android.sh --companion <member>  # the file it ships beside its own, if any
 #
 #   <member>       sodiumxt | enetxt | box2dxt | box3dxt | audioxt | render3dxt |
-#                  xlsxt | coinxt | curlxt | datachannelxt | torrentxt
+#                  pdfxt | xlsxt | webpxt | barcodext | coinxt | curlxt |
+#                  datachannelxt | torrentxt
 #   <platform-id>  arm64-android | armv7-android | x86_64-android | x86-android
 #
 # It writes <member>/src/code/<platform-id>/<member>.so, the place every
@@ -82,6 +84,14 @@ ANDROID_API="21"
 # and the others keep Android 5.0. tools/install-release-binaries.py holds
 # the same number (ANDROID_API_FOR) and refuses a torrentxt built for less.
 TORRENTXT_ANDROID_API="24"
+# The Android pdfxt's COMPANION was built for: PDFium's builders made the
+# pinned pdfium.so for API 23 (Android 6.0). Nothing here is built for it,
+# and --android-check is not asked of that file (the pin holds it; see
+# COMPANIONS below). It is a pin because a level is tested on: pdfxt's own
+# lane runs its tests on the emulator for it, the oldest Android where the
+# companion loads, and tools/android-emulator.sh boots only the levels
+# --pins names. Below it pdfxt's tests run only their refusals, and say so.
+PDFIUM_ANDROID_API="23"
 # OpenSSL and Boost are the release workflow's own pins (its "Acquire pinned
 # deps" step); tools/test-build-android.py fails when the two disagree, so a
 # bump in one place cannot leave Android on the old version.
@@ -90,7 +100,50 @@ OPENSSL_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 BOOST_VERSION="1.86.0"
 BOOST_SHA256="2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26"
 
-MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt coinxt curlxt datachannelxt torrentxt"
+MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt pdfxt xlsxt webpxt barcodext coinxt curlxt datachannelxt torrentxt"
+# Native members with NO Android library, each for a reason given here.
+# --list prints them, so tools/test-build-android.py holds MEMBERS plus
+# these to exactly the native members every other table names: a member
+# left out of both is a library built for the desktop and silently missing
+# from every Android app, which is the gap that comparison exists to catch.
+# The same test holds each one's packager and `ships` row to no Android id,
+# so "not built" cannot drift into "half built".
+#   gamepadxt (2026-11-20)  SDL reaches controllers on Android through its
+#                        own Java activity (SDLActivity,
+#                        SDLControllerManager), which an OXT app does not
+#                        have: the engine's activity is its own
+#                        (docs/ANDROID.md).
+#   midixt (2026-11-21)  RtMidi's Android backend needs API 29 (AMidi) and
+#                        JNI; the floor here is API 21, and its CMake
+#                        refuses an Android configure.
+#   oscxt (2026-11-21)   nothing in it stops an Android build (C over two
+#                        vendored files), but none has run yet, and a new
+#                        row here would first build in a release dispatch,
+#                        where a red row discards every artifact; the suite
+#                        work plan carries it.
+DESKTOP_ONLY="gamepadxt oscxt midixt"
+
+# COMPANIONS (2026-11-20): a member whose library loads a second, PREBUILT
+# library from the folder it is itself in. pdfxt's shim opens pdfium.so
+# beside it; that file is PDFium's builders' own, fetched by the member's
+# CMake from the archive pdfxt/src/pdfium.pin names and held to its SHA-256
+# there. This script places it beside the member's library byte for byte:
+# never stripped, and never put through --android-check, whose floors are
+# the suite's (PDFium's Android libraries say API 23, and would be refused,
+# rightly, as a library built here). What holds it is the pin, asserted
+# again below where the file is placed.
+#   companion_of <member>  ->  the companion's file name, or nothing
+companion_of() {
+  case "$1" in
+    pdfxt) echo "pdfium.so" ;;
+  esac
+}
+# A companion has its builders' floor, not ANDROID_API (PDFium's is API 23,
+# PDFIUM_ANDROID_API above).
+# On a device below it the member's test can run only its refusals; it then
+# prints a line `XTALK_TEST_PARTIAL: <what did not run>`, and this script's
+# last line carries that instead of letting "RUN" read as "all of it"
+# (run_tests below; any member's test may print one).
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
 # The Android a member is built for: the suite's floor, or the one member
@@ -106,12 +159,14 @@ api_for() {
 case "${1:-}" in
   --list)
     echo "members:   $MEMBERS"
+    echo "desktop-only: $DESKTOP_ONLY"
     echo "platforms: $PLATFORMS"
     exit 0 ;;
   --pins)
     echo "ndk $NDK_REVISION"
     echo "api $ANDROID_API"
     echo "api-torrentxt $TORRENTXT_ANDROID_API"
+    echo "companion-api-pdfxt $PDFIUM_ANDROID_API"
     echo "openssl $OPENSSL_VERSION $OPENSSL_SHA256"
     echo "boost $BOOST_VERSION $BOOST_SHA256"
     exit 0 ;;
@@ -121,12 +176,22 @@ case "${1:-}" in
     case " $MEMBERS " in
       *" ${2:-} "*) api_for "$2"; exit 0 ;;
     esac
+    case " $DESKTOP_ONLY " in
+      *" ${2:-} "*)
+        echo "build-android: '${2:-}' has no Android build (DESKTOP_ONLY in this script says why)" >&2
+        exit 2 ;;
+    esac
     echo "build-android: '${2:-}' is not a native member ($MEMBERS)" >&2
     exit 2 ;;
+  --companion)
+    # The file a member ships beside its own library on Android, or nothing:
+    # how the release workflow's staging step knows what else to carry.
+    companion_of "${2:-}"
+    exit 0 ;;
 esac
 
 if [ $# -ne 2 ]; then
-  sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 fi
 MEMBER="$1"
@@ -134,7 +199,13 @@ PLATFORM="$2"
 
 case " $MEMBERS " in
   *" $MEMBER "*) : ;;
-  *) echo "build-android: '$MEMBER' is not a native member ($MEMBERS)" >&2; exit 2 ;;
+  *)
+    case " $DESKTOP_ONLY " in
+      *" $MEMBER "*)
+        echo "build-android: '$MEMBER' has no Android build (DESKTOP_ONLY in this script says why)" >&2
+        exit 2 ;;
+    esac
+    echo "build-android: '$MEMBER' is not a native member ($MEMBERS)" >&2; exit 2 ;;
 esac
 
 # One row per ABI: the NDK's name for it, the compiler's target triple, and
@@ -312,11 +383,16 @@ run_tests() {
   mkdir -p "$device"
   for lib in "$BUILD"/*.so; do
     [ -f "$lib" ] || continue
+    if [ "$(basename "$lib")" = "$(companion_of "$MEMBER")" ]; then
+      # A companion ships as its builders made it, so that is what is tested.
+      cp "$lib" "$device/$(basename "$lib")"
+      continue
+    fi
     "$TOOLCHAIN_BIN/llvm-strip" --strip-unneeded -o "$device/$(basename "$lib")" "$lib"
   done
   ctest --test-dir "$BUILD" --show-only=json-v1 > "$BUILD/ctest-tests.json"
   XTALK_ANDROID_SERIAL="$SERIAL" python3 - "$BUILD/ctest-tests.json" "$ROOT/tools/android-run.sh" \
-      "$device" "$TOOLCHAIN_BIN/llvm-strip" <<'PYEOF'
+      "$device" "$TOOLCHAIN_BIN/llvm-strip" <<'PYEOF' | tee "$BUILD/device-tests.log"
 import json, os, subprocess, sys
 listing, runner, device, strip = sys.argv[1:5]
 tests = [t for t in json.load(open(listing))["tests"] if t.get("command")]
@@ -345,6 +421,13 @@ for t in tests:
 print("android: %d test(s) passed on the device" % len(tests))
 PYEOF
   TESTS="RUN on $SERIAL, passed"
+  # A test that could run only part of itself on this device says so in a
+  # line of its own, and the summary repeats it: passed IN PART is not passed.
+  local partial
+  partial="$(sed -n 's/^XTALK_TEST_PARTIAL: //p' "$BUILD/device-tests.log" | head -n 1)"
+  if [ -n "$partial" ]; then
+    TESTS="RUN on $SERIAL, passed IN PART: $partial"
+  fi
 }
 
 echo "== build-android: $MEMBER for $PLATFORM ($ABI, API $ANDROID_API, NDK $have) =="
@@ -398,6 +481,11 @@ else
         x86_64-android) args+=(-DBOX2D_AVX2=OFF) ;;
         x86-android)    args+=(-DBOX2D_DISABLE_SIMD=ON) ;;
       esac ;;
+    pdfxt)
+      # Nothing to pass. The member's CMake picks the pinned PDFium archive
+      # for ANDROID_ABI, checks both hashes and copies pdfium.so beside the
+      # shim; the shim itself is C and links nothing but libdl.
+      : ;;
     box3dxt)
       # Nothing to pass. Box3D picks its AVX2 solver at RUN time (so the
       # x86_64 library needs no flag to stay loadable everywhere), the
@@ -415,6 +503,16 @@ else
       # no dependency outside the two single-file readers its CMake fetches;
       # its threads are bionic's pthreads, and its tests carry their model
       # and picture files inside them, so they run from the pushed folder.
+      : ;;
+    webpxt)
+      # Nothing to pass. libwebp builds from source inside the member's
+      # CMake and picks its SSE or NEON code per file, at run time where
+      # the ABI does not promise it.
+      : ;;
+    barcodext)
+      # Nothing to pass. zxing-cpp is C++20 and the NDK's libc++ goes INTO
+      # the library (ANDROID_STL above), so it needs nothing of the device
+      # beyond bionic.
       : ;;
     xlsxt)
       # Nothing to pass. libxlsxwriter, zlib and Expat are plain C built from
@@ -465,6 +563,27 @@ else
   "$TOOLCHAIN_BIN/llvm-strip" --strip-unneeded "$OUT.tmp"
   mv "$OUT.tmp" "$OUT"
   echo "built $OUT"
+
+  # The companion, beside it, byte for byte, and only if it is the file the
+  # member's pin names for this platform (the last field of its row).
+  companion="$(companion_of "$MEMBER")"
+  if [ -n "$companion" ]; then
+    if [ ! -f "$BUILD/$companion" ]; then
+      echo "build-android: the build put no $companion beside $MEMBER.so in $BUILD" >&2
+      exit 1
+    fi
+    pin="$ROOT/$MEMBER/src/${companion%.so}.pin"
+    want="$(awk -v p="$PLATFORM" '{ sub(/#.*/, "") } NF == 4 && $1 == p { print $4 }' "$pin")"
+    have_sum="$(sha256sum "$BUILD/$companion" | cut -d' ' -f1)"
+    if [ -z "$want" ] || [ "$have_sum" != "$want" ]; then
+      echo "build-android: $BUILD/$companion is not the file $pin pins for $PLATFORM" >&2
+      echo "  SHA-256 $have_sum, pinned ${want:-nothing}" >&2
+      exit 1
+    fi
+    cp "$BUILD/$companion" "$OUT_DIR/$companion.tmp"
+    mv "$OUT_DIR/$companion.tmp" "$OUT_DIR/$companion"
+    echo "placed $OUT_DIR/$companion (the pinned file, unchanged)"
+  fi
 fi
 
 # The contract, asserted where the library is born, by the code the release

@@ -1,0 +1,8 @@
+# Pure-LCB member: nothing native is built here. The headless runners
+# (tools/run-lcb-tests.py, tools/run-lcs-tests.py) work under build/ by
+# default, and CI writes their TAP stream beside them.
+build*/
+dist/
+*.tap
+__pycache__/
+*.pyc

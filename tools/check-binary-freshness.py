@@ -168,6 +168,7 @@ repo from its own path). Exit 0 green, 1 with every problem printed.
                  declares it. Gained platforms print either way.
 """
 
+import hashlib
 import os
 import re
 import shutil
@@ -414,13 +415,16 @@ MEMBERS = [
         "name": "render3dxt",
         "lib": "render3dxt",
         "lcb": ["render3dxt/src/render3dxt.lcb"],
-        # Only the web archive, committed by hand on 2026-11-20 (built with
-        # emsdk 6.0.12 as native-render3dxt.yml's wasm lane builds it) so
-        # OXT-Beyond's web engine can pin it. The desktop and Android rows
-        # wait for the first release-binaries dispatch that lands render3dxt's
-        # libraries: that run's --installing tolerates each gained platform,
-        # and the change after it lists them here.
-        "ships": ["wasm32-emscripten"],
+        # Its first release-binaries dispatch (run 44874931964, commit f6c0b1a,
+        # 2026-11-21) landed the ten desktop and Android libraries; the web
+        # archive, built with emsdk 6.0.12 as native-render3dxt.yml's wasm
+        # lane builds it, was committed by hand on 2026-11-20 so OXT-Beyond's
+        # web engine could pin it, as every member's is.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "render3dxt/src/render3d_shim.c",
         "prefix": "r3x_",
         # Like box2dxt and box3dxt, the ABI define lives in the shim itself.
@@ -435,6 +439,33 @@ MEMBERS = [
                     "wasm": WASM_CLOSURE_REASON},
     },
     {
+        "name": "pdfxt",
+        "lib": "pdfxt",
+        "lcb": ["pdfxt/src/pdfxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands pdfxt's
+        # libraries (joined 2026-11-20 with none committed), as box3dxt's
+        # row above.
+        "ships": [],
+        "shim": "pdfxt/src/pdfium_shim.c",
+        "prefix": "pdx_",
+        "abi_header": "pdfxt/src/pdfium_shim.c",
+        "abi_define": "PDX_ABI_VERSION",
+        "abi_symbol": "pdx_abi_version",
+        # src/pdfxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export pdx_* and nothing else, and the shim links no
+        # library of its own: PDFium is the companion below, loaded at run
+        # time (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+        # THE FIRST COMPANION (2026-11-20). pdfxt's shim loads PDFium from
+        # the folder it is itself in, so every platform folder holds a
+        # SECOND library this member did not build: pdfium.<suffix>, copied
+        # unchanged from a prebuilt archive. It has none of this member's
+        # exports and none of its floors, so no leg below can read it; what
+        # holds it is its SHA-256, which must be the one the pin file names
+        # for the platform (companion_problems). bare name -> pin file.
+        "companions": {"pdfium": "pdfxt/src/pdfium.pin"},
+    },
+    {
         "name": "gamepadxt",
         "lib": "gamepadxt",
         "lcb": ["gamepadxt/src/gamepadxt.lcb"],
@@ -443,8 +474,8 @@ MEMBERS = [
         # archive is not that workflow's: it was built with Emscripten 6.0.12
         # and committed the same day, for OXT-Beyond's web engine to link.
         # No Android ids: SDL reaches controllers there through its own Java
-        # layer, which an OXT app does not have (tools/test-build-android.py,
-        # NO_ANDROID).
+        # layer, which an OXT app does not have (tools/build-android.sh,
+        # DESKTOP_ONLY).
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
                   "wasm32-emscripten"],
@@ -489,6 +520,87 @@ MEMBERS = [
         # than this gate's skip, in the member: tools/check-web-names.py
         # --archive (native-xlsxt.yml's web job) lets it define only xlx_*,
         # xlxw_* and the table function.
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    # oscxt and midixt joined 2026-11-21 (ShowControl's OSC and MIDI) with no
+    # library committed: ShowControl's own were built under the old names
+    # (osc, midi) and stayed behind. artnetxt, the third, binds nothing
+    # foreign and is in BINDLESS_LCB below, not here.
+    {
+        "name": "oscxt",
+        "lib": "oscxt",
+        "lcb": ["oscxt/src/osc.lcb"],
+        # EMPTY until the first release-binaries dispatch lands them.
+        "ships": [],
+        "shim": "oscxt/src/osc_shim.c",
+        "prefix": "osc_",
+        "abi_header": "oscxt/src/osc_shim.h",
+        "abi_define": "OSC_ABI_VERSION",
+        "abi_symbol": "osc_abi_version",
+        # src/oscxt.map (GNU ld) and the derived -exported_symbols_list (ld64)
+        # export osc_* and nothing else; tinyosc is compiled in hidden
+        # (measured on the x86_64-linux build, 2026-11-21).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
+        "name": "midixt",
+        "lib": "midixt",
+        "lcb": ["midixt/src/midi.lcb"],
+        # EMPTY until the first release-binaries dispatch lands them.
+        "ships": [],
+        "shim": "midixt/src/midi_shim.c",
+        "prefix": "midi_",
+        "abi_header": "midixt/src/midi_shim.h",
+        "abi_define": "MIDI_ABI_VERSION",
+        "abi_symbol": "midi_abi_version",
+        # src/midixt.map and the derived ld64 list export midi_* and nothing
+        # else; RtMidi's classes are compiled in without RTMIDI_EXPORT
+        # (measured on the x86_64-linux build, 2026-11-21).
+        "closure": {"elf": [], "pe": [], "macho": []},
+    },
+    {
+        "name": "barcodext",
+        "lib": "barcodext",
+        "lcb": ["barcodext/src/barcodext.lcb"],
+        # Its first release-binaries dispatch (run 44846691681 from 527d109,
+        # 2026-11-21) built the ten desktop and Android libraries; the web
+        # archive is built outside that workflow, with OXT-Beyond's pinned
+        # emsdk, and was committed before it (527d109).
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
+        "shim": "barcodext/src/barcode_shim.cpp",
+        "prefix": "bcx_",
+        "abi_header": "barcodext/src/barcode_shim.cpp",
+        "abi_define": "BCX_ABI_VERSION",
+        "abi_symbol": "bcx_abi_version",
+        # src/barcodext.map (GNU ld) and the same pattern for ld64 export
+        # bcx_* and nothing else, the statically linked C++ runtime included
+        # (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
+        "name": "webpxt",
+        "lib": "webpxt",
+        "lcb": ["webpxt/src/webpxt.lcb"],
+        # As barcodext's: the same release run, the web archive beside it.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
+        "shim": "webpxt/src/webp_shim.c",
+        "prefix": "wpx_",
+        "abi_header": "webpxt/src/webp_shim.c",
+        "abi_define": "WPX_ABI_VERSION",
+        "abi_symbol": "wpx_abi_version",
+        # src/webpxt.map and the ld64 pattern export wpx_* and nothing else:
+        # libwebp declares its API with default visibility, and the script
+        # is what keeps WebP* out (measured on x86_64-linux, 2026-11-20).
         "closure": {"elf": [], "pe": [], "macho": [],
                     "wasm": WASM_CLOSURE_REASON},
     },
@@ -2213,6 +2325,106 @@ def call_abi_in_subprocess(path, symbol):
 
 
 # --------------------------------------------------------------------------
+# The .lcb files that are not a member's binding (2026-11-21).
+#
+# The guard below refuses an .lcb no row names, so that no foreign bind goes
+# unchecked. Until ShowControl joined, every .lcb in the tree was a binding.
+# Its three members brought two other kinds, and each is held to what it
+# claims rather than waved through:
+#
+#   BINDLESS_LCB  a module that binds NOTHING foreign: artnetxt's binding
+#                 (pure LCB, no library at all) and the members' lc-run test
+#                 modules. Each must exist and must hold no `binds to "c:`
+#                 line; a file that grows one fails, and goes to a row.
+#   TEST_LCB      a test module that binds a TEST-ONLY build of a member's
+#                 library (midixt's mock, built as build/mock/midixt.* over a
+#                 double of RtMidi and never committed or shipped). Each bind
+#                 must be defined, non-static, in that double's source under
+#                 its own prefix - the source leg the rows get, without the
+#                 binary legs, because no binary of it is ever committed.
+# --------------------------------------------------------------------------
+
+BINDLESS_LCB = {
+    "artnetxt/src/artnet.lcb":
+        "artnetxt's binding: pure LCB byte packing, no library at all",
+    "artnetxt/tests/lcb/artnet_test.lcb": "artnetxt's lc-run test module",
+    "artnetxt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+    "oscxt/tests/lcb/osc_test.lcb": "oscxt's lc-run test module (it calls the binding)",
+    "oscxt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+    "midixt/tests/lcb/midi_test.lcb": "midixt's lc-run test module (it calls the binding)",
+    "midixt/tests/lcb/midi_hw_test.lcb": "midixt's lc-run test module for a real MIDI service",
+    "midixt/tests/lcb/_support.lcb": "the ShowControl family's lc-run test support module",
+}
+
+# path -> (the library token its binds must name, the source defining them,
+# the symbol prefix, why)
+TEST_LCB = {
+    "midixt/tests/lcb/_midimock.lcb":
+        ("midixt", "midixt/tests/mock/rtmidi_mock.c", "midimock_",
+         "drives midixt's mock build (CMake's build/mock/midixt.*), which "
+         "tools/package-extension.py refuses to package"),
+}
+
+
+def check_non_binding_lcb(problems, stats, root=ROOT, bindless=None,
+                          test_lcb=None):
+    """Hold BINDLESS_LCB and TEST_LCB to what they claim (see above). The
+    tables are parameters so tools/test-binary-freshness.py can hand it its
+    own files."""
+    bindless = BINDLESS_LCB if bindless is None else bindless
+    test_lcb = TEST_LCB if test_lcb is None else test_lcb
+    for rel in sorted(bindless):
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            problems.append(f"BINDLESS_LCB names {rel}, which does not exist - "
+                            f"remove the stale entry")
+            continue
+        with open(path, encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                if re.search(r'binds\s+to\s+"c:', line):
+                    problems.append(f"{rel}:{lineno} binds into a library, but "
+                                    f"BINDLESS_LCB says it binds nothing - move "
+                                    f"it to its member's row (or TEST_LCB) so "
+                                    f"the bind is checked")
+        stats["bindless"] = stats.get("bindless", 0) + 1
+    for rel in sorted(test_lcb):
+        lib, source, prefix, _why = test_lcb[rel]
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            problems.append(f"TEST_LCB names {rel}, which does not exist - "
+                            f"remove the stale entry")
+            continue
+        mine, foreign = set(), []
+        with open(path, encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                for target, symbol in BIND_RE.findall(line):
+                    if target == lib:
+                        mine.add(symbol)
+                    else:
+                        foreign.append(f"{rel}:{lineno} binds c:{target}>{symbol}")
+        for line in foreign:
+            problems.append(f"{line} - TEST_LCB says its binds name {lib}")
+        if not mine:
+            problems.append(f"{rel}: parsed 0 binds into {lib} - a TEST_LCB "
+                            f"entry that binds nothing belongs in BINDLESS_LCB "
+                            f"(or BIND_RE stopped matching it)")
+            continue
+        spath = os.path.join(root, source)
+        if not os.path.isfile(spath):
+            problems.append(f"{rel}: its test library source {source} does not "
+                            f"exist")
+            continue
+        with open(spath, encoding="utf-8") as fh:
+            src = strip_comments(fh.read())
+        defs = set(def_re(prefix).findall(src))
+        unbacked = sorted(mine - defs)
+        if unbacked:
+            problems.append(f"{rel} binds {unbacked[:6]} which {source} does "
+                            f"not define (non-static, at column 0, {prefix}*)")
+        stats["test_binds"] = stats.get("test_binds", 0) + len(mine)
+
+
+# --------------------------------------------------------------------------
 # Guards that keep this gate from going quietly vacuous.
 # --------------------------------------------------------------------------
 
@@ -2225,6 +2437,7 @@ def assert_table_covers_tree(problems):
     """
     known_dirs = {m["name"] for m in MEMBERS}
     known_lcb = {rel for m in MEMBERS for rel in m["lcb"]}
+    known_lcb |= set(BINDLESS_LCB) | set(TEST_LCB)
     for entry in sorted(os.listdir(ROOT)):
         code = os.path.join(ROOT, entry, "src", "code")
         if os.path.isdir(code) and entry not in known_dirs:
@@ -2527,6 +2740,56 @@ def check_fat_macho(member, path, where, binds, defs, want_abi,
     return 1
 
 
+def companion_pin(pin_rel, platform):
+    """The SHA-256 a pin file names for `platform` (the last of a row's four
+    fields: platform id, archive, archive hash, library hash), or None."""
+    try:
+        with open(os.path.join(ROOT, pin_rel), encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split("#", 1)[0].split()
+                if len(parts) == 4 and parts[0] == platform \
+                        and re.fullmatch(r"[0-9a-f]{64}", parts[3]):
+                    return parts[3]
+    except OSError:
+        return None
+    return None
+
+
+def companion_problems(member, platform, pdir, suffix):
+    """What is wrong with a member's COMPANION libraries in one platform
+    folder. A companion is a prebuilt library the member's own loads from
+    beside itself (the `companions` key of its row). The rule, both ways:
+    where either file is, the other is too; and the companion is byte for
+    byte the file the member's pin names for this platform. A companion
+    nobody pinned is "a binary nothing checks" under another name."""
+    out = []
+    name, lib = member["name"], member["lib"]
+    have_lib = os.path.exists(os.path.join(pdir, f"{lib}.{suffix}"))
+    for bare, pin_rel in sorted(member.get("companions", {}).items()):
+        fn = f"{bare}.{suffix}"
+        path = os.path.join(pdir, fn)
+        where = f"{name}/src/code/{platform}/{fn}"
+        if not os.path.exists(path):
+            if have_lib:
+                out.append(f"{where} is missing: {lib}.{suffix} loads it from "
+                           f"beside itself and opens nothing without it")
+            continue
+        if not have_lib:
+            out.append(f"{where} is here without {lib}.{suffix}: the two "
+                       f"ship together or not at all")
+        want = companion_pin(pin_rel, platform)
+        if want is None:
+            out.append(f"{where}: {pin_rel} has no readable row for "
+                       f"{platform}, so nothing says what this file should be")
+            continue
+        with open(path, "rb") as fh:
+            have = hashlib.sha256(fh.read()).hexdigest()
+        if have != want:
+            out.append(f"{where}: its SHA-256 is {have} and {pin_rel} pins "
+                       f"{want} - not the pinned file")
+    return out
+
+
 def check_member(member, problems, skips, notes, stats):
     name, lib, prefix = member["name"], member["lib"], member["prefix"]
 
@@ -2589,9 +2852,18 @@ def check_member(member, problems, skips, notes, stats):
             continue
         suffix, fmt = PLATFORMS[platform]
 
+        companions = {f"{bare}.{suffix}" for bare in member.get("companions", {})}
+        problems.extend(companion_problems(member, platform, pdir, suffix))
+        stats["companions"] = stats.get("companions", 0) + sum(
+            os.path.exists(os.path.join(pdir, c)) for c in companions)
+
         for fn in sorted(os.listdir(pdir)):
             path = os.path.join(pdir, fn)
             if fn in NON_LIBRARY_FILES:
+                continue
+            if fn in companions:
+                # Held by companion_problems above, by hash; none of the legs
+                # below can read a library this member did not build.
                 continue
             if fn != f"{lib}.{suffix}":
                 problems.append(f"{name}/src/code/{platform}/{fn}: not the "
@@ -2767,6 +3039,7 @@ def main(argv=()):
              "mac": 0, "guarded": 0, "wasm": 0}
 
     assert_table_covers_tree(problems)
+    check_non_binding_lcb(problems, stats)
     for member in MEMBERS:
         check_member(member, problems, skips, notes, stats)
 
@@ -2804,7 +3077,9 @@ def main(argv=()):
           f"from committed code (a fat dylib contributes one per slice; "
           f"{stats['guarded']} through the MSVC guarded shape), "
           f"{stats['confirmed']} of them confirmed by loading the library "
-          f"and calling the function")
+          f"and calling the function; {stats.get('bindless', 0)} .lcb modules "
+          f"held to binding nothing, and {stats.get('test_binds', 0)} binds of "
+          f"test-only builds held to their sources")
     return 0
 
 

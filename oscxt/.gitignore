@@ -1,0 +1,10 @@
+# build trees (any variant: build, build-asan, build-web, ...)
+build*/
+dist/
+# the runners' TAP stream, and the fuzzers' crash and dump files
+*.tap
+fuzz-artifacts/
+osc-fuzz-*.bin
+crash-*
+__pycache__/
+*.pyc
