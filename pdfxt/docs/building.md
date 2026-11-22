@@ -87,7 +87,7 @@ page, the README and the licence page to the release the pin names.
 
 ## Release libraries
 
-None are committed yet. They come from the suite's `release-binaries.yml` dispatch, never from
-a developer's machine: two files for each platform, `pdfxt` built there and `pdfium` copied
-unchanged from the pinned archive. `tools/package-extension.py` lands both or neither, and
-refuses a PDFium that is not the pinned one.
+They come from the suite's `release-binaries.yml` dispatch, never from a developer's machine
+(first on 2026-11-22, run 44990932105): two files for each platform, `pdfxt` built there and
+`pdfium` copied unchanged from the pinned archive. `tools/package-extension.py` lands both or
+neither, and refuses a PDFium that is not the pinned one.

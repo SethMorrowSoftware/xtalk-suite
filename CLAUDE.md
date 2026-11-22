@@ -22,9 +22,9 @@ reads; the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` se
   render3dxt (this suite's own software 3D renderer, textured and lit, into an image's
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
   transform, move and camera texts it reads, its libraries committed 2026-11-21), pdfxt (PDFium,
-  read-only: draw, text, search, outline; joined 2026-11-20 with no committed library yet; the one
-  member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from beside itself,
-  see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
+  read-only: draw, text, search, outline; joined 2026-11-20, its libraries committed 2026-11-22; the
+  one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from beside
+  itself, see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined
   2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game
   controllers; joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21;
   desktop and web only), webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
@@ -443,8 +443,11 @@ worse than no gate, because it answers the question nobody asks twice.
   row's `companions` key) and `build-android.sh` (`companion_of`). Both files or neither; the
   companion byte for byte, never stripped. `test-build-android.py` holds the three tables
   together. A device test that could run only part of itself prints `XTALK_TEST_PARTIAL:` and
-  `build-android.sh`'s last line then says "passed IN PART". All verified statically and by
-  fixtures; no release dispatch has landed a companion yet.
+  `build-android.sh`'s last line then says "passed IN PART". The first release dispatch to land
+  a companion, pdfxt's (run 44990932105, commit c7acd39, 2026-11-22), installed ten pairs through
+  the installer's companion check, each `pdfium.<ext>` the pinned file byte for byte; its Android
+  job tested the x86 pairs on the Android 5.0 emulator, so there they passed IN PART, as designed:
+  the full Android test is pdfxt's own lane's, on Android 6.0.
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come

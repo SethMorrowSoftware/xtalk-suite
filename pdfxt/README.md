@@ -136,9 +136,20 @@ Joined the suite on 2026-11-20. What has run, and where:
   in a fresh IDE session is still owed. The test now reports those two as not checked when it
   runs a second time in one session. Every drawing, text, search, outline and link check
   passed there.
+- **Its committed libraries**, from 2026-11-22: the suite's release-binaries dispatch (run
+  44990932105) built both files for every platform, ran the smoke test on each desktop row (the
+  mac x86_64 slice under Rosetta) and on an Android 5.0 emulator for the two x86 ABIs, where only
+  the 12 refusal checks can run and it said so ("passed IN PART"; this member's lane runs the
+  whole test on Android 6.0), and committed them under `src/code/`, each `pdfium` the pinned file
+  byte for byte. The same day, over the committed `x86_64-linux` pair on OXT-Beyond
+  0.2.7-rc.6's Linux engines: `tests/engine-selftest.lc` passed 70 checks, none failed;
+  `tests/demo-drive.livecodescript` passed 84 and the demo's own checks 50, none failed; and the
+  extensions site's package, built from those libraries, was installed by OXT-Beyond's
+  extension-utils, loaded, answered `pdfLibraryVersion()` and passed the same self-test, 70,
+  none failed.
 - **Not yet:** no IDE on Linux or a Mac has loaded it, and no engine on macOS or Android has
-  run it: on those it is verified statically; needs an OXT pass. No library is committed under
-  `src/code/` yet; the suite's release-binaries dispatch lands them.
+  run it: on those it is verified statically; needs an OXT pass. Of the committed libraries,
+  only the `x86_64-linux` pair has met an engine.
 
 ## Building and testing
 

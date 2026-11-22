@@ -146,4 +146,9 @@ self-test passed 64 checks and failed its 2 first-load checks, which cannot hold
 has been loaded in the process (pdfxt had been used in that session first; loading and
 shutting down first reproduces the two on Linux; a fresh-session run is owed). No IDE on Linux
 or a Mac and no engine on macOS or Android has loaded it: verified statically; needs an OXT
-pass. No binaries are committed yet. Open work is in the suite's `docs/WORK-PLAN.md`.
+pass. Its libraries were committed on 2026-11-22 (release run 44990932105, commit c7acd39: ten
+platforms, each the shim beside the pinned PDFium; the run's Android 5.0 emulator ran the x86
+pairs' smoke test IN PART, as designed), and that day the engine self-test (70 checks), the
+demo drive (84, the demo's own 50) and the extensions site's package, installed and run (70),
+passed over the committed `x86_64-linux` pair on OXT-Beyond 0.2.7-rc.6, none failing; no other
+committed library has met an engine. Open work is in the suite's `docs/WORK-PLAN.md`.

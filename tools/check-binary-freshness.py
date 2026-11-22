@@ -442,10 +442,15 @@ MEMBERS = [
         "name": "pdfxt",
         "lib": "pdfxt",
         "lcb": ["pdfxt/src/pdfxt.lcb"],
-        # EMPTY until the first release-binaries dispatch lands pdfxt's
-        # libraries (joined 2026-11-20 with none committed), as box3dxt's
-        # row above.
-        "ships": [],
+        # Its first release-binaries dispatch (run 44990932105, commit
+        # c7acd39, 2026-11-22) landed the six desktop and four Android
+        # libraries, each beside the pinned PDFium below. No web archive:
+        # PDFium's prebuilt wasm is a whole Emscripten program, not a
+        # library an engine can link (pdfxt/CLAUDE.md, "No web build").
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
         "shim": "pdfxt/src/pdfium_shim.c",
         "prefix": "pdx_",
         "abi_header": "pdfxt/src/pdfium_shim.c",
