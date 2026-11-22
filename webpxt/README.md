@@ -77,9 +77,14 @@ Joined the suite on 2026-11-20. What has run, and where:
     7,222 bytes in 40 ms, and `wpDecode` read it back in 4 ms.
   - **On Android**: OXT-Beyond's Android check built the extension into an app (its pull
     request 614), and on an Android 16 x86_64 emulator `wpLibraryVersion()` answered the same.
-- **Not yet:** no IDE on Linux or a Mac has loaded it; no engine on macOS or the web, and no
-  ARM or 32-bit library on any engine, has run it; and on Windows and Android only what is
-  listed above ran. Beyond these records it is verified statically; needs an OXT pass.
+- **Rebuilt on 2026-11-22** for the animation-length limit (an animation ends by 24.8 days,
+  written or read): every library under `src/code/` was rebuilt, and the engine self-test,
+  grown to 93 checks, passed over the rebuilt `x86_64-linux` library on that server engine,
+  none failed. The Windows and Android loads above were of the 2026-11-21 libraries.
+- **Not yet:** no IDE on Linux or a Mac has loaded it, and no IDE or app has loaded the
+  rebuilt libraries; no engine on macOS or the web, and no ARM or 32-bit library on any
+  engine, has run it; and on Windows and Android only what is listed above ran. Beyond these
+  records it is verified statically; needs an OXT pass.
 
 ## Building and testing
 

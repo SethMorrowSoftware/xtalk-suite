@@ -525,14 +525,18 @@ MEMBERS = [
     },
     # oscxt and midixt joined 2026-11-21 (ShowControl's OSC and MIDI) with no
     # library committed: ShowControl's own were built under the old names
-    # (osc, midi) and stayed behind. artnetxt, the third, binds nothing
-    # foreign and is in BINDLESS_LCB below, not here.
+    # (osc, midi) and stayed behind. Their first release-binaries dispatch
+    # (run 44985328988 from 80c3b28, 2026-11-22, `build: named`) built the
+    # six desktop libraries of each, commit 0996fba. Neither builds for
+    # Android (tools/build-android.sh's DESKTOP_ONLY says why) or for the
+    # web. artnetxt, the third, binds nothing foreign and is in BINDLESS_LCB
+    # below, not here.
     {
         "name": "oscxt",
         "lib": "oscxt",
         "lcb": ["oscxt/src/osc.lcb"],
-        # EMPTY until the first release-binaries dispatch lands them.
-        "ships": [],
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac"],
         "shim": "oscxt/src/osc_shim.c",
         "prefix": "osc_",
         "abi_header": "oscxt/src/osc_shim.h",
@@ -547,8 +551,9 @@ MEMBERS = [
         "name": "midixt",
         "lib": "midixt",
         "lcb": ["midixt/src/midi.lcb"],
-        # EMPTY until the first release-binaries dispatch lands them.
-        "ships": [],
+        # The same dispatch as oscxt's, the same six desktop rows.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac"],
         "shim": "midixt/src/midi_shim.c",
         "prefix": "midi_",
         "abi_header": "midixt/src/midi_shim.h",
@@ -587,7 +592,9 @@ MEMBERS = [
         "name": "webpxt",
         "lib": "webpxt",
         "lcb": ["webpxt/src/webpxt.lcb"],
-        # As barcodext's: the same release run, the web archive beside it.
+        # As barcodext's at first: the same release run, the web archive
+        # beside it. Rebuilt on 2026-11-22 for the animation-length limit
+        # (run 44965414934 from 17cbef6), the web archive by hand beside it.
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
                   "wasm32-emscripten",

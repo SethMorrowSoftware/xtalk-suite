@@ -65,7 +65,9 @@ change. Their four libraries each were committed on 2026-11-21 by their release 
 run 44838679488, commit 0be6db1; webpxt's and barcodext's run 44846691681, commit 21f75b8; the
 x86 ones tested on the emulator, the ARM ones built and checked, not run). webpxt's and
 barcodext's `x86_64-android` ones then answered one call each in OXT-Beyond's Android check app
-on 2026-11-21 (the record is below).
+on 2026-11-21 (the record is below). webpxt's four were rebuilt on 2026-11-22 for its
+animation-length limit (run 44965414934, commit 3d35c4a; the x86 ones tested on the emulator
+again, the ARM ones built and checked, not run), so the app's call was to the earlier build.
 **gamepadxt (joined the same day too) is not built for Android**: SDL reaches controllers on
 Android through its own Java activity, which an OXT app does not have.
 **oscxt and midixt joined on 2026-11-21 with no Android build either.** midixt cannot have one:
@@ -83,13 +85,15 @@ app, so a session starts paused and "listen on every address" opens no socket. B
 libtorrent does not use that socket. Release run 44914897842 rebuilt the four that day (commit
 d47060f) and ran the member's tests on an Android 7.0 emulator for the two x86 ABIs, the first
 libraries built for API 24 to run on an Android. Those tests run as the shell user, whom Android
-does not refuse the socket, so they show the library working on its floor and NOT the fix: no
-engine has loaded the rebuilt four, and no app on Android 11 or later has started a session of
-them (work plan 1.2 #33).
+does not refuse the socket, so they show the library working on its floor and not the fix. The
+fix was seen at work on 2026-11-22: OXT-Beyond's pull request 625 pins the four, and in its run
+the app on Android 13 and Android 16 emulators started a session that was not paused, listened on
+every address and seeded a file (the record is below, "torrentxt in an app at API 24").
 So five of the seven members' `x86_64-android` libraries, and webpxt's and barcodext's, are:
 native tests run on an Android emulator, and loaded by an engine in an app for one call each
-(curlxt's and torrentxt's were rebuilt after that load, above, and the files committed now have
-not been loaded); a member's own selftest on an Android engine is still owed. Every other
+(curlxt's and webpxt's were rebuilt after that load, above, and the files committed now have not
+been loaded; torrentxt's rebuilt one was loaded and used on 2026-11-22, below); a member's own
+selftest on an Android engine is still owed. Every other
 `x86_64-android` and every `x86-android` library: native tests run on an Android emulator; needs
 an OXT pass on Android. The ARM libraries are: built and verified statically; needs an OXT pass
 on Android.
@@ -322,12 +326,39 @@ What this is NOT: the fix seen at work. A test started over adb runs as the shel
 refusal that paused a session is Android's rule for apps; and the emulator is Android 7.0, older
 than the Androids that refuse. It shows that a torrentxt built for API 24 loads and runs on the
 oldest Android it now supports, and that a session there starts unpaused, listens and seeds. The
-proof is an app on Android 11 or later, which OXT-Beyond's Android workflow runs once it pins
-these four (work plan 1.2 #33).
+proof is an app on Android 11 or later, which is the next record.
+
+**torrentxt in an app at API 24, 2026-11-22** (OXT-Beyond pull request 625, head 158aaa0; its run
+44986583152, the `Android builder on linux-x86_64` job). The pull request pins the published
+TorrentXT at fb2debf, whose four Android libraries are the files of commit d47060f (the pin's
+SHA-256 of each read against this tree's: the same four), and changes its app's torrent test:
+a session that answers `btSessionIsPaused` true is a failure where the
+test resumed it, and the session listens on `0.0.0.0:0` where it named the loopback. With DHT,
+local discovery, UPnP and NAT-PMP off and no tracker, the test makes a torrent of a 100000-byte
+file the app wrote, adds it and waits for it to seed and for a listen port. Read back from the
+job's log, the app's own words: on the Android 13 emulator (API 33, x86_64) `passed: a session
+not paused at its start and listening on every address on port 33649, a torrent made of a
+100000-byte file in the app's folder, checked and seeding`, and on the Android 16 one (API 36,
+x86_64, 16 KB pages) the same on port 40191. So OBSERVED on both: the `x86_64-android` library
+built for API 24 loaded by the engine in an app, a new session not paused, "listen on every
+address" finding one, and a local file checked to seeding with nothing resumed. The lines of the
+Android 13 device's log that name the app, which a later step of the job prints, hold no refusal
+on `netlink_route_socket` for the app's process, where the run of 2026-11-21 held two; they hold
+one other refusal for it (`avc: denied { read }` of sysfs's `block` directory, from a thread named
+`Thread-2`), which stopped no test and has not been traced to a library. The Android 16 device's
+log was not printed. Before the push that test had failed both ways it should on x86_64 Linux,
+on OXT-Beyond's desktop engine with this suite's library under the preload: paused with the bind
+refused, and "listens on no port" with only `RTM_GETLINK` refused, which the loopback version of
+the test passed.
+What this is NOT: a peer. Nothing connects to that session, so no piece has crossed a socket on
+Android, and the DHT, a tracker and a download are untried there; nor is it the member's
+selftest, an ARM library, or the `x86-android` one. Android 5.0 and 6.0 are INFERRED not to load
+the library (it imports `getifaddrs`, which bionic has from API 24); no device that old has been
+asked.
 
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
 selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's, pdfxt's and xlsxt's,
-in an app; a torrentxt built for API 24 on an engine, or in an app at all.
+in an app; a torrentxt session on Android with a peer, a tracker or the DHT.
 
 ## What differs on Android, per member
 
@@ -335,7 +366,7 @@ in an app; a torrentxt built for API 24 on an engine, or in an app at all.
 |---|---|---|
 | curlxt | Android has no CA bundle file. The shim reads the system's trusted certificates from `/apex/com.android.conscrypt/cacerts` (Android 14 and later) or `/system/etc/security/cacerts` and gives them to curl in memory. Certificates a user added by hand are not included; `caFile` still overrides, and an empty `caFile` returns to the system store. `cuVersion()` ends with the number of certificates found. | tests run on the emulator 2026-11-18 (both x86 ABIs): 157 certificates read from its store. Loaded by an engine in an app 2026-11-19 (x86_64, one call, the ABI 1 build): 149 certificates on Android 16. Rebuilt at ABI 2 on 2026-11-21 and tested on the emulator again; no Android engine has loaded that build. ARM: built, not run |
 | coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
-| torrentxt | Built for API 24 (Android 7.0), not 21: libtorrent then learns the device's addresses with `getifaddrs()` and uses no netlink socket, which Android 11 and later refuse an app. On that path libtorrent watches for no address changes (a session does not notice the device moving between networks) and, with no route table to read, listens on the unspecified address itself, which its own source calls a best effort that does not follow BEP 32 and BEP 45 for the IPv6 DHT (read in libtorrent 2.0.11, not exercised). An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | rebuilt at API 24 on 2026-11-21 (run 44914897842, commit d47060f): tests run on an Android 7.0 emulator (both x86 ABIs), as the shell user. No engine has loaded these four, and no app on Android 11 or later has started a session of them: needs an OXT pass on Android. The API 21 builds they replace (tests run on the emulator 2026-11-18, loaded by an engine in an app 2026-11-19 for one call) started a session paused in an app on Android 13 and 16 ("The torrent stall"); an app still carrying those must `btSessionResume` it and name the address to listen on. ARM: built, not run |
+| torrentxt | Built for API 24 (Android 7.0), not 21: libtorrent then learns the device's addresses with `getifaddrs()` and uses no netlink socket, which Android 11 and later refuse an app. On that path libtorrent watches for no address changes (a session does not notice the device moving between networks) and, with no route table to read, listens on the unspecified address itself, which its own source calls a best effort that does not follow BEP 32 and BEP 45 for the IPv6 DHT (read in libtorrent 2.0.11, not exercised). An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | rebuilt at API 24 on 2026-11-21 (run 44914897842, commit d47060f): tests run on an Android 7.0 emulator (both x86 ABIs), as the shell user. Loaded by an engine in an app 2026-11-22 (x86_64, Android 13 and Android 16 with 16 KB pages; OXT-Beyond pull request 625): a new session not paused, listening on every address, a local file checked to seeding ("torrentxt in an app at API 24"). No peer has connected on Android, and the member's selftest has not run there. The API 21 builds they replace (tests run on the emulator 2026-11-18, loaded by an engine in an app 2026-11-19 for one call) started a session paused in an app on Android 13 and 16 ("The torrent stall"); an app still carrying those must `btSessionResume` it and name the address to listen on. ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
@@ -343,7 +374,7 @@ in an app; a torrentxt built for API 24 on an engine, or in an app at all.
 | pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built and tested by its own lane, not yet by a release run; no library committed |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
-| webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8), rebuilt by the 2026-11-22 one (3d35c4a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | barcodext | None. zxing-cpp is C++20; the NDK's libc++ is linked into the library like every C++ member's. | built by the 2026-11-21 release run and committed (21f75b8); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | sodiumxt, box2dxt | None. box2dxt's x86 libraries are built without AVX2 (x86_64) or SIMD (x86), as on the desktop; the ARM ones use NEON. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | onionxt (script) | It drives a Tor daemon it can reach. Android apps cannot start one of their own this way; a Tor app that offers a SOCKS port (Orbot) could serve the client paths, and the control-port paths (onion services) need a control port such an app may not offer. | not examined on Android |
