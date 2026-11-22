@@ -84,7 +84,10 @@ jobs:
   # worth instrumenting - under the sanitizer at all.
   sanitize:
     name: full-stack ASan+UBSan (linux x86_64)
-    runs-on: ubuntu-24.04
+    # The maintainer's Linux PC takes this job while the repository variable
+    # PC_RUNNERS_LINUX is 'on', for this repository's own pushes and branches
+    # only; otherwise, and for every fork, GitHub's ubuntu-24.04 (docs/PC-RUNNERS.md).
+    runs-on: ${{ (vars.PC_RUNNERS_LINUX == 'on' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","Linux","X64","seth-pc"]')) || 'ubuntu-24.04' }}
     defaults:
       run:
         working-directory: box2dxt

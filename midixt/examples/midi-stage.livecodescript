@@ -42,6 +42,15 @@ script "MIDI Stage"
 -- only to the one the footer names. Every stop, pause and scene change sends
 -- note-offs and "all notes off", so nothing is left sounding.
 --
+-- ON THE WEB (a web engine with midixt built in): a web page has no virtual
+-- ports, and the browser decides whether the page may use MIDI at all. The
+-- first look at the ports asks it, and the answer comes later (Web MIDI's
+-- access is a promise), so the stage decodes, says why, and looks again each
+-- second until the browser has answered (mdsAskAgain). Allowed, it finds a
+-- loopback driver's pair as a desktop does, and Sound and a keyboard work as
+-- they do there. Refused, or shown in a frame that does not allow MIDI (a
+-- gallery's player), it decodes and says why: the show goes on either way.
+--
 -- THE LOOK is OXT-Beyond's dark stage (the Render3D Tour's palette), not the
 -- suite's light UI kit, by request (2026-11-21), so this stack is in
 -- tools/check-ui-kit-drift.py's EXEMPT list. Every field and button sets its
@@ -52,7 +61,9 @@ script "MIDI Stage"
 -- FOR THE TESTS (tests/lcs/demo_test.livecodescript, over the mock library):
 -- mdsTestBegin stops the clock's loop, mdsTestStep moves the show on by so
 -- many seconds and draws, mdsGo jumps to a scene, mdsTestCable hands the
--- demo two ports to use as its cable, and mdsState() says how things are.
+-- demo two ports to use as its cable, mdsHeard gives it a listing's error in
+-- the web's words (the mock speaks a desktop's), and mdsState() says how
+-- things are.
 --
 -- HONESTY (the suite convention): it built, ran every scene and passed its
 -- tests in OXT-Beyond's standalone engine (9.7.1-OXT, Linux x86_64, headless
@@ -274,6 +285,7 @@ constant kMdsH = 620
 constant kMdsFrameMs = 33          -- about thirty pictures a second
 constant kMdsPortName = "MIDI Stage"
 constant kMdsPollMs = 4            -- the cable's poll interval
+constant kMdsAskMs = 1000          -- on the web: how often to look for the browser's answer
 constant kMdsLow = 48              -- C3, the keyboard's lowest key
 constant kMdsHigh = 84             -- C6, its highest
 constant kMdsBeat = 0.5357         -- 112 beats a minute
@@ -351,6 +363,7 @@ local sTour, sPaused
 local sHaveMidi, sWhyNot  -- midixt answers; why not, when it does not
 local sMode               -- "cable", "decode" or "none"
 local sCableIn, sCableOut, sCableName, sCableHow, sNoCable
+local sListWhy, sAskAt    -- on the web: why no port could be listed; when to look again
 local sYouIns, sYouNames  -- other inputs, read for the player at the keys
 local sSoundOut, sSoundName, sSoundOn, sSoundWhy
 local sTrouble            -- an error the loop caught
@@ -451,6 +464,14 @@ command mdsStop
    put empty into sSoundOut
    put empty into sYouIns
    put empty into sYouNames
+   put empty into sAskAt
+   -- Nothing is open now, so nothing may send. Left at "cable", the mode made
+   -- the next open's own stop (an IDE keeps a closed stack in memory and
+   -- opens it again) silence the cable through its emptied handle, into
+   -- midiControlChange's Integer, which refuses one (the suite's engine
+   -- notes, 6.4): the reopen threw on the maintainer's Linux PC (2026-11-22).
+   -- The next start finds its way again (mdsConnect).
+   put "none" into sMode
 end mdsStop
 
 -- Is midixt here? The first call of an LCB library that is not loaded throws
@@ -500,6 +521,8 @@ command mdsConnect
    put empty into sSoundOut
    put empty into sSoundName
    put empty into sSoundWhy
+   put empty into sListWhy
+   put empty into sAskAt
    if sHaveMidi is not true then
       put "none" into sMode
       exit mdsConnect
@@ -530,7 +553,9 @@ command mdsConnect
       end if
    end if
    put mdsPortLines(midiInputPorts()) into tIns
+   mdsHeard midiLastError()
    put mdsPortLines(midiOutputPorts()) into tOuts
+   mdsHeard midiLastError()
    -- 2. a loopback driver's pair of ports (loopMIDI, LoopBe, IAC, Midi Through)
    if sCableIn is empty then
       put mdsFindPair(tIns, tOuts) into tPair
@@ -578,6 +603,57 @@ command mdsConnect
       put "There is no MIDI output here to play through." into sSoundWhy
    end if
 end mdsConnect
+
+-- A listing's error, kept when it is the web's reason that no port could be
+-- listed (the first one heard): the page may not use MIDI here, or the
+-- browser has not answered yet, and then the stage looks again in a second.
+-- A desktop's errors carry none of the web's words, so there this keeps
+-- nothing.
+command mdsHeard pErr
+   if sListWhy is empty then
+      put mdsWebWhy(pErr) into sListWhy
+   end if
+   if sListWhy contains "ask again" then
+      put the milliseconds + kMdsAskMs into sAskAt
+   else
+      put empty into sAskAt
+   end if
+end mdsHeard
+
+-- The web's reason in midixt's error, or empty. The library puts its own
+-- words first ("midi: no MIDI output backend: " and then the browser's
+-- side of it), and every reason the web gives names the browser or the
+-- page.
+function mdsWebWhy pErr
+   local tWhy, tAt
+   if not (pErr contains "browser" or pErr contains "this page") then
+      return empty
+   end if
+   put line 1 of pErr into tWhy
+   if tWhy begins with "midi: " then
+      delete char 1 to 6 of tWhy
+   end if
+   put offset(": ", tWhy) into tAt
+   if tAt > 0 then
+      delete char 1 to tAt + 1 of tWhy
+   end if
+   return tWhy
+end mdsWebWhy
+
+-- While the browser has not answered whether this page may use MIDI, look
+-- again each second (called each frame; the answer arrives on its own, and
+-- nothing here may wait for it). Nothing was listed, so nothing is open:
+-- connecting again opens afresh.
+command mdsAskAgain
+   if sAskAt is empty or the milliseconds < sAskAt then
+      exit mdsAskAgain
+   end if
+   put empty into sAskAt
+   if sCableIn is empty and sSoundOut is empty and the number of elements of sYouIns is 0 then
+      mdsConnect
+      mdsShowStatus
+   end if
+end mdsAskAgain
 
 -- Port names, one a line, from midiInputPorts() or midiOutputPorts() (an
 -- LCB List arrives as an array numbered from 1)
@@ -637,7 +713,11 @@ function mdsBaseName pName
 end mdsBaseName
 
 -- The output to play through: the synth every Windows has, else the first
--- output that is not a cable (sending to a loopback would play nothing)
+-- output that is neither a cable (sending to a loopback would play nothing)
+-- nor a program's input. ALSA lists the port RtMidi makes to READ the cable
+-- among the outputs, as "RtMidi Input Client:ShowControl In 130:0": taken
+-- for a synth on a Linux PC with none (2026-11-22), Sound would have played
+-- the player's notes into the stage's own input.
 function mdsFindSound pOuts, pCableName
    local tI, tName
    repeat with tI = 1 to the number of lines of pOuts
@@ -647,13 +727,20 @@ function mdsFindSound pOuts, pCableName
    end repeat
    repeat with tI = 1 to the number of lines of pOuts
       put line tI of pOuts into tName
-      if tName contains kMdsPortName or mdsLoops(tName) or (pCableName is not empty and mdsBaseName(tName) is mdsBaseName(pCableName)) then
+      if tName contains kMdsPortName or mdsLoops(tName) or mdsReads(tName) or (pCableName is not empty and mdsBaseName(tName) is mdsBaseName(pCableName)) then
          next repeat
       end if
       return tI - 1
    end repeat
    return -1
 end mdsFindSound
+
+-- A port a program reads MIDI through with RtMidi: the one midixt makes for
+-- each input it opens and for a virtual input left unnamed ("ShowControl
+-- In"), and any input of RtMidi's own client name. Never a synth.
+function mdsReads pName
+   return pName contains "ShowControl In" or pName contains "RtMidi Input Client"
+end mdsReads
 
 -- Sound on and off. On opens the output the footer names; off silences it.
 command mdsSoundSwitch
@@ -728,6 +815,7 @@ on mdsFrame pGen
          mdsTick tDt
       end if
       mdsPollYou
+      mdsAskAgain
       mdsRender
    catch tErr
       put tErr into sTrouble
@@ -1629,6 +1717,11 @@ command mdsShowStatus
       put "Nothing to set up: the player sends through a virtual port, " & quote & kMdsPortName & quote & ", and the stage reads it back from your MIDI service." & tSound into tText
    else if sMode is "cable" then
       put "The player sends through " & sCableName & ", a loopback, and the stage reads it back with midiPoll." & tSound into tText
+   else if sListWhy is not empty then
+      -- on the web, no port could be listed: the page may not (or may not
+      -- yet) use MIDI, so there is no output to offer for Sound either
+      put "No MIDI cable here: the stage decodes each message itself." & mdsCableHint(sListWhy) into tText
+      put "No MIDI cable: " & sListWhy into tTip
    else
       put "No MIDI cable here: the stage decodes each message itself." & mdsCableHint(sNoCable) & tSound into tText
       put "No MIDI cable: " & sNoCable into tTip
@@ -1670,7 +1763,20 @@ end mdsShowStatus
 
 -- What would make a cable here, from why there is none (the library's words)
 function mdsCableHint pWhy
-   if pWhy contains "no virtual ports" then
+   if pWhy contains "frame it is shown in does not allow" then
+      return " This page's frame does not allow MIDI."
+   else if pWhy contains "ask again" then
+      return " Allow MIDI when your browser asks."
+   else if pWhy contains "refused this page MIDI" then
+      return " The browser refused this page MIDI."
+   else if pWhy contains "has no Web MIDI" then
+      return " This browser has no Web MIDI."
+   else if pWhy contains "secure page" then
+      return " Browsers give MIDI only to a secure (https) page."
+   else if pWhy contains "web page has no virtual ports" then
+      -- the web, MIDI allowed: a loopback driver on the computer is listed
+      return " A loopback port (loopMIDI, the IAC Driver) makes one."
+   else if pWhy contains "no virtual ports" then
       -- Windows MM: RtMidi cannot make a virtual port there
       return " A loopMIDI port makes one."
    else if pWhy contains "backend init failed" then
@@ -1718,6 +1824,7 @@ command mdsTestStep pSeconds
          scMidiPollAndDispatch sCableIn
       end if
       mdsPollYou
+      mdsAskAgain
       mdsRender
    end repeat
 end mdsTestStep
@@ -1748,6 +1855,8 @@ function mdsState
    put sCableName into tState["cableName"]
    put sCableHow into tState["cableHow"]
    put sNoCable into tState["noCable"]
+   put sListWhy into tState["listWhy"]
+   put sAskAt into tState["askAt"]
    put sYouNames into tState["youNames"]
    put sSoundName into tState["soundName"]
    put sSoundOn into tState["soundOn"]

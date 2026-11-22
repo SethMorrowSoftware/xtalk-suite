@@ -28,10 +28,11 @@ reads; the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` se
   2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game
   controllers; joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21;
   desktop and web only), webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
-  their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21 with no
-  committed library yet: oscxt (tinyosc: Open Sound Control), midixt (RtMidi: realtime MIDI) and
-  artnetxt (Art-Net DMX lighting in pure LCB, with no native library at all, but a native lane:
-  its suites run on an engine).
+  their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21: oscxt
+  (tinyosc: Open Sound Control) and midixt (RtMidi: realtime MIDI), their libraries committed
+  2026-11-22 (desktop only, bar midixt's web archive over the browser's Web MIDI, committed
+  by hand the same day), and artnetxt (Art-Net DMX lighting in pure LCB, with no native
+  library at all, but a native lane: its suites run on an engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -79,7 +80,8 @@ tools/                     suite gates, their fixture tests, generators, carried
    where a mid-handler `local` is legal); `unsafe` around foreign calls; block balance including
    `switch`; the zero-arg statement call and throw-in-catch refusals; the per-dialect antipattern
    sets; a hex digest, token, nonce or key (by name) meeting a bare comparison (check 23, engine
-   note 2.11; a name heuristic that narrows the class, not a proof). The copies are
+   note 2.11; a name heuristic that narrows the class, not a proof); a `.lcb` foreign handler that
+   RETURNS a `ZString`, which the engine `free()`s (check 24, engine note 6.18). The copies are
    byte-identical (`tools/check-checker-drift.py`) and `tools/test-checker.py`
    fixture-tests every rule in every copy. **Done means:** a script change passes that gate; a shim
    change passes the member's smoke test under ASan/UBSan; a native-library change refreshes the
@@ -406,7 +408,9 @@ worse than no gate, because it answers the question nobody asks twice.
   starts paused; `--api <member>` prints a member's level, the installer's `ANDROID_API_FOR` holds
   it from both sides, and torrentxt's tests run on `android-emulator.sh start 24`; its four
   were rebuilt at API 24 that day, run 44914897842, commit d47060f, tests run on the Android 7.0
-  emulator for the two x86 ABIs, and no app has run them yet), libc++ inside each library, the desktop
+  emulator for the two x86 ABIs; on 2026-11-22 OXT-Beyond's app started a session of the
+  `x86_64-android` one unpaused, listening on every address and seeding, on Android 13 and 16
+  emulators, its pull request 625), libc++ inside each library, the desktop
   lanes' OpenSSL and Boost pins (`tools/test-build-android.py` compares them, and every table that
   names an Android id). The release workflow's `android` job (the `lanes` input runs it alone, or
   leaves it out) only calls it, per ABI. `install-release-binaries.py --android-check` holds each

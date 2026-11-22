@@ -193,7 +193,7 @@ Opens a WebP file for reading one frame at a time.
 
 Returns: A handle for the other wpAnim calls, or 0 if the file could not be read.
 
-The file's bytes are copied, so the variable they came from can be reused. A still picture opens as an animation of one frame. Close the handle with `wpAnimClose` when the animation is no longer playing: each open animation holds its file and one full frame in memory, and at most 64 can be open at once.
+The file's bytes are copied, so the variable they came from can be reused. A still picture opens as an animation of one frame. Close the handle with `wpAnimClose` when the animation is no longer playing: each open animation holds its file and one full frame in memory, and at most 64 can be open at once. A file whose frames add up to more than 2147483647 milliseconds (about 24.8 days) is refused, because libwebp cannot time it; `wpDecode` still reads its first frame.
 
 ```
 put wpAnimOpen(url ("binfile:" & tPath)) into sAnim
@@ -349,7 +349,7 @@ Adds one frame to an animation being written.
 
 Returns: True if the frame was added; false if it was refused.
 
-The frame must be the animation's size exactly. Frames play in the order they are added. An animation holds at most 10000 frames.
+The frame must be the animation's size exactly. Frames play in the order they are added. An animation holds at most 10000 frames and lasts at most 2147483647 milliseconds in all (about 24.8 days): a frame that would end it later is refused, and the frames before it are kept.
 
 ### `wpAnimEncoderIsValid`
 

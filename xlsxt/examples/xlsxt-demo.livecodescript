@@ -55,7 +55,7 @@ script "xlsxtDemo"
 -- the while. Leaving the Showcase tab stops the scene and closes its files.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kXdUiVersion = "xlsxt-beyond-2"
+constant kXdUiVersion = "xlsxt-beyond-3"
 constant kXdWidth = 960
 constant kXdHeight = 640
 -- The header band: OXT-Beyond's name, the demo's, what it does, who made it.
@@ -642,9 +642,9 @@ on xdBuildUI
    uiPanel "ui:panel", "16,112,944,574"
    uiFooter \
          "Backed by libxlsxwriter, zlib and Expat through the xlsxt C shim; every scene and every Make writes a" \
-         & " real .xlsx and reads it back. This window has run on OXT-Beyond on Linux and on Windows; on macOS" \
-         & " and in a browser it is verified statically; needs an OXT pass. No file it wrote has been opened" \
-         & " in Excel on the record.", \
+         & " real .xlsx and reads it back. This window has run on OXT-Beyond on Linux, on Windows and in" \
+         & " Chromium; on macOS and in other browsers it is verified statically; needs an OXT pass. No file it" \
+         & " wrote has been opened in Excel on the record.", \
          "16,582,944,636"
    set the foregroundColor of field "uiFooter" to kXdMuted
 

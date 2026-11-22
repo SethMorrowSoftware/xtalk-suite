@@ -62,7 +62,8 @@ A browser loads no library, so the web build is a static archive, `gamepadxt.a`,
 OXT-Beyond's web engine to link in: the shim, SDL, and a generated table of the symbols the
 binding names (`gamepadxt_web_exports`). There SDL reads the browser's Gamepad API. The two
 tests run against that archive under node, where no such API exists and only virtual pads
-do. No web engine has linked it yet.
+do. OXT-Beyond's web engine links it, by its SHA-256, since 0.2.8-dp.2.1 (first in that
+project's pull request 612, 2026-11-21).
 
 ## The engine self-test
 

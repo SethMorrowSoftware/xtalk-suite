@@ -17,6 +17,10 @@ project(midixt LANGUAGES C CXX)
 # target: RtMidi's Android backend needs API 29 and a JNI environment, and the
 # suite's Android floor is API 21 (docs/building.md).
 #
+# For the web (emcmake, below) the same shim is built over src/midi_web.c, the
+# browser's Web MIDI, into a static archive that OXT-Beyond's web engine links
+# in: src/code/wasm32-emscripten/midixt.a.
+#
 # ShowControl's top-level CMakeLists.txt is this file's ancestor (its midi half).
 #
 #   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMIDIXT_BUILD_TESTS=ON
@@ -25,6 +29,8 @@ project(midixt LANGUAGES C CXX)
 # ---------------------------------------------------------------------------
 
 option(MIDIXT_BUILD_TESTS "Build the C smoke and mock tests and the mock library" OFF)
+option(MIDIXT_PLACE_IN_SRC
+       "Web build only: copy midixt.a into src/code/wasm32-emscripten/ after building" ON)
 set(MIDIXT_SANITIZE "" CACHE STRING "Sanitizer: '' or 'address' (ASan + UBSan, gcc or clang)")
 # The shipped library must load on a machine that has nothing but the OS and the
 # engine: the static MSVC CRT (a /MD build needs the VC++ redistributable, and
@@ -38,24 +44,35 @@ if(NOT MIDIXT_SANITIZE STREQUAL "")
     set(MIDIXT_STATIC_RUNTIME OFF)
 endif()
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-if(MIDIXT_STATIC_RUNTIME)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# The web build (wasm32-emscripten, below) is a release archive: optimised
+# unless a build type is given.
+if(EMSCRIPTEN AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-# Hidden by default in every object, RtMidi's included: only MIDI_API symbols
-# leave the library (RtMidi's own classes are visibility("default") under GCC
-# whatever is defined, which is why the version script below exists too).
-set(CMAKE_C_VISIBILITY_PRESET hidden)
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
-set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+# The shared library links RtMidi's static objects into itself, so every
+# object is position-independent. Not for the web build, whose archive is
+# linked into the engine; nor does the web build hide anything (OXT-Beyond
+# makes every symbol of the archive local but the table's and EM_JS's own).
+if(NOT EMSCRIPTEN)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    if(MIDIXT_STATIC_RUNTIME)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+
+    # Hidden by default in every object, RtMidi's included: only MIDI_API
+    # symbols leave the library (RtMidi's own classes are
+    # visibility("default") under GCC whatever is defined, which is why the
+    # version script below exists too).
+    set(CMAKE_C_VISIBILITY_PRESET hidden)
+    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+endif()
 
 if(MIDIXT_SANITIZE STREQUAL "address")
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=address,undefined)
 endif()
-
-find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
 # RtMidi 6.0.0, fetched as SOURCE only (SOURCE_SUBDIR names a folder that does
@@ -74,6 +91,140 @@ FetchContent_Declare(rtmidi
     SOURCE_SUBDIR  midixt-builds-the-sources-itself)
 FetchContent_MakeAvailable(rtmidi)
 set(_rtmidi "${rtmidi_SOURCE_DIR}")
+
+# ---------------------------------------------------------------------------
+# The web build: wasm32-emscripten. A browser loads no library, so for
+# OXT-Beyond's web engine the shim is linked INTO the engine, which keeps a
+# table of the libraries compiled into it and finds "c:midixt>midi_..." there
+# by name (its engine/src/em-xtalk-web.cpp). What is built is a static
+# archive, midixt.a, holding ONE relocatable object (emcc -r): the shim over
+# src/midi_web.c, which is the part of RtMidi's C API the shim calls,
+# implemented over the browser's Web MIDI (that file says why RtMidi's own
+# Web MIDI backend is not used), and a table of the symbols the binding names:
+#
+#     const struct { const char *symbol; void *address; } *
+#     midixt_web_exports(void);          /* ends with { NULL, NULL } */
+#
+# The table is GENERATED from every `binds to "c:midixt>NAME"` of src/midi.lcb,
+# so it cannot drift from the binding, and compiled in ONE translation unit
+# with src/midi_shim.c (which it includes), so a bind with no shim function is
+# a compile error, never a missing symbol found in a browser. This is
+# box2dxt's mechanism, unchanged. RtMidi is fetched for its header alone: the
+# shim and src/midi_web.c compile against rtmidi_c.h, so every backend
+# function has RtMidi's own signature, and none of RtMidi's code is in the
+# archive.
+# ---------------------------------------------------------------------------
+if(EMSCRIPTEN)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/midi.lcb" _midi_lcb)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 "${CMAKE_CURRENT_SOURCE_DIR}/src/midi.lcb")
+    string(REGEX MATCHALL "binds to \"c:midixt>[A-Za-z_][A-Za-z0-9_]*" _midi_binds "${_midi_lcb}")
+    set(_midi_symbols "")
+    foreach(_bind IN LISTS _midi_binds)
+        string(REGEX REPLACE ".*>" "" _symbol "${_bind}")
+        list(APPEND _midi_symbols "${_symbol}")
+    endforeach()
+    list(REMOVE_DUPLICATES _midi_symbols)
+    list(SORT _midi_symbols)
+    list(LENGTH _midi_symbols _midi_count)
+    if(_midi_count EQUAL 0)
+        message(FATAL_ERROR "src/midi.lcb binds no c:midixt> symbol: is the regular expression stale?")
+    endif()
+    set(_midi_rows "")
+    foreach(_symbol IN LISTS _midi_symbols)
+        string(APPEND _midi_rows "\t{ \"${_symbol}\", (void *)${_symbol} },\n")
+    endforeach()
+    set(_midi_exports_c "${CMAKE_CURRENT_BINARY_DIR}/midixt_web_exports.c")
+    file(CONFIGURE OUTPUT "${_midi_exports_c}" @ONLY CONTENT
+"/* GENERATED by CMakeLists.txt from src/midi.lcb: the shim, and the
+ * @_midi_count@ symbols the binding binds to, for OXT-Beyond's web engine. */
+#include \"midi_shim.c\"
+
+struct midixt_web_export { const char *symbol; void *address; };
+
+static const struct midixt_web_export k_midixt_web_exports[] = {
+@_midi_rows@\t{ NULL, NULL },
+};
+
+MIDI_API const struct midixt_web_export *midixt_web_exports(void);
+MIDI_API const struct midixt_web_export *midixt_web_exports(void)
+{
+\treturn k_midixt_web_exports;
+}
+")
+    message(STATUS "midixt web exports: ${_midi_count} symbols from src/midi.lcb")
+
+    # -g0 and the prefix maps keep the build folder's path out of the object,
+    # so the same source and Emscripten give the same archive anywhere.
+    add_library(midixt_web_objects OBJECT "${_midi_exports_c}" src/midi_web.c)
+    target_include_directories(midixt_web_objects PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_include_directories(midixt_web_objects SYSTEM PRIVATE "${_rtmidi}")
+    set_target_properties(midixt_web_objects PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)
+    target_compile_options(midixt_web_objects PRIVATE
+        -Os -g0 -Wall -Wextra -Werror=implicit-function-declaration
+        "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=midixt"
+        "-ffile-prefix-map=${CMAKE_CURRENT_BINARY_DIR}=build"
+        "-ffile-prefix-map=${_rtmidi}=rtmidi")
+
+    set(_midi_web_object "${CMAKE_CURRENT_BINARY_DIR}/midixt-web.o")
+    set(_midi_web_archive "${CMAKE_CURRENT_BINARY_DIR}/midixt.a")
+    add_custom_command(
+        OUTPUT "${_midi_web_archive}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${_midi_web_object}" "${_midi_web_archive}"
+        COMMAND ${CMAKE_C_COMPILER} -r -o "${_midi_web_object}"
+                "$<TARGET_OBJECTS:midixt_web_objects>"
+        COMMAND ${CMAKE_AR} rcsD "${_midi_web_archive}" "${_midi_web_object}"
+        DEPENDS midixt_web_objects "$<TARGET_OBJECTS:midixt_web_objects>"
+        COMMAND_EXPAND_LISTS
+        COMMENT "Linking midixt.a for the web (the shim over Web MIDI, one object)"
+        VERBATIM)
+    add_custom_target(midixt_web ALL DEPENDS "${_midi_web_archive}")
+
+    # The web tests: linked against the ARCHIVE and run by node (ctest), so
+    # what is tested is the file that would ship. node has no Web MIDI, so
+    # tests/web/fake-web-midi.js (--pre-js) stands in for the browser's: each
+    # scene is one run of tests/midi_web_test.c, a fresh page, since a refusal
+    # stands for the life of one. Asyncify lets the test wait for the
+    # browser's answer (a promise) between two calls, as a script's timer does.
+    if(MIDIXT_BUILD_TESTS)
+        enable_testing()
+        find_program(MIDIXT_NODE node REQUIRED)
+        set(_midi_fake "${CMAKE_CURRENT_SOURCE_DIR}/tests/web/fake-web-midi.js")
+        add_executable(midi_web_test tests/midi_web_test.c)
+        add_dependencies(midi_web_test midixt_web)
+        target_include_directories(midi_web_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        set_target_properties(midi_web_test PROPERTIES SUFFIX ".js" C_STANDARD 17 C_STANDARD_REQUIRED ON
+                              LINK_DEPENDS "${_midi_fake}")
+        target_compile_options(midi_web_test PRIVATE -Wall -Wextra)
+        target_link_libraries(midi_web_test PRIVATE "${_midi_web_archive}")
+        # -sEXIT_RUNTIME=1: the test ends with exit(), which reaches node's
+        # exit status only so (a slept main's return value never does), and
+        # FAIL_REGULAR_EXPRESSION fails a scene on its printed FAIL lines
+        # whatever the status says: before both, every failing scene passed.
+        target_link_options(midi_web_test PRIVATE
+            -sENVIRONMENT=node -sASYNCIFY -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1
+            "--pre-js=${_midi_fake}")
+        foreach(_scene none refused framed pending granted)
+            add_test(NAME midi_web_${_scene}
+                     COMMAND "${MIDIXT_NODE}" "$<TARGET_FILE:midi_web_test>" ${_scene})
+            set_tests_properties(midi_web_${_scene} PROPERTIES
+                FAIL_REGULAR_EXPRESSION "FAIL  |, [1-9][0-9]* failed")
+        endforeach()
+    endif()
+
+    if(MIDIXT_PLACE_IN_SRC)
+        set(_midi_bundle_dir "${CMAKE_CURRENT_SOURCE_DIR}/src/code/wasm32-emscripten")
+        add_custom_command(TARGET midixt_web POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_midi_bundle_dir}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_midi_web_archive}" "${_midi_bundle_dir}/midixt.a"
+            COMMENT "Bundling midixt.a -> src/code/wasm32-emscripten/"
+            VERBATIM)
+    endif()
+    return()
+endif()
+
+find_package(Threads REQUIRED)
 
 add_library(midixt_rtmidi STATIC "${_rtmidi}/RtMidi.cpp" "${_rtmidi}/rtmidi_c.cpp")
 target_include_directories(midixt_rtmidi PUBLIC "${_rtmidi}")

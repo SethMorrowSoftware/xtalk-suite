@@ -5,7 +5,7 @@
 # library as an ARTIFACT; committed binaries come from the suite's manual
 # release-binaries.yml dispatch (suite rule 5).
 #
-# THREE JOBS, each the proof of one sentence in the member's README:
+# FOUR JOBS, each the proof of one sentence in the member's README:
 #   sanitize      the real library's smoke test and the shim against the mock
 #                 RtMidi under ASan/UBSan: every failure path RtMidi has
 #                 (a dead backend, a throwing read, a full queue) driven with
@@ -23,7 +23,15 @@
 #                 macOS rows' libraries are the artifacts for those ids;
 #   build-matrix  the other platform ids the release workflow builds, tested:
 #                 the 64-bit Linux rows in the manylinux_2_28 image the
-#                 release rows use, 32-bit Linux and 32-bit Windows.
+#                 release rows use, 32-bit Linux and 32-bit Windows;
+#   web           the wasm32-emscripten archive OXT-Beyond's web engine links
+#                 in (the shim over src/midi_web.c, the browser's Web MIDI),
+#                 built with the pinned Emscripten and tested under node
+#                 against tests/web/fake-web-midi.js, a stand-in for the
+#                 browser's Web MIDI: what it cannot show (a browser's own
+#                 prompt, its device list, its timing) is in docs/building.md.
+#                 The committed archive is built by hand, as the other web
+#                 members' are: release-binaries.yml builds no web archive.
 # There is no Android row: RtMidi's Android backend needs API 29 and JNI, and
 # the suite's floor is API 21 (CMakeLists.txt refuses the configure).
 name: native midixt
@@ -62,6 +70,9 @@ env:
   # digests, read 2026-11-21).
   OXT_BEYOND_REPO: SethMorrowSoftware/OpenXTalk-Beyond
   OXT_BEYOND_TAG: v0.2.7-rc.6
+  # The Emscripten release the `web` job installs (the one the archive was
+  # first built and tested with, 2026-11-22, and every other web member's).
+  EMSDK_VERSION: "6.0.12"
 
 defaults:
   run:
@@ -380,3 +391,32 @@ jobs:
           name: midixt-${{ matrix.platform_id }}
           path: midixt/dist/${{ matrix.platform_id }}/
           if-no-files-found: ignore
+
+  web:
+    name: wasm32-emscripten (the archive, tested under node)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned Emscripten
+        run: |
+          git clone --quiet --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install "$EMSDK_VERSION" > "$RUNNER_TEMP/emsdk-install.log" 2>&1 ||
+            { tail -40 "$RUNNER_TEMP/emsdk-install.log"; exit 1; }
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$EMSDK_VERSION" > /dev/null
+      # MIDIXT_PLACE_IN_SRC=OFF: a CI build places nothing in the tree. No
+      # ALSA here: the web build compiles none of RtMidi's sources.
+      - name: Configure + build + test
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh" > /dev/null 2>&1
+          emcc --version | head -n 1
+          emcmake cmake -S . -B build-web -DMIDIXT_BUILD_TESTS=ON -DMIDIXT_PLACE_IN_SRC=OFF
+          cmake --build build-web --parallel 4
+          ctest --test-dir build-web --output-on-failure --no-tests=error
+          mkdir -p dist/wasm32-emscripten
+          cp build-web/midixt.a dist/wasm32-emscripten/
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: midixt-wasm32-emscripten
+          path: midixt/dist/wasm32-emscripten/
+          if-no-files-found: error
