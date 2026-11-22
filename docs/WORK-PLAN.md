@@ -1249,16 +1249,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   ASan/UBSan (23 million fuzz inputs, 2026-11-21); the LCB suite under lc-run and the
   Script suite in OXT-Beyond's standalone engine with `-ui` (real UDP and the interop peer
   included) on Linux x86_64 over a locally built library (2026-11-21), which its native
-  lane repeats on Linux, Windows and a Mac. No desktop IDE has loaded it: verified
-  statically; needs an OXT pass.
+  lane repeats on Linux, Windows and a Mac. Its IDE installs of 2026-11-22 are under
+  Binaries; beyond them it is verified statically; needs an OXT pass.
 - Binaries: committed 2026-11-22 by its first release-binaries dispatch (run 44985328988
   from 80c3b28, `build: named` with midixt, commit 0996fba: the six desktop rows, ABI 2),
   and the `ships` row lists all six. The same day the LCB and Script suites passed over the
   committed `x86_64-linux` library on OXT-Beyond's headless Linux engine (23 and 39 tests,
   328 and 255 checks, none failed or skipped), and the extensions site's pipeline built its
   package here, which installed and loaded on the pinned Linux server engine, `oscVersion()`
-  answering 2. No engine has loaded the other committed libraries. No Android build
-  (`tools/build-android.sh`'s `DESKTOP_ONLY`: none has run yet).
+  answering 2. Then the maintainer's two PCs installed it over those libraries (runbook
+  section 8): on Windows, OXT-Beyond 0.2.8-dp.1's IDE compiled the binding and loaded it,
+  `oscVersion()` answered 2 and the self-test passed (29 checks and its UDP loopback, its
+  sockets closed by its stop); on Linux, 0.2.8-dp.2's IDE loaded it from packages staged by
+  the site's builder, and the self-test passed in the standalone engine. No engine has
+  loaded the mac, 32-bit or ARM libraries. No Android build (`tools/build-android.sh`'s
+  `DESKTOP_ONLY`: none has run yet).
 - The showcase, `examples/osc-show-surface.livecodescript` (2026-11-21, by Seth Morrow;
   OXT-Beyond's dark look by the owner's request): its engine tests passed on OXT-Beyond's
   headless Linux engine the same day; with oscxt loaded, its window, look and feel are
@@ -1276,20 +1281,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   That pass found the Light Board's closed show still listing a socket named by the
   address its board sent from (engine note 6.21); this one, with oscxt loaded, does the
   same on the headless engine. Fixed the same day: the show closes every sender's name with
-  its listener, held by the same test, strengthened first; that fix needs a Windows pass
-  with oscxt loaded (row 7).
+  its listener, held by the same test, strengthened first, and a Windows pass with oscxt
+  loaded (2026-11-22, opened hidden) found no socket listed and nothing queued after its
+  close (runbook section 8).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `oscxt/src/code/` holds every desktop platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
+| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac. (2026-11-22: installed on Windows, `oscVersion()` 2 and the self-test's 29 checks and UDP loopback passed in the IDE; installed on Linux, the self-test passed in the standalone engine; no real peer yet, no Mac.) | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
 | 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them publishes it | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme. (2026-11-22, with oscxt loaded, on Windows and Linux: opened hidden, it said "Nothing to set up" and its close left no socket and nothing queued; nobody has seen it on a screen with oscxt.) | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 
 ### 2.18 midixt
 
@@ -1300,8 +1306,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   backend's failures, clean under ASan/UBSan; the real library's smoke test on its
   no-service path; the LCB and Script suites on OXT-Beyond's headless Linux engine over
   locally built libraries (2026-11-21), which its native lane repeats on Linux, Windows and
-  a Mac. No MIDI service has carried a message on the record (no ALSA sequencer where it
-  ran), and no desktop IDE has loaded it: verified statically; needs an OXT pass.
+  a Mac. Its IDE installs of 2026-11-22, and the first MIDI service on its record (ALSA),
+  are under Binaries; beyond them it is verified statically; needs an OXT pass.
 - Binaries: committed 2026-11-22 by oscxt's dispatch (run 44985328988, commit 0996fba: the
   six desktop rows, ABI 2; the Linux libraries link ALSA's `libasound.so.2`, the Windows
   ones WINMM and KERNEL32 alone), and the `ships` row lists all six. The same day the LCB
@@ -1310,14 +1316,28 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   with no MIDI service there the real library took its no-service path and said so, and
   the checks that need a service skipped), and the extensions site's pipeline built its
   package here, which installed and loaded on the pinned Linux server engine,
-  `midiVersion()` answering 2. No engine has loaded the other committed libraries. No
+  `midiVersion()` answering 2. Then the maintainer's two PCs installed it over those
+  libraries (runbook section 8). On Linux, OXT-Beyond 0.2.8-dp.2's IDE loaded it and the
+  self-test passed in the standalone engine with every check run (38), its Tier 3 loopback
+  among them: a note, a controller, a bend and a SysEx through an ALSA virtual port and back,
+  the first MIDI service on its record. On Windows, 0.2.8-dp.1's IDE compiled the binding and
+  loaded it, `midiVersion()` answered 2, the ports listed were the GS Wavetable synth alone,
+  and the self-test passed (29; 2 skipped, Windows MM having no virtual ports). Two port-less
+  ALSA clients, the shim's two port listers, stay for the life of the process
+  (`midixt/CLAUDE.md`, "As built"). No engine has loaded the mac, 32-bit or ARM libraries. No
   Android library: RtMidi's Android backend needs API 29 and JNI, above the suite's API 21
   floor.
 - The showcase, `examples/midi-stage.livecodescript` (2026-11-21, by Seth Morrow): its
   engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
-  library and over the real one with no MIDI service (where it decodes and says why). No
-  service has carried its messages and nobody has heard it: verified statically; needs an
-  OXT pass (row 6). It opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and
+  library and over the real one with no MIDI service (where it decodes and says why). On
+  2026-11-22, with midixt installed, it opened hidden in the IDE on the maintainer's Linux
+  PC, its virtual port made and found again through ALSA ("Nothing to set up"), and on
+  Windows, naming the GS Wavetable synth for Sound; each close left no port and nothing
+  queued (runbook section 8). On Linux it offered for Sound the port RtMidi makes to read
+  its own cable, which would have played the player's notes into the stage's own input;
+  fixed the same day (`mdsReads`, its test failing first). Nobody has watched or heard it:
+  verified statically; needs an OXT pass (row 6). It opened without midixt in OXT-Beyond
+  0.2.8-dp.1's IDE on Windows and
   said what was missing. That run found two faults in all three ShowControl showcases: each
   opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
   OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
@@ -1335,7 +1355,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `midixt/src/code/` holds every desktop platform and the freshness gate demands them |
-| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
+| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports). (Linux, 2026-11-22: Tier 3 passed through ALSA on the maintainer's PC, every check run; no keyboard or DAW yet.) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
 | 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them publishes it | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |

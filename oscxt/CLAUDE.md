@@ -129,8 +129,13 @@ million fuzz inputs clean on 2026-11-21) and on OXT-Beyond's headless engine (9.
 Linux x86_64, 2026-11-21): the LCB suite under lc-run, and the Script suite in the
 standalone engine with `-ui`, real UDP and the interop peer included, over a locally built
 library, and both again on 2026-11-22 over the committed `x86_64-linux` library. Its six
-desktop libraries were committed that day (release run 44985328988); no engine has loaded
-the other five. No desktop IDE and no Windows, macOS or Android engine has loaded it:
-verified statically; needs an OXT pass. Its showcase has opened without it in OXT-Beyond
-0.2.8-dp.1's IDE on Windows (2026-11-21): it said what was missing, and that run found the
-two faults above. Open work is in the suite's `docs/WORK-PLAN.md`.
+desktop libraries were committed that day (release run 44985328988), and the maintainer's
+two PCs installed it over them (the suite's runbook, section 8): on Windows, OXT-Beyond
+0.2.8-dp.1's IDE compiled the binding and loaded it, `oscVersion()` answered 2, the
+self-test passed (29 checks and its UDP loopback) and closed its sockets, and the showcase,
+opened hidden, said "Nothing to set up" and left no socket and nothing queued when closed;
+on Linux, 0.2.8-dp.2's IDE loaded it and the self-test passed in the standalone engine. Its
+showcase had opened without it in 0.2.8-dp.1's IDE on Windows (2026-11-21) and said what
+was missing; that run found the two faults above. No engine has loaded the mac, 32-bit or
+ARM libraries, and no OSC application (TouchOSC, QLab, Max) has talked to it: verified
+statically; needs an OXT pass. Open work is in the suite's `docs/WORK-PLAN.md`.

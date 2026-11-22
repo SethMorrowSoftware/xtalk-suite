@@ -80,7 +80,7 @@ light per channel. On macOS and Linux the messages travel through a virtual port
 makes, "MIDI Stage", and back through the system's MIDI service; on Windows a loopMIDI
 port carries them, and without one the stage reads each message with `midiDecode` and
 says so. Press Sound to hear it through the Microsoft GS Wavetable Synth on Windows (or the
-first output that is not a cable); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing.
+first output that is neither a cable nor a program's input); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing.
 
 Its engine tests passed on 2026-11-21 in OXT-Beyond's headless engine (Linux x86_64):
 `tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only what
@@ -113,10 +113,13 @@ Joined the suite on 2026-11-21. What has run, and where:
 - **Committed libraries:** the six desktop ones under `src/code/`, from the suite's
   release-binaries dispatch of 2026-11-22. No Android library: RtMidi's Android backend
   needs API 29.
-- **Not yet:** no MIDI service has carried a message on the record (where these ran there
-  was no ALSA sequencer, so the self-test's loopback skipped); no desktop IDE has loaded it,
-  and no engine on Windows or macOS has run it: there it is verified statically; needs an
-  OXT pass.
+- **In an IDE**, 2026-11-22, over the committed libraries: on Linux, OXT-Beyond 0.2.8-dp.2
+  loaded it as an installed extension, and the shipped self-test passed in the standalone
+  engine with every check run, its loopback through an ALSA virtual port among them; on
+  Windows, 0.2.8-dp.1 compiled the binding and loaded it, `midiVersion()` answered 2 and the
+  self-test passed (29 checks; Windows MM has no virtual ports, so 2 skipped).
+- **Not yet:** a message through CoreMIDI, Windows MM or a MIDI keyboard on the record, and
+  a Mac: there it is verified statically; needs an OXT pass.
 
 ## Building and testing
 

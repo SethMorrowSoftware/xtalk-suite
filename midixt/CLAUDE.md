@@ -91,6 +91,12 @@ extension upgrades in place and its stacks keep working. Only the library's file
   fit the caller's drain block to the next drain: a popped message is never dropped. The
   binding's block (2 + 65535 + 4) always fits one, so the stash's drop path is unreachable
   from LCB.
+- **The two port listers stay.** Counting and naming ports needs an RtMidi instance: the
+  shim makes one per direction on first use and keeps it for the life of the process (one
+  whose backend failed is made again). ALSA lists them as two clients with no port, "RtMidi
+  Input Client" and "RtMidi Output Client", after every port has closed: two such clients
+  stayed in the IDE on the maintainer's Linux PC after MIDI Stage closed (2026-11-22).
+  Nothing can connect to a client with no port.
 - **`midiLoadNativeLibError` keeps its reason**, read from `dlerror()` when
   `midiLoadNativeLib` fails. ShowControl's read it when asked, and the engine binds a
   foreign handler on its first call, which ate the pending error: the first answer was
@@ -140,9 +146,16 @@ test on its no-service path) and on OXT-Beyond's headless engine (9.7.1-OXT, Lin
 2026-11-21): the LCB suite under lc-run, and the Script suite in the standalone engine with
 `-ui`, over locally built libraries, and both again on 2026-11-22 over the committed
 `x86_64-linux` library. Its six desktop libraries were committed that day (release run
-44985328988); no engine has loaded the other five. No MIDI service has carried a message on
-the record yet (the self-test's Tier 3 skipped: no ALSA sequencer where it ran). No desktop
-IDE and no Windows or macOS engine has loaded it: verified statically; needs an OXT pass.
-Its showcase has opened without it in OXT-Beyond 0.2.8-dp.1's IDE on Windows (2026-11-21):
-it said what was missing, and that run found the two faults above. Open work is in the
-suite's `docs/WORK-PLAN.md`.
+44985328988), and the maintainer's two PCs installed it over them (the suite's runbook,
+section 8). On Linux, OXT-Beyond 0.2.8-dp.2's IDE loaded it and the self-test passed in the
+standalone engine with every check run (38), its Tier 3 loopback through an ALSA virtual
+port among them: the first MIDI service on the record to carry its messages. On Windows,
+0.2.8-dp.1's IDE compiled the binding and loaded it, `midiVersion()` answered 2 and listed
+the GS Wavetable synth, and the self-test passed (29; 2 skipped, Windows MM having no
+virtual ports). The showcase opened hidden on both and left no port and nothing queued when
+closed; on Linux it offered for Sound the port that reads its own cable, fixed the same day
+(`mdsReads`). It had opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and
+said what was missing; that run found the two faults above. No message through CoreMIDI,
+Windows MM or a MIDI keyboard is on the record, and no engine has loaded the mac, 32-bit or
+ARM libraries: verified statically; needs an OXT pass. Open work is in the suite's
+`docs/WORK-PLAN.md`.

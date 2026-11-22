@@ -95,8 +95,13 @@ Joined the suite on 2026-11-21. What has run, and where:
   peer); on 2026-11-22 both again over the committed `x86_64-linux` library.
 - **Committed libraries:** the six desktop ones under `src/code/`, from the suite's
   release-binaries dispatch of 2026-11-22. No Android library.
-- **Not yet:** no desktop IDE has loaded it, and no engine on Windows, macOS or Android has
-  run it: there it is verified statically; needs an OXT pass.
+- **In an IDE**, 2026-11-22, over the committed libraries: on Windows, OXT-Beyond
+  0.2.8-dp.1 compiled the binding and loaded it as an installed extension, `oscVersion()`
+  answered 2, the shipped self-test passed (29 checks and its UDP loopback) and the
+  showcase opened and closed clean; on Linux, 0.2.8-dp.2 loaded it, and the self-test passed
+  in the standalone engine.
+- **Not yet:** a Mac, a real OSC application (TouchOSC, QLab, Max) and Android: there it is
+  verified statically; needs an OXT pass.
 
 ## Building and testing
 
