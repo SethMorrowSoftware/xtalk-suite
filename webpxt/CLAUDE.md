@@ -81,17 +81,18 @@ self-test's `sweepEveryHandler`. `tools/check-shim-coverage.py` refuses any of t
 
 Verified natively (smoke and fuzz, ASan/UBSan, 64-bit, 32-bit and wasm under node) and on the
 headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a locally built library).
-Release libraries were committed on 2026-11-21 (six desktop platforms, four Android ABIs, run
-44846691681), beside the web archive (`src/code/wasm32-emscripten/`, built by hand with
-Emscripten 6.0.12 the same day). That day three engines loaded committed ones: the engine
+The first release libraries were committed on 2026-11-21 (six desktop platforms, four Android
+ABIs, run 44846691681), beside the web archive (`src/code/wasm32-emscripten/`, built by hand with
+Emscripten 6.0.12 the same day). That day three engines loaded those: the engine
 self-test passed over the `x86_64-linux` library on that server engine (79 checks, none
 failed); the IDE on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit) loaded the
 `x86_64-win32` library as an installed extension, `wpLibraryVersion()` answered and the
 gallery's WebP Studio encoded a picture and decoded it back; and OXT-Beyond's Android check app
-(its pull request 614) called `wpLibraryVersion()` on an Android 16 x86_64 emulator. No IDE on
-Linux or a Mac, no engine on macOS or the web, and no ARM or 32-bit library has run it:
-verified statically; needs an OXT pass. The animation-length limit (gotcha 8) came on
-2026-11-22, and the web archive was rebuilt from it that day; the engine self-test passes
-over a library built from it on that server engine (93 checks, none failed) and fails
-exactly its five new checks over the libraries committed 2026-11-21, which predate it until
-a release dispatch rebuilds them. Open work is in the suite's `docs/WORK-PLAN.md`.
+(its pull request 614) called `wpLibraryVersion()` on an Android 16 x86_64 emulator. On
+2026-11-22 the animation-length limit (gotcha 8) came in: the web archive was rebuilt from it
+by hand, release run 44965414934 rebuilt the ten others (commit 3d35c4a), and the engine
+self-test passed over the rebuilt `x86_64-linux` library on that server engine (93 checks,
+none failed; over the 2026-11-21 library it fails exactly its five new checks). The Windows
+and Android records above are of the 2026-11-21 libraries. No IDE on Linux or a Mac, no engine
+on macOS or the web, no ARM or 32-bit library, and no IDE or app on the rebuilt libraries has
+run it: verified statically; needs an OXT pass. Open work is in the suite's `docs/WORK-PLAN.md`.

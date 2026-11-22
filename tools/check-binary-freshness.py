@@ -523,7 +523,9 @@ MEMBERS = [
         "name": "webpxt",
         "lib": "webpxt",
         "lcb": ["webpxt/src/webpxt.lcb"],
-        # As barcodext's: the same release run, the web archive beside it.
+        # As barcodext's at first: the same release run, the web archive
+        # beside it. Rebuilt on 2026-11-22 for the animation-length limit
+        # (run 44965414934 from 17cbef6), the web archive by hand beside it.
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
                   "x86_64-win32", "universal-mac",
                   "wasm32-emscripten",
