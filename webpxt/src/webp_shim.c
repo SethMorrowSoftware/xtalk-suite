@@ -85,6 +85,13 @@
 #define WPX_MAX_FRAMES 10000
 #define WPX_MAX_DURATION_MS 600000
 
+/* The longest a whole animation may last, written or read: libwebp keeps a
+ * frame's start in an int of milliseconds when it writes (the timestamp
+ * wpx_animenc_add passes) and when it reads (the end time its decoder adds
+ * each frame's duration to), so the last frame must end by INT_MAX, about
+ * 24.8 days. The two limits above would allow 6,000,000,000. */
+#define WPX_MAX_TOTAL_MS INT_MAX
+
 /* ------------------------------------------------------------------ */
 /* The last error, and the text buffer                                  */
 /* ------------------------------------------------------------------ */
@@ -746,6 +753,23 @@ WPX_API void wpx_output_release(void)
 /* Reading an animation, frame by frame                                 */
 /* ------------------------------------------------------------------ */
 
+/* Whether an animation's frames add up to WPX_MAX_TOTAL_MS or less. Each
+ * duration is the file's 24-bit field, so the sum is kept in 64 bits and the
+ * walk stops as soon as it is over. A file the demuxer cannot walk is left to
+ * the decoder, which says what is wrong with it. */
+static int durations_fit(const WebPAnimDecoder *decoder)
+{
+    const WebPDemuxer *demux = WebPAnimDecoderGetDemuxer(decoder);
+    WebPIterator iter;
+    int64_t total = 0;
+    if (demux == NULL || !WebPDemuxGetFrame(demux, 1, &iter)) return 1;
+    do {
+        total += iter.duration;
+    } while (total <= WPX_MAX_TOTAL_MS && WebPDemuxNextFrame(&iter));
+    WebPDemuxReleaseIterator(&iter);
+    return total <= WPX_MAX_TOTAL_MS;
+}
+
 /* Open a WebP file (animated, or a still, which is an animation of one
  * frame) for reading frame by frame. Returns a handle, or 0. The bytes are
  * copied: the caller's buffer need not outlive the call. */
@@ -797,6 +821,15 @@ WPX_API int wpx_anim_open(const uint8_t *data, int length)
         free(reader->data);
         reader->data = NULL;
         set_error("the animation's canvas is over the limit of %d pixels", WPX_MAX_PIXELS);
+        return 0;
+    }
+    if (!durations_fit(reader->decoder)) {
+        WebPAnimDecoderDelete(reader->decoder);
+        reader->decoder = NULL;
+        free(reader->data);
+        reader->data = NULL;
+        set_error("the animation's frames add up to more than %d milliseconds (about 24.8 days), which libwebp "
+                  "cannot time", WPX_MAX_TOTAL_MS);
         return 0;
     }
     reader->index = 0;
@@ -981,6 +1014,13 @@ WPX_API int wpx_animenc_add(int handle, const uint8_t *pixels, int pixelsLength,
     }
     if (writer->frames >= WPX_MAX_FRAMES) {
         set_error("an animation holds at most %d frames", WPX_MAX_FRAMES);
+        return 0;
+    }
+    /* writer->timestamp is at most WPX_MAX_TOTAL_MS, so the subtraction
+     * cannot overflow where the sum would have. */
+    if (durationMs > WPX_MAX_TOTAL_MS - writer->timestamp) {
+        set_error("an animation lasts at most %d milliseconds in all (about 24.8 days); its frames add up to %d so far",
+                  WPX_MAX_TOTAL_MS, writer->timestamp);
         return 0;
     }
     if (!pixels_ok(pixels, pixelsLength, alpha, alphaLength, writer->width, writer->height)) return 0;
