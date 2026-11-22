@@ -1354,7 +1354,13 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   ALSA clients, the shim's two port listers, stay for the life of the process
   (`midixt/CLAUDE.md`, "As built"). No engine has loaded the mac, 32-bit or ARM libraries. No
   Android library: RtMidi's Android backend needs API 29 and JNI, above the suite's API 21
-  floor.
+  floor. The web archive (`wasm32-emscripten/midixt.a`, 2026-11-22, built by hand with
+  Emscripten 6.0.12 as the other members' are): the same shim over midixt's own Web MIDI
+  layer, `src/midi_web.c` (RtMidi 6.0.0's Web MIDI backend delivers input only to a
+  callback, which a poll never reads), its tests run under node against a stand-in for the
+  browser's Web MIDI (`tests/web/fake-web-midi.js`), and the `ships` row lists it. No web
+  engine links it yet (row 7) and no browser has run it: verified statically; needs a pass
+  in a browser.
 - The showcase, `examples/midi-stage.livecodescript` (2026-11-21, by Seth Morrow): its
   engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
   library and over the real one with no MIDI service (where it decodes and says why). On
@@ -1384,7 +1390,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   close a frame of the show's loop was still queued, and the IDE keeps a closed stack in
   memory. Fixed the same day: the loop stops itself once its stack is closed, held by an
   engine test that failed first, and a Windows pass of that fix found nothing queued after
-  either kind of close (runbook section 8). It opens no socket.
+  either kind of close (runbook section 8). It opens no socket. On the web (2026-11-22) it
+  says the web's reasons in its footer (a frame that does not allow MIDI, as a gallery's
+  player is; a question the person has not answered; a refusal) and looks again each second
+  until the browser has answered, held by two engine tests that hand it the web layer's
+  words and failed against the stage before them; verified statically; needs a pass in a
+  browser (row 8).
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
@@ -1396,6 +1407,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
 | 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in. (2026-11-22, hidden in OXT-Beyond's IDE on the maintainer's PCs, 10 s of play each: on Linux, over its virtual port through ALSA, the stage read all 86 messages the player sent, 3 ms from send to stage, and its close left no port; on Windows with no loopMIDI port it decoded all 86. Not yet on a screen, heard, on a Mac, through a loopMIDI port or with a keyboard.) | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
+| 7 | The web archive linked into OXT-Beyond's web engine (its `tools/oxt/xtalk-extensions.json` pins it by SHA-256, as it pins the other members'), then in a web player release | OXT-Beyond | - | `midiVersion()` answers 2 in the web IDE |
+| 8 | Web MIDI in a browser: the web IDE or Stack Player in Chrome, the browser's question answered yes and no, a loopback port (loopMIDI, the IAC Driver) found as MIDI Stage's cable, Sound through a real output, a keyboard's notes in blue, and MIDI Stage in the community gallery's player (its frame allows no MIDI: it must decode and say so) | after #7 + a browser with Web MIDI | - | the stage reads what the player sends through the loopback port, and in the gallery it plays on, saying the frame does not allow MIDI |
 
 ### 2.19 artnetxt
 

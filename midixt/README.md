@@ -13,6 +13,9 @@ RtMidi 6.0.0 (pinned commit, static; ALSA / CoreMIDI / Windows MM)
    |- C shim   src/midi_shim.c  ->  midixt.{so,dll,dylib}     (ABI: midi_*, v2)
         |- LCB binding  src/midi.lcb     (org.openxtalk.library.midi; public midi*)
              |- examples/midi-helpers.livecodescript   (the poll dispatcher)
+
+the browser's Web MIDI, through src/midi_web.c (no RtMidi code)
+   |- the same C shim  ->  wasm32-emscripten/midixt.a        (a web engine links it in)
 ```
 
 It is the MIDI third of ShowControl, which joined the suite on 2026-11-21 as **oscxt**
@@ -38,7 +41,13 @@ handler and the helper's messages are ShowControl's, so a stack written for Show
 
 What it does not do: MIDI files, MIDI 2.0, timing or sequencing of its own (send on your own
 timer), Android (RtMidi's Android backend needs API 29; the suite's floor is 21), or
-virtual ports on Windows (use a loopback driver such as loopMIDI).
+virtual ports on Windows or in a web page (use a loopback driver such as loopMIDI).
+
+**On the web**, a web engine that links midixt in runs the same handlers over the browser's
+Web MIDI: the browser decides whether a page may use MIDI and may ask the person first, so
+the first listing is empty while it asks, and a page in a frame that does not allow MIDI is
+refused at once. [docs/getting-started.md](docs/getting-started.md#8-on-the-web) says what
+else differs.
 
 ## Quick taste
 
@@ -80,7 +89,7 @@ light per channel. On macOS and Linux the messages travel through a virtual port
 makes, "MIDI Stage", and back through the system's MIDI service; on Windows a loopMIDI
 port carries them, and without one the stage reads each message with `midiDecode` and
 says so. Press Sound to hear it through the Microsoft GS Wavetable Synth on Windows (or the
-first output that is neither a cable nor a program's input); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing.
+first output that is neither a cable nor a program's input); a keyboard plugged in plays in blue. It carries its helper script, so it is one file: open it from the suite's `start-here.livecodescript`, or paste the whole file into a new stack's script, apply, then close the stack and open it again. It needs the midixt extension installed; without it the window still opens and says what is missing. In a web page (a web engine with midixt linked in) it decodes and says why while the browser has not allowed the page MIDI, looks again each second until the browser answers, and then finds a loopback port as a desktop does; in a frame that does not allow MIDI, a gallery's player, it decodes and says so. Its tests hand it the web's reasons in the web layer's words (the mock speaks a desktop's): verified statically; needs a pass in a browser.
 
 Its engine tests passed on 2026-11-21 in OXT-Beyond's headless engine (Linux x86_64):
 `tests/lcs/demo_test.livecodescript` over the mock MIDI library (the stage draws only what
@@ -121,7 +130,9 @@ Joined the suite on 2026-11-21. What has run, and where:
   self-test); on 2026-11-22 both again over the committed `x86_64-linux` library.
 - **Committed libraries:** the six desktop ones under `src/code/`, from the suite's
   release-binaries dispatch of 2026-11-22. No Android library: RtMidi's Android backend
-  needs API 29.
+  needs API 29. The web archive (`wasm32-emscripten/midixt.a`), built by hand the same day
+  with Emscripten 6.0.12: its tests run under node against a stand-in for the browser's Web
+  MIDI, and no browser has run it yet: verified statically; needs a pass in a browser.
 - **In an IDE**, 2026-11-22, over the committed libraries: on Linux, OXT-Beyond 0.2.8-dp.2
   loaded it as an installed extension, and the shipped self-test passed in the standalone
   engine with every check run, its loopback through an ALSA virtual port among them; on
@@ -139,16 +150,18 @@ python3 tools/run-lcs-tests.py --oxt-bin <OXT bin folder> --build-dir build
 bash tools/run-gates.sh
 ```
 
-Linux needs `libasound2-dev`; RtMidi is fetched at configure time.
-[docs/building.md](docs/building.md) has the details.
+Linux needs `libasound2-dev`; RtMidi is fetched at configure time. The web archive builds
+with Emscripten (`emcmake cmake -S . -B build-web -DMIDIXT_BUILD_TESTS=ON`) and its tests run
+under node. [docs/building.md](docs/building.md) has the details.
 
 ## Documentation
 
 - [docs/getting-started.md](docs/getting-started.md) - install, receive (with the helper and
-  by hand), send, virtual ports, the self-test, troubleshooting.
+  by hand), send, virtual ports, the self-test, the web, troubleshooting.
 - [docs/api-reference.md](docs/api-reference.md) - every `midi*` handler, generated from the
   binding's doc blocks.
-- [docs/building.md](docs/building.md) - builds, sanitizers, the four test layers, the gates.
+- [docs/building.md](docs/building.md) - builds, sanitizers, the web archive, the test
+  layers, the gates.
 - [CLAUDE.md](CLAUDE.md) - rules and gotchas for anyone changing this member.
 
 ## License

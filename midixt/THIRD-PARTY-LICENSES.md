@@ -2,6 +2,10 @@
 
 midixt is MIT-licensed (see [LICENSE](LICENSE)). The native library it ships
 (`midixt.so`, `midixt.dll`, `midixt.dylib`) contains one third-party component.
+The web archive (`wasm32-emscripten/midixt.a`, which a web engine links in)
+contains none of RtMidi's code: it is the shim over midixt's own Web MIDI
+layer (`src/midi_web.c`), compiled against RtMidi's C header for its
+declarations alone.
 
 ## RtMidi 6.0.0 (MIT), statically linked
 

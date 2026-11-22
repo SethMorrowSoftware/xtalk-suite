@@ -39,6 +39,11 @@ script "MidiDemoTest"
 --     a keyboard's own in and out are never taken for one, and Sound never
 --     plays into a cable;
 --   * where there are no virtual ports (Windows MM) it says so;
+--   * on the web, each reason the browser gives (a frame without MIDI, a
+--     question out, a refusal, no Web MIDI) has its own words, and while the
+--     browser has not answered it looks again each second, then connects.
+--     The mock speaks a desktop's errors, so the web's are handed in, as
+--     src/midi_web.c words them (tests/midi_web_test.c pins those);
 --   * without midixt, or without its native library, it still opens, the
 --     player plays, nothing is sent and it says what is missing.
 -- The window itself, the look, the feel and a real MIDI service need an OXT
@@ -624,6 +629,76 @@ on TestWindowsMMHasNoVirtualPortsAndSaysSo
    TestAssertEqual "and its tooltip gives the library's words", the tooltip of field "mdsStatus" of stack sDemo, "No MIDI cable: this MIDI backend has no virtual ports (on Windows use a loopback driver such as loopMIDI)"
    TestAssert "the show goes on (" & tState["read"] & " read)", tState["read"] >= 4 and tState["read"] is tState["sent"]
 end TestWindowsMMHasNoVirtualPortsAndSaysSo
+
+-- The web layer's reasons, word for word as src/midi_web.c gives them after
+-- the library's own ("midi: no MIDI input backend: ..."), and what the
+-- footer makes of each. A desktop's errors carry none of them.
+on TestOnTheWebEachReasonHasItsWords
+   local tCreates
+   MockReset
+   MockSetBackendOk false
+   demoOpen
+   TestPump 300
+   demoHold
+   TestAssertEqual "a frame without MIDI", demoFind("mdsCableHint", "this page may not use MIDI: the frame it is shown in does not allow it"), " This page's frame does not allow MIDI."
+   TestAssertEqual "a question out", demoFind("mdsCableHint", "asked the browser whether this page may use MIDI: ask again once it has answered"), " Allow MIDI when your browser asks."
+   TestAssertEqual "a question still out", demoFind("mdsCableHint", "the browser has not yet answered whether this page may use MIDI: ask again in a moment"), " Allow MIDI when your browser asks."
+   TestAssertEqual "a refusal", demoFind("mdsCableHint", "the browser refused this page MIDI (NotAllowedError: Permission denied.)"), " The browser refused this page MIDI."
+   TestAssertEqual "no Web MIDI", demoFind("mdsCableHint", "this browser has no Web MIDI"), " This browser has no Web MIDI."
+   TestAssertEqual "a page that is not secure", demoFind("mdsCableHint", "browsers give MIDI only to a secure page (https), and this one is not"), " Browsers give MIDI only to a secure (https) page."
+   TestAssertEqual "MIDI allowed: a loopback driver, never loopMIDI alone", demoFind("mdsCableHint", "a web page has no virtual ports (Web MIDI makes none)"), " A loopback port (loopMIDI, the IAC Driver) makes one."
+   TestAssertEqual "Windows MM keeps its own words", demoFind("mdsCableHint", "this MIDI backend has no virtual ports (on Windows use a loopback driver such as loopMIDI)"), " A loopMIDI port makes one."
+   -- the web's reason out of midixt's error; nothing out of a desktop's
+   TestAssertEqual "the library's own words go", demoFind("mdsWebWhy", "midi: no MIDI output backend: this page may not use MIDI: the frame it is shown in does not allow it"), "this page may not use MIDI: the frame it is shown in does not allow it"
+   TestAssertEqual "after a count that failed too", demoFind("mdsWebWhy", "midi: could not count the MIDI ports: the browser refused this page MIDI (NotAllowedError: x)"), "the browser refused this page MIDI (NotAllowedError: x)"
+   TestAssertEqual "a desktop's backend error has none", demoFind("mdsWebWhy", "midi: no MIDI input backend"), empty
+   TestAssertEqual "nor a desktop's virtual port", demoFind("mdsWebWhy", "midi: backend init failed (no MIDI service available?)"), empty
+   TestAssertEqual "nor no error at all", demoFind("mdsWebWhy", empty), empty
+   -- and here the desktop's own listing error kept nothing
+   TestAssertEqual "this mock's errors are a desktop's", demoGet("listWhy"), empty
+   -- the gallery's player: a frame without MIDI, said once, never asked again
+   dispatch "mdsHeard" to stack sDemo with "midi: no MIDI input backend: this page may not use MIDI: the frame it is shown in does not allow it"
+   dispatch "mdsShowStatus" to stack sDemo
+   TestAssertEqual "the footer says why, with no Sound to offer", demoText("mdsStatus"), "No MIDI cable here: the stage decodes each message itself. This page's frame does not allow MIDI."
+   TestAssertEqual "its tooltip gives the reason in full", the tooltip of field "mdsStatus" of stack sDemo, "No MIDI cable: this page may not use MIDI: the frame it is shown in does not allow it"
+   TestAssertEqual "nothing to wait for", demoGet("askAt"), empty
+   put MockCreates() into tCreates
+   TestPump 1100
+   demoStep 0.1
+   TestAssertEqual "so it never looks again", MockCreates(), tCreates
+   TestAssertEqual "and the show goes on", demoGet("trouble"), empty
+end TestOnTheWebEachReasonHasItsWords
+
+-- The browser has not answered yet: the footer asks the person, and the
+-- stage looks again each second (not every frame), then connects once the
+-- answer is yes. Here the mock's MIDI service coming up is the answer.
+on TestOnTheWebItWaitsForTheBrowsersAnswer
+   local tState, tCreates
+   MockReset
+   MockSetBackendOk false
+   demoOpen
+   TestPump 300
+   demoHold
+   dispatch "mdsHeard" to stack sDemo with "midi: no MIDI input backend: asked the browser whether this page may use MIDI: ask again once it has answered"
+   dispatch "mdsShowStatus" to stack sDemo
+   TestAssertEqual "the footer says what to do", demoText("mdsStatus"), "No MIDI cable here: the stage decodes each message itself. Allow MIDI when your browser asks."
+   TestAssertEqual "its tooltip gives the browser's side in full", the tooltip of field "mdsStatus" of stack sDemo, "No MIDI cable: asked the browser whether this page may use MIDI: ask again once it has answered"
+   TestAssert "it will look again", demoGet("askAt") is an integer
+   put MockCreates() into tCreates
+   demoStep 0.1
+   TestAssertEqual "but not at once", MockCreates(), tCreates
+   MockSetBackendOk true
+   TestPump 1100
+   demoStep 0.1
+   put demoState() into tState
+   TestAssert "a second later it looked again (" & MockCreates() & " creates, " & tCreates & " before)", MockCreates() > tCreates
+   TestAssertEqual "and found ports: nothing more to wait for", tState["listWhy"], empty
+   TestAssertEqual "so it asks nothing more", tState["askAt"], empty
+   TestAssertEqual "it listens to the mock's two inputs for a player", the number of lines of tState["youNames"], 2
+   TestAssertEqual "it offers the first output to play through", tState["soundName"], "MockPort-0-aLongishName"
+   TestAssert "and the footer says so (" & demoText("mdsStatus") & ")", demoText("mdsStatus") contains "Press Sound to hear it through MockPort-0-aLongishName."
+   TestAssertEqual "nothing went wrong", tState["trouble"], empty
+end TestOnTheWebItWaitsForTheBrowsersAnswer
 
 on TestWithoutMidixtItSaysWhatIsMissing
    local tState, tLog

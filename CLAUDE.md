@@ -30,7 +30,8 @@ reads; the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` se
   desktop and web only), webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
   their libraries committed 2026-11-21, and ShowControl's three, which joined 2026-11-21: oscxt
   (tinyosc: Open Sound Control) and midixt (RtMidi: realtime MIDI), their libraries committed
-  2026-11-22 (desktop only), and artnetxt (Art-Net DMX lighting in pure LCB, with no native
+  2026-11-22 (desktop only, bar midixt's web archive over the browser's Web MIDI, committed
+  by hand the same day), and artnetxt (Art-Net DMX lighting in pure LCB, with no native
   library at all, but a native lane: its suites run on an engine).
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
