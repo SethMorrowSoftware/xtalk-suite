@@ -113,6 +113,15 @@ Joined the suite on 2026-11-20. What has run, and where:
   Chromium, Firefox and WebKit over a virtual pad: attached, a button pressed and read back
   as an event, a stick inside and outside the dead zone, rumble, the light, unplugged, and
   SDL's assertions at 0. The browsers showed no pads of their own, so no real controller.
+- **In the community gallery**, 2026-11-22: OXT-Beyond 0.2.8-dp.2.1 ships the web archive
+  (its web engine links it by SHA-256), and the gallery plays stacks in that release's
+  Stack Player. Gamepad Lab, as the gallery shares it, played there in headless Chromium:
+  it read "SDL 3.4.20, gamepadxt ABI 1: reading controllers" and played its showcases on
+  the software pad. A pad the test put into the browser's Gamepad API (a standard mapping
+  with an Xbox One S id; no device) was plugged in mid-run and taken over: SDL's
+  Emscripten driver named it "Xbox One S Controller", and its south button and left stick
+  were read back. From the Gamepad API on, that is a real controller's path in a browser;
+  no real one has taken it yet.
 - **In the IDE on Windows**, 2026-11-21: on the maintainer's PC, OXT-Beyond 0.2.8-dp.1
   (64-bit) loaded the extension from the user's Extensions folder, over a DLL the size of
   the committed `x86_64-win32` one (1,936,384 bytes; not hashed). Gamepad Lab opened in
