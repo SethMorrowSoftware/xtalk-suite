@@ -184,10 +184,66 @@ command drPick pPick
    end if
 end drPick
 
+-- An IDE's ear, in front of every object while the window is built.
+-- OXT-Beyond's IDE answers each control a script makes, names or deletes
+-- (engine note 5.15): its frontscript hears newField, newButton,
+-- newGraphic or newGroup (and newBackground), and nameChanged, and queues
+-- a message to its project browser for each, and its backscript stamps
+-- the control. Built with messages on, the window took 59 s to open in
+-- that IDE on Windows (2026-11-21), where the engine alone builds it in
+-- about 30 ms. The demo builds it with messages locked, so the ear hears
+-- nothing; it counts every such message the engine has (the script before
+-- that fix made 520: 268 new-control messages and 252 nameChanged).
+command drEar pOn
+   local tScript, tName
+   if pOn then
+      put "local sHeard" & return into tScript
+      repeat for each item tName in "newField,newButton,newGraphic,newGroup,newBackground,newImage,newPlayer,newScrollbar,newWidget," \
+            & "nameChanged,deleteField,deleteButton,deleteGraphic,deleteGroup,deleteBackground"
+         put "on" && tName & return & "add 1 to sHeard" & return & "pass" && tName & return \
+               & "end" && tName & return after tScript
+      end repeat
+      put "function earHeard" & return & "return sHeard + 0" & return & "end earHeard" & return after tScript
+      create invisible stack "audioxtDemoEar"
+      set the script of stack "audioxtDemoEar" to tScript
+      insert the script of stack "audioxtDemoEar" into front
+   else
+      remove the script of stack "audioxtDemoEar" from front
+      delete stack "audioxtDemoEar"
+   end if
+end drEar
+
+-- How many messages of a control made, named or deleted the ear has heard.
+function drEarHeard
+   dispatch function "earHeard" to stack "audioxtDemoEar"
+   return the result
+end drEarHeard
+
+-- Is all of a window of pRect, and a title bar above it, inside one of
+-- pScreens? Worked out here, not asked of the demo, so a demo that never
+-- places its window fails it.
+function drOnScreen pRect, pScreens
+   local tScreen
+   repeat for each line tScreen in pScreens
+      if item 1 of pRect >= item 1 of tScreen and item 2 of pRect - 32 >= item 2 of tScreen \
+            and item 3 of pRect <= item 3 of tScreen and item 4 of pRect <= item 4 of tScreen then
+         return true
+      end if
+   end repeat
+   return false
+end drOnScreen
+
+-- Where the demo would move a window of pWindow on screens pScreens (its
+-- adPlacedLoc): empty to leave it, or the loc it moves it to.
+function drPlaced pWindow, pScreens
+   dispatch function "adPlacedLoc" to stack kStack with pWindow, pScreens
+   return the result
+end drPlaced
+
 -- The demo's script on a new stack, compiled with every variable declared,
 -- and the window opened.
 command drOpen
-   local tScript, tResult
+   local tScript, tResult, tHeard
    put textDecode(URL ("binfile:" & $AUDIOXT_DEMO), "UTF-8") into tScript
    drCheck the number of lines of tScript > 1000, "the demo's script is read", $AUDIOXT_DEMO
    create stack kStack
@@ -199,11 +255,20 @@ command drOpen
    dispatch function "adProbe" to stack kStack with "scene"
    put it into tResult
    drCheck tResult is "handled", "it compiles with every variable declared", tResult
+   -- the ear goes in before `go`, which builds the window in a windowed
+   -- engine
+   drEar true
    go stack kStack
    set the defaultStack to kStack
    -- a windowed engine sends it on `go`; -ui does not, so it is sent here
    -- (the window is built once: a second one builds nothing)
    send "preOpenStack" to stack kStack
+   put drEarHeard() into tHeard
+   drEar false
+   set the defaultStack to kStack
+   drCheck the number of controls of card 1 of stack kStack > 200 and tHeard is 0, \
+         "its window is built with messages locked: an IDE hears of none of its controls", \
+         tHeard && "messages for" && the number of controls of card 1 of stack kStack && "controls"
 end drOpen
 
 -- The look, for a system in dark mode: every field and button has its own
@@ -245,6 +310,27 @@ command drWindow
          and drField("Sub") is not empty, "the header: the family, the stage's name, what it does, and whose", drField("Credit")
    drCheck the backgroundColor of stack kStack is "#12151F", "a dark stage", the backgroundColor of stack kStack
    drLook
+   -- Where it opens: on this engine's screen, when it has one (-ui has
+   -- none); and on screens it has not got, a window above and left of
+   -- every screen, as the stack file opened on Windows (2026-11-21), is
+   -- centred on the first; one on any screen, title bar and all, stays; a
+   -- screen too short for it keeps its title bar on the screen; an engine
+   -- with no display moves nothing.
+   if item 3 of line 1 of the working screenRects > 0 then
+      drCheck drOnScreen(the rect of stack kStack, the working screenRects), "it opens on the screen, its title bar too", \
+            the rect of stack kStack && "on" && line 1 of the working screenRects
+   else
+      put "INFO  no screen here: where the window opens is not seen" & return after sOut
+   end if
+   drCheck drPlaced("-320,-140,640,460", "0,0,1821,920") is "910,476", \
+         "a window above and left of the screen is centred on it", drPlaced("-320,-140,640,460", "0,0,1821,920")
+   drCheck drPlaced("120,100,1080,700", "0,0,1821,920") is empty \
+         and drPlaced("2000,100,2960,700", "0,0,1821,920" & return & "1821,0,3741,1040") is empty, \
+         "a window on any screen stays where it is", drPlaced("2000,100,2960,700", "0,0,1821,920" & return & "1821,0,3741,1040")
+   drCheck drPlaced("120,10,1080,610", "0,0,1280,600") is "640,332", \
+         "on a screen too short for it, its title bar stays on the screen", drPlaced("120,10,1080,610", "0,0,1280,600")
+   drCheck drPlaced("-320,-140,640,460", "0,0,0,0") is empty and drPlaced("-320,-140,640,460", empty) is empty, \
+         "with no display it moves nothing", drPlaced("-320,-140,640,460", "0,0,0,0")
    put the number of controls of card 1 of stack kStack into tWas
    send "preOpenStack" to stack kStack
    drCheck the number of controls of card 1 of stack kStack is tWas, "reopening adds no control", \

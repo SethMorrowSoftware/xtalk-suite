@@ -1500,6 +1500,23 @@ section 8). Built with messages locked, the same three opened in that IDE in
 section 8): those messages were nearly all of the cost. What the rest is, the
 IDE's own work as a stack of some hundreds of controls opens or the builds'
 own, is not measured.
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1: the messages and what they
+cost. audioxt's demo, Sound Stage, builds 252 controls in its `preOpenStack`;
+built with messages on, the headless desktop engine sent 520 such messages for
+them, which a script inserted in front heard: 252 `nameChanged`, 244
+`newField`, `newButton` or `newGraphic`, and for its 8 groups 8 `newGroup` and
+16 `newBackground` (`audioxt/tests/demo-drive.livecodescript` counts them). In
+the IDE on the maintainer's Windows PC its stack file froze the IDE for 59 s
+(the `go stack` call's time) while other demos opened in under half a second.
+In that release's IDE on Linux (its package under Xvfb, 1440 x 900, no other
+stack of ours open), the same file's `go` took 1.8 s and left 514
+`ideMessageSend` messages queued, all handled 1.9 s after the `go` began, or
+3.2 s with the project browser open; built under `lock messages`, 0.14 s with 2
+queued (0.23 s with the project browser open). The engine alone builds that
+window in about 30 ms. What made Windows thirty times slower than Linux is not
+measured: what that IDE had open, which an open project browser walks on every
+message, is not recorded. Built locked, the same window opened in that Windows
+IDE in 796 ms later the same day (runbook section 8).
 **Rule:** bulk create, rename and delete under `lock messages`, and lift it
 around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
 unlocked, the engine updates the screen after every statement that dirtied it
@@ -1512,7 +1529,9 @@ its placeholder hero's image and slices that way, outside the lock (fixed the
 same day). The ShowControl showcases' engine tests (`TestTheWindowIsBuiltQuietly`
 in `tests/lcs/demo_test.livecodescript` of oscxt, midixt and artnetxt,
 2026-11-21) hear them with a front script across a build and a rebuild, after
-proving it hears a field made and deleted. No suite-wide gate.
+proving it hears a field made and deleted; audioxt's
+`tests/demo-drive.livecodescript` (2026-11-21) hears none with a front script
+during Sound Stage's build. No suite-wide gate.
 **Does NOT mean:** that your own calls stop. Calling a handler directly still
 works; `send` and `dispatch` unlock messages for their own delivery
 (`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the
@@ -1584,15 +1603,37 @@ script, each opened at rect -390,-3,710,617, their left 390 pixels past the scre
 (runbook section 8; where the IDE put their tops is not explained). A headless engine has
 no screen: `the screenRect` and `the working screenRect` read 0,0,0,0 and `the screenLoc`
 0,0, with a display or without one.
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's desktop engine (Linux, `-ui` and in a
+window under Xvfb), for a stack a script saves: `create stack`, then a width of 960 and a
+height of 600, gives -320,-140,640,460 round the first centre, 160,160, and `save stack`
+keeps that rect. audioxt's stack builder saved Sound Stage so, and in the IDE on the
+maintainer's Windows PC (0.2.8-dp.1) it opened there, its title bar 140 px above the top of
+the screen where the window could not be dragged; it was moved by hand. The same file in
+that release's IDE on Linux opened at 0,96: that IDE moved it on to the screen. A stack a
+person makes with New Stack, whose `preOpenStack` sets its size, grows round its own centre
+the same way.
 **Rule:** a window built by script sets its size, then its place:
 `set the loc of this stack to the screenLoc`. start-here centres each window it opens
 after the window's own build (`slOpenSelected`); box2dxt's games, box3dxt's Orb Island and
 the ShowControl showcases centre themselves, so they open whole however they are opened.
+A window a stack builds or sizes as it opens can instead be placed in its `preOpenStack`
+against `the working screenRects`, title bar included, only when it is not wholly on a
+screen already (Sound Stage's `adPlaceWindow`). Not in a browser: the Stack Player opens a
+stack in its own window and lays the page out (`the platform` is "HTML5"), and a phone's
+window is its screen.
 **Gate:** the ShowControl showcases' `TestTheWindowOpensCentredOnTheScreen` (in each
 member's `tests/lcs/demo_test.livecodescript`), which starts the stack where Windows put
-it; no suite-wide gate.
+it.
+For Sound Stage, `audioxt/tests/demo-drive.livecodescript` checks the window is on the
+screen when it opens in a window (it failed at -320,-140,640,460 on a 1280 x 720 Xvfb
+screen before the fix) and tries the demo's placing function on screens it has not got,
+and audioxt's native lane checks the place the stack builder reports for the file it saves
+(160,60,1120,660). No suite-wide gate.
 **Does NOT mean:** that start-here's windows needed it. It bites a window opened any other
 way, as the Windows run opened the showcases.
+Nor that a size set moves a window that has a place: setting the width and height keeps
+the centre the window has, wherever it is; only a stack whose centre is still the engine's
+first one, near the screen's corner, is pushed off it.
 
 ### 5.19 A field lays out its first line 6 pixels above its top margin
 **OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (the

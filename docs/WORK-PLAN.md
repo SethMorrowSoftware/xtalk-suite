@@ -1090,15 +1090,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   same day the IDE on the maintainer's Windows PC (64-bit OXT-Beyond) loaded a CI-built
   `x86_64-win32` DLL on WASAPI, and `tests/engine-selftest.lc`, run there as a script-only
   stack, passed 89 and failed 0; and the demo was driven on the Linux desktop engine (row 7).
-  Nobody has heard it: for everything beyond those runs it is verified statically; needs an
-  OXT pass.
+  Later that day the demo played in that IDE (OXT-Beyond 0.2.8-dp.1) through a real sound
+  device, by its own status line, meters and oscilloscope, but opened off the screen and
+  froze the IDE for 59 s on opening; both were fixed the same day (engine notes 5.15 and
+  5.18): the fixed stack opened in 0.14 s in that release's IDE on Linux, against 1.8 s
+  before, and in 796 ms back in the Windows IDE, on the screen (runbook section 8). Nobody
+  has heard it: for everything beyond those runs it is verified statically; needs an OXT
+  pass.
 - Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
   first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
   later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
   those platforms), and the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten
   6.0.12, the same bytes from two build folders) was built outside that workflow, as the other
-  members' are. The `ships` row lists all eleven. No engine has loaded a committed one yet:
-  the runs above used locally built or CI-built libraries.
+  members' are. The `ships` row lists all eleven. Only the `x86_64-linux` one has been loaded
+  by an engine: OXT-Beyond 0.2.8-dp.1's desktop engine and IDE, running the demo
+  (2026-11-21); the earlier runs above used locally built or CI-built libraries.
 - Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
   publish-members run adopts it (`--adopt audioxt`).
 
@@ -1110,7 +1116,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site. PACKAGED 2026-11-21: `audioxt-0.1.0.lce` (`org.openxtalk.library.audioxt`, the six desktop rows and the four Android ids; the web archive is in no package) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `auLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine, no device opened). The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
-| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21) | S1, after #1 | - | each scene is heard as its caption says and the checks pass |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening; fixed the same day to open on the screen and quickly, and re-run there: 796 ms, on the screen) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
 | 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (twelve since webpxt, barcodext, oscxt, midixt and artnetxt joined: artnetxt, audioxt, barcodext, box3dxt, curlxt, gamepadxt, midixt, nocloud, oscxt, render3dxt, webpxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29. Twelve fill the band's four lines above the members caption, so a thirteenth needs a new geometry. The boot self-check's `suRowsFit` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows run into the band or whose band runs into the members caption. Measured on OXT-Beyond's Linux desktop engine on 2026-11-21 with gamepadxt in it and seven names (the board built alone, read back, and pictured under a virtual display; no person has looked at it): the rows do not touch, the band's three lines end at 523, above the caption at 546, and every name reads in full bar nocloud's, which wrapped in its 108-pixel cell. DRAWN on the Linux headless engine under a virtual display the same day with oscxt, midixt and artnetxt in it instead (runbook section 8): rows and band clear of each other and of the caption, every word whole once a name took its whole cell, 152 wide (beside a muted "gates", No Cloud Quick Share had lost its last word). DRAWN again on that engine once gamepadxt's merge made the band ten names: four lines, the fourth above the caption, every word whole, `suRowsFit` passing (runbook section 8). DRAWN again once webpxt's and barcodext's merge made it twelve, its whole room: four full lines, the fourth (midixt, artnetxt, No Cloud Quick Share) above the caption, every word whole, `suRowsFit` passing (runbook section 8) | S1 | 48 | the same on Windows and a Mac, in their own fonts |
 
