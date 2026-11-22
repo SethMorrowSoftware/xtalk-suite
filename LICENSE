@@ -56,6 +56,13 @@ licenses, reproduced with their sources:
                   and Openwall MD5)             public domain
                   zlib 1.4 (with minizip)       zlib
                   Expat 2.10.0                  MIT
+  oscxt           tinyosc (vendored; its local  ISC
+                  changes marked in the source)
+  midixt          RtMidi 6.0.0                  MIT
+                  (on Linux it loads the
+                  system's ALSA library, which
+                  is not bundled)
+  artnetxt        (no bundled code — pure LiveCode Builder)
   onionxt         (no bundled code — connects to a Tor daemon you run)
   nostrxt         (no bundled code — pure script over sibling extensions
                   and relays you choose; published test vectors are
@@ -67,6 +74,16 @@ licenses, reproduced with their sources:
   render3dxt      stb_image (pinned commit)     MIT (offered as MIT or
                                                 public domain)
                   fast_obj v1.3                 MIT
+  pdfxt           PDFium chromium/8165          BSD-3-Clause, Apache-2.0
+                  (prebuilt, shipped as a       (and the permissive licenses
+                  separate library)             of the libraries inside it)
+  gamepadxt       SDL 3.4.20                    Zlib
+                  HIDAPI (inside SDL)           BSD-3-Clause
+  webpxt          libwebp 1.6.0                 BSD-3-Clause (+ its PATENTS grant)
+  barcodext       zxing-cpp 3.1.1               Apache-2.0
+                  Zint (its writer's backend)   BSD-3-Clause
+                  libzueci, with a UTF-8        BSD-3-Clause, MIT
+                  decoder by B. Hoehrmann
   box2dxt         Box2D v3.1.0                  MIT
                   Kenney game assets            CC0-1.0
                   (the Spritesheets/ art the
@@ -104,8 +121,8 @@ redistribution, and coinxt commits built libraries. The list is per-file in
 coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
-in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, audioxt, render3dxt), in a THIRD-PARTY-LICENSES.md next to
-the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, xlsxt), or
+in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, audioxt, render3dxt, gamepadxt, webpxt, barcodext), in a THIRD-PARTY-LICENSES.md next to
+the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, pdfxt, xlsxt, oscxt, midixt), or
 alongside the vendored sources (coinxt/native/vendor/LICENSE, for the MIT
 parts). OpenSSL's licence is in an OpenSSL-LICENSE.txt next to the LICENSE of
 each member that links it (torrentxt, datachannelxt, curlxt).

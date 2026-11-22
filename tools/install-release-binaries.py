@@ -13,6 +13,10 @@ directory laid out as
 
     <member>/<platform-id>/<member>.<so|dll|dylib>
 
+(and, for a member with a COMPANION, the companion beside it: pdfxt's
+`pdfium.<so|dll|dylib>`, which is not built here and is held to
+pdfxt/src/pdfium.pin by SHA-256 instead of to the checks below).
+
 WHO CALLS THIS. Both paths, and they are the same code on purpose:
 
   * release-binaries.yml's commit job runs it on the runner, so the checks below
@@ -133,9 +137,82 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # BOX3DXT JOINED 2026-11-20 the same way: rows in release-binaries.yml, no
 # library committed, its manifest created by its first dispatch. XLSXT
 # JOINED 2026-11-20 too, the same way, and AUDIOXT and RENDER3DXT.
+#
+# PDFXT JOINED 2026-11-20 the same way, and brought the first COMPANION (below).
+# GAMEPADXT joined that day too (desktop rows only: it is not built for
+# Android, docs/ANDROID.md), and BARCODEXT AND WEBPXT.
+#
+# OSCXT AND MIDIXT JOINED 2026-11-21 (ShowControl's OSC and MIDI) the same
+# way again: rows in release-binaries.yml, no library committed. Their third,
+# artnetxt, is pure LCB with no library, so it is not a native member here.
+# Neither is built for Android (midixt cannot be: RtMidi's Android backend
+# needs API 29 and JNI; oscxt waits on the work plan): tools/build-android.sh
+# names them desktop-only, beside gamepadxt, so no release bundle carries an
+# Android library of theirs.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt", "audioxt", "render3dxt", "xlsxt")
+           "curlxt", "box3dxt", "audioxt", "render3dxt", "pdfxt", "xlsxt", "gamepadxt",
+           "barcodext", "webpxt", "oscxt", "midixt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
+
+# COMPANIONS (2026-11-20): a member whose library LOADS a second library from
+# the folder it is itself in, where that second library is a pinned prebuilt
+# the member does not build. pdfxt's shim opens `pdfium.<ext>` beside it; the
+# file is PDFium's builders' own, copied unchanged from an archive that
+# pdfxt/src/pdfium.pin names by SHA-256.
+#
+# Such a file cannot be held to the checks above, and must not be excused from
+# checking either. Its floors are its builders' (PDFium's Android libraries
+# say API 23, its dylib macOS 13: both would be REFUSED as a member's own
+# library, rightly). What CAN be asked of it is the one thing that matters
+# for a file nobody here built: that it is byte for byte the file the pin
+# names for this platform. So: the companion must be present whenever the
+# member's library is (the shim opens nothing without it), its SHA-256 must
+# be the last column of the pin's row for the platform id, and the two land
+# together or not at all. A pin with no row for the platform is a refusal.
+#
+#   member -> (the companion's bare name, the pin file relative to ROOT)
+COMPANIONS = {"pdfxt": ("pdfium", os.path.join("pdfxt", "src", "pdfium.pin"))}
+
+
+def companion_pin(member, platform_id):
+    """The SHA-256 the member's pin names for its companion on `platform_id`
+    (the last of a row's four fields), or None when the pin is unreadable or
+    has no such row. Read at call time, from ROOT as it is then."""
+    try:
+        with open(os.path.join(ROOT, COMPANIONS[member][1]), encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split("#", 1)[0].split()
+                if len(parts) == 4 and parts[0] == platform_id \
+                        and re.fullmatch(r"[0-9a-f]{64}", parts[3]):
+                    return parts[3]
+    except OSError:
+        return None
+    return None
+
+
+def companion_problem(member, platform_id, pdir, ext):
+    """(companion file name, None) when the companion beside the member's
+    library in `pdir` is the pinned one, else (name, why not)."""
+    name = f"{COMPANIONS[member][0]}.{ext}"
+    src = os.path.join(pdir, name)
+    if not os.path.isfile(src):
+        return name, (f"{member}.{ext} is here without {name}: {member} loads "
+                      f"{name} from beside itself and opens nothing without "
+                      f"it, so the two land together or not at all")
+    want = companion_pin(member, platform_id)
+    if want is None:
+        return name, (f"{COMPANIONS[member][1]} has no readable row for "
+                      f"{platform_id}, so there is nothing to hold this file "
+                      f"to - refusing a library nobody here built and no pin "
+                      f"names")
+    with open(src, "rb") as fh:
+        have = hashlib.sha256(fh.read()).hexdigest()
+    if have != want:
+        return name, (f"its SHA-256 is {have}, and {COMPANIONS[member][1]} "
+                      f"pins {want} for {platform_id}: not the pinned file "
+                      f"(another release, another platform's, or one that was "
+                      f"stripped or re-signed on the way)")
+    return name, None
 
 
 def platform_kind(platform_id):
@@ -354,7 +431,9 @@ def mac_floor_cli(paths):
 #                links, with the API level the build targeted. No note means
 #                the file was not built with the NDK for Android at all (a
 #                Linux library under an Android name); a level above the
-#                floor means it may import what an older Android lacks.
+#                floor means it may import what an older Android lacks. One
+#                member has a floor of its own (ANDROID_API_FOR), and for it
+#                a level BELOW that floor is refused as well.
 #   needed       only libraries every Android has. libc++_shared.so is the
 #                one a default NDK build asks for and no app has unless it
 #                ships it; OXT-Beyond's apps do not.
@@ -372,6 +451,18 @@ ANDROID_ABIS = {
     "x86-android": (1, 0x03, "x86"),
 }
 ANDROID_API_FLOOR = 21
+# torrentxt alone is built for API 24 (Android 7.0), and here a LOWER level is
+# the defect. Built for less than 24, libtorrent learns the machine's
+# addresses the Linux way, over a NETLINK_ROUTE socket (its config.hpp:
+# TORRENT_USE_NETLINK), and from Android 11 an app that targets API 30 or
+# later may neither bind that socket nor ask it for the links: the session
+# pauses itself at birth and listens nowhere. Built for 24 or later it calls
+# getifaddrs() instead, which every app may. The API 21 torrentxt libraries
+# of 2026-11-18 passed every check this file had and stalled inside an app on
+# Android 13 (2026-11-21), which is why the number is checked from both
+# sides. tools/build-android.sh builds to the same number
+# (TORRENTXT_ANDROID_API; tools/test-build-android.py compares the two).
+ANDROID_API_FOR = {"torrentxt": 24}
 ANDROID_PAGE_SIZE = 16384
 # libz.so is one of them (a stable NDK library at every API level), and
 # curlxt needs it exactly as its 64-bit Linux libraries need libz.so.1:
@@ -510,10 +601,18 @@ def elf_facts(path):
             "textrel": textrel, "android_api": android_api, "exports": exports}
 
 
-def android_problem(path, platform_id):
+def android_api_for(member):
+    """The Android API level `member`'s libraries are built for: the suite's
+    floor, or the member's own (ANDROID_API_FOR)."""
+    return ANDROID_API_FOR.get(member, ANDROID_API_FLOOR)
+
+
+def android_problem(path, platform_id, member=None):
     """None when the library at `path` is what Android will load for
-    `platform_id`, else why not."""
+    `platform_id`, else why not. `member` decides the API level it is held
+    to; with none it is held to the suite's floor."""
     cls, machine, arch = ANDROID_ABIS[platform_id]
+    want_api = android_api_for(member)
     facts = elf_facts(path)
     if facts is None:
         return ("not an ELF library this tool can read - refusing a file it "
@@ -526,11 +625,23 @@ def android_problem(path, platform_id):
         return ("it carries no Android note (.note.android.ident), which the "
                 "NDK writes into everything it links: this is not a library "
                 "built for Android (a Linux one loads nowhere on a device)")
-    if facts["android_api"] > ANDROID_API_FLOOR:
+    if facts["android_api"] > want_api and want_api == ANDROID_API_FLOOR:
         return (f"built for Android API {facts['android_api']}, above the "
                 f"suite's floor of {ANDROID_API_FLOOR} (Android 5.0, what "
                 f"OXT-Beyond's Android engine is built for): it may import "
                 f"what an older Android lacks, and fails to load there. "
+                f"Build with tools/build-android.sh")
+    if facts["android_api"] > want_api:
+        return (f"built for Android API {facts['android_api']}, above the "
+                f"{want_api} that {member} is built for: it may import what "
+                f"an Android between the two lacks, and fails to load there. "
+                f"Build with tools/build-android.sh")
+    if member in ANDROID_API_FOR and facts["android_api"] < want_api:
+        return (f"built for Android API {facts['android_api']}, below the "
+                f"{want_api} that {member} must be built for: under API "
+                f"{want_api} its library reads the network over a netlink "
+                f"socket that Android 11 and later refuse an app, and it "
+                f"loads and then does not work (ANDROID_API_FOR, above). "
                 f"Build with tools/build-android.sh")
     stray = [n for n in facts["needed"] if n not in ANDROID_SYSTEM_LIBS]
     if stray:
@@ -566,7 +677,10 @@ def android_check_cli(paths):
                   f"Android platform id ({', '.join(sorted(ANDROID_ABIS))})")
             bad += 1
             continue
-        problem = android_problem(path, platform_id)
+        # The member is the file's name: <member>.so is the bind token, the
+        # one name the tree and a bundle ever give a member's library.
+        member = os.path.splitext(os.path.basename(path))[0]
+        problem = android_problem(path, platform_id, member)
         facts = elf_facts(path) or {}
         shown = (f"API {facts.get('android_api')}, needs "
                  f"{', '.join(facts.get('needed') or []) or 'nothing'}, "
@@ -596,6 +710,21 @@ def main(argv):
         sys.exit(f"install-release-binaries: {bundle} is not a directory")
 
     plan, problems, skipped = [], [], []
+
+    def queue(member, platform_id, pdir, src, dst):
+        """Plan a verified library, and with it the member's companion, held
+        to its pin: both are planned or neither is."""
+        if member in COMPANIONS:
+            ext = EXT_FOR[platform_kind(platform_id)]
+            name, why = companion_problem(member, platform_id, pdir, ext)
+            if why:
+                problems.append(f"{member}/{platform_id}/{name}: {why}")
+                return
+            plan.append((member, platform_id, src, dst))
+            plan.append((member, platform_id, os.path.join(pdir, name),
+                         os.path.join(os.path.dirname(dst), name)))
+            return
+        plan.append((member, platform_id, src, dst))
 
     for member in sorted(os.listdir(bundle)):
         mdir = os.path.join(bundle, member)
@@ -633,7 +762,7 @@ def main(argv):
                         f"{member}/{platform_id}/{want}: it is a {got_kind} "
                         f"library in an Android directory")
                     continue
-                why = android_problem(src, platform_id)
+                why = android_problem(src, platform_id, member)
                 if why:
                     problems.append(f"{member}/{platform_id}/{want}: {why}")
                     continue
@@ -656,7 +785,7 @@ def main(argv):
                             f"without src/coinxt.map")
                         continue
                 dst = os.path.join(ROOT, member, "src", "code", platform_id, want)
-                plan.append((member, platform_id, src, dst))
+                queue(member, platform_id, pdir, src, dst)
                 continue
             if got_kind != kind:
                 problems.append(
@@ -743,7 +872,7 @@ def main(argv):
                         continue
 
             dst = os.path.join(ROOT, member, "src", "code", platform_id, want)
-            plan.append((member, platform_id, src, dst))
+            queue(member, platform_id, pdir, src, dst)
 
     for s in skipped:
         print(f"  note: {s}")
@@ -1216,7 +1345,28 @@ def selftest():
         _p, (rc, out) = android_case(
             "android-api", "arm64-android", _bytes_android_elf(2, 0xB7, api=24))
         check("one built for API 24, above the floor of 21, is REFUSED",
-              rc == 1 and "built for Android API 24" in out, out)
+              rc == 1 and "built for Android API 24, above the suite's floor"
+              in out, out)
+        # torrentxt's own floor (ANDROID_API_FOR), held from both sides: the
+        # API 21 build is the one that loaded and stalled on Android 13.
+        torrent = {}
+        for api, verdict, said in (
+                (24, 0, "1 library verified"),
+                (21, 1, "built for Android API 21, below the 24 that "
+                        "torrentxt must be built for"),
+                (26, 1, "built for Android API 26, above the 24 that "
+                        "torrentxt is built for")):
+            torrent[api], (rc, out) = android_case(
+                f"android-torrentxt-{api}", "arm64-android",
+                _bytes_android_elf(2, 0xB7, api=api), member="torrentxt")
+            check(f"a torrentxt Android library built for API {api} is "
+                  f"{'accepted' if verdict == 0 else 'REFUSED'}",
+                  rc == verdict and said in out, out)
+        check("  ...and that floor is torrentxt's alone",
+              ANDROID_API_FOR == {"torrentxt": 24}
+              and android_api_for("torrentxt") == 24
+              and android_api_for("box2dxt") == ANDROID_API_FLOOR
+              and android_api_for(None) == ANDROID_API_FLOOR, ANDROID_API_FOR)
         _p, (rc, out) = android_case(
             "android-stl", "arm64-android",
             _bytes_android_elf(2, 0xB7, needed=("libc.so", "libc++_shared.so")))
@@ -1264,6 +1414,10 @@ def selftest():
                  "--android-check fails a 4 KB-aligned arm64 library"),
                 (1, [stray], "--android-check fails a file whose directory "
                              "is not an Android platform id"),
+                (0, [torrent[24]], "--android-check passes a torrentxt built "
+                                   "for API 24 (the member is the file's name)"),
+                (1, [torrent[21]], "--android-check fails a torrentxt built "
+                                   "for API 21"),
                 (1, [], "--android-check fails when given no file")):
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
@@ -1331,6 +1485,66 @@ def selftest():
             check("a rebuilt library is reported (REPLACES the committed one)",
                   rc == 0 and out.count("(REPLACES the committed one)") == 1
                   and out.count("(unchanged)") == staged - 1, out)
+            # 5. THE COMPANION (pdfxt, 2026-11-20), against the same throwaway
+            #    ROOT with a pin of its own: the real pin names files of tens
+            #    of megabytes that no gate should fetch, and what is pinned
+            #    here is the RULE (present, the pinned bytes, both or neither),
+            #    which a three-byte stand-in exercises exactly as PDFium does.
+            good, other = b"the pinned pdfium", b"some other pdfium"
+            pin = os.path.join(fake_root, COMPANIONS["pdfxt"][1])
+            _put(pin, ("# a throwaway pin\nrelease chromium/1\n"
+                       "x86_64-linux linux-x64 %s %s\n"
+                       "x86_64-win32 win-x64 %s %s\n"
+                       % ("0" * 64, hashlib.sha256(good).hexdigest(),
+                          "1" * 64, hashlib.sha256(other).hexdigest())
+                       ).encode("ascii"))
+
+            def pdf_bundle(tag, files):
+                root = os.path.join(tmp, "pdf-" + tag)
+                for rel, data in files.items():
+                    _put(os.path.join(root, "pdfxt", rel), data)
+                return root
+
+            shim = _bytes_elf(2, 0x3E)
+            landed = os.path.join(fake_root, "pdfxt", "src", "code", "x86_64-linux")
+            rc, out = _capture([pdf_bundle("alone", {"x86_64-linux/pdfxt.so": shim})])
+            check("pdfxt without its pdfium is REFUSED (both or neither)",
+                  rc == 1 and "without pdfium.so" in out
+                  and not os.path.exists(os.path.join(landed, "pdfxt.so")), out)
+            rc, out = _capture([pdf_bundle("wrong", {
+                "x86_64-linux/pdfxt.so": shim, "x86_64-linux/pdfium.so": other})])
+            check("a pdfium that is not the pinned file is REFUSED, and "
+                  "nothing lands",
+                  rc == 1 and "not the pinned file" in out
+                  and not os.path.exists(os.path.join(landed, "pdfxt.so")), out)
+            rc, out = _capture([pdf_bundle("norow", {
+                "x86-linux/pdfxt.so": _bytes_elf(1, 0x03),
+                "x86-linux/pdfium.so": good})])
+            check("a platform the pin has no row for is REFUSED",
+                  rc == 1 and "no readable row for x86-linux" in out, out)
+            rc, out = _capture([pdf_bundle("only", {"x86_64-linux/pdfium.so": good})])
+            check("a pdfium with no pdfxt beside it is REFUSED (the member's "
+                  "own library is still expected by name)",
+                  rc == 1 and "expected pdfxt.so" in out, out)
+            rc, out = _capture([pdf_bundle("good", {
+                "x86_64-linux/pdfxt.so": shim, "x86_64-linux/pdfium.so": good})])
+            body = ""
+            manifest = os.path.join(fake_root, "pdfxt", "src", "code", "MANIFEST.sha256")
+            if os.path.exists(manifest):
+                with open(manifest, encoding="utf-8") as fh:
+                    body = fh.read()
+            check("pdfxt and the pinned pdfium land TOGETHER, both in the manifest",
+                  rc == 0 and out.count("(new)") == 2
+                  and os.path.exists(os.path.join(landed, "pdfxt.so"))
+                  and os.path.exists(os.path.join(landed, "pdfium.so"))
+                  and "x86_64-linux/pdfium.so" in body
+                  and "x86_64-linux/pdfxt.so" in body, out + body)
+            with open(os.path.join(landed, "pdfium.so"), "rb") as fh:
+                check("  ...the pdfium byte for byte", fh.read() == good)
+            os.remove(pin)
+            rc, out = _capture([pdf_bundle("good", {})])
+            check("with the pin gone, the same bundle is REFUSED",
+                  rc == 1 and "no readable row" in out, out)
         finally:
             ROOT = saved_root
     finally:

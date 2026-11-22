@@ -2,8 +2,9 @@
 # android-emulator.sh - boot the Android emulator the suite's Android tests
 # run on, and wait until it can run them.
 #
-#   bash tools/android-emulator.sh start    # boots, waits, prints the serial
-#   bash tools/android-emulator.sh stop
+#   bash tools/android-emulator.sh start         # boots, waits, prints the serial
+#   bash tools/android-emulator.sh start <api>   # the same, for another Android
+#   bash tools/android-emulator.sh stop          # ...and waits until it is gone
 #
 # WHICH ANDROID. API 21 (Android 5.0), x86_64: the oldest Android the
 # libraries are built for (tools/build-android.sh's ANDROID_API), on the
@@ -17,6 +18,21 @@
 # libraries. Nothing here runs an ARM library: those are built and checked,
 # and say so (tools/build-android.sh's last line).
 #
+# ONE MEMBER HAS A FLOOR OF ITS OWN: torrentxt is built for API 24 (Android
+# 7.0; tools/build-android.sh says why beside TORRENTXT_ANDROID_API), so its
+# tests cannot load on the API 21 image. `start 24` boots the same kind of
+# image for that Android, again the member's FLOOR. ONE COMPANION HAS ONE
+# TOO: pdfxt's library is built for API 21, but the prebuilt PDFium it loads
+# beside itself was built by PDFium's builders for API 23 (Android 6.0;
+# PDFIUM_ANDROID_API there), so on the API 21 image pdfxt's tests can run
+# only their refusals. `start 23` boots that Android for pdfxt's own lane
+# (native-pdfxt.yml), the oldest on which its tests open a PDF; the release
+# job tests pdfxt on the floor, IN PART. The API levels this script will
+# boot are exactly the ones build-android.sh --pins names
+# (tools/test-build-android.py compares them): any other is refused, so a
+# typo cannot test on an Android nothing is built for. One emulator runs at
+# a time, under one serial; stop the first before starting the second.
+#
 # It needs an Android SDK (ANDROID_HOME or ANDROID_SDK_ROOT) with its
 # command-line tools, and /dev/kvm. What the SDK lacks of the emulator, the
 # platform tools and the image, sdkmanager installs.
@@ -25,18 +41,29 @@
 # tools/build-android.sh as XTALK_ANDROID_SERIAL.
 set -euo pipefail
 
-API="21"
-IMAGE="system-images;android-$API;google_apis;x86_64"
-AVD="xtalk-api$API"
+APIS="21 23 24"
 SERIAL="emulator-5554"
 BOOT_MINUTES="${XTALK_ANDROID_BOOT_MINUTES:-10}"
 
 case "${1:-}" in
+  --apis)
+    echo "apis $APIS"
+    exit 0 ;;
   start|stop) : ;;
   *)
-    sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2 ;;
 esac
+
+API="${2:-21}"
+case " $APIS " in
+  *" $API "*) : ;;
+  *)
+    echo "android-emulator: '$API' is not an Android this script boots ($APIS)" >&2
+    exit 2 ;;
+esac
+IMAGE="system-images;android-$API;google_apis;x86_64"
+AVD="xtalk-api$API"
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
@@ -49,7 +76,22 @@ LOG="$ANDROID_AVD_HOME/emulator.log"
 
 if [ "$1" = "stop" ]; then
   "$ADB" -s "$SERIAL" emu kill > /dev/null 2>&1 || true
-  exit 0
+  # Gone is "adb no longer lists it", waited for: the next emulator takes the
+  # same serial, and one started while this one still holds the port comes
+  # up under another name that nothing here would find.
+  deadline=$(( $(date +%s) + 120 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    if ! "$ADB" devices 2> /dev/null | grep -q "^$SERIAL[[:space:]]"; then
+      exit 0
+    fi
+    sleep 2
+  done
+  echo "android-emulator: $SERIAL is still there two minutes after it was told to stop" >&2
+  exit 1
+fi
+if "$ADB" devices 2> /dev/null | grep -q "^$SERIAL[[:space:]]"; then
+  echo "android-emulator: an emulator is already running as $SERIAL; stop it first" >&2
+  exit 1
 fi
 
 # A hosted runner has KVM and gives it to root only; this is the rule

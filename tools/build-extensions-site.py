@@ -20,7 +20,9 @@ WHY THIS EXISTS
                                              api.lcdoc (Description: or
                                              Summary:), first paragraph
       platforms                              its code/<platform-id>/ folders;
-                                             none means a script library,
+                                             none means a script library, or
+                                             an LCB library with no native
+                                             code (module.lcm and no code/),
                                              which runs on every platform
       size, download link                    the release asset
       SHA-256                                the release's SHA256SUMS
@@ -84,6 +86,9 @@ PLATFORM_NAMES = [
     ('x86-android', 'Android on 32-bit x86 (emulators)', 'Android x86'),
 ]
 SCRIPT_PLATFORMS = 'Every platform (script library, no native code)'
+# an LCB module that binds no library of its own (native=False in
+# tools/build-lce-packages.py, such as showcontrol's Art-Net)
+LCB_PLATFORMS = 'Every platform (LiveCode Builder, no native code)'
 
 # The engine's own modules every LCB package requires: not something a user
 # installs, so not listed as a requirement
@@ -274,6 +279,7 @@ def read_package(name, data):
         'requires': [r.get('name') for r in manifest.findall('requires')
                      if r.get('name') and not ENGINE_MODULE.match(r.get('name'))],
         'platforms': platforms,
+        'lcb': 'module.lcm' in names,
         'description': doc,
         'entry': entry,
         'about': about,
@@ -601,8 +607,8 @@ def render(release, packages, sums_url, repo=REPO, members=None, sources=None):
       'extensions its documentation pairs it with, which some of its features may need.</p>\n'
       '<p>An installed extension loads every time the IDE starts. To put one in a standalone, tick it in '
       '<b>Standalone Application Settings &gt; Inclusions</b> (choose "Select inclusions for the standalone '
-      'application"). A <i>script</i> library runs anywhere the IDE runs; a <i>native</i> library carries '
-      'compiled code for the platforms listed with it. The macOS libraries are not signed or notarized, so '
+      'application"). A <i>script</i> library, or one with no native code, runs anywhere the IDE runs; a '
+      '<i>native</i> library carries compiled code for the platforms listed with it. The macOS libraries are not signed or notarized, so '
       'macOS may ask before it lets them load. To check a download, compare its SHA-256 with '
       '<a href="%s">SHA256SUMS</a>.</p>\n' % esc(sums_url))
     if release.get('prerelease'):
@@ -642,7 +648,7 @@ def render(release, packages, sums_url, repo=REPO, members=None, sources=None):
 
 
 def render_card(w, p, packages, by_id, suite, tag, sources):
-    kind = 'script library' if not p['platforms'] else 'native library'
+    kind = 'native library' if p['platforms'] else ('LCB library' if p.get('lcb') else 'script library')
     needs = []
     for r in p['requires']:
         dep = by_id.get(r)
@@ -660,7 +666,8 @@ def render_card(w, p, packages, by_id, suite, tag, sources):
         w('<ul class="chips" aria-label="Platforms">%s</ul>\n' % ''.join(
             '<li title="%s">%s</li>' % (esc(name), esc(short)) for name, short in platforms_of(p['platforms'])))
     else:
-        w('<ul class="chips" aria-label="Platforms"><li title="%s">Any platform</li></ul>\n' % esc(SCRIPT_PLATFORMS))
+        w('<ul class="chips" aria-label="Platforms"><li title="%s">Any platform</li></ul>\n'
+          % esc(LCB_PLATFORMS if p.get('lcb') else SCRIPT_PLATFORMS))
     w('</div>\n<div class="get"><a class="dl" href="%s" download>Download</a><small>%s &middot; %s</small></div>\n'
       '</div>\n' % (esc(p['url']), esc(p['file']), esc(human_size(p['size']))))
     if len(about) > 1:

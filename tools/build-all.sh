@@ -54,7 +54,14 @@ done
 # that layer's cover) had never run here. Its Box2D comes from FetchContent,
 # so the lane costs a Box2D source build; unlike sodiumxt it copies nothing
 # back into src/code/, so it adds no second case to the NOTE at the top.
-CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt xlsxt)
+# oscxt and midixt joined 2026-11-21 (artnetxt, pure LCB, has nothing to
+# compile). midixt's RtMidi needs the platform's MIDI headers: on Linux that is
+# ALSA (libasound2-dev), which a full local walk must have installed; its
+# tests then run against the MOCK backend, so no MIDI service is needed.
+# pdfxt (2026-11-20) builds no dependency at all: its configure step fetches
+# one pinned, prebuilt PDFium archive (a few megabytes, held to a SHA-256 by
+# pdfxt/src/pdfium.pin) and the smoke test loads that library at run time.
+CMAKE_MEMBERS=(sodiumxt torrentxt enetxt datachannelxt box2dxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt gamepadxt barcodext webpxt oscxt midixt)
 
 # HOW MANY COMPILER PROCESSES, and why this is not left to CMake.
 # `cmake --build --parallel` with NO NUMBER passes a BARE `-j` to GNU make,
@@ -174,6 +181,18 @@ fi
 if [ -f tools/check-ui-kit-drift.py ]; then
   echo "== suite: tools/check-ui-kit-drift.py =="
   python3 tools/check-ui-kit-drift.py
+fi
+# The kit's words on its own colours have a colour of the kit's (its rule 7):
+# uiInput's and uiArea's fields were white on white in the dark appearance
+# (2026-11-21). It reads the master; the drift gate above holds every copy to
+# it. Its fixture mutates the master in memory only.
+if [ -f tools/test-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/test-ui-kit-text-colour.py =="
+  python3 tools/test-ui-kit-text-colour.py
+fi
+if [ -f tools/check-ui-kit-text-colour.py ]; then
+  echo "== suite: tools/check-ui-kit-text-colour.py =="
+  python3 tools/check-ui-kit-text-colour.py
 fi
 # Fixtures beside the gate: this one reported a confident 43/27 for months while
 # measuring nothing at all in nocloud, so its three legs are proven before it
@@ -453,7 +472,7 @@ fi
 # riptide, nocloud, and holde-em are not extensions but carry the same gate
 # shape (script checker, golden glob, vector gate, docs style), so they ride
 # the same loop.
-for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt xlsxt; do
+for m in sodiumxt torrentxt enetxt datachannelxt onionxt coinxt riptide nocloud box2dxt holde-em nostrxt curlxt box3dxt audioxt render3dxt pdfxt xlsxt gamepadxt barcodext webpxt oscxt midixt artnetxt; do
   [ -d "$m" ] || continue
   # the same skip the native loop applies - see SUITE_ONLY_MEMBERS above for
   # why the gate walk has to honour it too

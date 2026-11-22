@@ -1,0 +1,45 @@
+/*
+midi_hw_test.lcb - the binding against the REAL midixt library (RtMidi over the
+OS backend: WinMM / CoreMIDI / ALSA), on whatever machine runs it.
+
+A CI runner has no MIDI devices and often no MIDI service at all, so this suite
+asserts only what must hold everywhere: the ABI matches, enumeration returns
+without error, an out-of-range open fails cleanly with a reason, and a virtual
+port either works (macOS/Linux with a backend) or fails cleanly (Windows WinMM,
+headless Linux). The behavioural MIDI coverage lives in midi_test.lcb (mock).
+*/
+-- requires: midixt
+
+module org.openxtalk.showcontrol.tests.midihw
+
+use com.livecode.unittest
+use org.openxtalk.library.midi
+use org.openxtalk.showcontrol.tests.support
+
+public handler TestRealLibrary()
+   variable tIns as List
+   variable tOuts as List
+   variable tH as Integer
+   test "midiVersion is ABI 2" when midiVersion() is 2
+   put midiInputPorts() into tIns
+   put midiOutputPorts() into tOuts
+   test "enumeration returned (inputs: " & (the number of elements in tIns formatted as string) \
+      & ", outputs: " & (the number of elements in tOuts formatted as string) & ")" when true
+   test "an out-of-range output fails (0)" when midiOpenOutput(99999) is 0
+   test "  with a reason" when midiLastError() is not ""
+   midiSend(987654, HexToData("903c64"))
+   test "a send on a stale handle says why" when midiLastError() contains "not an open output port"
+   put midiOpenVirtualOutput("midixt headless test") into tH
+   if tH is 0 then
+      test "no virtual ports here, and the refusal says why" when midiLastError() is not ""
+      skip test "virtual output send" because "no virtual ports here: " & midiLastError()
+   else
+      midiSend(tH, HexToData("903c64"))
+      midiNoteOff(tH, 1, 60, 0)
+      test "  and the send went out (no error)" when midiLastError() is ""
+      midiClose(tH)
+      test "virtual output opened, sent and closed" when true
+   end if
+end handler
+
+end module

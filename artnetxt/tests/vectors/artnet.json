@@ -1,0 +1,236 @@
+{
+ "_comment": "Shared Art-Net 4 wire-format vectors (OpCode and the ArtPollReply Port little-endian; ProtVer and the ArtDmx Length big-endian; SubUni before Net). Checked against the clean-room codec by tests/vectors_reference_test.py and asserted through the LCB binding under lc-run (tools/gen_vectors.py).",
+ "dmx": [
+  {
+   "name": "universe 0, 4 channels",
+   "universe": 0,
+   "channels": "ff800040",
+   "length": 4,
+   "hex": "4172742d4e6574000050000e000000000004ff800040"
+  },
+  {
+   "name": "universe 258 splits SubUni 2 / Net 1",
+   "universe": 258,
+   "channels": "ff800040",
+   "length": 4,
+   "hex": "4172742d4e6574000050000e000002010004ff800040"
+  },
+  {
+   "name": "universe 32767 (max 15-bit port-address)",
+   "universe": 32767,
+   "channels": "01",
+   "length": 2,
+   "hex": "4172742d4e6574000050000e0000ff7f00020100"
+  },
+  {
+   "name": "odd channel count pads to even",
+   "universe": 0,
+   "channels": "0a141e",
+   "length": 4,
+   "hex": "4172742d4e6574000050000e0000000000040a141e00"
+  },
+  {
+   "name": "zero channels pads to the 2-byte minimum",
+   "universe": 1,
+   "channels": "",
+   "length": 2,
+   "hex": "4172742d4e6574000050000e0000010000020000"
+  },
+  {
+   "name": "one channel pads to 2",
+   "universe": 1,
+   "channels": "ff",
+   "length": 2,
+   "hex": "4172742d4e6574000050000e000001000002ff00"
+  },
+  {
+   "name": "full 512-channel universe",
+   "universe": 5,
+   "channels": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+   "length": 512,
+   "hex": "4172742d4e6574000050000e000005000200000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+  },
+  {
+   "name": "over-long input truncates to 512",
+   "universe": 0,
+   "channels": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+   "length": 512,
+   "hex": "4172742d4e6574000050000e000000000200abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+  },
+  {
+   "name": "sequence and physical from another sender",
+   "universe": 3,
+   "channels": "0102",
+   "length": 2,
+   "hex": "4172742d4e6574000050000e0c01030000020102",
+   "sequence": 12,
+   "physical": 1
+  }
+ ],
+ "poll": [
+  {
+   "name": "ArtPoll (TalkToMe 0, priority 0)",
+   "hex": "4172742d4e6574000020000e0000"
+  }
+ ],
+ "pollreply": [
+  {
+   "name": "node 2.0.0.10 'Node'",
+   "ip": "2.0.0.10",
+   "shortName": "Node",
+   "longName": "ShowControl test node",
+   "net": 0,
+   "subuni": 0,
+   "hex": "4172742d4e65740000210200000a3619000000000000000000004e6f6465000000000000000000000000000053686f77436f6e74726f6c2074657374206e6f6465000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "port": 6454,
+   "version": 0,
+   "nodeReport": "",
+   "outputUniverses": [],
+   "inputUniverses": [],
+   "style": 0,
+   "mac": "00:00:00:00:00:00",
+   "bindIndex": 0
+  },
+  {
+   "name": "node 10.0.0.42 on net 3 / sub 7",
+   "ip": "10.0.0.42",
+   "shortName": "Dimmer rack",
+   "longName": "Rack A - 48 x 2.4kW",
+   "net": 3,
+   "subuni": 7,
+   "hex": "4172742d4e65740000210a00002a36190000030700000000000044696d6d6572207261636b000000000000005261636b2041202d203438207820322e346b570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "port": 6454,
+   "version": 0,
+   "nodeReport": "",
+   "outputUniverses": [],
+   "inputUniverses": [],
+   "style": 0,
+   "mac": "00:00:00:00:00:00",
+   "bindIndex": 0
+  },
+  {
+   "name": "short name exactly 17 chars + NUL",
+   "ip": "192.168.1.200",
+   "shortName": "ABCDEFGHIJKLMNOPQ",
+   "longName": "L",
+   "net": 1,
+   "subuni": 2,
+   "hex": "4172742d4e6574000021c0a801c83619000001020000000000004142434445464748494a4b4c4d4e4f5051004c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "port": 6454,
+   "version": 0,
+   "nodeReport": "",
+   "outputUniverses": [],
+   "inputUniverses": [],
+   "style": 0,
+   "mac": "00:00:00:00:00:00",
+   "bindIndex": 0
+  },
+  {
+   "name": "four ports: two outputs, an input, one both (Art-Net 4 fields)",
+   "ip": "10.0.0.7",
+   "shortName": "Quad node",
+   "longName": "artnetxt 4-port node",
+   "net": 1,
+   "subuni": 2,
+   "port": 6454,
+   "version": 258,
+   "nodeReport": "#0001 [0042] Power On Tests successful",
+   "outputUniverses": [
+    291,
+    292,
+    294
+   ],
+   "inputUniverses": [
+    293,
+    294
+   ],
+   "style": 0,
+   "mac": "00:1a:2b:3c:4d:5e",
+   "bindIndex": 1,
+   "hex": "4172742d4e65740000210a00000736190102010200000000000051756164206e6f64650000000000000000006172746e6574787420342d706f7274206e6f646500000000000000000000000000000000000000000000000000000000000000000000000000000000000000002330303031205b303034325d20506f776572204f6e205465737473207375636365737366756c00000000000000000000000000000000000000000000000000000004808040c00000000000000000000005060304000600000000000000001a2b3c4d5e0a00000701000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "name": "reserved switch bits are ignored in the port universes",
+   "ip": "192.168.0.9",
+   "shortName": "Reserved",
+   "longName": "reserved bits set",
+   "net": 129,
+   "subuni": 18,
+   "port": 6454,
+   "version": 0,
+   "nodeReport": "",
+   "outputUniverses": [
+    291
+   ],
+   "inputUniverses": [],
+   "style": 1,
+   "mac": "ff:ee:dd:cc:bb:aa",
+   "bindIndex": 0,
+   "hex": "4172742d4e6574000021c0a8000936190000811200000000000052657365727665640000000000000000000072657365727665642062697473207365740000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000001300000000000000000001ffeeddccbbaa0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+   "name": "an older node's 207-byte reply: MAC, no BindIndex",
+   "ip": "2.0.0.20",
+   "shortName": "Old node",
+   "longName": "cut short at 207 bytes",
+   "net": 0,
+   "subuni": 0,
+   "port": 6454,
+   "version": 0,
+   "nodeReport": "",
+   "outputUniverses": [
+    0,
+    1
+   ],
+   "inputUniverses": [],
+   "style": 0,
+   "mac": "00:50:c2:00:00:01",
+   "bindIndex": 0,
+   "hex": "4172742d4e6574000021020000143619000000000000000000004f6c64206e6f6465000000000000000000006375742073686f7274206174203230372062797465730000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028080000000000000000000000000000000010000000000000000000050c2000001"
+  }
+ ],
+ "pollreply_reject": [
+  {
+   "name": "empty",
+   "hex": ""
+  },
+  {
+   "name": "not Art-Net",
+   "hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a"
+  },
+  {
+   "name": "an ArtDmx is not an ArtPollReply",
+   "hex": "4172742d4e6574000050000e0000010000020102"
+  },
+  {
+   "name": "an ArtPoll is not an ArtPollReply",
+   "hex": "4172742d4e6574000020000e0000"
+  },
+  {
+   "name": "an ArtPollReply cut below 26 bytes",
+   "hex": "4172742d4e6574000021010203043619000000000000000000"
+  }
+ ],
+ "reject": [
+  {
+   "name": "empty",
+   "hex": ""
+  },
+  {
+   "name": "not Art-Net",
+   "hex": "0102030405060708090a0b0c0d0e0f101112"
+  },
+  {
+   "name": "ArtPoll is not ArtDmx",
+   "hex": "4172742d4e6574000020000e0000"
+  },
+  {
+   "name": "ArtDmx header cut short",
+   "hex": "4172742d4e6574000050000e0000000000"
+  },
+  {
+   "name": "Art-Net id without NUL",
+   "hex": "4172742d4e6574ff0050000e0000000000020102"
+  }
+ ]
+}

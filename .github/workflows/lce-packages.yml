@@ -1,10 +1,12 @@
 # lce-packages.yml - the suite's extensions as finished .lce packages, the
 # files an end user installs with Tools > Extension Manager > + in any IDE
 # built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,
-# HyperXTalk, OXT-Beyond). One package per extension: the six LiveCode
-# Builder libraries with their native code for every committed platform,
-# and the nine script libraries. tools/build-lce-packages.py says what a
-# package holds and why; tools/lce-engine-check.lc is the engine's half.
+# HyperXTalk, OXT-Beyond). One package per extension: every LiveCode
+# Builder library with its native code for every committed platform, and
+# every script library (`python3 tools/build-lce-packages.py list` names
+# them; its `table` holds every extension member of the registry to a
+# package). tools/build-lce-packages.py says what a package holds and why;
+# tools/lce-engine-check.lc is the engine's half.
 #
 # WHAT A RUN DOES, in about five minutes on one Linux runner (plus a minute
 # on Windows for the Visual C++ runtime):
@@ -28,7 +30,28 @@
 #   3. release, only on a dispatch that names a release_tag: the same files
 #      attached to that GitHub release, which is created as a draft
 #      pre-release when it does not exist yet. Pressing Run with a tag is
-#      the human decision; nothing here publishes on its own.
+#      the human decision, and pressing Publish on the draft puts it on the
+#      extensions site (pages.yml).
+#   4. publish, only on a push to main (2026-11-21): the owner's rule is
+#      that every extension the suite makes is on the extensions site for
+#      HyperXTalk and LiveCode Community, so the site follows main instead
+#      of waiting for someone to remember a dispatch (box3dxt joined with
+#      its libraries and no package, and was not on it). `build-lce-packages.py
+#      plan` compares this run's packages with the newest published release:
+#      when any differs (a new package, version or platform, one dropped,
+#      or other bytes at the same version: a fix must reach the site too,
+#      and the build is deterministic, so only a real change differs), this
+#      job publishes them as a dated pre-release, vYYYY.MM.DD (.2, .3, ...
+#      for a second the same day), and starts pages.yml, which a release
+#      the workflow token publishes would not start by itself. Identical
+#      packages publish nothing. LCE_AUTO_PUBLISH 'false' leaves each such
+#      release a draft for a press of Publish.
+#      Safe to hold contents: write here: it runs only for a push to main,
+#      so on main's own reviewed tree, and attaches only this run's
+#      packages, which this run's engine check passed; a pull request's
+#      run never reaches it. A run for an older commit that finishes after
+#      a newer one's publishes nothing (the newest release must be its
+#      ancestor).
 #
 # The engine check runs on Linux x86-64 only: the Windows, macOS, arm64 and
 # 32-bit libraries in the packages are the committed ones that
@@ -51,6 +74,18 @@ on:
       - 'box2dxt/src/**'
       - 'coinxt/src/**'
       - 'coinxt/native/vendor/**'
+      - 'curlxt/src/**'
+      - 'box3dxt/src/**'
+      - 'audioxt/src/**'
+      - 'render3dxt/src/**'
+      - 'xlsxt/src/**'
+      - 'gamepadxt/src/**'
+      - 'pdfxt/src/**'
+      - 'webpxt/src/**'
+      - 'barcodext/src/**'
+      - 'oscxt/src/**'
+      - 'midixt/src/**'
+      - 'artnetxt/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'
       - '*/examples/*-helpers.livecodescript'
@@ -84,6 +119,9 @@ env:
   OXT_BEYOND_BINARIES_SHA256: 12504ee02cbf26c59f218263724790853b50993ebdda02546df66bcf6525add8
   DOCS_PARSER_SHA256: 539f8052a9fca16302cd206b6826a06b091a16c03a66a1f95d70faf644555a19
   EXTENSION_UTILS_SHA256: 68d1e6957201eeb0ed82937f48ab763eb2771bedd82145d6ad9f055bd1f57790
+  # The publish job (header, step 4): 'true' publishes what main brings the
+  # site, 'false' leaves it a draft pre-release for a press of Publish
+  LCE_AUTO_PUBLISH: 'true'
 
 defaults:
   run:
@@ -182,9 +220,12 @@ jobs:
           name: vc-runtime
           path: ${{ runner.temp }}/vc-runtime
 
+      # A release build (the pinned Visual C++ runtime or nothing) for a
+      # dispatch with a tag and for a push to main, whose packages the
+      # publish job may put on the site
       - name: Stage the packages
         env:
-          RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && '--release' || '' }}
+          RELEASE: ${{ ((github.event_name == 'workflow_dispatch' && inputs.release_tag != '') || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && '--release' || '' }}
         run: |
           echo "Visual C++ redistributable on the runner: $(cat "$RUNNER_TEMP/vc-runtime/REDIST.txt")"
           python3 tools/build-lce-packages.py stage --bin "$RUNNER_TEMP/oxt/engine" \
@@ -192,13 +233,20 @@ jobs:
             --openssl-licence "$RUNNER_TEMP/oxt/OpenSSL-LICENSE.txt" $RELEASE
 
       - name: Write the Dictionary docs
+        # tools/test-build-lce-packages.py runs this block, between its
+        # markers, with an engine that prints what the real one can
         run: |
+          # >>> docs
           set +e
           "$RUNNER_TEMP/oxt/engine/server-community" tools/lce-engine-check.lc docs \
             "$RUNNER_TEMP/stage" "$RUNNER_TEMP/oxt/revdocsparser.livecodescript" | tee "$RUNNER_TEMP/docs.log"
           status="${PIPESTATUS[0]}"
-          grep -q '^SUMMARY ' "$RUNNER_TEMP/docs.log" || { echo "::error::the docs step did not finish"; exit 1; }
+          # Beyond's parser goes on after an error it logs, and the engine
+          # check sees only what the parser returns: the log is read for those
+          # errors, and for the SUMMARY line of a run that finished
+          python3 tools/build-lce-packages.py docs-log "$RUNNER_TEMP/docs.log" || exit 1
           exit "$status"
+          # <<< docs
 
       - name: Pack
         run: python3 tools/build-lce-packages.py pack "$RUNNER_TEMP/stage" --out "$RUNNER_TEMP/lce" --release
@@ -259,7 +307,7 @@ jobs:
           fi
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             {
-              echo "The xTalk Suite extensions as .lce packages, built from $GITHUB_SHA by run $GITHUB_RUN_ID."
+              echo "The xTalk Suite extensions by Seth Morrow, as .lce packages built from $GITHUB_SHA by run $GITHUB_RUN_ID."
               echo
               echo "Install one in any IDE built on LiveCode Community 9 (LiveCode Community 9.6.3, OpenXTalk,"
               echo "HyperXTalk, OXT-Beyond): Tools > Extension Manager > + , then choose the .lce file."
@@ -287,3 +335,92 @@ jobs:
             fi
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber lce/*.lce lce/SHA256SUMS
+
+  publish:
+    name: Publish what changed to the extensions site
+    needs: packages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # one at a time, in push order: each compares with the release the one
+    # before it may have just published
+    concurrency:
+      group: lce-packages-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write   # the release and its tag
+      actions: write    # start pages.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: xtalk-suite-lce
+          path: ${{ runner.temp }}/lce
+
+      - name: Compare with the newest published release
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          python3 tools/build-lce-packages.py plan "$RUNNER_TEMP/lce" --repo "$GITHUB_REPOSITORY" \
+            --notes "$RUNNER_TEMP/notes.md" --github-output "$GITHUB_OUTPUT" | tee "$RUNNER_TEMP/plan.txt"
+          { echo "### What this push brings the extensions site"; echo; echo '```'
+            cat "$RUNNER_TEMP/plan.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish the release
+        if: steps.plan.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE: ${{ steps.plan.outputs.baseline }}
+        # tools/test-build-lce-packages.py runs this block, between its
+        # markers, against a gh that answers as GitHub would
+        run: |
+          # >>> publish
+          set -euo pipefail
+          # A run for an older commit that finishes after a newer one's must
+          # not publish over it: when the newest release was built from this
+          # commit or a later one, this run has nothing to add. (A release
+          # dispatched from a branch is neither: "diverged" publishes, since
+          # the plan found how this commit's packages differ from it.)
+          if [ -n "$BASELINE" ]; then
+            base=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BASELINE" --jq .sha)
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$base...$GITHUB_SHA" --jq .status)
+            case "$status" in
+              ahead|diverged) ;;
+              *)
+                echo "Compared with the newest release, $BASELINE ($base), $GITHUB_SHA is $status: nothing published." \
+                  | tee -a "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+            esac
+          fi
+          day="v$(date -u +%Y.%m.%d)"
+          tag="$day"
+          n=1
+          # (a tag without a release is taken too: a release on it would
+          # name that tag's commit, not this one)
+          while gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+                gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; do
+            n=$((n + 1))
+            tag="$day.$n"
+          done
+          # Created as a draft with every file, then published: a visitor
+          # never sees a release with half its packages
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --draft --prerelease --title "xTalk Suite extensions $tag" --notes-file "$RUNNER_TEMP/notes.md" \
+            "$RUNNER_TEMP"/lce/*.lce "$RUNNER_TEMP/lce/SHA256SUMS"
+          if [ "$LCE_AUTO_PUBLISH" != true ]; then
+            echo "Drafted $tag: press Publish on it to put it on the extensions site." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$tag"
+          echo "Published $tag and started the extensions site (pages.yml)." | tee -a "$GITHUB_STEP_SUMMARY"
+          # <<< publish

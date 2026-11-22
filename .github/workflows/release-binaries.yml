@@ -80,8 +80,10 @@
 # hold) - the dylibs ship with the linker's ad-hoc signature only, and the
 # installer's refusals keep holding the line for hand-assembled bundles.
 #
-# ANDROID LANES SINCE 2026-11-18. The `android` job builds all ten native
-# members for the four Android ABIs OXT-Beyond's Android builder packs
+# ANDROID LANES SINCE 2026-11-18. The `android` job builds every member
+# `tools/build-android.sh --list` names (every native member bar gamepadxt;
+# no count here, as a copied one went stale twice) for the four Android
+# ABIs OXT-Beyond's Android builder packs
 # (arm64-android, armv7-android, x86_64-android, x86-android). The recipe is
 # NOT spelled out here row by row as the desktop lanes are: one toolchain,
 # the NDK, builds every ABI from one Linux runner, so it lives in
@@ -483,6 +485,67 @@ jobs:
             platform_id: universal-mac
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          # ---- webpxt and barcodext: added 2026-11-20. Both build their
+          # library from source inside the member's CMake (FetchContent,
+          # pinned to a commit) and have no dependency, so each row is
+          # box3dxt's shape. barcodext is C++20 (zxing-cpp): its 32-bit gcc
+          # row needs the C++ multilib and -m32 for both languages.
+          # native-webpxt.yml and native-barcodext.yml build and test the
+          # same six on every change to the member.
+          - member: webpxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: webpxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: webpxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: webpxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: webpxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: webpxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          - member: barcodext
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: barcodext
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: barcodext
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib g++-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32
+          - member: barcodext
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: barcodext
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: barcodext
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
           # ---- audioxt: added 2026-11-20. miniaudio is ONE header the
           # member's CMake fetches (an exact commit, held to a SHA-256) and
@@ -553,6 +616,45 @@ jobs:
             os: macos-15
             cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
+          # ---- pdfxt: added 2026-11-20. It builds NO dependency: the member's
+          # CMake fetches the prebuilt PDFium archive pdfxt/src/pdfium.pin
+          # names for the row's platform, refuses one whose SHA-256 is not the
+          # pin's, and copies that library beside the shim. So each row lands
+          # TWO files through the member's packager (pdfxt.<ext>, built here,
+          # and pdfium.<ext>, unchanged), and the installer refuses the one
+          # without the other or a pdfium that is not the pinned file. The
+          # floor assertions below read pdfxt.<ext> only: PDFium's floors are
+          # its builders' (macOS 13, glibc 2.16), stated in the member's
+          # README. native-pdfxt.yml builds and tests the same six on every
+          # change to the member.
+          - member: pdfxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: pdfxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: pdfxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: pdfxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: pdfxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: pdfxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
           # ---- xlsxt: added 2026-11-20. libxlsxwriter, zlib and Expat build
           # from source inside the member's CMake (FetchContent, each pinned
           # to a commit) and need nothing from the runner, not even its zlib,
@@ -585,6 +687,122 @@ jobs:
             platform_id: x86-win32
             os: windows-2025
             cmake_args: -A Win32
+
+          # ---- gamepadxt: added 2026-11-20. SDL builds from source inside
+          # the member's CMake (FetchContent, pinned to a release commit, only
+          # its joystick parts switched on), so the rows are box3dxt's shape
+          # plus ONE build-time package on Linux: the udev headers, without
+          # which SDL would poll for controllers instead of being told (the
+          # member's configure stops rather than build that quietly). SDL
+          # loads libudev.so.1 itself at run time, so the library still needs
+          # nothing but glibc. No Android rows: docs/ANDROID.md says why.
+          # native-gamepadxt.yml builds and tests the same six on every change
+          # to the member.
+          - member: gamepadxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            dnf: systemd-devel
+          - member: gamepadxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            dnf: systemd-devel
+          - member: gamepadxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            apt_i386: libudev-dev:i386
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: gamepadxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: gamepadxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: gamepadxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+          # ---- oscxt: added 2026-11-21. tinyosc is vendored (two C files)
+          # and the shim is C, so every row is xlsxt's shape with nothing to
+          # fetch at all. native-oscxt.yml builds and tests the same six on
+          # every change to the member, and fuzzes the parser there.
+          - member: oscxt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+          - member: oscxt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+          - member: oscxt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib cmake ninja-build
+            cmake_args: -DCMAKE_C_FLAGS=-m32
+          - member: oscxt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: oscxt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: oscxt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+          # ---- midixt: added 2026-11-21. RtMidi 6.0.0 is fetched as source
+          # (pinned by commit) and compiled with the platform's MIDI backend.
+          # ALSA's headers are the one system dependency, on Linux only: from
+          # the manylinux image's dnf on the 64-bit rows (the `dnf` key and
+          # its step below), and the i386 package on the 32-bit row, named
+          # for CMake's FindALSA, which looks in the 64-bit folders
+          # otherwise. CoreMIDI and Windows MM need nothing. The C++ runtime
+          # is linked in (MIDIXT_STATIC_RUNTIME, ON by default), so the floor
+          # assertion's libstdc++ refusal holds as it does for box2dxt;
+          # libasound.so.2 stays dynamic, as every ALSA program's does. The
+          # tests run against the member's mock backend, which
+          # package-extension.py never stages. Ported from native-midixt.yml.
+          - member: midixt
+            platform_id: x86_64-linux
+            os: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64
+            manylinux: "1"
+            dnf: alsa-lib-devel
+          - member: midixt
+            platform_id: arm64-linux
+            os: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+            manylinux: "1"
+            dnf: alsa-lib-devel
+          - member: midixt
+            platform_id: x86-linux
+            os: ubuntu-24.04
+            apt: gcc-multilib g++-multilib cmake ninja-build
+            apt_i386: libasound2-dev:i386
+            cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32 -DCMAKE_LIBRARY_ARCHITECTURE=i386-linux-gnu -DALSA_LIBRARY=/usr/lib/i386-linux-gnu/libasound.so -DALSA_INCLUDE_DIR=/usr/include
+          - member: midixt
+            platform_id: x86_64-win32
+            os: windows-2025
+            cmake_args: -A x64
+          - member: midixt
+            platform_id: x86-win32
+            os: windows-2025
+            cmake_args: -A Win32
+          - member: midixt
+            platform_id: universal-mac
+            os: macos-15
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
           # ---- datachannelxt: OpenSSL, including the i386 one for the 32-bit lane
           #
@@ -723,6 +941,21 @@ jobs:
           ln -sf "$PYBIN/cmake"   /usr/local/bin/cmake
           ln -sf "$PYBIN/ctest"   /usr/local/bin/ctest
           ln -sf "$PYBIN/ninja"   /usr/local/bin/ninja
+
+      # A distribution package a containerized row needs at BUILD time only
+      # (gamepadxt: the udev headers, 2026-11-20; midixt: ALSA's headers,
+      # alsa-lib-devel, 2026-11-21). The image's own package, so it is the
+      # glibc-2.28-era one the row links against. The safe.directory line is
+      # native-midixt.yml's, ported with its rows: git runs as root in a
+      # workspace the runner's user owns.
+      - name: Acquire dnf packages (manylinux lanes)
+        if: matrix.dnf
+        shell: bash
+        working-directory: /
+        run: |
+          set -euo pipefail
+          dnf install -y ${{ matrix.dnf }}
+          git config --global --add safe.directory '*'
 
       # torrentxt's dependencies are PINNED DOWNLOADS, hash-checked before use
       # (the libsodium discipline: the pin is the integrity gate). Boost is
@@ -1432,11 +1665,14 @@ jobs:
     steps: *mac-lipo-steps
 
   # ------------------------------------------------------------------- Android
-  # All ten native members, one job per Android ABI, each calling
-  # tools/build-android.sh once per member. Per ABI rather than per member
-  # and ABI: the three OpenSSL members share one static OpenSSL per ABI (four
-  # builds of it instead of twelve), the x86 ABIs share one emulator boot per
-  # job, and the queue holds four jobs instead of twenty-eight.
+  # Every native member tools/build-android.sh lists, one job per Android
+  # ABI, each calling the script once per member. (gamepadxt, oscxt and
+  # midixt have no Android library: the script's DESKTOP_ONLY says why, and
+  # --list prints them apart, so the loops below never meet them.) Per ABI
+  # rather than per member and ABI: the three OpenSSL members share one
+  # static OpenSSL per ABI (four builds of it instead of twelve), the x86
+  # ABIs share one emulator boot per job, and the queue holds four jobs
+  # instead of one per member and ABI.
   #
   # WHAT IS RUN AND WHAT IS ONLY BUILT. The x86_64 and x86 rows boot an
   # Android 5.0 x86_64 emulator (tools/android-emulator.sh; its 64-bit
@@ -1537,27 +1773,56 @@ jobs:
             echo "XTALK_ANDROID_WORK=$RUNNER_TEMP/android-work"
           } >> "$GITHUB_ENV"
 
+      # The suite's floor first (API 21, Android 5.0): every member but one
+      # is built for it and tested on it. The level is build-android.sh's
+      # pin, read from the script.
       - name: Boot the Android 5.0 emulator (the x86 ABIs)
         if: matrix.emulator
         shell: bash
         timeout-minutes: 25
         run: |
           set -euo pipefail
-          bash tools/android-emulator.sh start | tee "$RUNNER_TEMP/emulator.txt"
+          floor=$(bash tools/build-android.sh --pins | sed -n 's/^api //p')
+          [ -n "$floor" ] || { echo "::error::build-android.sh --pins names no API level"; exit 1; }
+          bash tools/android-emulator.sh start "$floor" | tee "$RUNNER_TEMP/emulator.txt"
           serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
           [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
-          echo "XTALK_ANDROID_SERIAL=$serial" >> "$GITHUB_ENV"
+          {
+            echo "XTALK_ANDROID_SERIAL=$serial"
+            echo "XTALK_ANDROID_BOOTED=$floor"
+          } >> "$GITHUB_ENV"
 
       # Every chosen member, in the script's own order (its --list): the
       # light ones first, so a toolchain problem shows in the first minute
       # and not after OpenSSL. A member that fails stops the row; the commit
       # job needs every row green.
+      #
+      # A member built for a later Android than the emulator that is up
+      # (torrentxt: API 24, build-android.sh says why) has its tests run on
+      # ITS floor: the emulator is stopped and the one for that level booted,
+      # where the member comes up in the list. Without this the script
+      # refuses the member before it builds it, so the row cannot go green
+      # on a test that never loaded.
       - name: Build every member (and run its tests on the emulator rows)
         shell: bash
         run: |
           set -euo pipefail
           : > "$RUNNER_TEMP/android-summary.txt"
+          booted="${XTALK_ANDROID_BOOTED:-}"
           for member in $ANDROID_MEMBERS; do
+            if [ -n "$booted" ]; then
+              want=$(bash tools/build-android.sh --api "$member")
+              if [ "$want" != "$booted" ]; then
+                echo "::group::the Android API $want emulator ($member is built for it)"
+                bash tools/android-emulator.sh stop
+                bash tools/android-emulator.sh start "$want" | tee "$RUNNER_TEMP/emulator.txt"
+                serial=$(sed -n 's/^serial //p' "$RUNNER_TEMP/emulator.txt" | tail -1)
+                [ -n "$serial" ] || { echo "::error::android-emulator.sh named no serial"; exit 1; }
+                export XTALK_ANDROID_SERIAL="$serial"
+                booted="$want"
+                echo "::endgroup::"
+              fi
+            fi
             echo "::group::$member ${{ matrix.platform_id }}"
             bash tools/build-android.sh "$member" "${{ matrix.platform_id }}" 2>&1 | tee "$RUNNER_TEMP/android-$member.log"
             echo "::endgroup::"
@@ -1594,6 +1859,12 @@ jobs:
           for member in $ANDROID_MEMBERS; do
             mkdir -p "stage/$member/${{ matrix.platform_id }}"
             cp "$member/src/code/${{ matrix.platform_id }}/$member.so" "stage/$member/${{ matrix.platform_id }}/"
+            # A member's companion (pdfxt's pdfium.so: the prebuilt library
+            # its own loads from beside itself) rides with it; the installer
+            # refuses the one without the other.
+            for companion in $(bash tools/build-android.sh --companion "$member"); do
+              cp "$member/src/code/${{ matrix.platform_id }}/$companion" "stage/$member/${{ matrix.platform_id }}/"
+            done
           done
           find stage -type f | sort
 

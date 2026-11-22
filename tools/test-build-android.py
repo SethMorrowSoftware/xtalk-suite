@@ -88,16 +88,23 @@ def fake_ndk(tmp, name, revision, clang=True):
     return ndk
 
 
-def fake_adb(tmp, name, abilist):
-    """An adb that answers the one question build-android.sh asks a device
-    before it builds (None: there is no such device)."""
+def fake_adb(tmp, name, abilist, sdk="21"):
+    """An adb that answers the two questions build-android.sh asks a device
+    before it builds: the ABIs it runs (None: there is no such device) and
+    its Android API level (None: it does not say)."""
     path = os.path.join(tmp, name)
     with open(path, "w") as fh:
         if abilist is None:
             fh.write("#!/bin/sh\necho \"adb: device 'x' not found\" >&2\nexit 1\n")
         else:
-            # CR LF, as adb shell prints without its shell protocol.
-            fh.write("#!/bin/sh\nprintf '%s\\r\\n'\n" % abilist)
+            # The property asked for is adb's last argument; CR LF, as adb
+            # shell prints without its shell protocol.
+            fh.write("#!/bin/sh\nfor a; do last=$a; done\ncase \"$last\" in\n"
+                     "  ro.product.cpu.abilist) printf '%s\\r\\n' ;;\n"
+                     % abilist)
+            if sdk is not None:
+                fh.write("  ro.build.version.sdk) printf '%s\\r\\n' ;;\n" % sdk)
+            fh.write("esac\n")
     os.chmod(path, 0o755)
     return path
 
@@ -114,15 +121,43 @@ def main():
     listed = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
     members = listed.get("members", "").split()
     platforms = listed.get("platforms", "").split()
+    # The native members it names and does NOT build (gamepadxt since
+    # 2026-11-20, oscxt and midixt since 2026-11-21), each with its reason in
+    # the script. They count toward the comparison below, so a new native
+    # member must land in one list or the other: never in neither.
+    desktop_only = listed.get("desktop-only", "").split()
     check(rc == 0 and members and platforms, "--list names members and "
           "platform ids", (rc, out, err))
-    native = [m["name"] for m in freshness.MEMBERS]
-    check(sorted(members) == sorted(native),
-          "it builds exactly the native members the freshness gate knows",
-          (members, native))
-    check(sorted(members) == sorted(installer.MEMBERS),
+    check(not set(members) & set(desktop_only),
+          "no member is both built for Android and desktop-only",
+          (members, desktop_only))
+    every_native = [m["name"] for m in freshness.MEMBERS]
+    check(sorted(members + desktop_only) == sorted(every_native),
+          "it builds exactly the native members the freshness gate knows, "
+          "bar the ones it names desktop-only", (members, desktop_only, every_native))
+    check(sorted(members + desktop_only) == sorted(installer.MEMBERS),
           "  ...which are the members the installer installs",
-          (members, sorted(installer.MEMBERS)))
+          (members, desktop_only, sorted(installer.MEMBERS)))
+    # A desktop-only member is held to the opposite of every Android rule
+    # below (gamepadxt's rule, 2026-11-20): its `ships` row names no Android
+    # library and its packager names no Android id, so "not built" can
+    # never drift into "half built" and nothing promises a library this
+    # script never builds.
+    for row in freshness.MEMBERS:
+        if row["name"] not in desktop_only:
+            continue
+        android = [p for p in row["ships"] if p.endswith("-android")]
+        check(not android, f"desktop-only {row['name']} ships no Android "
+              "library", android)
+        packer = os.path.join(ROOT, row["name"], "tools", "package-extension.py")
+        with open(packer, encoding="utf-8") as fh:
+            text = fh.read()
+        # An id as the packager would hold it, a quoted string: a comment
+        # naming build-android.sh is not an id.
+        named = [p for p in platforms if f'"{p}"' in text or f"'{p}'" in text]
+        check(not named, f"  ...and its packager names no Android id", named)
+    # The rules below are for the members it does build.
+    native = [m for m in every_native if m in members]
     check(sorted(platforms) == sorted(installer.ANDROID_ABIS),
           "its platform ids are the installer's ANDROID_ABIS",
           (platforms, sorted(installer.ANDROID_ABIS)))
@@ -151,8 +186,9 @@ def main():
     # a member that opens none declares nothing: a permission that appears
     # in a crypto or physics library is a question for a reviewer, not a
     # default. WHICH members open sockets is this table, by hand; nothing
-    # in a compiler-free gate can derive it.
-    for member in native:
+    # in a compiler-free gate can derive it. A desktop-only member is asked
+    # too, and must declare nothing: no app of its has an Android build.
+    for member in every_native:
         folder = os.path.join(ROOT, member, "src")
         lcbs = [f for f in sorted(os.listdir(folder)) if f.endswith(".lcb")]
         lines = []
@@ -184,15 +220,117 @@ def main():
           'bash tools/build-android.sh "$member"' in job,
           "  ...building every member the script lists, through the script",
           "")
+    # A member built for a later Android than the suite's floor is tested on
+    # the emulator for ITS level, which the job asks the script for (a copied
+    # number would test torrentxt on an Android its library cannot load on,
+    # and the script refuses that row).
+    check('tools/build-android.sh --api "$member"' in job
+          and 'tools/android-emulator.sh start "$want"' in job
+          and "tools/android-emulator.sh stop" in job
+          and "sed -n 's/^api //p'" in job
+          and 'tools/android-emulator.sh start "$floor"' in job,
+          "  ...and booting the emulator each member's API level asks for, "
+          "read from the script", "")
+
+    # The companions (pdfxt's pdfium.so, 2026-11-20): three tables name
+    # them - this script's, the installer's and the freshness gate's - and a
+    # member one of them forgot would build a library whose second file is
+    # refused at install, or land one nothing checks. The workflow's staging
+    # step must carry what the script says, or the bundle arrives without it
+    # and the installer refuses the whole run.
+    for member in native:
+        rc, out, err = run(["--companion", member])
+        named = out.split()
+        inst = installer.COMPANIONS.get(member)
+        gate = next(m for m in freshness.MEMBERS if m["name"] == member).get("companions", {})
+        check(rc == 0 and named == ([inst[0] + ".so"] if inst else [])
+              and sorted(n + ".so" for n in gate) == named
+              and (not inst or [inst[1].replace(os.sep, "/")] == list(gate.values())),
+              f"{member}: the script, the installer and the freshness gate "
+              f"agree on its companion ({named or 'none'})", (named, inst, gate))
+        if named:
+            pin = os.path.join(ROOT, inst[1])
+            rows = {}
+            with open(pin, encoding="utf-8") as fh:
+                for line in fh:
+                    parts = line.split("#", 1)[0].split()
+                    if len(parts) == 4:
+                        rows[parts[0]] = parts[3]
+            check(all(re.fullmatch(r"[0-9a-f]{64}", rows.get(p, "")) for p in platforms),
+                  f"  ...and its pin has a row for every Android platform id",
+                  sorted(rows))
+    check("tools/build-android.sh --companion" in job,
+          "the workflow's staging step carries each member's companion, as "
+          "the script names it", "")
 
     # 2. The pins.
     rc, out, err = run(["--pins"])
     pins = {line.split()[0]: line.split()[1:] for line in out.splitlines()}
-    check(rc == 0 and set(pins) == {"ndk", "api", "openssl", "boost"},
-          "--pins names the NDK, the API level, OpenSSL and Boost", out)
+    check(rc == 0 and set(pins) == {"ndk", "api", "api-torrentxt",
+                                    "companion-api-pdfxt", "openssl", "boost"},
+          "--pins names the NDK, the API levels, OpenSSL and Boost", out)
     check(pins.get("api") == [str(installer.ANDROID_API_FLOOR)],
           "the API level it builds for is the installer's floor",
           (pins.get("api"), installer.ANDROID_API_FLOOR))
+    # The one member with a floor of its own (torrentxt: API 24, the level
+    # at which libtorrent stops reading the network over the netlink socket
+    # Android 11 and later refuse an app). Three files hold the number: the
+    # script builds to it, the installer refuses anything else, and the
+    # emulator script must be able to boot it.
+    own = {k[len("api-"):]: v for k, v in pins.items() if k.startswith("api-")}
+    check(own == {m: [str(a)] for m, a in installer.ANDROID_API_FOR.items()},
+          "  ...and the members with a level of their own, and those "
+          "levels, are the installer's ANDROID_API_FOR",
+          (own, installer.ANDROID_API_FOR))
+    # A companion's level (pdfxt's pdfium.so: PDFium's builders' API 23).
+    # Nothing is BUILT for it, so the installer has no row for it; it is a
+    # pin because pdfxt's own lane tests on that Android, the oldest where
+    # the companion loads, so the emulator script must boot it. Exactly the
+    # members with a companion have one, and it lies above the floor (at the
+    # floor the floor's emulator would do).
+    with_companion = sorted(m for m in members if run(["--companion", m])[1].split())
+    levels = {k[len("companion-api-"):]: v for k, v in pins.items()
+              if k.startswith("companion-api-")}
+    check(with_companion and sorted(levels) == with_companion
+          and all(len(v) == 1 and v[0].isdigit()
+                  and int(v[0]) > installer.ANDROID_API_FLOOR for v in levels.values()),
+          "  ...and the members with a companion, and the level each "
+          "companion was built for, above the floor", (levels, with_companion))
+    asked = {}
+    for member in members:
+        rc, out, err = run(["--api", member])
+        asked[member] = (rc, out.strip())
+    check(asked == {m: (0, str(installer.android_api_for(m))) for m in members},
+          "--api <member> answers the installer's level for every member",
+          asked)
+    rc, out, err = run(["--api", "onionxt"])
+    check(rc == 2 and not out and "not a native member" in err,
+          "  ...and refuses a name that is not a native member (exit 2)",
+          (rc, out, err))
+    for member in desktop_only:
+        rc, out, err = run(["--api", member])
+        check(rc == 2 and not out and "has no Android build" in err
+              and "DESKTOP_ONLY" in err,
+              f"  ...and refuses desktop-only {member}, pointing at the reason "
+              "(exit 2)", (rc, out, err))
+    done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
+                           "--apis"], capture_output=True, text=True,
+                          timeout=60)
+    boots = done.stdout.split()
+    tested_on = {a for _rc, a in asked.values()} | {v[0] for v in levels.values()}
+    check(done.returncode == 0 and boots[:1] == ["apis"]
+          and sorted(boots[1:], key=int) == sorted(tested_on, key=int),
+          "the emulator script boots exactly the API levels the members "
+          "are built for, and their companions' levels",
+          (done.returncode, done.stdout, asked, levels))
+    # A level in neither set (22: between the floor and every level above
+    # it), so the refusal is the script's, not a missing image's.
+    done = subprocess.run(["bash", os.path.join(HERE, "android-emulator.sh"),
+                           "start", "22"], capture_output=True, text=True,
+                          timeout=60)
+    check(done.returncode == 2 and "not an Android this script boots" in done.stderr,
+          "  ...and refuses any other level (exit 2)",
+          (done.returncode, done.stderr))
     if len(pins.get("openssl", [])) == 2 and len(pins.get("boost", [])) == 2:
         version, sha = pins["openssl"]
         check(f"openssl-{version}/openssl-{version}.tar.gz" in workflow
@@ -219,6 +357,11 @@ def main():
     rc, out, err = run(["onionxt", "arm64-android"])
     check(rc == 2 and "not a native member" in err,
           "a member with no native library is refused (exit 2)", (rc, err))
+    for member in desktop_only:
+        rc, out, err = run([member, "arm64-android"])
+        check(rc == 2 and "has no Android build" in err and "DESKTOP_ONLY" in err,
+              f"desktop-only {member} is refused, pointing at the reason "
+              "(exit 2)", (rc, err))
     rc, out, err = run(["enetxt", "arm64-linux"])
     check(rc == 2 and "not an Android platform id" in err,
           "a platform id that is not Android's is refused (exit 2)", (rc, err))
@@ -279,6 +422,32 @@ def main():
         check(not os.path.exists(os.path.join(ROOT, "enetxt", "src", "code",
                                               "x86-android", "enetxt.so.tmp")),
               "  ...and a failed build leaves no half-written library")
+        # The second question: which Android. A member's tests cannot load
+        # on an Android older than the level its library is built for, and
+        # that failure reads as a broken library, so it is refused before
+        # the build with the emulator to boot instead.
+        rc, out, err = run(["torrentxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-21", "x86_64,x86")))
+        check(rc == 1 and "runs Android API 21, and torrentxt is built for "
+              "API 24 or later" in err
+              and "tools/android-emulator.sh start 24" in err,
+              "torrentxt on the Android 5.0 emulator is refused, naming the "
+              "emulator to boot", (rc, err))
+        check("== build-android: torrentxt for" not in out,
+              "  ...before the build starts", out)
+        rc, out, err = run(["enetxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-mute", "x86_64,x86",
+                                                  sdk=None)))
+        check(rc == 1 and "would not say which Android it runs" in err
+              and "== build-android: enetxt for" not in out,
+              "a device that does not say which Android it runs is refused",
+              (rc, out, err))
+        rc, out, err = run(["enetxt", "x86-android"],
+                           dict(env, ADB=fake_adb(tmp, "adb-24", "x86_64,x86",
+                                                  sdk="24")))
+        check(rc != 0 and "== build-android: enetxt for x86-android" in out,
+              "a device NEWER than a member's level gets past the question "
+              "(a floor is a floor)", (rc, out, err))
 
     if FAILURES:
         print(f"\n{TAG}: {len(FAILURES)} FAILURE(S)")

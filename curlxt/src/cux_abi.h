@@ -132,8 +132,10 @@
  * and when it succeeds the handle stays RUNNING, now a two-way message
  * socket. Whole messages (fragments reassembled) queue in the shim until
  * cux_ws_read takes them; cux_ws_send queues a whole message and the pump
- * writes it out. PUMP OR NOTHING holds here too: a socket moves only inside
- * cux_poll, cux_ws_poll or cux_ws_wait.
+ * writes it out. The pump answers pings itself, with at most one answer
+ * waiting, and handles at most 1024 control frames a pass. PUMP OR NOTHING
+ * holds here too: a socket moves only inside cux_poll, cux_ws_poll or
+ * cux_ws_wait.
  *
  * A WebSocket is NEVER listed by cux_poll: that list is consumed by whoever
  * reads it (the helpers' timer, for the requests it watches), and a handle
