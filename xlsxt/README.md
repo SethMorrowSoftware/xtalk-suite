@@ -88,12 +88,25 @@ Joined the suite on 2026-11-20. What has run, and where:
   demo was rebuilt the same day, and the new window ran on that PC readable throughout
   (below).
 - **In a browser**, 2026-11-21: the committed web archive, linked into OXT-Beyond's web
-  engine by that repository's pull request 605 (not merged yet), ran the `xlsx` step of its
-  web IDE check (run 44847676839) in headless Chromium, Firefox and WebKit.
-  `xlLibraryVersion()` answered; a workbook with a table, a formula, a date, a boolean, text
-  outside ASCII and a chart was written to the engine's in-memory file system and read back;
-  a file that is no workbook was refused; nothing was left open. The other handlers have not
-  run in a browser.
+  engine by that repository's pull request 605, ran the `xlsx` step of its web IDE check
+  (run 44847676839) in headless Chromium, Firefox and WebKit. `xlLibraryVersion()`
+  answered; a workbook with a table, a formula, a date, a boolean, text outside ASCII and a
+  chart was written to the engine's in-memory file system and read back; a file that is no
+  workbook was refused; nothing was left open. The demo stack's run in a browser (below)
+  reached more of the handlers; no browser run has called every one.
+  Pull request 605 did not merge: OXT-Beyond 0.2.8-dp.2.1 builds xlsxt in instead (its pull
+  request 620, merged 2026-11-22, pinned to 9ebbd6e), and that pull request's check passed
+  the same step in the three browsers (run 44955451513).
+- **In an Android app**, 2026-11-21: the same pull request put the committed
+  `x86_64-android` library in OXT-Beyond's Android check app (run 44955451306). On an
+  Android 13 x86_64 emulator and an Android 16 one with 16 KB pages, `xlLibraryVersion()`
+  answered `xlsxt ABI 1; libxlsxwriter 1.2.4; zlib 1.4; Expat 2.10.0`, and the app's test
+  passed: a workbook written in the app's documents folder with no temporary folder set (on
+  Android the library then makes its temporary files beside the workbook), checked to be a
+  zip, and read back cell for cell and as one grid (text outside ASCII and on two lines,
+  0.1 + 0.2 to its last digit, a formula with its result, a date in its format, a yes), with
+  nothing left open. The same test passed that day on OXT-Beyond 0.2.8-dp.2's Linux
+  standalone engine, headless, over the committed `x86_64-linux` library.
 - **The demo stack, Spreadsheet Studio**, `examples/xlsxt-demo.livecodescript` (paste it
   into a stack's script and reopen the stack; `examples/build-demo-stack.livecodescript`
   saves it as a stack file). It opens playing a tour of four scenes that write real
@@ -117,16 +130,20 @@ Joined the suite on 2026-11-20. What has run, and where:
   passed 39/0, and every word was readable. The one fault it showed, the ten-thousand-cell
   scene's last column cutting a five-digit number to four, was fixed that day; the drive
   now measures every cell a scene shows against its column, and the fix is checked on
-  Linux only. On macOS and in a browser the new window is verified statically; needs an
-  OXT pass.
-- **Not yet:** no engine on macOS or Android has run it, and no desktop IDE but the Windows
-  one above: on macOS and Android, and in an IDE on Linux, it is verified statically; needs
-  an OXT pass. No file it wrote has been opened in Excel itself on the record: what is
-  checked is that the library's own reader reads them and that their parts are the ones
-  libxlsxwriter writes. The release libraries
-  committed under `src/code/` on 2026-11-21 (six desktop platforms, four Android ABIs) were
-  tested where they were built; no engine has loaded one of them yet. The Windows run used
-  the native lane's DLL, and the browser run the web archive committed beside them.
+  Linux only. On 2026-11-22 the window played in a browser: saved as a stack for the
+  community gallery (oxt-community-stacks pull request 19, merged that day) and opened in
+  OXT-Beyond 0.2.8-dp.2.1's Stack Player in headless Chromium, it played its tour to the
+  end and About's checks passed 39/0; nothing else in it was clicked there. On macOS, and
+  in Firefox and WebKit, the new window is verified statically; needs an OXT pass. The
+  gallery lists it at https://oxt-stacks.github.io/oxt-community-stacks/s/spreadsheet-studio/.
+- **Not yet:** no engine on macOS or on an ARM Android has run it, and no desktop IDE but
+  the Windows one above: on macOS, on an ARM Android and in an IDE on Linux, it is verified
+  statically; needs an OXT pass. No file it wrote has been opened in Excel itself on the
+  record: what is checked is that the library's own reader reads them and that their parts
+  are the ones libxlsxwriter writes. The release libraries committed under `src/code/` on
+  2026-11-21 (six desktop platforms, four Android ABIs) were tested where they were built,
+  and two of them have run on an engine, the `x86_64-android` and `x86_64-linux` ones
+  (above); the Windows run used the native lane's DLL.
 
 ## Building and testing
 

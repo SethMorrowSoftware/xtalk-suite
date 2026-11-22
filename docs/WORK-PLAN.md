@@ -1057,27 +1057,47 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   stack; that window is driven on the Linux engine (`xlsxt/tests/demo-drive.livecodescript`)
   and ran that day on the Windows PC under its dark theme: the tour's four scenes, About's
   checks 39/0, every word readable, and one clipped column, fixed after (checked on Linux
-  only). Everything else is verified statically; needs an OXT pass.
+  only). OXT-Beyond 0.2.8-dp.2.1 builds it in: that repository's pull request 620 (merged
+  2026-11-22; it carried 618, which replaced 605) pins it to 9ebbd6e, and its checks ran the
+  committed files on 2026-11-21 (head e5d79df). The web IDE check's `xlsx` step passed again
+  in the three browsers (run 44955451513; read back from the Chromium job's log, and the
+  Firefox and WebKit jobs, which fail on a step that fails or does not finish, passed). Its
+  Android builder (run 44955451306) put the `x86_64-android` library in the check app, and on
+  an Android 13 x86_64 emulator and an Android 16 one with 16 KB pages `xlLibraryVersion()`
+  answered `xlsxt ABI 1; libxlsxwriter 1.2.4; zlib 1.4; Expat 2.10.0` and the app's xlsxt test
+  passed: a workbook of 5409 bytes written in the app's documents folder with no temporary
+  folder set (the shim then uses the workbook's own folder), a zip, read back cell for cell
+  and as one grid, nothing left open (read back from the job's log, both emulators). The same
+  test passed that day on 0.2.8-dp.2's Linux standalone engine, headless, over the committed
+  `x86_64-linux` library, in a probe script made by the check's own handlers. On
+  2026-11-22 the demo, saved as a stack for the community gallery (its pull request 19),
+  played in 0.2.8-dp.2.1's Stack Player in headless Chromium: the tour to its end, About's
+  checks 39/0 (row 10). That pull request merged the same day, and the gallery's Publish
+  run opened the stack in the player on the published site.
+  Everything else is verified statically; needs an OXT pass.
 - Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44838679488
   from b2d4a6c, commit 0be6db1: six desktop rows and four Android ids, ABI 1), beside the
   web archive committed before it (built with emsdk 6.0.12 outside that workflow, as the
-  other members' are). The `ships` row lists all eleven. No engine has loaded a desktop or
-  Android one yet: the runs above used locally built or lane-built libraries, and the
-  browser run the web archive.
+  other members' are). The `ships` row lists all eleven. Beside the web archive, two have
+  met an engine, both on 2026-11-21 (above): `x86_64-android` in OXT-Beyond's check app on
+  two emulators and `x86_64-linux` on 0.2.8-dp.2's Linux standalone engine. No engine has
+  loaded the Windows, Mac, 32-bit or ARM ones yet: the Windows runs above used the native
+  lane's DLL.
 - Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
   2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44838679488, commit 0be6db1, beside the web archive): the first release-binaries dispatch with `members: xlsxt`, then the `ships` row | - | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
+| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain; OXT-Beyond 0.2.8-dp.2.1 builds the release libraries in, so its IDE needs no install) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
 | 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
 | 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
-| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is (linked by OXT-Beyond's pull request 605, whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit on 2026-11-21; open until that work merges there) | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
+| 5 | DONE 2026-11-22: the web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is, by OXT-Beyond's pull request 620 (0.2.8-dp.2.1, carrying 618, which replaced 605), whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit (run 44955451513, 2026-11-21, as 605's had). OXT-Beyond 0.2.8-dp.2.1, published 2026-11-22, carries it in its web IDE and its Stack Player, whose `xlLibraryVersion()` answered in Chromium that day (row 10) | - | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package and a place on the extensions site. PACKAGED 2026-11-21: its row in `tools/build-lce-packages.py` waited until #1's libraries landed, and `xlsxt-0.1.0.lce` (`org.openxtalk.library.xlsxt`, the six desktop rows and the four Android ids; the web archive is in no package) built from that tree passed the workflow's engine check run locally (validated, loaded and `xlLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine). The site lists it from the release the first push to main after that publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
 | 8 | `xlsxt/examples/xlsxt-demo.livecodescript` (Spreadsheet Studio) used by a person: the Showcase's tour and each scene, each tab's Make and Save, Open on a file from Excel, a click on a cell, Run every check (driven on the Linux engine by `xlsxt/tests/demo-drive.livecodescript` since 2026-11-21; on Windows on 2026-11-21 a session on the maintainer's PC built the first window and ran its checks, 39/0, and found its words white on white under the dark theme; the same day the demo was rebuilt as a self-playing showcase in OXT-Beyond's dark look, every colour named by the stack, and that window ran on the same PC under the dark theme: the tour's four scenes, About's checks 39/0, every word readable, one clipped column fixed after and checked on Linux only; a light theme, Make and Save by hand and a file opened in Excel remain) | S1, after #1 | - | the tour plays smoothly, the window looks right under a dark and a light theme, and the saved files open in Excel |
-| 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+| 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set (begun 2026-11-21: OXT-Beyond's check app, its pull request 620, wrote one in the app's documents folder with no temporary folder set and read it back cell for cell on Android 13 and 16 x86_64 emulators, above; with `xlSetTempFolder` set, and on an ARM device, remain) | S1, after #1 | - | the file is on the device and reads back |
+| 10 | DONE 2026-11-22 (the gallery's pull request 19, squash 44f94cb, after its pull request 24 moved the player's pins to OXT-Beyond 0.2.8-dp.2.1): Spreadsheet Studio in the community gallery (oxt-community-stacks), playing in a browser, the stack saved by `xlsxt/examples/build-demo-stack.livecodescript`. Before the merge, in a gallery built locally with those pins, the stack opened in headless Chromium with `xlLibraryVersion()` on its status line, played its tour to the end and passed About's checks 39/0; after it, the gallery's Publish run (44989253439) opened it in the player on the published site | - | - | the gallery plays it |
 
 ### 2.13 audioxt
 
