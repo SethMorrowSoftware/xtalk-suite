@@ -135,9 +135,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # JOINED 2026-11-20 too, the same way, and AUDIOXT and RENDER3DXT.
 # GAMEPADXT joined that day too (desktop rows only: it is not built for
 # Android, docs/ANDROID.md), and BARCODEXT AND WEBPXT.
+#
+# OSCXT AND MIDIXT JOINED 2026-11-21 (ShowControl's OSC and MIDI) the same
+# way again: rows in release-binaries.yml, no library committed. Their third,
+# artnetxt, is pure LCB with no library, so it is not a native member here.
+# Neither is built for Android (midixt cannot be: RtMidi's Android backend
+# needs API 29 and JNI; oscxt waits on the work plan): tools/build-android.sh
+# names them desktop-only, beside gamepadxt, so no release bundle carries an
+# Android library of theirs.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
            "curlxt", "box3dxt", "audioxt", "render3dxt", "xlsxt", "gamepadxt",
-           "barcodext", "webpxt")
+           "barcodext", "webpxt", "oscxt", "midixt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 

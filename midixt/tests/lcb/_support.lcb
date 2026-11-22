@@ -1,0 +1,135 @@
+/*
+_support.lcb - shared helpers for ShowControl's headless LCB test suites.
+
+Loaded by tools/run-lcb-tests.py (lc-run -l) ahead of every tests/lcb/*_test.lcb
+module. Files starting with "_" are suite infrastructure, never test modules.
+
+Hex is the lingua franca of the suite: the wire-format vectors in tests/vectors/
+are hex, the C tests and the Python reference speak hex, and a failing byte
+comparison is only readable as hex. So every byte assertion goes through
+HexToData / DataToHex rather than hand-built `the byte with code` chains.
+*/
+
+library org.openxtalk.showcontrol.tests.support
+
+metadata version is "1.0.0"
+metadata author is "ShowControl contributors"
+
+private constant kHexDigits is "0123456789abcdef"
+
+-- Value of one hex digit (either case); -1 for a non-hex character.
+private handler hexNibble(in pChar as String) returns Integer
+   variable tCode as Integer
+   put the code of pChar into tCode
+   if tCode >= 48 and tCode <= 57 then
+      return tCode - 48
+   end if
+   if tCode >= 97 and tCode <= 102 then
+      return tCode - 87
+   end if
+   if tCode >= 65 and tCode <= 70 then
+      return tCode - 55
+   end if
+   return -1
+end handler
+
+-- HexToData("4172") -> the bytes 0x41 0x72. Spaces are ignored so vectors can be
+-- grouped for readability. A malformed string (odd length, non-hex) throws: a
+-- broken vector is a broken test, never a silent pass.
+public handler HexToData(in pHex as String) returns Data
+   variable tOut as Data
+   variable tClean as String
+   variable tChar as String
+   variable tI as Integer
+   variable tHi as Integer
+   variable tLo as Integer
+   put the empty data into tOut
+   put the empty string into tClean
+   repeat for each char tChar in pHex
+      if tChar is not " " then
+         put tChar after tClean
+      end if
+   end repeat
+   if (the number of chars in tClean) mod 2 is not 0 then
+      throw "HexToData: odd-length hex string"
+   end if
+   repeat with tI from 1 up to the number of chars in tClean by 2
+      put hexNibble(char tI of tClean) into tHi
+      put hexNibble(char (tI + 1) of tClean) into tLo
+      if tHi < 0 or tLo < 0 then
+         throw "HexToData: non-hex character"
+      end if
+      put the byte with code (tHi * 16 + tLo) after tOut
+   end repeat
+   return tOut
+end handler
+
+-- DataToHex(<bytes>) -> lower-case hex, no separators.
+public handler DataToHex(in pData as Data) returns String
+   variable tOut as String
+   variable tByte as Data
+   variable tCode as Integer
+   put the empty string into tOut
+   repeat for each byte tByte in pData
+      put the code of tByte into tCode
+      put char (((tCode - (tCode mod 16)) / 16) + 1) of kHexDigits after tOut
+      put char ((tCode mod 16) + 1) of kHexDigits after tOut
+   end repeat
+   return tOut
+end handler
+
+-- A Data of pCount copies of the byte pCode (for SysEx / DMX / blob fixtures).
+public handler RepeatByte(in pCode as Integer, in pCount as Integer) returns Data
+   variable tOne as Data
+   variable tOut as Data
+   variable tI as Integer
+   put the byte with code (pCode) into tOne
+   put the empty data into tOut
+   repeat with tI from 1 up to pCount
+      put tOne after tOut
+   end repeat
+   return tOut
+end handler
+
+-- A String of pCount copies of pChar.
+public handler RepeatChar(in pChar as String, in pCount as Integer) returns String
+   variable tOut as String
+   variable tI as Integer
+   put the empty string into tOut
+   repeat with tI from 1 up to pCount
+      put pChar after tOut
+   end repeat
+   return tOut
+end handler
+
+-- Absolute difference within a tolerance (floats cross the wire as 32-bit).
+public handler NearlyEqual(in pA as Number, in pB as Number, in pTolerance as Number) returns Boolean
+   variable tD as Number
+   put pA - pB into tD
+   if tD < 0 then
+      put -tD into tD
+   end if
+   return tD <= pTolerance
+end handler
+
+-- Render any scalar for a diagnostic line (Numbers, Strings, Booleans, Data as hex).
+public handler Show(in pValue as optional any) returns String
+   if pValue is nothing then
+      return "<nothing>"
+   end if
+   if pValue is a string then
+      return "'" & pValue & "'"
+   end if
+   if pValue is a number then
+      return pValue formatted as string
+   end if
+   if pValue is a boolean then
+      return pValue formatted as string
+   end if
+   if pValue is a data then
+      return "<" & DataToHex(pValue) & ">"
+   end if
+   return "<" & "non-scalar" & ">"
+end handler
+
+end library

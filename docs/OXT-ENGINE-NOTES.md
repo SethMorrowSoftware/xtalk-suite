@@ -2,11 +2,14 @@
 
 Every entry is a fact about the OpenXTalk engine that cost this project
 something to learn: the symptom verbatim, what it broke, the rule, and the gate
-(if any) that holds it. OXT cannot compile or run `.livecodescript` or `.lcb`
-headlessly, so every gate here stands in for a compiler; this file lists what
-no stand-in predicted. Entry NUMBERS are stable and cited across the tree
-("engine notes 5.3"): never renumber, merge or delete one; a resolved entry
-stays as a stub (6.6).
+(if any) that holds it. The suite's static gates cannot compile or run
+`.livecodescript` or `.lcb`, so each stands in for a compiler; this file lists
+what no stand-in predicted. (Since 2026-11-21 oscxt, midixt and artnetxt also
+compile and run theirs in a real engine with no window, through each member's
+`tools/run-lcb-tests.py` and `tools/run-lcs-tests.py`; what those runs see is
+OBSERVED like any engine session's.) Entry NUMBERS are stable and cited
+across the tree ("engine notes 5.3"): never renumber, merge or delete one; a
+resolved entry stays as a stub (6.6).
 
 ## THE EVIDENCE RULE
 
@@ -967,6 +970,56 @@ engine's rule and lets both values through.
 **Does NOT mean:** `trunc` is wrong, or that `is an integer` bounds a value:
 2^60 and +inf are integers to it, and 2.4's 2^53 limit is a separate test.
 
+### 2.13 `numToByte` WRAPS modulo 256, and a fraction is ROUNDED or TRUNCATED by where it came from
+**OBSERVED 2026-11-21** (Linux x86_64, the standalone engine of OXT-Beyond
+0.2.7-rc.6, "9.7.1-OXT"; `byteToNum(numToByte(x))`). Out of range WRAPS, with
+no error and no flag: 256 gives 0, 257 gives 1, 300 gives 44, -1 gives 255. A
+value just past the top of the byte becomes the BOTTOM of it. A fraction is
+made whole first, and HOW depends on what holds it:
+
+- ROUNDED half away from zero: a literal written in the call
+  (`numToByte(255.6)` is byte 0, `numToByte(127.5)` is 128), a computed value
+  (`2556 / 10` gives 0, `255 / 2` gives 128) and text never read as a number
+  before (`item 1 of "255.6,x"` gives 0; "1.6" gives 2).
+- TRUNCATED toward zero: a variable or parameter holding a number WRITTEN as a
+  literal (`put 255.6 into tN` then `numToByte(tN)` gives 255; 127.5 gives
+  127; a handler's `pLevel` when its caller wrote 255.6 gives 255).
+
+The same conversion feeds every built-in that takes a whole number:
+`numToChar` of a variable holding the literal 66.6 is code 66, of the literal
+itself 67. And reading TEXT as a whole number rewrites what it reads as
+afterwards: with `tN` set to `item 1 of "255.6,x"`, after `numToByte(tN)` the
+expression `tN + 0` is 256, while `tN` still shows 255.6.
+**Why (DOCUMENTED, OXT-Beyond's engine source):** a numeric literal is parsed
+once and its text keeps the number it read (`scriptpt.cpp`, the `ST_NUM` case:
+`MCStringSetNumericValue`). Text that carries such a number converts to an
+integer by a C cast, which truncates (`exec.cpp`,
+`MCExecTypeConvertStringToNumber`: `(integer_t)t_real_value`); every other path
+rounds (`MCExecTypeConvertNumbers` and `MCNumberFetchAsInteger`: `+ 0.5`), and
+the text path that rounds stores the ROUNDED integer back as the text's number
+(`MCStringSetNumericValue(p_from, (double)t_value)`), which arithmetic then
+reads. `numToByte` itself is a cast to a byte (`exec-strings.cpp`,
+`MCStringsEvalNumToByte`), hence the wrap.
+**Cost:** ShowControl's `scArtnetOneChannel` built a DMX level with a bare
+`numToByte(pLevel)`: a level of 256, or a computed one just under it (a
+fader's `thumbPosition` times 2.55 landing on 255.6), sent level 0, so a
+light at full went dark; and a level's fraction rounded or not by how its
+caller had written it. artnetxt's helpers round and clamp first, and are held
+to it for each kind of value by `artnetxt/tests/lcs/helpers_test.livecodescript`.
+**Rule:** make the number whole and in range yourself before any built-in that
+takes one: `numToByte(max(0, min(255, round(x))))`. `round` is arithmetic: it
+reads the fraction exactly from any source and rounds half away from zero
+(`round(127.5)` is 128, `round(-0.5)` is -1), and a whole number converts the
+same way down every path.
+**Gate:** none static. `artnetxt/tests/lcs/engine_notes_test.livecodescript`
+pins every observation above in the engine, so an engine that changes any of
+them fails that member's run until this entry is updated.
+**Does NOT mean:** LCB's `the byte with code` behaves the same. It neither
+rounds nor wraps: 255.6 TRUNCATES to 255 (6.15), and 256 THROWS ("overflow in
+byte operation"), as does -1 ("error exporting foreign '<type:
+__builtin__.uint>' value: numeric overflow") - OBSERVED under lc-run the same
+day.
+
 ## 3. Control flow
 
 ### 3.1 `repeat with i = A to B step N` does not honour the step
@@ -1116,6 +1169,43 @@ the library (path, architecture, quarantine, the macOS floors in work plan
 **Does not mean:** a library problem. A loaded extension whose library fails
 shows its own "LCB Error" line first; a COMMAND called with `()` throws EE-0219
 too (3.4).
+
+### 4.2 `the loadedExtensions` tells an extension that is not loaded from one whose library will not load
+**OBSERVED 2026-11-21** (Linux x86_64, the standalone engine of OXT-Beyond
+0.2.7-rc.6, "9.7.1-OXT", headless with `-ui`; a probe script, then the three
+ShowControl showcases' tests). With midixt's module loaded and its library
+mapped to a path that does not exist (`set the revLibraryMapping["midixt"]`
+before the load), `the loadedExtensions` listed `org.openxtalk.library.midi`,
+and the first call, `midiVersion()`, threw these lines, innermost first, the
+shape 4.1 reads from the engine source:
+
+    863,9,11,runtime
+    864,9,11,unable to load foreign library 'midixt': /nonexistent/midixt-gone/midixt.so: cannot open shared object file: No such file or directory
+    865,9,11,midi.lcb
+    866,9,11,267
+    897,9,11,1
+    219,9,11,midiVersion
+    465,9,11
+
+After `unload extension "org.openxtalk.library.midi"` (its result empty), `the
+loadedExtensions` was empty and the same call threw only `219,19,11,midiVersion`
+and `465,19,11`: EE-0219 with the handler's name, as for any handler nothing
+answers (3.4).
+**Cost:** none; it is what lets a stack say WHICH of the two it met, in words,
+instead of showing a code or guessing.
+**Rule:** catch the first call. If the module's id is among the lines of `the
+loadedExtensions`, its library failed, and the engine's own sentence is the
+first error line whose fourth item onward contains a space (`osdEngineSays` in
+oscxt's showcase, `mdsEngineSays` in midixt's); otherwise the extension is not
+loaded. `unload extension` makes the second case headlessly; a mapping to a
+missing file makes the first.
+**Gate:** the showcases' missing-library tests in their members' engine suites:
+oscxt's `TestWithoutTheLibraryItSaysWhatIsMissing` (the library mapped away),
+artnetxt's (the module unloaded), and midixt's two (`...WithoutMidixt...` and
+`...WithoutItsNativeLibrary...`).
+**Does NOT mean:** that a listed extension WORKS: a foreign handler is bound
+at its first call (6.17), so a module can be listed and still fail there,
+which is the first case above. Windows and macOS engines: not examined.
 
 ## 5. Controls and the UI
 
@@ -1396,27 +1486,20 @@ statically in box2dxt's platformer (`pfStartGame`, 2026-10-08), whose level
 builds the maintainer reported slow after a save and reopen; how much of that
 these messages were is not measured yet (its debug overlay now prints each
 build's time).
-**Rule:** bulk create, rename and delete under `lock messages`, and lift it
-around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
-unlocked, the engine updates the screen after every statement that dirtied it
-(`MCActionsRunAll` after each statement, `engine/src/handler.cpp`), so a
-teardown under a covering card repaints once per delete. **Gate:** for that
-game only, box2dxt's `tools/check-platformer-levels.py` (2026-10-08) counts
-these messages where the engine would send them and fails a level build that
-sends one with messages unlocked; its first run found the no-art build making
-its placeholder hero's image and slices that way, outside the lock (fixed the
-same day). No suite-wide gate.
-**Does NOT mean:** that your own calls stop. Calling a handler directly still
-works; `send` and `dispatch` unlock messages for their own delivery
-(`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the
-lock reset, and the lock itself ends when the handler chain returns to idle
-(`MCU_resetprops`); a script error still reaches the error dialog, which is
-queued the same way (`MCscreen->delaymessage`, `engine/src/object.cpp`). What
-it does stop is every ENGINE message your script may rely on: `menuPick` from a
-`menuHistory` set (5.14), `openCard`, `resizeStack`, `setProp` and `getProp`
-handlers. And the IDE stops following: an open project browser keeps listing
-the controls it last heard of until it is closed and reopened (its
-`preOpenStack` rebuilds the tree).
+**OBSERVED 2026-11-21** on OXT-Beyond's headless engine (`9.7.1-OXT`, Linux,
+`-ui`): a front script heard `new<Type>` for each control a script made, sent
+before the control has its name (`the short name of the target` read
+`field id 1003`), then `nameChanged`; `delete<Type>` for each delete; and
+`resizeStack` for a stack's width set. Under `lock messages` it heard none of
+them. The three ShowControl showcases' builds sent 276, 494 and 1286 such
+messages with messages unlocked, and in OXT-Beyond 0.2.8-dp.1's IDE on Windows
+the same builds held the IDE for 42, 81 and 112 seconds as they opened, where
+Gamepad Lab, whose build locks messages, opened in under half a second (runbook
+section 8). Built with messages locked, the same three opened in that IDE in
+1.7, 3.0 and 5.0 seconds that afternoon, each timed as its `go stack` (runbook
+section 8): those messages were nearly all of the cost. What the rest is, the
+IDE's own work as a stack of some hundreds of controls opens or the builds'
+own, is not measured.
 **OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1: the messages and what they
 cost. audioxt's demo, Sound Stage, builds 252 controls in its `preOpenStack`;
 built with messages on, the headless desktop engine sent 520 such messages for
@@ -1434,6 +1517,32 @@ window in about 30 ms. What made Windows thirty times slower than Linux is not
 measured: what that IDE had open, which an open project browser walks on every
 message, is not recorded. Built locked, the same window opened in that Windows
 IDE in 796 ms later the same day (runbook section 8).
+**Rule:** bulk create, rename and delete under `lock messages`, and lift it
+around anything that opens a dialog (`answer`, `ask`). Lock the screen too:
+unlocked, the engine updates the screen after every statement that dirtied it
+(`MCActionsRunAll` after each statement, `engine/src/handler.cpp`), so a
+teardown under a covering card repaints once per delete. **Gate:** for that
+game only, box2dxt's `tools/check-platformer-levels.py` (2026-10-08) counts
+these messages where the engine would send them and fails a level build that
+sends one with messages unlocked; its first run found the no-art build making
+its placeholder hero's image and slices that way, outside the lock (fixed the
+same day). The ShowControl showcases' engine tests (`TestTheWindowIsBuiltQuietly`
+in `tests/lcs/demo_test.livecodescript` of oscxt, midixt and artnetxt,
+2026-11-21) hear them with a front script across a build and a rebuild, after
+proving it hears a field made and deleted; audioxt's
+`tests/demo-drive.livecodescript` (2026-11-21) hears none with a front script
+during Sound Stage's build. No suite-wide gate.
+**Does NOT mean:** that your own calls stop. Calling a handler directly still
+works; `send` and `dispatch` unlock messages for their own delivery
+(`engine/src/exec-engine.cpp`); a `send ... in` timer is delivered with the
+lock reset, and the lock itself ends when the handler chain returns to idle
+(`MCU_resetprops`); a script error still reaches the error dialog, which is
+queued the same way (`MCscreen->delaymessage`, `engine/src/object.cpp`). What
+it does stop is every ENGINE message your script may rely on: `menuPick` from a
+`menuHistory` set (5.14), `openCard`, `resizeStack`, `setProp` and `getProp`
+handlers. And the IDE stops following: an open project browser keeps listing
+the controls it last heard of until it is closed and reopened (its
+`preOpenStack` rebuilds the tree).
 
 ### 5.16 A control that names no text colour takes the system theme's, and a dark theme's is white
 **OBSERVED 2026-11-21** (Windows, OXT-Beyond 64-bit, the maintainer's PC under its dark
@@ -1486,33 +1595,45 @@ scroll bar and drives the wheel by message; no turned wheel has run it.
 wheel: it scrolls itself (the same `fscroll`).
 
 ### 5.18 A new stack is 32,32,288,288, and a size set keeps its centre
-**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's desktop engine (Linux,
-`-ui` and in a window under Xvfb): a big window made in script opens above
-and left of the screen. `create stack` makes a stack whose rect is
-32,32,288,288, and setting its width to 960 and its height to 600 keeps its
-centre, 160,160, so its rect becomes -320,-140,640,460. `save stack` keeps
-that rect. audioxt's stack builder saved Sound Stage so, and in the IDE on
-the maintainer's Windows PC (0.2.8-dp.1) it opened there: its title bar 140
-px above the top of the screen, where the window could not be dragged; it
-was moved by hand. The same file in that release's IDE on Linux opened at
-0,96: that IDE moved it on to the screen. A stack a person makes with New
-Stack and whose `preOpenStack` sets its size grows round its own centre the
-same way.
-**Rule:** set a window's place after its size (`topLeft`, `loc` or `rect`),
-and a window a stack builds or sizes when it opens is placed in its
-`preOpenStack` against `the working screenRects`, title bar included. Not
-in a browser: the Stack Player opens a stack in its own window and lays the
-page out (`the platform` is "HTML5"), and a phone's window is its screen.
-**Gate:** for Sound Stage only, `audioxt/tests/demo-drive.livecodescript`
-checks the window is on the screen when it opens in a window (it failed at
--320,-140,640,460 on a 1280 x 720 Xvfb screen before the fix) and tries the
-demo's placing function on screens it has not got; the native lane checks
-the place the stack builder reports for the file it saves (160,60,1120,660).
-No suite-wide gate.
-**Does NOT mean:** that a size set moves a window that has a place. Setting
-the width and height keeps the centre the window has, wherever it is; only a
-stack whose centre is still the engine's first one, near the screen's
-corner, is pushed off it.
+**OBSERVED 2026-11-21** on OXT-Beyond's headless engine (`9.7.1-OXT`, Linux, `-ui`):
+`create invisible stack` makes a stack at rect 32,32,288,288, and setting its width to
+1100 keeps its centre, so its left edge lands at -390. The same day, in OXT-Beyond
+0.2.8-dp.1's IDE on Windows, the three ShowControl showcases, 1100 wide and built by
+script, each opened at rect -390,-3,710,617, their left 390 pixels past the screen's edge
+(runbook section 8; where the IDE put their tops is not explained). A headless engine has
+no screen: `the screenRect` and `the working screenRect` read 0,0,0,0 and `the screenLoc`
+0,0, with a display or without one.
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's desktop engine (Linux, `-ui` and in a
+window under Xvfb), for a stack a script saves: `create stack`, then a width of 960 and a
+height of 600, gives -320,-140,640,460 round the first centre, 160,160, and `save stack`
+keeps that rect. audioxt's stack builder saved Sound Stage so, and in the IDE on the
+maintainer's Windows PC (0.2.8-dp.1) it opened there, its title bar 140 px above the top of
+the screen where the window could not be dragged; it was moved by hand. The same file in
+that release's IDE on Linux opened at 0,96: that IDE moved it on to the screen. A stack a
+person makes with New Stack, whose `preOpenStack` sets its size, grows round its own centre
+the same way.
+**Rule:** a window built by script sets its size, then its place:
+`set the loc of this stack to the screenLoc`. start-here centres each window it opens
+after the window's own build (`slOpenSelected`); box2dxt's games, box3dxt's Orb Island and
+the ShowControl showcases centre themselves, so they open whole however they are opened.
+A window a stack builds or sizes as it opens can instead be placed in its `preOpenStack`
+against `the working screenRects`, title bar included, only when it is not wholly on a
+screen already (Sound Stage's `adPlaceWindow`). Not in a browser: the Stack Player opens a
+stack in its own window and lays the page out (`the platform` is "HTML5"), and a phone's
+window is its screen.
+**Gate:** the ShowControl showcases' `TestTheWindowOpensCentredOnTheScreen` (in each
+member's `tests/lcs/demo_test.livecodescript`), which starts the stack where Windows put
+it.
+For Sound Stage, `audioxt/tests/demo-drive.livecodescript` checks the window is on the
+screen when it opens in a window (it failed at -320,-140,640,460 on a 1280 x 720 Xvfb
+screen before the fix) and tries the demo's placing function on screens it has not got,
+and audioxt's native lane checks the place the stack builder reports for the file it saves
+(160,60,1120,660). No suite-wide gate.
+**Does NOT mean:** that start-here's windows needed it. It bites a window opened any other
+way, as the Windows run opened the showcases.
+Nor that a size set moves a window that has a place: setting the width and height keeps
+the centre the window has, wherever it is; only a stack whose centre is still the engine's
+first one, near the screen's corner, is pushed off it.
 
 ### 5.19 A field lays out its first line 6 pixels above its top margin
 **OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (the
@@ -1815,6 +1936,105 @@ no display server. **Gate:** curlxt's native lane
 taken, but nothing here has compared one with a screen, so a stack's look
 still needs a pass on one.
 
+### 6.17 LCB's `Integer` is `Number`: a fraction passes in whole and is TRUNCATED where it becomes a C integer
+**OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond 0.2.7-rc.6, engine "9.7.1-OXT"):
+in the standalone engine, the Script call `midiNoteOn tOut, 1, 60.6, 100` into
+`public handler midiNoteOn(... in pNote as Integer ...)` neither throws nor
+rounds: the note sent is 60 (`903c64`), and 99.99 and 127.9 send 99 and 127.
+Under lc-run the same day, a handler `in pValue as Integer` returned 60.6
+unchanged; `put 60.6 into tC` (a `CInt`) gave 60, and -60.6 gave -60; `the code
+of (the byte with code (60.6))` is 60, and of 127.9 is 127.
+**Why** (DOCUMENTED, source): lc-compile emits `Integer` and `Real` as the
+builtin `Number` (`toolchain/lc-compile/src/emit.cpp`, `EmitIntegerType`, under
+"TODO: Real / Integer types"), so a typed `Integer` parameter asks only "is it a
+number". The cut happens where the number becomes a C integer: libfoundation's
+`DoExport` for an integral foreign type (`foundation-foreign.cpp`) is a C cast,
+which truncates toward zero. `MCNumberFetchAsInteger` (`foundation-number.cpp`)
+ROUNDS half away from zero, but on other paths: do not generalise from it.
+**Cost:** nothing broke; midixt's boundary test found it. A computed value
+(a slider's `thumbPosition / 100 * 127`) lands one step low, and nothing says so.
+**Rule:** round in script (`round(x)`) where you mean the nearest whole number;
+an `Integer` in a public `.lcb` signature does not refuse a fraction, and the
+binding behind it may hold 60.6 until the value reaches C.
+**Gate:** `midixt/tests/lcs/boundary_test.livecodescript`
+(`TestFractionalIntoIntegerTruncates`) pins the Script-to-byte path in the
+engine. oscxt's binding cuts an `i` value the same way on purpose (toward zero,
+as ShowControl's `strtol` did).
+**Does NOT mean:** that anything converts: empty or non-numeric text into an
+`Integer` is a hard error (6.4). Nor that an out-of-range number wraps:
+`DoExport` throws a numeric overflow for a value outside the C type's range
+(the source; OBSERVED the same day for `the byte with code (-1)`, whose
+parameter is a C unsigned integer: 2.13).
+
+### 6.18 A `ZString` a foreign handler RETURNS is `free()`d by the engine
+**OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond 0.2.7-rc.6, lc-run): a module
+binding `getenv` twice, `returns optional Pointer` and `returns optional
+ZStringNative`, ran the Pointer call clean and died on the FIRST ZString call,
+`free(): invalid pointer` and an abort (two runs), or a segfault (a third). getenv's
+pointer is into the environment, which nobody may free. ShowControl met the same
+on its first lc-run (a static buffer returned as a ZString by `oscLastError()`
+crashed the VM; its CLAUDE.md, pre-suite, undated).
+**Why** (DOCUMENTED, source): the C string types are one foreign descriptor whose
+`finalize` is `__cbuffer_finalize`, a plain `free()` of the pointer
+(`libscript/src/module-foreign.cpp`, `com_livecode_foreign_Initialize`), so the
+value the call returns OWNS what it points to.
+**Rule:** return a `ZString` only for memory the callee `malloc`ed and hands
+over (`realpath(path, NULL)` qualifies). Static, library-owned or borrowed text
+(`dlerror`, `getenv`, a module buffer) comes back as a `Pointer`, copied with
+`MCStringCreateWithCString` (oscxt's and midixt's `_dl_error()`), or through a
+caller-allocated buffer (every string their shims return).
+**Cost:** box2dxt's `b2LoadNativeLibError()` bound `dlerror` as `optional
+ZStringNative` (`box2dxt/src/box2dxt.lcb`). OBSERVED 2026-11-21 under lc-run,
+three runs alike: the first call after a failed `b2LoadNativeLib` answered
+empty (6.19), a second failure's reason came through, and the process then
+aborted with `free(): double free detected in tcache 2`: the engine had freed
+glibc's dlerror buffer, which glibc frees itself. Fixed the same day (the
+reason is read at the failure as a `Pointer`, copied and kept); box2dxt's
+harness v36 asserts it on Linux (`stTestLoaderErrorKept`), where no engine has
+run it yet. Work plan 2.8.
+**Gate:** none yet. ShowControl's own checker refused a foreign handler that
+returns a `ZString`; the suite's unified checker, which replaced it when
+ShowControl joined (2026-11-21), has no such rule, and box2dxt's bind, which no
+checker of its lineage ever refused, was found while porting it. The rule
+comes to the unified checker in its own change, so that one change touches
+every member's copy (work plan 2.8).
+**Does NOT mean:** a `ZString` PARAMETER is unsafe: the engine makes and frees
+its own copy for the call. Nor that `nothing` is a problem: a NULL return is
+`nothing` and frees nothing.
+
+### 6.19 A foreign handler is bound on its FIRST call, and a pending `dlerror()` does not survive that bind
+**OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond 0.2.7-rc.6, lc-run): a
+binding that reads `dlerror()` when a script asks, as ShowControl's
+`oscLoadNativeLibError` and `midiLoadNativeLibError` did and box2dxt's
+`b2LoadNativeLibError` did, answered EMPTY the first time it was asked after a
+failed load, and empty again when asked twice; a SECOND failed load's reason
+came through. oscxt's and midixt's `TestLoadNativeLibErrorIsKept` against
+ShowControl's code: `not ok - and the FIRST reason asked for names it`, `not ok
+- and asking again gives it again` (3 not ok of 10 each, the third the NUL
+refusal it never explained). So the reason a script most needs, the first
+one, was never delivered.
+**Why:** the engine binds a foreign handler lazily, on its first call, by
+looking the symbol up with `dlsym` (DOCUMENTED: libscript `script-instance.cpp`,
+`__MCScriptResolveForeignFunctionBindingForC`, through `MCSLibraryLookupSymbol`).
+The `dlerror` handler's first call comes after the failed `dlopen`, so its own
+bind is a dynamic-linker call between the failure and the read, and glibc's
+pending error does not outlive it (INFERRED from the observation: the second
+failure, read through an already-bound handler, arrived whole). macOS: not
+examined.
+**Rule:** read `dlerror()` AT the failure, in the handler that called `dlopen`,
+copy it and keep it; and call every handler that read needs once BEFORE the
+`dlopen` (`dlerror` itself, which also clears an older error, the POSIX idiom,
+and the string copy on a one-byte empty C string), so nothing binds in
+between: `bindLoaderErrorPath()` in `oscxt/src/osc.lcb`, `midixt/src/midi.lcb`
+and `box2dxt/src/box2dxt.lcb`.
+**Gate:** oscxt's and midixt's `TestLoadNativeLibErrorIsKept` (their LCB suites,
+each test in a fresh lc-run, in `native-oscxt.yml` and `native-midixt.yml`);
+box2dxt's harness v36 `stTestLoaderErrorKept` on a Linux engine (not yet run).
+**Does NOT mean:** `dlopen` itself misbehaves, or that a binding is unsafe once
+every handler it uses has been called: the loss is only the error text pending
+across a first bind. Windows has no `dlerror`, and none of these loaders is
+called there.
+
 ### 6.20 On Windows an accepted socket is named after its HANDLE, and the next connection gets that handle at once
 **OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE engine (Windows x86-64,
 the maintainer's PC); the mechanism is read in the engine source. curlxt
@@ -1853,6 +2073,108 @@ client's address and port (the same source), and curlxt Live's Linux runs,
 hundreds of connections a run, never lost one; a Mac was not tried. Nor
 that a server may never close first: the hazard is only a close by id that
 can run after the client has closed.
+
+### 6.21 A datagram listener lists ONE MORE socket per sender it hears, and closing the listener leaves them listed, with a thread spinning
+**OBSERVED 2026-11-21** on Windows (OXT-Beyond 0.2.8-dp.1's IDE on the
+maintainer's PC, runbook section 8) and the same day on Linux x86_64
+(OXT-Beyond's headless engine 9.7.1-OXT build 25923, `-ui`). The Art-Net and
+OSC showcases listen with `accept datagram connections on port N with message
+...` and send to themselves through `open datagram socket to
+"127.0.0.1:N"`. On Windows, while the Light Board ran, `the openSockets`
+listed a third name beside `6454` and `127.0.0.1:6454`: `127.0.0.1:55205`,
+the address its board sent from. A second after its window closed, by either
+kind of close, the other two were gone and that one was still listed; it
+went only when the stack was deleted. On Linux both showcases did the same,
+one name more for each open and close: `got:
+"127.0.0.1:49242,127.0.0.1:32910"`, `want: ""` (oscxt's and artnetxt's
+`TestAClosedWindowStopsItsShow`, strengthened, against the showcases at
+8359560). A show the IDE keeps in memory after its window closes keeps the
+names as long. And a name left listed is not idle: on Linux, a script that
+heard one sender and then closed its listener left one engine thread using a
+whole core, 298 of 300 ticks of CPU over the next three seconds, against 2
+when it closed the sender's name first (a probe run in the same engine,
+2026-11-21). The shipped OSC and Art-Net self-tests' stops left such a name
+too (`TestShippedSelfTestTier2`, strengthened: `got: "127.0.0.1:54396"`).
+**Why:** DOCUMENTED, engine source `engine/src/opensslsocket.cpp`,
+`MCSocket::readsome`: a datagram arriving on an accepting socket from a
+sender that no listed socket is named after makes a socket named
+`host:port` for that sender, with no message, sharing the listener's
+descriptor, so that a script can `write ... to socket "host:port"` to
+answer from the listener's port (`MCS_write_socket` `sendto`s through it).
+`deletewrites` closes a descriptor only when the socket is not shared, so
+closing the listener leaves the sender's name listed, and closing the
+name leaves the listener open; `IO_freeobject` closes both when the object
+that accepted is deleted, which is why deleting the stack cleared it. The
+spin: off Windows, a socket thread (`MCSocketsPoll`) puts every listed
+descriptor into one `select`, and a closed one fails it at once, so the
+thread loops without waiting (INFERRED from the source; Windows polls its
+sockets in its main loop, `dskw32.cpp`, not examined). And at quit `X_close`
+deletes every socket without the socket list's lock, and only later stops
+that thread (`MCSocketsFinalize`), so a thread spinning then can write into a
+socket already freed (INFERRED from the source). artnetxt's work plan row 8
+is the likeliest case: an Art-Net engine test that closed its listener after
+hearing the show, and so left such a name, never exited in 5 of 355 runs (in
+the two that gdb examined, glibc found the heap corrupt as the engine freed
+its objects at quit); once the test and the show closed their senders' names
+first, none of 700 runs failed (2026-11-21, Linux; 350 of them counted by the
+test's own PASS line).
+**Rule:** a script that listens remembers each sender its message hears
+(the handler's first parameter) and, when it stops, closes those names
+that are still in `the openSockets`, first, while the listener is open, and
+then the listener: `osdStop` in `oscxt/examples/osc-show-surface.livecodescript`,
+`albStop` in `artnetxt/examples/artnet-light-board.livecodescript`, and the
+self-tests' `oscStopSelfTest` and `artnetStopSelfTest`. A test runner that
+starts an engine per test closes whatever a test left listed before that
+engine quits, as the three ShowControl members' runner does
+(`scCloseLeftSockets` in each one's `tests/lcs/_runner.livecodescript`). With
+the rule, the Light Board and the Art-Net self-test left nothing listed on
+Windows (2026-11-21, runbook section 8).
+Never write to a sender's name after its listener has closed: the name keeps
+the closed descriptor's number, so the write goes to whatever holds that
+number by then (INFERRED from the source, not run). A helper that opens a
+socket only when its name is not listed, as `scArtnetEnsureSocket` and
+`scEnsureDatagramSocket` do, writes through a sender's name when one is
+listed: an Art-Net node that answered on 6454 is then sent to from the
+listener's port, which works while the listener is open (INFERRED, not
+run).
+**Gate:** oscxt's and artnetxt's `TestAClosedWindowStopsItsShow` (each
+showcase's engine suite) and `TestShippedSelfTestTier2` (their UDP suites),
+in `native-oscxt.yml` and `native-artnetxt.yml`: no name is left in `the
+openSockets` after either kind of close, or after the self-test's stop. Each
+failed against the code before the fix. `TestTheRunnerClosesWhatARunLeftListed`
+in the same UDP suites leaves a sender's name on purpose and asserts that it
+is listed after its listener closed, then that the runner's handler closes it.
+**Does NOT mean:** a socket opened with `open datagram socket to` makes one:
+only an ACCEPTING datagram socket does, for a sender it has not seen, and one
+sender makes one name, however many datagrams it sends (each showcase sent
+hundreds and left one per open).
+
+### 6.22 Two engines can both accept datagrams on one port, and neither hears that the other has it
+**OBSERVED 2026-11-21** (Linux x86_64, OXT-Beyond's headless engine 9.7.1-OXT
+build 25923, `-ui`): two engine processes each ran `accept datagram
+connections on port 47555`, and `the result` was empty for both; a third sent
+100 datagrams from one socket, and all 100 reached the first, none the second.
+It cost a false alarm: the Art-Net showcase's engine suite, run while another
+copy of the same suite ran, failed `every packet sent arrived` and `the rig
+holds all 512 levels the board sent` in three tests and passed alone: by the
+mechanism below, each show's packets could reach the other's rig.
+**Why:** DOCUMENTED, engine source `engine/src/opensslsocket.cpp`,
+`MCS_accept`: it sets `SO_REUSEADDR` and, where it exists, `SO_REUSEPORT` on
+the socket before `bind`, so a second listener that sets them too is not
+refused, and Linux gives each sender's datagrams to one of the listeners.
+Windows and macOS: not examined.
+**Rule:** an empty `the result` after `accept datagram connections` does not
+mean the port is yours alone. A stack that falls back to the next port when
+one is taken (the Art-Net showcase's 6454 to 6464, the OSC showcase's 9000 to
+9009) moves on only for a holder that did not set those options; two OXT
+engines on one machine are given different ports by whoever starts them. Two
+copies of a showcase's engine suite are never run at once on one machine:
+the showcases listen on their own fixed ports, whatever `--port-base` says
+(the collision above came with a different `--port-base`).
+**Gate:** none.
+**Does NOT mean:** a port held by a program that does not set
+`SO_REUSEPORT` is shared: there, by Linux's rule for the option, the second
+`bind` fails and `the result` says so (6.12; not run here).
 
 ## 7. How to add to this file
 

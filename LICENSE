@@ -56,6 +56,13 @@ licenses, reproduced with their sources:
                   and Openwall MD5)             public domain
                   zlib 1.4 (with minizip)       zlib
                   Expat 2.10.0                  MIT
+  oscxt           tinyosc (vendored; its local  ISC
+                  changes marked in the source)
+  midixt          RtMidi 6.0.0                  MIT
+                  (on Linux it loads the
+                  system's ALSA library, which
+                  is not bundled)
+  artnetxt        (no bundled code — pure LiveCode Builder)
   onionxt         (no bundled code — connects to a Tor daemon you run)
   nostrxt         (no bundled code — pure script over sibling extensions
                   and relays you choose; published test vectors are
@@ -112,7 +119,7 @@ coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
 in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, audioxt, render3dxt, gamepadxt, webpxt, barcodext), in a THIRD-PARTY-LICENSES.md next to
-the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, xlsxt), or
+the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, xlsxt, oscxt, midixt), or
 alongside the vendored sources (coinxt/native/vendor/LICENSE, for the MIT
 parts). OpenSSL's licence is in an OpenSSL-LICENSE.txt next to the LICENSE of
 each member that links it (torrentxt, datachannelxt, curlxt).

@@ -98,7 +98,11 @@ script "SuiteStartHere"
 -- files resolve, the session index built) instead of a human judgement.
 
 -- Bump when the generated UI changes so a saved stack rebuilds its controls.
-constant kSlUiVersion = "start-here-3"
+-- The directory list is filled only at a build, so a registry row added
+-- without a bump stays invisible in a saved launcher: "start-here-4" is
+-- render3dxt's demo (2026-11-20), curlxt Live, audioxt's Sound Stage, xlsxt's
+-- Spreadsheet Studio and the three ShowControl showcases (2026-11-21).
+constant kSlUiVersion = "start-here-4"
 
 -- ---- script-local state (declared at top) ------------------------------------
 local sLineEntry        -- array: list line number -> registry line ("" = header/spacer)
@@ -740,6 +744,9 @@ function slRegistry
    put "xlsxt/examples/xlsxt-demo.livecodescript||the xlsxt extension (org.openxtalk.library.xlsxt)||Spreadsheet Studio: opens playing a tour of four scenes that write real Excel files and read them back (a sheet that fills itself, formulas and dates, all fifteen kinds of chart, ten thousand cells timed); then a tab each for a table in one call, formats, formulas, charts and page setup, a reader for any .xlsx, and one click that checks all of it." & return after tR
    put "gamepadxt/examples/gamepad-lab.livecodescript||the gamepadxt extension (org.openxtalk.library.gamepadxt) to read controllers; without it the window plays a recording|A controller is optional: the showcases play on a touch pad made in software, and a controller plugged in, or pressed, takes over.|Game controllers from xTalk: five showcases that play by themselves (every button, sticks and the dead zone, rumble and light, remapping, a small game), then every button, stick, trigger, motor and light of the pad on show, live." & return after tR
    put "holde-em/src/holdem.livecodescript||nothing to play hotseat; box2dxt for card art, sodiumxt for the committed deal, + torrentxt for online tables; a local tor daemon for onion tables|Save the stack next to holde-em/assets/ for the Kenney card art; a pasted stack falls back to drawn cards. SESSION when online. Self-contained: carries onionxt.|Serverless Texas Hold'em: hotseat now, online tables over the DHT or Tor, signed hash-chained transcripts, an auditable committed shuffle - Riptide's sibling capstone." & return after tR
+   put "oscxt/examples/osc-show-surface.livecodescript||the oscxt extension (org.openxtalk.library.osc)|Nothing to set up: the surface and its rig talk over UDP on this computer only. Self-contained: carries osc-helpers.|Open Sound Control from xTalk: faders, an XY pad, address patterns, cues that wait for their timetag, and bad bytes refused with their reasons - every message read back by a rig." & return after tR
+   put "midixt/examples/midi-stage.livecodescript||the midixt extension (org.openxtalk.library.midi)|Nothing to set up on macOS or Linux (it makes a virtual port); on Windows a loopMIDI port carries it, and without one it decodes on the spot. It plays aloud only when you press Sound. Self-contained: carries midi-helpers.|Realtime MIDI from xTalk: a player and a stage - notes, chords, eight knobs, pitch bend, drums and program changes, each drawn as it arrives; a keyboard plugged in plays in blue." & return after tR
+   put "artnetxt/examples/artnet-light-board.livecodescript||the artnetxt extension (org.openxtalk.library.artnet)|Nothing to set up: the board and its virtual rig talk over UDP on this computer only, and it never broadcasts. Self-contained: carries artnet-helpers.|Art-Net lighting from xTalk: colour washes, a chase, moving heads, the whole 512-channel universe and node discovery - the rig lit only by the packets that arrive." & return after tR
    put "tests/preflight.livecodescript||every extension you have (absent ones SKIP, not fail)|GENERATED from the C shims' ABI macros. Nothing to install first, no start-using step. It TAKES the one torrent session and gives it straight back, so run it BEFORE any SESSION stack in this OXT launch.|Answers the pass's first question - can this machine run it at all? - in the first minute: one table of LOADED/ABSENT rows, each extension's own ABI guard doing the checking." & return after tR
    put "tests/suite-selftest.livecodescript||every extension you have (absent ones SKIP, not fail)|SESSION: starts the one torrent session. GENERATED from the member harnesses.|The whole suite's self-test in one window, the demos' look: a row per member with a pill, its counts, Run (that member alone) and Show; a filter (All, Failures, Skips, Boot check); the window's own boot check. TEN folded harnesses plus the cross-member sections. Run all is the record: copy it after its summary. Engine-run since 2026-08-08, the board's Run all since 2026-09-24; a row's Run, Show and the filters need an OXT pass." & return after tR
    put "tests/suite-closing-pass.livecodescript||varies by section (each says what it needs)|Two machines for sections B-E; a tor binary for F. SESSION.|The remaining runbook legs as a checklist: ENet chat, torrent resume-from-disk, rp1 chat, DHT-signalled WebRTC, live Tor." & return after tR
@@ -839,7 +846,7 @@ function slRoot
    return tRoot
 end slRoot
 
--- ---- the extension probe: which of the suite's six are LOADED here? ----------
+-- ---- the extension probe: which of the suite's extensions are LOADED here? ---
 -- The registry's needs prose says what a stack WANTS; this asks what this
 -- engine actually HAS, so "needs sodiumxt" can never read as "sodiumxt is
 -- missing" on a machine where it is installed. Presence only, ON PURPOSE:
@@ -851,10 +858,11 @@ end slRoot
 -- LOADED library also WORKS (ABI match) stays each stack's own guarded
 -- probe at its open, and tests/preflight.livecodescript is the one-paste
 -- deep answer. `the loadedExtensions` is documented engine surface
--- (LiveCode 8+) but UNEVIDENCED on OXT in this tree (no
--- docs/OXT-ENGINE-NOTES.md entry yet): everything here is try-guarded and
--- fails soft to "state unknown" - a surprise costs one log line, never a
--- wrong claim.
+-- (LiveCode 8+), OBSERVED on OXT-Beyond's standalone engine (9.7.1-OXT,
+-- Linux) on 2026-11-21 to list each loaded module's id, and to drop it at
+-- `unload extension` (engine note 4.2); other engines are not examined, so
+-- everything here stays try-guarded and fails soft to "state unknown" - a
+-- surprise costs one log line, never a wrong claim.
 command slExtProbe
    local tOldDelim, tList, tLine, tTok, tId, tHave, tMiss, tErr
    put "false" into sExtProbed
@@ -880,20 +888,25 @@ command slExtProbe
       end if
    end repeat
    set the itemDelimiter to tOldDelim
+   -- the count is the registry's, never a word in a sentence: "six" was
+   -- written here and went stale the day a seventh row joined
    if tMiss is empty then
-      slSessLine "[extensions] all six loaded:" && char 1 to -3 of tHave & "."
+      slSessLine "[extensions] all" && the number of lines of slExtRegistry() && "loaded:" && char 1 to -3 of tHave & "."
    else if tHave is empty then
-      slSessLine "[extensions] NONE of the six suite extensions is loaded - Tools > Extension Manager installs them; each member's README has the id."
+      slSessLine "[extensions] NONE of the" && the number of lines of slExtRegistry() && "suite extensions is loaded - Tools > Extension Manager installs them; each member's README has the id."
    else
       slSessLine "[extensions] loaded:" && char 1 to -3 of tHave && "- not loaded:" && char 1 to -3 of tMiss && "(only the stacks that name one care)."
    end if
 end slExtProbe
 
--- The eight INSTALLABLE extensions (native-backed .lcb libraries), member
--- token -> module id, each token spelled exactly as the registry's needs
--- prose spells it. onionxt, nostrxt, riptide and the script HALVES of
--- coinxt/box2dxt are FILES a demo carries, not extensions, so a row here
--- would be meaningless for them.
+-- The INSTALLABLE extensions a registry row names (.lcb libraries, native-
+-- backed bar artnetxt, which is pure LCB), member token -> module id, each
+-- token spelled exactly as the registry's needs prose spells it. onionxt,
+-- nostrxt, riptide and the script HALVES of coinxt/box2dxt are FILES a demo
+-- carries, not extensions, so a row here would be meaningless for them.
+-- The members no row names yet (curlxt, xlsxt) join with their first
+-- launcher row. box3dxt and render3dxt joined with render3dxt's demo
+-- (2026-11-20); oscxt, midixt and artnetxt with their showcases (2026-11-21).
 function slExtRegistry
    return "sodiumxt|org.openxtalk.library.sodium" & return \
          & "torrentxt|org.openxtalk.library.torrent" & return \
@@ -902,7 +915,10 @@ function slExtRegistry
          & "coinxt|org.openxtalk.library.coin" & return \
          & "box2dxt|org.openxtalk.box2dxt" & return \
          & "box3dxt|org.openxtalk.library.boxthreed" & return \
-         & "render3dxt|org.openxtalk.library.renderthreed"
+         & "render3dxt|org.openxtalk.library.renderthreed" & return \
+         & "oscxt|org.openxtalk.library.osc" & return \
+         & "midixt|org.openxtalk.library.midi" & return \
+         & "artnetxt|org.openxtalk.library.artnet"
 end slExtRegistry
 
 -- The live half of the card's Needs field: which of the extensions THIS

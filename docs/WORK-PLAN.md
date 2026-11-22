@@ -724,7 +724,7 @@ keeping the scaffold for its report.
 ### 2.8 box2dxt
 
 - Box2D v3.1.0: 376 public `b2*` handlers plus the pure-script Kit's 316 `b2k*`. Kit
-  coverage 316/316; the raw binding 131/376, the other 245 held as a floor.
+  coverage 316/316; the raw binding 133/376, the other 243 held as a floor.
 - Records: harness v32 385/0 in the suite paste on Windows (2026-09-24, 09-25 and
   twice on 09-26, `playLoudness` read back exact every time; the 09-26 runs'
   slab-fall y 836.252747 again, and that evening's Windows preflight READ ABI 4
@@ -783,6 +783,15 @@ keeping the scaffold for its report.
   fixed (`pfEmbedPlaceholder` under the build's lock). It needs riptide and
   nostrxt beside box2dxt (the registry's gate siblings). Verified statically +
   headless; needs an OXT pass (engine #7, #8).
+- 2026-11-21: `b2LoadNativeLibError` bound `dlerror` returning a `ZString`, which the
+  engine frees (engine note 6.18). Under lc-run on Linux its first answer after a
+  failed `b2LoadNativeLib` was empty (6.19) and the process then aborted with a double
+  free. The reason is now read at the failure and kept, for `b2LoadNativeLib` and
+  `b2LoadNativeLibHere`; a scratch lc-run probe passed three runs out of three, and
+  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9).
+  Verified under lc-run; needs an OXT pass. Still to do: the unified checker refuses
+  the form in every member (ShowControl's checker did; a change of its own, since it
+  touches every member's copy).
 
 **Coding.**
 
@@ -790,9 +799,10 @@ keeping the scaffold for its report.
 |---|---|---|---|---|
 | 2 | **The x86-linux glibc regression, 2.17 to 2.34:** build that release row in a `manylinux2014_i686` container (as `native-box2dxt.yml` already does), or publish the floor | A silent portability regression | M | dispatch; revisit D-03 |
 | 4 | Platformer polish that can be done in the tree: the dev level-picker behind the debug toggle, or styled as intentional; sweep unused handlers and the dead camera-fallback paths; extend `tools/audit-platformer.py` to the vertical L7; check the win-screen summary (time, falls, gems, stars, coin score, hero, a "flawless run" callout); retune `pfMakeCoin`'s coin-tier thresholds if wanted | The code half of the polish plan | M | none |
-| 5 | The raw `b2*` script ratchet: 245 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
+| 5 | The raw `b2*` script ratchet: 243 handlers named by no script | Blind assertions against a foreign-bound API would mostly be test bugs | L | engine |
 | 8 | Point `box2dxt/README.md`'s build badge at the member repository's own `native.yml` once that lane has run | It still points at the suite lane | S | the first member-repository run |
 | 11 | Native shim defects found statically 2026-09-24, each a shim change that needs its binaries rebuilt by a dispatch (rule 5): the per-type joint accessors (`src/box2d_lc.c` near 1610-1712) check that the handle is live, not the joint's type, so a wrong-type joint reaches Box2D, and `b2lc_joint_type` answers 0 for both a distance joint and a stale handle; `b2lc_shape_polygon_update` on a non-polygon zeroes the count but keeps the previous radius; the committed Linux `.so` files carry SONAME `libbox2dxt.so` (`BOX2DXT_BARE_SONAME` is OFF), so `b2LoadNativeLib` / `b2LoadNativeLibHere` cannot preload them. All three are documented in `box2dxt/docs/api-reference.md` | Wrong answers a script cannot tell apart | S + dispatch | dispatch |
+| 13 | An lc-run lane for the binding, as oscxt's and midixt's native lanes have: `native-box2dxt.yml` compiles no LCB, so the loader fix's checks (2026-11-21) ran in a scratch probe only | A binding fix should have a test CI runs on every change | S | none |
 | 12 | Nest the Kit's two slice-reuse guards, `there is an image tName and the uB2kSig of image tName is ...` in `b2kSheetEnsureIcon` and `b2kSheetEnsureFlip` (2026-10-06), as engine note 2.5's rule asks: a Kit change, so a harness assertion and a `kStHarnessV` bump (box2dxt CLAUDE.md rule 2), then `sync-embedded-kit.py` and the suite paste | With persistence on, each throws on every frame's first slice if row P(b) shows `and` evaluating both operands; the engine's source and dictionary say it short-circuits (note 2.5's 2026-10-08 paragraph), and the level gate models that reading, so nothing here would see it | S | none |
 
 Parked by D-19 (2026-08-27, "triggers stand"), not scheduled: Wave 8 builder
@@ -811,6 +821,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | A fresh-machine package run: build with `tools/make-release.py`, install on a clean machine, play end to end | S1 (a clean machine) | - | installs and runs |
 | 7 | The platformer's first-run import (harness v33, 2026-10-08): open it from a fresh launch with its art folder present, let the import finish and accept the save; quit, move the art folder away, reopen the SAVED stack and play L1 to L7; then Shift+Reset re-imports | S1 item 5 (Windows, Linux) | 38 | no folder prompt after the save; every sprite, flip and sound present in the saved copy; the paste's box2dxt row at 405/0 |
 | 8 | The platformer's quiet build (2026-10-08): in the saved stack, R on L1 and a flag advance from L1, each with the IDE's project browser open and then closed, noting the debug overlay's (`) build and first-frame times; then play on to the L7 win; once more from a fresh copy with Cancel at the folder prompt (the no-art build, quiet since the level gate's first run) | S1 item 5 (Windows, Linux) | 38 | a flag advance builds once (one card hold); the times recorded; the win screen's totals cover all seven levels |
+| 9 | Harness v36's `stTestLoaderErrorKept` in the suite paste on a Linux engine (2026-11-21's loader fix) | S1 (Linux) | - | its eight lines green, the first reason naming its path |
 
 ### 2.9 curlxt
 
@@ -1020,7 +1031,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 9 | The setup stage (transform, light, clip) on several threads; today only the filling is, so a picture of a model with tens of thousands of triangles is bound by one core | coding | - | the 45,000-triangle frame scales with threads as the filling does |
 | 11 | An engine path for a picture a script sets every frame: `set the imageData` compresses it the way `the paintCompression` says (36.6 ms a frame as "png", the desktop default, and 6.5 ms as "rle", in the demo on OXT-Beyond 0.2.8-dp.2, 2026-11-20), and the demo and the docs now set "rle" around that line. Keeping the bitmap raw until the stack is saved would take the rest; it is an engine change, and existing stacks must read the same imageData back | OXT-Beyond, owner's say first | - | the demo's frame shows no compress step, and a stack saved before and after reads the same picture |
 | 12 | The filling loop four pixels at a time (SSE2, NEON), keeping the picture the same for any thread count; today a pixel is filled alone, about 20 ns each on a 2.1 GHz core | coding | - | the smoke test's pictures are unchanged and the demo frame's milliseconds drop |
-| 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped, so a stack SAVED before the fix keeps its controls until it is rebuilt. Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
+| 13 | **The kit's plain buttons are the system's, and saved stacks keep their old controls.** The white-on-white words are fixed in the master (2026-11-21: `uiInput`, `uiArea` and `uiCheckbox` say `kUiInk`, held by `check-ui-kit-drift.py`'s `SAYS_ITS_INK`, and re-carried into every adopter), but two things are left. `uiButton` sets no colour, so under a dark theme a button is a dark slab on the kit's white card: readable, not pretty; the physics demo paints its own (`rdButton`) and is the model if the kit should. And no adopter's build stamp was bumped for it, so a stack SAVED before the fix keeps its controls until it is rebuilt (start-here's moved to start-here-4 on 2026-11-21 for its new rows, which rebuilds a saved launcher with the fix). Decide both at the adopters' next engine re-pass, where the look can be seen | Seen in the physics demo on Windows, 2026-11-20 (dark system appearance). A kit button change repaints twenty windows nobody has looked at since | S | engine (a Windows pass under a dark theme) |
 
 ### 2.12 xlsxt
 
@@ -1107,7 +1118,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
 | 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening; fixed the same day to open on the screen and quickly, and re-run there: 796 ms, on the screen) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
-| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the nine members with no harness (audioxt, barcodext, box3dxt, curlxt, gamepadxt, nocloud, render3dxt, webpxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29. Measured on OXT-Beyond's Linux desktop engine on 2026-11-21 with gamepadxt in it and seven names, before webpxt and barcodext joined the band (the board built alone, read back, and pictured under a virtual display; no person has looked at it): the rows do not touch, the band's three lines end at 523, above the caption at 546, and every name reads in full bar nocloud's, which wraps in its 108-pixel cell, so "No Cloud Quick" shows and "Share" falls on a second line the 14-pixel cell hides. Nine names still make three lines, three to a line; that board is verified statically; needs an OXT pass | S1 | 48 | the band and the rows do not touch, and the band ends above the members caption, on an engine |
+| 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (twelve since webpxt, barcodext, oscxt, midixt and artnetxt joined: artnetxt, audioxt, barcodext, box3dxt, curlxt, gamepadxt, midixt, nocloud, oscxt, render3dxt, webpxt, xlsxt) are names under the eleven rows, three to a line, and the rows keep a pitch of 29. Twelve fill the band's four lines above the members caption, so a thirteenth needs a new geometry. The boot self-check's `suRowsFit` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows run into the band or whose band runs into the members caption. Measured on OXT-Beyond's Linux desktop engine on 2026-11-21 with gamepadxt in it and seven names (the board built alone, read back, and pictured under a virtual display; no person has looked at it): the rows do not touch, the band's three lines end at 523, above the caption at 546, and every name reads in full bar nocloud's, which wrapped in its 108-pixel cell. DRAWN on the Linux headless engine under a virtual display the same day with oscxt, midixt and artnetxt in it instead (runbook section 8): rows and band clear of each other and of the caption, every word whole once a name took its whole cell, 152 wide (beside a muted "gates", No Cloud Quick Share had lost its last word). DRAWN again on that engine once gamepadxt's merge made the band ten names: four lines, the fourth above the caption, every word whole, `suRowsFit` passing (runbook section 8). DRAWN again once webpxt's and barcodext's merge made it twelve, its whole room: four full lines, the fourth (midixt, artnetxt, No Cloud Quick Share) above the caption, every word whole, `suRowsFit` passing (runbook section 8) | S1 | 48 | the same on Windows and a Mac, in their own fonts |
 
 ### 2.14 gamepadxt
 
@@ -1216,6 +1227,145 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's barcodext row has a pill and a Run |
 | 7 | A demo stack (type text, see its QR Code; drop a picture, see what it holds; the kit's look) | coding | - | a paste-and-run example in `barcodext/examples/` |
 | 8 | Adopt and publish `SethMorrowSoftware/barcodext` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+
+### 2.17 oscxt
+
+- Joined 2026-11-21 from ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
+  extensions): tinyosc behind the `osc_*` C shim (ABI 2) and the `osc*` binding, a codec
+  over the script's own UDP sockets. The library id, every public handler and the helpers'
+  names are ShowControl's, so an installed ShowControl `osc` extension upgrades in place.
+  Records: the shim's smoke test, the shared vectors and the fuzzer, clean under
+  ASan/UBSan (23 million fuzz inputs, 2026-11-21); the LCB suite under lc-run and the
+  Script suite in OXT-Beyond's standalone engine with `-ui` (real UDP and the interop peer
+  included) on Linux x86_64 over a locally built library (2026-11-21), which its native
+  lane repeats on Linux, Windows and a Mac. No desktop IDE has loaded it: verified
+  statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (six desktop rows in `cmake-members`), and the change after it lists the platforms in
+  `check-binary-freshness.py`'s `ships` row. No Android build (`tools/build-android.sh`'s
+  `DESKTOP_ONLY`: none has run yet).
+- The showcase, `examples/osc-show-surface.livecodescript` (2026-11-21, by Seth Morrow;
+  OXT-Beyond's dark look by the owner's request): its engine tests passed on OXT-Beyond's
+  headless Linux engine the same day; with oscxt loaded, its window, look and feel are
+  verified statically; need an OXT pass (row 7). It opened without oscxt in OXT-Beyond
+  0.2.8-dp.1's IDE on Windows and said what was missing. That run found two faults in all
+  three ShowControl showcases: each opened with its left 390 pixels off the screen, and held
+  the IDE as it opened (42 s here; MIDI Stage 81 s, the Light Board 112 s), built with
+  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages locked
+  and centres its window, held by two engine tests that failed against the old build. Built
+  so, it opened there that afternoon in 1.7 s, wholly on the screen (runbook section 8).
+  That run found a third fault: after each close a frame of the show's loop was still
+  queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
+  itself once its stack is closed, held by an engine test that failed first, and a Windows
+  pass of that fix found nothing queued after either kind of close (runbook section 8).
+  That pass found the Light Board's closed show still listing a socket named by the
+  address its board sent from (engine note 6.21); this one, with oscxt loaded, does the
+  same on the headless engine. Fixed the same day: the show closes every sender's name with
+  its listener, held by the same test, strengthened first; that fix needs a Windows pass
+  with oscxt loaded (row 7).
+- Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
+  then a publish-members run adopts it (`--adopt oscxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: oscxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `oscxt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
+| 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
+| 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
+
+### 2.18 midixt
+
+- Joined 2026-11-21 from ShowControl: RtMidi 6.0.0 (ALSA, CoreMIDI or Windows MM) behind
+  the `midi_*` C shim (ABI 2) and the `midi*` binding, with input drained by polling (no
+  callback runs script). ShowControl's names are kept, so an installed ShowControl `midi`
+  extension upgrades in place. Records: the shim against a mock RtMidi that reproduces each
+  backend's failures, clean under ASan/UBSan; the real library's smoke test on its
+  no-service path; the LCB and Script suites on OXT-Beyond's headless Linux engine over
+  locally built libraries (2026-11-21), which its native lane repeats on Linux, Windows and
+  a Mac. No MIDI service has carried a message on the record (no ALSA sequencer where it
+  ran), and no desktop IDE has loaded it: verified statically; needs an OXT pass.
+- Binaries: none committed when it joined; the first release-binaries dispatch lands them
+  (the Linux rows install ALSA's headers in the manylinux containers), and the change
+  after it fills its `ships` row. No Android library: RtMidi's Android backend needs API
+  29 and JNI, above the suite's API 21 floor.
+- The showcase, `examples/midi-stage.livecodescript` (2026-11-21, by Seth Morrow): its
+  engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
+  library and over the real one with no MIDI service (where it decodes and says why). No
+  service has carried its messages and nobody has heard it: verified statically; needs an
+  OXT pass (row 6). It opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and
+  said what was missing. That run found two faults in all three ShowControl showcases: each
+  opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
+  OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
+  5.15). Fixed the same day: each builds with messages locked and centres its window, held
+  by two engine tests that failed against the old build. Built so, it opened there that
+  afternoon in 3.0 s, wholly on the screen (runbook section 8): over the two seconds row 6
+  asks, and what the rest is has not been measured. That run found a third fault: after each
+  close a frame of the show's loop was still queued, and the IDE keeps a closed stack in
+  memory. Fixed the same day: the loop stops itself once its stack is closed, held by an
+  engine test that failed first, and a Windows pass of that fix found nothing queued after
+  either kind of close (runbook section 8). It opens no socket.
+- Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
+  then a publish-members run adopts it (`--adopt midixt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first release-binaries dispatch with `members: midixt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `midixt/src/code/` holds every platform and the freshness gate demands them |
+| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
+| 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
+
+### 2.19 artnetxt
+
+- Joined 2026-11-21 from ShowControl: Art-Net (DMX512 lighting over UDP) in pure LiveCode
+  Builder, with no shim and no native library: the codec packs and parses, and the
+  script's own UDP sockets carry it. ShowControl's names are kept. Records: the LCB suite
+  under lc-compile `-Werror` and lc-run, and the Script suite in OXT-Beyond's standalone
+  engine with `-ui` (real UDP, discovery and DMX against the virtual node
+  `tools/sim/artnet_node.py`), on Linux x86_64 (2026-11-21), which its native lane repeats
+  on Linux, Windows and a Mac. The same day OXT-Beyond 0.2.8-dp.1's IDE on Windows (64-bit)
+  compiled the binding with its own lc-compile, loaded it and ran the showcase: its first
+  desktop IDE and first Windows engine (runbook section 8). The self-test has not run in an
+  IDE, and no hardware node: verified statically; needs an OXT pass.
+- Binaries: none, ever; there is no `src/code/`. An lce package carries the module alone.
+- The showcase, `examples/artnet-light-board.livecodescript` (2026-11-21, by Seth Morrow):
+  its engine tests passed on OXT-Beyond's headless Linux engine the same day; its look and
+  feel on a Mac and on Linux, and a real node or desk, are verified statically; need an OXT
+  pass (row 7). On Windows the same day it ran, the rig lighting from what the board sent
+  ("35 sent, 34 read, 0 ignored" when its picture was taken). That run found two faults in
+  all three ShowControl showcases: each opened with its left 390 pixels off the screen, and
+  held the IDE as it opened (112 s here; OSC Show Surface 42 s, MIDI Stage 81 s), built with
+  messages unlocked (engine note 5.15). Fixed the same day: each builds with messages locked
+  and centres its window, held by two engine tests that failed against the old build. Built
+  so, it opened there that afternoon in 5.0 s, running, wholly on the screen (runbook
+  section 8): over the two seconds row 7 asks, and what the rest is has not been measured.
+  That run found a third fault: after each close a frame of the show's loop was still
+  queued, and the IDE keeps a closed stack in memory. Fixed the same day: the loop stops
+  itself once its stack is closed, held by an engine test that failed first, and a Windows
+  pass of that fix found nothing queued after either kind of close (runbook section 8).
+  That pass found a fourth: a second after each close one socket was still listed, named
+  by the address the board sent from (engine note 6.21), and it went only when the stack
+  was deleted. Fixed the same day: the show closes every sender's name with its listener,
+  held by the same test, strengthened first, which failed on the headless engine too, and a
+  Windows pass of that fix found nothing of the show listed a second after either kind of
+  close, the self-test's stop likewise (runbook section 8).
+- Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
+  EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
+
+| # | What | Needs | Runbook | Done when |
+|---|---|---|---|---|
+| 1 | The first IDE pass: install the extension, then `examples/artnet-selftest.livecodescript` on Windows, Linux and a Mac | S1 | - | the self-test is green on each |
+| 2 | A real node or desk: ArtPoll discovery finds it and a DMX universe drives a fixture (or a node's own monitor), and a desk's ArtDmx arrives in script | S1 + Art-Net gear | - | the fixture follows the faders, and the desk's levels read back |
+| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day | S1, after the merge | - | the package installs from the site in an IDE |
+| 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
+| 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
+| 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
+| 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, the desk drives the rig, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
+| 8 | The headless engine's rare abort at quit: 5 of 355 runs of `demo_test::TestAlsoToSendsOnlyWhenItNamesANode` on 2026-11-21 (OXT-Beyond's `9.7.1-OXT` build 25923, Linux x86_64; 1 of 211 with the showcase before that day's closed-window fix, 4 of 144 after) never exited. In one run of each, gdb found glibc reporting a corrupt heap (`free(): corrupted unsorted chunks`) as the engine freed its objects at quit, from the same engine frames, and the engine's abort handler then waiting in `exit()` on malloc's lock until the runner killed it, the run's TAP output lost with it. One run under valgrind's memcheck reported no invalid read or write (only mismatched free and delete pairs, from 7 sites). The likeliest cause, found the same day (engine note 6.21; INFERRED from the engine's source): the test closed its own listener after it had heard the show, which leaves the show's address listed as a socket on a closed descriptor and the engine's socket thread spinning over it, and at quit `X_close` frees every socket, and the list, without that thread's lock, and only later stops the thread. Since the same day the test closes the names its listener heard first, the show and the self-test do the same, and the members' test runner closes whatever a run left listed before it quits (`scCloseLeftSockets`). 700 runs of the test with its fix (the show's too, the runner's not), the same day: none failed, 350 of them counted by the test's own PASS line; under the earlier rate about ten would have. Other suites were not counted | S1 (Linux) | - | reported to OXT-Beyond (the lock in `X_close`, or a listener's closing taking its senders' names with it), and the test passes 1000 runs in a row |
 
 ---
 
