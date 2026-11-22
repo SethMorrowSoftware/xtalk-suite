@@ -93,9 +93,18 @@ were fixed the same day: it now builds its window with messages locked and centr
 Built so, it opened there that afternoon in 3 seconds, wholly on the screen. Closing its
 window stops the show, by a close made with messages locked too: after each close in that
 IDE a frame of its loop was still queued, and it now stops itself once its stack is closed,
-which a second Windows pass saw the same day. No MIDI service has carried its messages and
-nobody has heard it: the cable, Sound, and the window's look with midixt loaded are
-verified statically; need an OXT pass.
+which a second Windows pass saw the same day. On 2026-11-22, with midixt installed, it
+opened hidden in the IDE on the maintainer's Linux PC, made its virtual port and found it
+again through ALSA, and on the Windows PC named the GS Wavetable synth for Sound. Those
+runs found two faults, each fixed the same day with a test that failed first: on Linux it
+offered for Sound the port that reads its own cable, and it threw when opened again after
+a close made while it played over the cable. Built from both fixes, it opened, closed and
+opened again on both PCs with no error, and left nothing queued and no port behind.
+Left playing ten seconds on Linux, it read back through ALSA all 86 messages its player
+sent, 3 ms from send to stage on average: its first messages through a MIDI service on the
+record. Nobody has watched or heard it, and no cable through CoreMIDI or a loopMIDI port
+is on the record: its look, its Sound and those cables are verified statically; need an
+OXT pass.
 
 ## Status
 

@@ -160,8 +160,11 @@ the GS Wavetable synth, and the self-test passed (29; 2 skipped, Windows MM havi
 virtual ports). The showcase opened hidden on both and left no port and nothing queued when
 closed; on Linux it offered for Sound the port that reads its own cable, fixed the same day
 (`mdsReads`). Rebuilt there with that fix, it offered no output ("There is no MIDI output
-here to play through."), and a reopen after a close threw, fixed the same day (above). It
-had opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and said what was
+here to play through."), and a reopen after a close threw, fixed the same day (above):
+built from the fix, it opened again after either kind of close on both PCs, with no error,
+and left playing 10 s on Linux it read back through ALSA all 86 messages its player sent
+(3 ms from send to stage on average): its first messages through a MIDI service. It had
+opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and said what was
 missing; that run found the two Windows faults above. No message through CoreMIDI,
 Windows MM or a MIDI keyboard is on the record, and no engine has loaded the mac, 32-bit or
 ARM libraries: verified statically; needs an OXT pass. Open work is in the suite's
