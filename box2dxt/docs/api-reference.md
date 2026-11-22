@@ -47,7 +47,7 @@ easier - reach for these handlers when you need something the Kit doesn't expose
 |---------|---------|
 | `b2Version()` → int | The shim's ABI version, currently `4`. `b2NewWorld` and `b2NewThreadedWorld` check it and throw `box2dxt: incompatible native library (binding needs ABI 4)` when the loaded library disagrees. |
 | `b2LoadNativeLib(path)` → `1` / `0` | **Linux only.** Preload the native library by absolute path (`dlopen` with `RTLD_NOW` \| `RTLD_GLOBAL`), so the engine's later bare-name load finds the copy already in the process. `0` on failure. Glibc matches the resident copy by SONAME, so this only works for a library built with `-DBOX2DXT_BARE_SONAME=ON` (soname `box2dxt.so`); the committed `src/code/*-linux/` libraries carry `libbox2dxt.so` (measured 2026-09-24), so they need the Kit's `revLibraryMapping` route instead (`b2kEnsureNativeLib`). The preload path itself has not been confirmed on an engine: `CMakeLists.txt` keeps `BOX2DXT_BARE_SONAME` OFF until it is. It binds to the POSIX loader, so never call it on Windows or macOS. |
-| `b2LoadNativeLibError()` → string | The loader's last error (`dlerror`), empty if none: why `b2LoadNativeLib` returned `0`. Linux only, like it. |
+| `b2LoadNativeLibError()` → string | Why the last `b2LoadNativeLib` or `b2LoadNativeLibHere` returned `0`: the loader's reason (`dlerror`), read at the failure and kept, so it can be asked for again; empty when the last load worked or none has run. Linux only, like it. |
 | `b2LoadNativeLibHere()` → `1` / `0` | **Linux only.** Preload `box2dxt.so` from the running engine's own folder (found through `/proc/self/exe`), with the same soname requirement. Nothing calls it automatically. |
 
 ## World

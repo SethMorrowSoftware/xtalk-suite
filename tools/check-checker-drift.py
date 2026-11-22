@@ -15,7 +15,8 @@ one copy" is no longer a state the tree can quietly be in.
 
 Since 2026-08-15 the same rule covers the carried family engineering
 template (templates/CLAUDE.md) - the TEMPLATE_SETS registry below records
-why.
+why - and since 2026-11-21 the in-engine test runners of oscxt, midixt and
+artnetxt, with their harness halves under tests/ (TESTS_SETS).
 
     python3 tools/check-checker-drift.py
 
@@ -35,7 +36,8 @@ COPY_SETS = {
                                 "riptide", "nocloud", "box2dxt",
                                 "holde-em", "nostrxt", "curlxt", "box3dxt",
                                 "audioxt", "render3dxt", "xlsxt", "gamepadxt",
-                                "barcodext", "webpxt"],
+                                "barcodext", "webpxt", "oscxt", "midixt",
+                                "artnetxt"],
     # The shim-coverage gate and its fixture (2026-11-20): written once for
     # barcodext and webpxt, which find their own files by name, so the two
     # copies are one file and stay one.
@@ -54,6 +56,24 @@ COPY_SETS = {
     # for its own repository on 2026-09-21; the extension stays in both
     # remaining copies.
     "lcs-interp.py": ["coinxt", "nostrxt"],
+    # The three ShowControl members (2026-11-21) share the runners that
+    # compile and RUN their code in a real engine with no window: one copy
+    # per member so each stands alone, and one implementation, so a fix to
+    # how a test is staged, timed out or counted reaches all three. What
+    # differs per member (which suites, which peers, which libraries) lives
+    # in each member's tools/runner_config.py, which is NOT in this set.
+    "run-lcb-tests.py": ["oscxt", "midixt", "artnetxt"],
+    "run-lcs-tests.py": ["oscxt", "midixt", "artnetxt"],
+    "build-api-reference.py": ["oscxt", "midixt", "artnetxt"],
+}
+
+# The other halves of those runners, under <member>/tests/: the in-engine
+# harness every Script suite runs inside, and the LCB assertion module
+# every LCB suite imports. A drifted harness would count, time out or
+# report differently in one member, and the runners read its output.
+TESTS_SETS = {
+    "lcs/_runner.livecodescript": ["oscxt", "midixt", "artnetxt"],
+    "lcb/_support.lcb": ["oscxt", "midixt", "artnetxt"],
 }
 
 # carried document name -> the members that must carry a byte-identical copy
@@ -78,7 +98,8 @@ def main():
     checked = 0
     sets = 0
     for subdir, registry in (("tools", COPY_SETS),
-                             ("templates", TEMPLATE_SETS)):
+                             ("templates", TEMPLATE_SETS),
+                             ("tests", TESTS_SETS)):
         for name, members in sorted(registry.items()):
             sets += 1
             rel = subdir + "/" + name

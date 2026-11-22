@@ -114,14 +114,24 @@ Joined the suite on 2026-11-20. What has run, and where:
   card (so through the silent device, as the window itself chooses), headless and in a
   window: every scene played and checked at its moments, its own checks green, every field
   and button with its own colours, no words cut off; and without the extension the window
-  said so and survived every click. The native lane repeats that on every change. Nobody has
-  used it by hand yet.
+  said so and survived every click. The native lane repeats that on every change. The same
+  day it played in the IDE on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1) through a
+  real sound device: its status line named the device at 48,000 Hz and 2 channels, the beat
+  played, the oscilloscope drew and both meters moved. Nobody listened, so that is the demo's
+  own report. It opened off the screen there, and took 59 s to open; both were fixed the same
+  day (the window built with messages locked and placed on the screen when it opens), and in
+  that release's IDE on Linux the fixed stack file opened in 0.14 s, against 1.8 s before.
+  Back on the Windows PC the fixed demo opened in 796 ms, at 160,60 inside the screen's
+  working area, the beat machine playing by its meters (a stack made in that IDE with the
+  builder's steps and the fixed script, its SHA-256 checked: the file itself could not be
+  copied there).
 - **Not yet:** nobody has HEARD it: the runs above played through the silent device or
-  rendered into memory. No engine on macOS, Android or the web has run it, and no IDE has
-  loaded a release library or an installed extension: on those it is verified statically;
-  needs an OXT pass. The libraries committed under `src/code/` on 2026-11-21 (six desktop
-  platforms, four Android ABIs, a web archive) were tested where they were built; no engine
-  has loaded one of them yet.
+  rendered into memory, bar the demo on Windows, which played through a real device with
+  nobody listening. No engine on macOS, Android or the web has run it: on those it is
+  verified statically; needs an OXT pass. The libraries committed under `src/code/` on
+  2026-11-21 (six desktop platforms, four Android ABIs, a web archive) were tested where
+  they were built; of them, only the `x86_64-linux` one has been loaded by an engine
+  (OXT-Beyond 0.2.8-dp.1's desktop engine and IDE, running the demo, 2026-11-21).
 
 ## Building and testing
 

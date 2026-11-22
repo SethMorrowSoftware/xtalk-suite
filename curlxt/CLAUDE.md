@@ -89,9 +89,10 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   store); the ARM libraries are built, not run. An engine first loaded the `x86_64-android`
   library on 2026-11-19, in an app OXT-Beyond's CI ran on x86_64 emulators: `cuLibraryVersion()`
   answered, 149 certificates on Android 16 (the conscrypt path). One call, no request made,
-  and on the ABI 1 build: the four Android libraries were rebuilt at ABI 2 on 2026-11-21 (run
-  44825160471, its tests run on the emulator again), and no Android engine has loaded those.
-  The selftest on an Android engine and any ARM run still need an OXT pass on Android.
+  and on the ABI 1 build: the four Android libraries were rebuilt at ABI 2 on 2026-11-21 (runs
+  44825160471 and, for the 0.2.1 shim, 44925581646, their tests run on the emulator again), and
+  no Android engine has loaded those. The selftest on an Android engine and any ARM run still
+  need an OXT pass on Android.
 - **Release builds** (the suite's `release-binaries.yml`): 64-bit Linux and the mac slices
   link a pinned static OpenSSL 3.5.9 (no `libssl.so.3` needed); 32-bit Linux links the
   system's, as datachannelxt does; Windows uses Schannel and the static CRT (`/MT`), so
@@ -106,9 +107,14 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
     (`wsState`), and `cux_ws_poll` pumps without consuming the list. `cux_wait` refuses a socket.
   - **Whole messages only.** Fragments are reassembled; a message crosses into script once
     (`cux_ws_read`, into a block of its exact size, like `cux_body`).
-  - **Both queues are bounded.** Reading stops at 4 MiB (or 4096 messages) unread, so TCP slows
-    the peer; `cux_ws_send` refuses past 16 MiB unsent. `maxBodyBytes` caps one message (close
-    1009, result 23).
+  - **Both queues are bounded, and so are control frames.** Reading stops at 4 MiB (or 4096
+    messages) unread, so TCP slows the peer; `cux_ws_send` refuses past 16 MiB unsent.
+    `maxBodyBytes` caps one message (close 1009, result 23). Pings and pongs put nothing in front
+    of script, so that brake never stops them, and they have bounds of their own (2026-11-21,
+    after a review): at most ONE automatic pong waits behind the frame in flight (a later ping
+    replaces its payload, as RFC 6455 5.5.3 allows), and one pass over a socket handles at most
+    1024 control frames (`kWsControlPerPass`). A peer that pings without reading cannot grow
+    memory, and one that floods control frames cannot hold a pump.
   - **Three things libcurl 8.22 does not do, done in the shim, each measured:** it holds its
     automatic pong until the next frame (so `CURLWS_NOAUTOPONG`, and `ws_service` answers pings,
     after the frame at the head of the queue, never inside it); it does not answer a close
@@ -126,7 +132,17 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
   (`check-demo-control-lists.py --write`). It wears OXT-Beyond's dark look at the owner's
   request (2026-11-21), so the suite's UI-kit gate lists it in `EXEMPT`. Its server answers
   127.0.0.1 only and every write is the background kind; every scene uses curlxt's background
-  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it.
+  calls, never `cuRequestSync`, whose wait would hold the very stack that serves it. After a
+  connection's last bytes the CLIENT closes it: on Windows an accepted socket's id is its
+  handle, which the next connection gets at once, so a `close socket` by id after the client
+  closed closed the next connection (the suite's engine note 6.20; one request in four on
+  Windows, 2026-11-21). The server forgets on `socketClosed` without closing, closes a
+  straggler only by its serial (`cdSrvReap`), and takes an id it still holds as a new
+  connection (`cdSrvTakeId`); the boot self-check holds both. Every field's top margin is 6
+  or more, because the engine lays a field's first line out 6 px above it (the suite's engine
+  note 5.19: with 2, Windows cut the tops off every label); labels keep the font's own line
+  height, and the boot self-check measures each field's first line (`cdLineInside`). The
+  window is centred on open when it is not wholly on a screen.
 
 ## Gotchas
 
@@ -143,10 +159,13 @@ builds, the system's in the 32-bit Linux one: "Release builds" below).
    block does; the README can show it in full.
 5. **The WebSocket test servers answer ANY request with an upgrade.** Point an ordinary request
    at the HTTP server (`base`), never at the WebSocket one.
-6. **`cuWsWait` answers 1 at once while a message waits, and moves nothing then** (by contract:
-   `cux_ws_wait` looks before it pumps). A loop that waits for a LATER state (closed, a count of
-   messages) with messages unread spins in place: the engine test's first run lost eight checks
-   to it (2026-11-21). Read the messages first, or loop on `cuWsPoll` with a short `wait`.
+6. **`cuWsWait` answers 1 at once while a message waits, after ONE pass of the pump.** Until
+   2026-11-21 it moved nothing then, and a loop that waited for a LATER state (closed, a count
+   of messages) with messages unread spun in place: the engine test's first run lost eight
+   checks to it. Such a loop now ends, but it still never pauses (every call answers at once):
+   read the messages first, or loop on `cuWsPoll` with a short `wait`. The smoke test and the
+   engine test pin it ("!close-later" / "!closelater": a message, then the close only once the
+   client sends "!go", so the test never races the close).
 7. **The engine's parser is the judge of a `.lc` test**, which `tools/check-livecodescript.py`
    does not read (it reads `.lcb` and `.livecodescript`): `does not contain` is not xTalk (the
    checker's check 7 refuses it in a script; the engine stops the whole file at it), and

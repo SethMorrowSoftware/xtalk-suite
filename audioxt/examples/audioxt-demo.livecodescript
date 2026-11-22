@@ -48,7 +48,7 @@ script "audioxtDemo"
 -- true to what has run.
 
 -- Bump when the generated window changes, so a saved stack rebuilds it.
-constant kAdUiVersion = "audioxt-stage-1"
+constant kAdUiVersion = "audioxt-stage-2"
 constant kAdWidth = 960
 constant kAdHeight = 600
 
@@ -216,6 +216,7 @@ local sCkSeconds
 on preOpenStack
    adInitState
    adBuildUI
+   adPlaceWindow
    adShowScene sScene
    adPaintVolume
    adSyncButtons
@@ -451,17 +452,23 @@ end adProbe
 -- ==========================================================================
 
 on adBuildUI
-   local tI, tName, tLeft, tTop, tX, tRow, tStep
+   local tI, tName, tLeft, tTop, tX, tRow, tStep, tWasLocked
    set the defaultStack to the short name of this stack
    if the uAdUiVersion of this stack is kAdUiVersion and there is a field "Heading" then
       exit adBuildUI
    end if
    lock screen
+   -- Messages stay locked for the whole build. Each control made sends a
+   -- new-object message, and an IDE answers every one: built with messages
+   -- on, the window took 59 s to open in OXT-Beyond 0.2.8-dp.1's IDE on
+   -- Windows (2026-11-21), where the engine alone builds it in about 30 ms.
+   -- Restored, not unlocked: the stack file's builder calls this with
+   -- messages locked already.
+   put the lockMessages into tWasLocked
    lock messages
    repeat while the number of controls of this card > 0
       delete control 1 of this card
    end repeat
-   unlock messages
    set the width of this stack to kAdWidth
    set the height of this stack to kAdHeight
    set the resizable of this stack to false
@@ -557,16 +564,64 @@ on adBuildUI
 
    -- the foot of the window
    adLabel "Status", empty, "16,552,944,570", 12, kAdSoft, "plain"
-   adLabel "Footer", "Made in script with audioxt (miniaudio inside). Run on OXT-Beyond's Linux engine through its silent device; " \
-         & "with a sound card, verified statically; needs an OXT pass.", "16,572,944,590", 11, kAdSoft, "italic"
+   adLabel "Footer", "Made in script with audioxt (miniaudio inside). Played through the silent device on Linux and a sound card " \
+         & "on Windows (2026-11-21); not yet heard: needs an OXT pass.", "16,572,944,590", 11, kAdSoft, "italic"
 
    -- the sound devices, a panel over the stage (last, so it is on top)
    adBuildDevices
    put empty into sBuildGroup
 
    set the uAdUiVersion of this stack to kAdUiVersion
+   set the lockMessages to tWasLocked
    unlock screen
 end adBuildUI
+
+-- Where the window goes when it opens: empty to leave it where it is (all
+-- of it, and the title bar above it, inside one working screen), or the loc
+-- that centres it on the first screen, never with its title bar above the
+-- top. A window whose title bar is above the screen cannot be dragged: the
+-- stack file once opened at -320,-140 on Windows (2026-11-21), its size set
+-- around the engine's default centre. pScreens is the working screenRects,
+-- one rectangle a line; a screen of no size (an engine with no display)
+-- asks for nothing. A function of its own, so the drive can try it with
+-- screens it has not got.
+function adPlacedLoc pWindow, pScreens
+   local tTitle, tScreen, tX, tY
+   -- about a title bar, which sits above a stack's own top
+   put 32 into tTitle
+   put line 1 of pScreens into tScreen
+   if the number of items of tScreen is not 4 then
+      return empty
+   end if
+   if item 3 of tScreen - item 1 of tScreen < 1 or item 4 of tScreen - item 2 of tScreen < 1 then
+      return empty
+   end if
+   repeat for each line tScreen in pScreens
+      if item 1 of pWindow >= item 1 of tScreen and item 2 of pWindow - tTitle >= item 2 of tScreen \
+            and item 3 of pWindow <= item 3 of tScreen and item 4 of pWindow <= item 4 of tScreen then
+         return empty
+      end if
+   end repeat
+   put line 1 of pScreens into tScreen
+   put (item 1 of tScreen + item 3 of tScreen) div 2 into tX
+   put (item 2 of tScreen + item 4 of tScreen + tTitle) div 2 into tY
+   put max(tY, item 2 of tScreen + tTitle + (item 4 of pWindow - item 2 of pWindow) div 2) into tY
+   return tX & comma & tY
+end adPlacedLoc
+
+private command adPlaceWindow
+   local tLoc
+   -- the desktop's windows only: in a browser the Stack Player gives the
+   -- stack its own window and lays the page out, and a phone's window is
+   -- its screen
+   if the platform is "HTML5" or the environment is "mobile" then
+      exit adPlaceWindow
+   end if
+   put adPlacedLoc(the rect of this stack, the working screenRects) into tLoc
+   if tLoc is not empty then
+      set the loc of this stack to tLoc
+   end if
+end adPlaceWindow
 
 -- Beat machine: four rows of sixteen steps, a playhead, the drums' group.
 private command adBuildBeat

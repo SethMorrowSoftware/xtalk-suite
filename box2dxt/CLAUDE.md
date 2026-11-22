@@ -41,9 +41,14 @@ Box2D v3.1.0 (CMake FetchContent, GIT_TAG v3.1.0)
 - **LCB binding.** `library org.openxtalk.box2dxt` predates the family's
   `org.openxtalk.library.*` convention and stays (renaming would break every
   installed user for zero gain). `b2PascalCase`; body type `0=static,
-  1=kinematic, 2=dynamic`. 376 public handlers over 373 `binds to` lines: 370
-  into `c:box2dxt>` plus three POSIX binds (`_dlopen`, `_dlerror`, `_realpath`)
-  that `b2LoadNativeLibHere` uses to preload the library by exact path on Linux.
+  1=kinematic, 2=dynamic`. 376 public handlers over 375 `binds to` lines: 370
+  into `c:box2dxt>`, three POSIX binds (`_dlopen`, `_dlerror`, `_realpath`)
+  that `b2LoadNativeLib` and `b2LoadNativeLibHere` use to preload the library
+  by exact path on Linux, and two `<builtin>` engine calls that copy
+  `dlerror()`'s text. Until 2026-11-21 `_dlerror` returned a `ZString`, which
+  the engine frees (engine note 6.18): `b2LoadNativeLibError` answered empty
+  the first time after a failed load (6.19) and aborted lc-run with a double
+  free after that. The reason is now read at the failure and kept.
 - **The Kit.** 316 public `b2k*` handlers incl. the game modules.
 - **Packaging.** `src/code/<arch>-<platform>/box2dxt.{so,dll,dylib}` (bare
   token; ids `x86_64-linux`, `x86-linux`, `x86_64-win32`, `x86-win32`,
@@ -467,10 +472,10 @@ save-keys unique per kind; selection is non-destructive (`uSelFg`/`uSelLine`).
 
 ## 10. The self-test harness and the suite fold
 
-`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 33**: 407
-`stAssert` call sites in 53 test handlers (405 execute in a green run), driving
-the real Kit (paused world, `b2kStepOnce` hand-stepping, `b2kInputInject`
-keys). The first 40 handlers are BEHAVIOUR tests; the 13 added at v23 are
+`examples/box2dxt-selftest.livecodescript`, **`kStHarnessV` 36**: 424
+`stAssert` call sites in 56 test handlers (count them again after a change),
+driving the real Kit (paused world, `b2kStepOnce` hand-stepping,
+`b2kInputInject` keys). The first 40 handlers are BEHAVIOUR tests; the 13 added at v23 are
 shallow "Kit API coverage" sections, and a handler that earns a real lesson
 graduates out. The 2026-09-09 Kit change left it at 31, against rule 2; v32
 (2026-09-24) is its assertion, `stTestCallerDelimiter` (11 lines, all ten fixed
@@ -481,7 +486,14 @@ on 2026-09-26; v31 never had a count of its own. v33 (2026-10-08) is the
 assertion for the saved-stack adoption above, `stTestSheetAdopt` (20 lines: the
 atlas stamp adopted with no file and refused for another xml path or with
 persistence off, a saved clip adopted by name, the one-pass orphan sweep); it
-has not run on an engine. Record the total a pass prints rather than matching 405.
+first ran on an engine as part of v35 (2026-11-14, section 12). v36 (2026-11-21)
+is the assertion for a binding fix, `stTestLoaderErrorKept`: on Linux, eight
+assertions that a failed `b2LoadNativeLib`'s reason is kept (the first answer,
+asked again, a second failure's own, and none after a load that works, of the C
+library already in the process); elsewhere one printed line, as the loader is
+Linux only. It has not run on an engine; the same checks passed under lc-run
+on Linux (2026-11-21, a scratch probe: no lane here runs the binding under
+lc-run). Record the total a pass prints.
 
 It is the EIGHTH member folded into the suite paste (2026-08-16):
 
@@ -511,12 +523,13 @@ no-op; 40 steps of fall at 400 px/s^2 is 89 px (step until grounded, max 150).
 
 - **Kit: 316/316, zero exemptions** in the suite's
   `tools/check-suite-coverage.py` (harness v23 closed 211 never-named handlers).
-- **Raw `b2*` script layer:** scripts name 131 of 376 and leave **245**
-  unnamed with comments stripped and literals blanked; raw tokens give 132/244
+- **Raw `b2*` script layer:** scripts name 133 of 376 and leave **243**
+  unnamed with comments stripped and literals blanked; raw tokens give 134/242
   (both correct, different conventions; the suite root CLAUDE.md cites the
-  pair). Since 2026-08-26 `B2_RAW_BASELINE` holds the 245 as an advisory FLOOR
-  (unlisted, promoted and stale names fail). ~245 blind script assertions
-  against a foreign-bound API are deliberately not attempted.
+  pair; 131/245 and 132/244 until harness v36 named the loader pair on
+  2026-11-21). Since 2026-08-26 `B2_RAW_BASELINE` holds the rest as an
+  advisory FLOOR (unlisted, promoted and stale names fail). ~240 blind script
+  assertions against a foreign-bound API are deliberately not attempted.
 - **C smoke test, measured with gcov, not grep:** 53 of 370 `LC_API` exports
   executed before 2026-08-17 (grep said 60: the extern block DECLARED six never
   called - a declaration is not a call); 194/370 after that day's body + shape

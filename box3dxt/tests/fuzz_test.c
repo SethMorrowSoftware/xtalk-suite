@@ -35,7 +35,7 @@
 #include <string.h>
 
 /* >>> BEGIN SHIM DECLARATIONS (generated: tools/check-smoke-coverage.py --write) >>> */
-/* 399 exports, in the shim's order. Plain declarations: the test is a client of
+/* 401 exports, in the shim's order. Plain declarations: the test is a client of
  * the built library, exactly as the engine's FFI is. */
 extern int b3x_abi_version(void);
 extern const char*b3x_library_version(void);
@@ -421,6 +421,8 @@ extern void b3x_render_set_camera(double ex, double ey, double ez, double tx, do
 extern const char*b3x_render_camera(void);
 extern void b3x_render_set_light(double dx, double dy, double dz);
 extern void b3x_render_set_background(int red, int green, int blue);
+extern void b3x_render_set_sky(int topRed, int topGreen, int topBlue, int bottomRed, int bottomGreen, int bottomBlue);
+extern const char*b3x_render_sky(void);
 extern void b3x_shape_set_color(int s, int red, int green, int blue);
 extern void b3x_shape_clear_color(int s);
 extern const char*b3x_shape_color(int s);
@@ -1384,34 +1386,38 @@ static void rp_382(const double *a) { tr("b3x_render_set_light", 3, a); b3x_rend
 static void fz_382(void) { double a[3]; a[0] = D(); a[1] = D(); a[2] = D(); rp_382(a); }
 static void rp_383(const double *a) { tr("b3x_render_set_background", 3, a); b3x_render_set_background((int)a[0], (int)a[1], (int)a[2]); }
 static void fz_383(void) { double a[3]; a[0] = small(-2, 257); a[1] = small(-2, 257); a[2] = small(-2, 257); rp_383(a); }
-static void rp_384(const double *a) { tr("b3x_shape_set_color", 4, a); b3x_shape_set_color((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
-static void fz_384(void) { double a[4]; a[0] = HS(); a[1] = small(-2, 257); a[2] = small(-2, 257); a[3] = small(-2, 257); rp_384(a); }
-static void rp_385(const double *a) { tr("b3x_shape_clear_color", 1, a); b3x_shape_clear_color((int)a[0]); }
-static void fz_385(void) { double a[1]; a[0] = HS(); rp_385(a); }
-static void rp_386(const double *a) { tr("b3x_shape_color", 1, a); text(b3x_shape_color((int)a[0])); }
-static void fz_386(void) { double a[1]; a[0] = HS(); rp_386(a); }
-static void rp_387(const double *a) { tr("b3x_render_world", 4, a); s_lastInt = b3x_render_world((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
-static void fz_387(void) { double a[4]; a[0] = HW(); a[1] = small(-1, 48); a[2] = small(-1, 48); a[3] = small(-1, 3); rp_387(a); }
-static void rp_389(const double *a) { (void)a; tr("b3x_render_byte_count", 0, a); s_lastInt = b3x_render_byte_count(); }
-static void fz_389(void) { double a[1];  rp_389(a); }
-static void rp_390(const double *a) { (void)a; tr("b3x_render_width", 0, a); s_lastInt = b3x_render_width(); }
-static void fz_390(void) { double a[1];  rp_390(a); }
-static void rp_391(const double *a) { (void)a; tr("b3x_render_height", 0, a); s_lastInt = b3x_render_height(); }
+static void rp_384(const double *a) { tr("b3x_render_set_sky", 6, a); b3x_render_set_sky((int)a[0], (int)a[1], (int)a[2], (int)a[3], (int)a[4], (int)a[5]); }
+static void fz_384(void) { double a[6]; a[0] = small(-2, 257); a[1] = small(-2, 257); a[2] = small(-2, 257); a[3] = small(-2, 257); a[4] = small(-2, 257); a[5] = small(-2, 257); rp_384(a); }
+static void rp_385(const double *a) { (void)a; tr("b3x_render_sky", 0, a); text(b3x_render_sky()); }
+static void fz_385(void) { double a[1];  rp_385(a); }
+static void rp_386(const double *a) { tr("b3x_shape_set_color", 4, a); b3x_shape_set_color((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
+static void fz_386(void) { double a[4]; a[0] = HS(); a[1] = small(-2, 257); a[2] = small(-2, 257); a[3] = small(-2, 257); rp_386(a); }
+static void rp_387(const double *a) { tr("b3x_shape_clear_color", 1, a); b3x_shape_clear_color((int)a[0]); }
+static void fz_387(void) { double a[1]; a[0] = HS(); rp_387(a); }
+static void rp_388(const double *a) { tr("b3x_shape_color", 1, a); text(b3x_shape_color((int)a[0])); }
+static void fz_388(void) { double a[1]; a[0] = HS(); rp_388(a); }
+static void rp_389(const double *a) { tr("b3x_render_world", 4, a); s_lastInt = b3x_render_world((int)a[0], (int)a[1], (int)a[2], (int)a[3]); }
+static void fz_389(void) { double a[4]; a[0] = HW(); a[1] = small(-1, 48); a[2] = small(-1, 48); a[3] = small(-1, 3); rp_389(a); }
+static void rp_391(const double *a) { (void)a; tr("b3x_render_byte_count", 0, a); s_lastInt = b3x_render_byte_count(); }
 static void fz_391(void) { double a[1];  rp_391(a); }
-static void rp_392(const double *a) { (void)a; tr("b3x_render_triangle_count", 0, a); s_lastInt = b3x_render_triangle_count(); }
+static void rp_392(const double *a) { (void)a; tr("b3x_render_width", 0, a); s_lastInt = b3x_render_width(); }
 static void fz_392(void) { double a[1];  rp_392(a); }
-static void rp_393(const double *a) { tr("b3x_render_pixel", 2, a); s_lastInt = b3x_render_pixel((int)a[0], (int)a[1]); }
-static void fz_393(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_393(a); }
-static void rp_394(const double *a) { tr("b3x_render_shape_at", 2, a); s_lastInt = b3x_render_shape_at((int)a[0], (int)a[1]); }
-static void fz_394(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_394(a); }
-static void rp_395(const double *a) { tr("b3x_render_depth", 2, a); number(b3x_render_depth((int)a[0], (int)a[1])); }
+static void rp_393(const double *a) { (void)a; tr("b3x_render_height", 0, a); s_lastInt = b3x_render_height(); }
+static void fz_393(void) { double a[1];  rp_393(a); }
+static void rp_394(const double *a) { (void)a; tr("b3x_render_triangle_count", 0, a); s_lastInt = b3x_render_triangle_count(); }
+static void fz_394(void) { double a[1];  rp_394(a); }
+static void rp_395(const double *a) { tr("b3x_render_pixel", 2, a); s_lastInt = b3x_render_pixel((int)a[0], (int)a[1]); }
 static void fz_395(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_395(a); }
-static void rp_396(const double *a) { tr("b3x_render_project", 3, a); text(b3x_render_project(a[0], a[1], a[2])); }
-static void fz_396(void) { double a[3]; a[0] = D(); a[1] = D(); a[2] = D(); rp_396(a); }
-static void rp_397(const double *a) { tr("b3x_render_ray", 2, a); text(b3x_render_ray(a[0], a[1])); }
-static void fz_397(void) { double a[2]; a[0] = D(); a[1] = D(); rp_397(a); }
-static void rp_398(const double *a) { tr("b3x_shape_triangles_text", 1, a); text(b3x_shape_triangles_text((int)a[0])); }
-static void fz_398(void) { double a[1]; a[0] = HS(); rp_398(a); }
+static void rp_396(const double *a) { tr("b3x_render_shape_at", 2, a); s_lastInt = b3x_render_shape_at((int)a[0], (int)a[1]); }
+static void fz_396(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_396(a); }
+static void rp_397(const double *a) { tr("b3x_render_depth", 2, a); number(b3x_render_depth((int)a[0], (int)a[1])); }
+static void fz_397(void) { double a[2]; a[0] = small(-2, 50); a[1] = small(-2, 50); rp_397(a); }
+static void rp_398(const double *a) { tr("b3x_render_project", 3, a); text(b3x_render_project(a[0], a[1], a[2])); }
+static void fz_398(void) { double a[3]; a[0] = D(); a[1] = D(); a[2] = D(); rp_398(a); }
+static void rp_399(const double *a) { tr("b3x_render_ray", 2, a); text(b3x_render_ray(a[0], a[1])); }
+static void fz_399(void) { double a[2]; a[0] = D(); a[1] = D(); rp_399(a); }
+static void rp_400(const double *a) { tr("b3x_shape_triangles_text", 1, a); text(b3x_shape_triangles_text((int)a[0])); }
+static void fz_400(void) { double a[1]; a[0] = HS(); rp_400(a); }
 typedef struct { const char *name; int argc; void (*call)(void); void (*replay)(const double *); } FuzzCall;
 static const FuzzCall k_fuzz[] = {
     { "b3x_abi_version", 0, fz_0, rp_0 },
@@ -1797,20 +1803,22 @@ static const FuzzCall k_fuzz[] = {
     { "b3x_render_camera", 0, fz_381, rp_381 },
     { "b3x_render_set_light", 3, fz_382, rp_382 },
     { "b3x_render_set_background", 3, fz_383, rp_383 },
-    { "b3x_shape_set_color", 4, fz_384, rp_384 },
-    { "b3x_shape_clear_color", 1, fz_385, rp_385 },
-    { "b3x_shape_color", 1, fz_386, rp_386 },
-    { "b3x_render_world", 4, fz_387, rp_387 },
-    { "b3x_render_byte_count", 0, fz_389, rp_389 },
-    { "b3x_render_width", 0, fz_390, rp_390 },
-    { "b3x_render_height", 0, fz_391, rp_391 },
-    { "b3x_render_triangle_count", 0, fz_392, rp_392 },
-    { "b3x_render_pixel", 2, fz_393, rp_393 },
-    { "b3x_render_shape_at", 2, fz_394, rp_394 },
-    { "b3x_render_depth", 2, fz_395, rp_395 },
-    { "b3x_render_project", 3, fz_396, rp_396 },
-    { "b3x_render_ray", 2, fz_397, rp_397 },
-    { "b3x_shape_triangles_text", 1, fz_398, rp_398 },
+    { "b3x_render_set_sky", 6, fz_384, rp_384 },
+    { "b3x_render_sky", 0, fz_385, rp_385 },
+    { "b3x_shape_set_color", 4, fz_386, rp_386 },
+    { "b3x_shape_clear_color", 1, fz_387, rp_387 },
+    { "b3x_shape_color", 1, fz_388, rp_388 },
+    { "b3x_render_world", 4, fz_389, rp_389 },
+    { "b3x_render_byte_count", 0, fz_391, rp_391 },
+    { "b3x_render_width", 0, fz_392, rp_392 },
+    { "b3x_render_height", 0, fz_393, rp_393 },
+    { "b3x_render_triangle_count", 0, fz_394, rp_394 },
+    { "b3x_render_pixel", 2, fz_395, rp_395 },
+    { "b3x_render_shape_at", 2, fz_396, rp_396 },
+    { "b3x_render_depth", 2, fz_397, rp_397 },
+    { "b3x_render_project", 3, fz_398, rp_398 },
+    { "b3x_render_ray", 2, fz_399, rp_399 },
+    { "b3x_shape_triangles_text", 1, fz_400, rp_400 },
 };
 /* <<< END FUZZ CALLS <<< */
 

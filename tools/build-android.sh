@@ -92,6 +92,27 @@ BOOST_VERSION="1.86.0"
 BOOST_SHA256="2128a4c96862b5c0970c1e34d76b1d57e4a1016b80df85ad39667f30b1deba26"
 
 MEMBERS="sodiumxt enetxt box2dxt box3dxt audioxt render3dxt xlsxt webpxt barcodext coinxt curlxt datachannelxt torrentxt"
+# Native members with NO Android library, each for a reason given here.
+# --list prints them, so tools/test-build-android.py holds MEMBERS plus
+# these to exactly the native members every other table names: a member
+# left out of both is a library built for the desktop and silently missing
+# from every Android app, which is the gap that comparison exists to catch.
+# The same test holds each one's packager and `ships` row to no Android id,
+# so "not built" cannot drift into "half built".
+#   gamepadxt (2026-11-20)  SDL reaches controllers on Android through its
+#                        own Java activity (SDLActivity,
+#                        SDLControllerManager), which an OXT app does not
+#                        have: the engine's activity is its own
+#                        (docs/ANDROID.md).
+#   midixt (2026-11-21)  RtMidi's Android backend needs API 29 (AMidi) and
+#                        JNI; the floor here is API 21, and its CMake
+#                        refuses an Android configure.
+#   oscxt (2026-11-21)   nothing in it stops an Android build (C over two
+#                        vendored files), but none has run yet, and a new
+#                        row here would first build in a release dispatch,
+#                        where a red row discards every artifact; the suite
+#                        work plan carries it.
+DESKTOP_ONLY="gamepadxt oscxt midixt"
 PLATFORMS="arm64-android armv7-android x86_64-android x86-android"
 
 # The Android a member is built for: the suite's floor, or the one member
@@ -107,6 +128,7 @@ api_for() {
 case "${1:-}" in
   --list)
     echo "members:   $MEMBERS"
+    echo "desktop-only: $DESKTOP_ONLY"
     echo "platforms: $PLATFORMS"
     exit 0 ;;
   --pins)
@@ -122,6 +144,11 @@ case "${1:-}" in
     case " $MEMBERS " in
       *" ${2:-} "*) api_for "$2"; exit 0 ;;
     esac
+    case " $DESKTOP_ONLY " in
+      *" ${2:-} "*)
+        echo "build-android: '${2:-}' has no Android build (DESKTOP_ONLY in this script says why)" >&2
+        exit 2 ;;
+    esac
     echo "build-android: '${2:-}' is not a native member ($MEMBERS)" >&2
     exit 2 ;;
 esac
@@ -135,7 +162,13 @@ PLATFORM="$2"
 
 case " $MEMBERS " in
   *" $MEMBER "*) : ;;
-  *) echo "build-android: '$MEMBER' is not a native member ($MEMBERS)" >&2; exit 2 ;;
+  *)
+    case " $DESKTOP_ONLY " in
+      *" $MEMBER "*)
+        echo "build-android: '$MEMBER' has no Android build (DESKTOP_ONLY in this script says why)" >&2
+        exit 2 ;;
+    esac
+    echo "build-android: '$MEMBER' is not a native member ($MEMBERS)" >&2; exit 2 ;;
 esac
 
 # One row per ABI: the NDK's name for it, the compiler's target triple, and

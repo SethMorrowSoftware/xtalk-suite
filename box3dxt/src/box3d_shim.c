@@ -65,7 +65,7 @@
 
 /* Bump when the exported ABI changes; src/box3dxt.lcb's checkABI() names the
  * same number and refuses a library that answers another. */
-#define B3X_ABI_VERSION 2
+#define B3X_ABI_VERSION 3
 
 /* ------------------------------------------------------------------ */
 /* Generic handle tables (box2dxt's, with one change: see below).      */
@@ -3566,7 +3566,8 @@ static double s_rRight[3] = { 1.0, 0.0, 0.0 }, s_rUp[3] = { 0.0, 1.0, 0.0 }, s_r
 static double s_rTarget[3] = { 0.0, 1.0, 0.0 };
 static double s_rFov = 50.0;           /* vertical, degrees             */
 static double s_rLight[3] = { -0.37139, -0.74278, -0.55709 };   /* the way the light travels */
-static unsigned s_rBack = 0x20242A;
+static unsigned s_rBack = 0x20242A;     /* the bottom row's colour      */
+static unsigned s_rBackTop = 0x20242A;  /* the top row's: the same, bar a sky */
 static unsigned *s_shapeColor = NULL;  /* by shape slot: 0x01RRGGBB when set */
 static int    s_shapeColorCap = 0;
 
@@ -3622,6 +3623,25 @@ LC_API void b3x_render_set_background(int red, int green, int blue)
 {
     if (!byte_ok(red) || !byte_ok(green) || !byte_ok(blue)) { fail("a colour is three numbers from 0 to 255"); return; }
     s_rBack = ((unsigned)red << 16) | ((unsigned)green << 8) | (unsigned)blue;
+    s_rBackTop = s_rBack;
+}
+/* A sky: where there is no shape the picture runs from one colour on its
+ * top row to another on its bottom row, each row one colour. Six bytes, all
+ * checked before either colour changes. b3x_render_set_background is the
+ * same with both colours alike, which is what it always painted. */
+LC_API void b3x_render_set_sky(int topRed, int topGreen, int topBlue, int bottomRed, int bottomGreen, int bottomBlue)
+{
+    if (!byte_ok(topRed) || !byte_ok(topGreen) || !byte_ok(topBlue)
+        || !byte_ok(bottomRed) || !byte_ok(bottomGreen) || !byte_ok(bottomBlue)) { fail("a colour is three numbers from 0 to 255"); return; }
+    s_rBackTop = ((unsigned)topRed << 16) | ((unsigned)topGreen << 8) | (unsigned)topBlue;
+    s_rBack = ((unsigned)bottomRed << 16) | ((unsigned)bottomGreen << 8) | (unsigned)bottomBlue;
+}
+/* "tr,tg,tb,br,bg,bb": the colours b3x_render_world paints behind the shapes */
+LC_API const char *b3x_render_sky(void)
+{
+    double v[6] = { (double)((s_rBackTop >> 16) & 255), (double)((s_rBackTop >> 8) & 255), (double)(s_rBackTop & 255),
+                    (double)((s_rBack >> 16) & 255), (double)((s_rBack >> 8) & 255), (double)(s_rBack & 255) };
+    return text_of(v, 6);
 }
 
 static void color_forget(int slot)
@@ -4076,13 +4096,25 @@ LC_API int b3x_render_world(int w, int width, int height, int mode)
     s_rW = width; s_rH = height; s_rMode = mode; s_rTriangles = 0;
     s_rScale = 0.5 * height / tan(0.5 * s_rFov * B3_PI / 180.0);
     camera_basis();
-    for (int i = 0; i < pixels; i++) {
-        s_rPix[4 * (size_t)i] = 0;
-        s_rPix[4 * (size_t)i + 1] = (unsigned char)(s_rBack >> 16);
-        s_rPix[4 * (size_t)i + 2] = (unsigned char)(s_rBack >> 8);
-        s_rPix[4 * (size_t)i + 3] = (unsigned char)s_rBack;
-        s_rDepth[i] = 0.0f;
-        s_rShape[i] = 0;
+    /* behind the shapes: one colour a row, from the sky's top colour on the
+     * first row to its bottom colour on the last, in whole numbers (rounded
+     * to nearest), so a flat background is that colour exactly on every row */
+    for (int y = 0; y < height; y++) {
+        unsigned char rgb[3];
+        for (int c = 0; c < 3; c++) {
+            int top = (int)((s_rBackTop >> (16 - 8 * c)) & 255), bottom = (int)((s_rBack >> (16 - 8 * c)) & 255);
+            int span = height > 1 ? height - 1 : 1;
+            rgb[c] = (unsigned char)(top + ((bottom - top) * y + (bottom >= top ? span / 2 : -(span / 2))) / span);
+        }
+        for (int x = 0; x < width; x++) {
+            size_t i = (size_t)y * (size_t)width + (size_t)x;
+            s_rPix[4 * i] = 0;
+            s_rPix[4 * i + 1] = rgb[0];
+            s_rPix[4 * i + 2] = rgb[1];
+            s_rPix[4 * i + 3] = rgb[2];
+            s_rDepth[i] = 0.0f;
+            s_rShape[i] = 0;
+        }
     }
     /* by shape, through the shim's own table: each knows its body */
     for (int slot = 0; slot < shapes_cnt; slot++) {
