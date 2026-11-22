@@ -51,6 +51,14 @@ command prSteps pCount
    end repeat
 end prSteps
 
+-- the size of a panel's soft shadow, 0 for none
+function prShadowSize pName
+   local tShadow
+   put the dropShadow of graphic pName of card 1 of stack "OrbIsland" into tShadow
+   if tShadow is not an array then return 0
+   return tShadow["size"] + 0
+end prShadowSize
+
 function prField pName
    return the text of field pName of card 1 of stack "OrbIsland"
 end prField
@@ -133,7 +141,15 @@ command prBuild pR3
          the rect of image "b3kView" of card 1 of stack "OrbIsland"
    prCheck "the win banner waits hidden", the visible of field "oiBanner" of card 1 of stack "OrbIsland" is false, \
          the visible of field "oiBanner" of card 1 of stack "OrbIsland"
-   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 1, the uOiUIVersion of stack "OrbIsland"
+   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 2, the uOiUIVersion of stack "OrbIsland"
+   -- the view's card has no soft shadow (the engine redrew it under every
+   -- frame: 10 ms a frame in the web player); the side panel keeps its own,
+   -- which shows this engine reads the property at all
+   prCheck "no soft shadow under the view", prShadowSize("oiViewCard") is 0, prShadowSize("oiViewCard")
+   prCheck "the side panel keeps its soft shadow", prShadowSize("oiSide") is 10, prShadowSize("oiSide")
+   -- smooth edges are dropped only in a web page, where render3dxt draws
+   -- on one thread inside the frame
+   prCheck "this engine is not a web page", oiOnWeb() is false, the platform
    -- the dark-appearance rule: a control that leaves its colours to the
    -- appearance draws light words in the dark one, white on the light page
    put empty into tBad
@@ -164,6 +180,7 @@ command prBuild pR3
    prCheck "a world runs", b3kWorld() is not empty and b3kIsRunning() is true, b3kWorld() && b3kIsRunning()
    if pR3 then
       prCheck "render3dxt draws", b3kRenderer() is "render3dxt", b3kRenderer()
+      prCheck "off the web it promises smooth edges", oiRendererWords() is "render3dxt draws: textured, lit, smooth edges.", oiRendererWords()
    else
       prCheck "box3dxt's own renderer draws", b3kRenderer() is "box3dxt", b3kRenderer()
    end if
