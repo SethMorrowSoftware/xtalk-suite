@@ -528,9 +528,9 @@ MEMBERS = [
     # (osc, midi) and stayed behind. Their first release-binaries dispatch
     # (run 44985328988 from 80c3b28, 2026-11-22, `build: named`) built the
     # six desktop libraries of each, commit 0996fba. Neither builds for
-    # Android (tools/build-android.sh's DESKTOP_ONLY says why) or for the
-    # web. artnetxt, the third, binds nothing foreign and is in BINDLESS_LCB
-    # below, not here.
+    # Android (tools/build-android.sh's DESKTOP_ONLY says why); midixt alone
+    # builds for the web (2026-11-22). artnetxt, the third, binds nothing
+    # foreign and is in BINDLESS_LCB below, not here.
     {
         "name": "oscxt",
         "lib": "oscxt",
@@ -551,9 +551,14 @@ MEMBERS = [
         "name": "midixt",
         "lib": "midixt",
         "lcb": ["midixt/src/midi.lcb"],
-        # The same dispatch as oscxt's, the same six desktop rows.
+        # The same dispatch as oscxt's, the same six desktop rows. The web
+        # archive is the same shim over src/midi_web.c (the browser's Web
+        # MIDI; no RtMidi source in it), built outside that workflow with
+        # emsdk 6.0.12 as native-midixt.yml's web job builds it, and
+        # committed by hand on 2026-11-22 for OXT-Beyond's web engine.
         "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
-                  "x86_64-win32", "universal-mac"],
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten"],
         "shim": "midixt/src/midi_shim.c",
         "prefix": "midi_",
         "abi_header": "midixt/src/midi_shim.h",
@@ -562,7 +567,8 @@ MEMBERS = [
         # src/midixt.map and the derived ld64 list export midi_* and nothing
         # else; RtMidi's classes are compiled in without RTMIDI_EXPORT
         # (measured on the x86_64-linux build, 2026-11-21).
-        "closure": {"elf": [], "pe": [], "macho": []},
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
     },
     {
         "name": "barcodext",

@@ -13,6 +13,7 @@ macOS, Windows MM on Windows. No driver or other program is needed.
 - [5. Send](#5-send)
 - [6. No hardware: virtual ports and loopback drivers](#6-no-hardware-virtual-ports-and-loopback-drivers)
 - [7. The self-test](#7-the-self-test)
+- [8. On the web](#8-on-the-web)
 - [Troubleshooting](#troubleshooting)
 
 ## 1. Install
@@ -179,6 +180,33 @@ and Tier 3 sends a note, a controller, a bend and a SysEx through a virtual outp
 them back through the system's MIDI service (Linux and macOS; on Windows it says why it
 skipped).
 
+## 8. On the web
+
+A web engine that links midixt in (OXT-Beyond's links the suite's web archives) runs the
+same `midi*` handlers in a browser page, over the browser's Web MIDI (most desktop browsers
+have it; Safari does not). Three things differ from a desktop:
+
+- **The browser decides.** A page may use MIDI only if the browser allows it, and it may
+  ask the person first. midixt asks at the first call that needs a port
+  (`midiInputPorts()`, `midiOutputPorts()`, an open), for SysEx too. The answer comes
+  later, so that first call lists nothing and `midiLastError()` says the question is out:
+  call again a moment later, from a timer or the next press of a button, and once the
+  person has allowed it the ports are there. A refusal stands for the life of the page
+  (midixt asks again only after a reload, and a browser that remembers it refuses again);
+  a page that is not secure (plain `http`) gets no MIDI; and a page shown in a frame that
+  does not allow MIDI is refused at once, with nothing asked.
+- **No virtual ports.** `midiOpenVirtualInput` and `midiOpenVirtualOutput` return 0 and
+  say why. A loopback driver on the computer (loopMIDI on Windows, the IAC Driver on
+  macOS) is listed like any device once the page may use MIDI.
+- **A port opens later, too.** An open answers with a handle at once. If the browser then
+  cannot open the port (another program holds it), every `midiPoll` or send through that
+  handle does nothing and `midiLastError()` says why, until you close it.
+
+Everything else is the same: the helper's listener, the decoded messages and their timing,
+SysEx. This is verified against a stand-in for the browser's Web MIDI (`docs/building.md`
+says what that stand-in cannot show); no browser has run it yet: verified statically;
+needs a pass in a browser.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -190,3 +218,6 @@ skipped).
 | Nothing arrives | The wrong port number (the list's position minus 1), the timer stopped (`scMidiIsListening`), or SysEx or clock you have not enabled with `midiIgnoreTypes`. |
 | A burst of messages arrives cut short | More than 1024 messages arrived between two polls: poll more often. |
 | A long non-SysEx send does nothing on macOS or Windows | Send one message per call; `midiLastError()` says this too. |
+| On the web, the ports are empty and `midiLastError()` says the browser has not answered | The browser is asking the person: call again once they have answered. |
+| On the web, it says the frame the page is shown in does not allow MIDI | The page is inside a frame without MIDI in its `allow` list: open the page itself. |
+| On the web, it says the browser refused this page MIDI | The person (or the browser's settings for the site) said no: change the site's setting and reload. |

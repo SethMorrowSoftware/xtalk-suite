@@ -32,6 +32,15 @@
  *     with `ok` still true. CoreMIDI and Windows MM drop a non-SysEx message
  *     longer than three bytes that way, and Windows MM "opens" a virtual port
  *     that sends nowhere. The shim refuses both itself, with a reason.
+ *
+ * On the web (wasm32-emscripten) there is no RtMidi under the shim: the same
+ * calls, with the same behaviour, are src/midi_web.c's, over the browser's
+ * Web MIDI API (that file says why RtMidi's own Web MIDI backend is not
+ * used). Two things are the web's own, and only the web build compiles them
+ * (#if defined(__EMSCRIPTEN__) below), so a desktop library is built from
+ * the code it always was: a virtual port is refused before anything asks the
+ * browser for MIDI, and a failure the backend can explain carries its words
+ * (err_set_backend).
  * ----------------------------------------------------------------------------
  */
 
@@ -87,6 +96,24 @@ static int32_t copy_str(const char *s, char *out, int32_t cap) {
     memcpy(out, s, (size_t) n + 1);
     return n;
 }
+/* A failure inside the backend. RtMidi's backends leave their reason in the
+ * wrapper's msg, which must never be read (see the top), so on a desktop the
+ * shim's own words stand alone. The web backend keeps its reason where it can
+ * be read (no Web MIDI in this browser, a page that is not secure, a frame
+ * that does not allow MIDI, a question the person has not answered yet, a
+ * refusal, or what the browser threw), and it is added to the shim's words:
+ * "midi: send failed: TypeError: ...". */
+#if defined(__EMSCRIPTEN__)
+#include <stdio.h>
+const char *midixt_web_why(void);    /* src/midi_web.c */
+static void err_set_backend(const char *m) {
+    const char *why = midixt_web_why();
+    if (!why || !*why) { err_set(m); return; }
+    snprintf(g_err, sizeof g_err, "%s: %s", m, why);
+}
+#else
+#define err_set_backend(m) err_set(m)
+#endif
 static void be16_store(uint8_t *p, uint16_t v) { p[0]=(uint8_t)(v>>8); p[1]=(uint8_t)v; }
 static void be32_store(uint8_t *p, uint32_t v) {
     p[0]=(uint8_t)(v>>24); p[1]=(uint8_t)(v>>16); p[2]=(uint8_t)(v>>8); p[3]=(uint8_t)v;
@@ -194,14 +221,14 @@ static int32_t port_count(int is_input) {
     err_clear();
     RtMidiPtr d = enumerator(is_input);
     if (!d) {
-        err_set(is_input ? "midi: no MIDI input backend" : "midi: no MIDI output backend");
+        err_set_backend(is_input ? "midi: no MIDI input backend" : "midi: no MIDI output backend");
         return 0;
     }
     unsigned int n = rtmidi_get_port_count(d);
     if (!d->ok || n > (unsigned int) INT32_MAX) {
         /* RtMidi answers (unsigned)-1 when the count throws: ShowControl handed
          * that on as -1 ports. */
-        err_set("midi: could not count the MIDI ports");
+        err_set_backend("midi: could not count the MIDI ports");
         return 0;
     }
     return (int32_t) n;
@@ -247,12 +274,21 @@ static void free_device(int is_input, RtMidiPtr d) {
 
 static int32_t open_port(int is_input, int32_t portIndex, const char *vname) {
     err_clear();
+#if defined(__EMSCRIPTEN__)
+    /* Web MIDI makes no ports of its own. Refused here, before the backend
+     * would ask the browser for MIDI: asking would put a question to the
+     * person only for the port to be refused anyway. */
+    if (vname) {
+        err_set("midi: a web page has no virtual ports (Web MIDI makes none)");
+        return 0;
+    }
+#endif
     RtMidiPtr d = is_input
         ? (RtMidiPtr) rtmidi_in_create(RTMIDI_API_UNSPECIFIED, MIDI_IN_CLIENT, MIDI_IN_QUEUE_LIMIT)
         : (RtMidiPtr) rtmidi_out_create(RTMIDI_API_UNSPECIFIED, MIDI_OUT_CLIENT);
     if (!d) { err_set("midi: could not create RtMidi instance"); return 0; }
     if (!d->ok || !d->ptr) {
-        err_set("midi: backend init failed (no MIDI service available?)");
+        err_set_backend("midi: backend init failed (no MIDI service available?)");
         free_device(is_input, d);
         return 0;
     }
@@ -273,7 +309,7 @@ static int32_t open_port(int is_input, int32_t portIndex, const char *vname) {
         d->ok = true;
         unsigned count = rtmidi_get_port_count(d);
         if (!d->ok) {
-            err_set("midi: could not count the MIDI ports");
+            err_set_backend("midi: could not count the MIDI ports");
             free_device(is_input, d);
             return 0;
         }
@@ -285,7 +321,7 @@ static int32_t open_port(int is_input, int32_t portIndex, const char *vname) {
         rtmidi_open_port(d, (unsigned)portIndex, is_input ? MIDI_IN_PORT_NAME : MIDI_OUT_PORT_NAME);
     }
     if (!d->ok) {
-        err_set("midi: open port failed");   /* d->msg is unsafe to read (see top) */
+        err_set_backend("midi: open port failed");   /* d->msg is unsafe to read (see top) */
         free_device(is_input, d);
         return 0;
     }
@@ -401,7 +437,7 @@ static int32_t drain_impl(int32_t handle, uint8_t *out, int32_t out_cap, int32_t
              * so reading again fails again. ShowControl took the untouched
              * size for a giant message, skipped it and read again: an endless
              * loop on the engine's main thread. Stop; the next poll retries. */
-            err_set("midi: reading the MIDI input queue failed");
+            err_set_backend("midi: reading the MIDI input queue failed");
             break;
         }
         if (sz == 0) break;                       /* queue empty */
@@ -473,7 +509,7 @@ MIDI_API int32_t midi_out_send(int32_t handle, const uint8_t *data, int32_t len)
     mp->ptr->ok = true;      /* RtMidi never resets it: one failed send made every later one "fail" */
     int rc = rtmidi_out_send_message(mp->ptr, data, len);
     if (rc < 0 || !mp->ptr->ok) {
-        err_set("midi: send failed");        /* d->msg is unsafe to read (see top) */
+        err_set_backend("midi: send failed");        /* d->msg is unsafe to read (see top) */
         return 0;
     }
     return 1;
