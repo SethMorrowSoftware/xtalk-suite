@@ -331,6 +331,7 @@ keeping the scaffold for its report.
 | 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets): its two library files were read on 2026-11-18 and call nothing a desktop alone has ([ANDROID.md](ANDROID.md)), and it has not run on an Android engine; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | owner (onionxt's path) |
 | 32 | **The dangling `else if`.** Check 20 refuses a bare `else` after a single-line `if`, but not an `else if ... then` there, which the engine binds to the single-line `if` just the same (engine note 3.6: `190` "if: missing 'end if'" at the handler's end; gamepadxt's demo had it twice, found only by compiling). The form is legal when that else is meant for the single-line `if`, so the rule is the indentation: refuse an `else` or `else if` written to the LEFT of the single-line `if` before it. Every carrier's copy, with `tools/test-checker.py` fixtures both ways | The checker passed a script the engine refused | S | none |
 | 33 | **torrentxt at API 24: the proof in an app.** The four libraries were rebuilt for API 24 on 2026-11-21 (run 44914897842, commit d47060f) and their tests ran on an Android 7.0 emulator for the two x86 ABIs ([ANDROID.md](ANDROID.md), "The rebuild at API 24"). That is the shell user on an Android older than the refusal, so the fix itself is unseen. Pin the four in OXT-Beyond, whose Android workflow then runs its torrent test inside an app on Android 13 and 16, and make that test fail on a session born paused (today it resumes one and says KNOWN LIMIT); have it listen on the unspecified address once too, which no run has tried in an app. Then replace the status paragraph, the table row and this item with the record | Until an app on Android 11 or later starts a session unpaused, the fix is a reading of libtorrent's source and a test on Android 7.0 | S | OXT-Beyond pinning the commit |
+| 34 | **Check the suite's script servers against engine note 6.20.** On Windows an accepted socket's id is its handle, which the next connection gets as soon as the engine closes the old one, so a `close socket` by id that can run after the client has closed (in a write's message, a timer, `socketClosed` or `socketError`) closes the NEXT connection. curlxt Live lost one request in four to it on 2026-11-21 and now lets the client close, forgets on `socketClosed` without closing, and closes a straggler only by a serial (`cdSrvTakeId`, `cdSrvReap`). Read each other server for the same shape: holde-em (`holde-em/src/holdem.livecodescript`), torrentxt's `torrent-dht-channels` and `torrent-quickshare`, coinxt's `coin-wallet`, onionxt (`onionxt/src/onionxt.livecodescript`, its demo, its tests and the `onion-httpd` spike), the suite closing pass, nocloud and riptide-social; fix each site that has it, with a headless check where the family interpreter can drive one | Found on the maintainer's Windows PC through curlxt Live's server (engine note 6.20); the other servers were not looked at, and most of them run on Windows | M | none |
 
 ### 1.3 Engine work (suite-level)
 
@@ -835,8 +836,8 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 - Binaries: none committed when it joined; the first release-binaries dispatch lands
   them (its rows ride `cmake-members` and `mac-lipo`), and the change after it lists
   the platforms in `check-binary-freshness.py`'s `ships` row. Since 2026-11-21 all ten
-  committed libraries are the ABI 2 build of run 44825160471 (from ac22df8, commit
-  02b4238).
+  committed libraries are an ABI 2 build: run 44825160471's (from ac22df8, commit 02b4238),
+  then, with the 0.2.1 shim, run 44925581646's (from eadc350, commit a336ba5).
 - Publishing: `SethMorrowSoftware/curlxt` does not exist yet. The owner creates it
   EMPTY, then a publish-members run adopts it (`--adopt curlxt`).
 - WebSockets, 2026-11-20 (ABI 2): `ws://` and `wss://` on libcurl's own WebSocket support,
@@ -848,27 +849,62 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   library built from the tree (138 checks, none failed): every public handler of the
   binding, requests through the binding and the helpers, and `ws://` and `wss://` sockets
   through the binding and the helpers' timer; the same day again over the committed
-  `x86_64-linux` library (run 44825160471), 138 checks, none failed. The native lane's
-  `engine` job runs it on every change. No IDE and no Windows, mac or Android engine has
-  opened a socket yet: needs an OXT pass there (row 3). curlxt has no web archive, so none
-  of it reaches an HTML5 standalone.
+  `x86_64-linux` library (run 44825160471), 138 checks, none failed, and over run
+  44925581646's (the 0.2.1 shim), 141 checks, none failed. The native lane's
+  `engine` job runs it on every change. OXT-Beyond 0.2.8-dp.1's IDE on Windows opened them
+  the same day: `ws://` in curlxt Live's scenes, and `wss://` over Schannel to a public echo
+  service through the binding and the helpers, every WebSocket call over run 44925581646's
+  library (`curlxt/README.md`, Status). No mac or Android engine and no Linux or mac IDE has
+  opened one yet: needs an OXT pass there (row 3).
+  curlxt has no web archive, so none
+  of it reaches an HTML5 standalone. A review's finding, fixed 2026-11-21: control frames
+  had no bound (a peer that pinged without reading grew the pong queue without limit, and
+  a flood of control frames held one pump); at most one automatic pong now waits behind
+  the frame in flight, and a pass handles at most 1024 control frames, both pinned by the
+  smoke test (`curlxt/README.md`, Status). The same day, by the owner's choice, `cuWsWait`
+  with a message already waiting moves the socket once before it answers, so a loop that
+  waits for the close with a message unread ends (curlxt gotcha 6; the former row 5, pinned
+  by the smoke test and the engine test).
 - The demo, 2026-11-21: `curlxt/examples/curlxt-live.livecodescript` (curlxt Live), five
   scenes that run themselves in OXT-Beyond's dark look against a server the stack runs on
   the engine's own sockets, launched from `start-here`. It ran start to finish the same day
   on OXT-Beyond 0.2.7-rc.6's desktop engine with no screen
   (`curlxt/tests/engine-demo.livecodescript` through `curlxt/tools/run-engine-demo.py`, 26
-  checks, a close and a reopen included; again over the committed `x86_64-linux` library,
-  26 checks; the native lane's `engine` job runs it on every change). The server engine
-  cannot host it (engine note 6.15). What it draws needs an OXT pass on a screen (row 6).
+  checks, a close and a reopen included; again over the committed `x86_64-linux` libraries
+  of runs 44825160471 and 44925581646, 26 checks each; the native lane's `engine` job runs it
+  on every change). The server engine cannot host it (engine note 6.15). What it draws needs
+  an OXT pass on a screen (row 6).
+  Its first picture on a screen, 2026-11-21 (OXT-Beyond 0.2.8-dp.1 on Windows x86-64, over the
+  IDE's built-in curlxt 0.1.0, ABI 1): the boot self-check green and scene 4 running, but the
+  window opened 430 px off the screen's left edge, every one-line label had its top cut off,
+  building the window held the IDE for 22.7 s, the tiles still running said "queued", and
+  scene 4's HEAD tile failed with no reason shown. The HEAD tile was the demo's own server:
+  it closed a finished connection by an id Windows had already given to the next one (engine
+  note 6.20; one request in four the same day, GETs too, reproduced on that PC). Fixed the
+  same day (the server lets the client close and closes a straggler only by its serial, the
+  window is centred when it is not on a screen, messages are locked while the window is
+  built, running tiles say so, and a failed tile's reason goes to the log) and run on that PC
+  again from f5309f5: boot self-check green, the window centred and open in 1.6 s, scene 4
+  seven times with 105 of 105 local requests answered. Its labels were still cut, because a
+  field lays its first line out 6 px above its top margin (engine note 5.19) and the demo's
+  were 2. Every field's top margin is 6 since, and the boot self-check measures each field's
+  first line (it fails all 46 quiet fields with the old margins on Linux); from 104f95a on
+  that PC every label read whole, the boot self-check passed 27 with none failed, and scene 4
+  answered 105 of 105 in seven more runs. Its WebSocket scenes ran on that PC the same day
+  over ABI 2 (the binding compiled there and loaded in place of the built-in 0.1.0, over run
+  44825160471's `x86_64-win32` library): the boot self-check green (28), every scene's verdict
+  the one the Linux run checks, and a close and a reopen that left nothing behind; scene 1
+  was looked at, every label whole. It all ran again over run 44925581646's library, and
+  every scene was looked at, every label whole (`curlxt/README.md`, Status). Row 6 still
+  wants light mode, the window opened from `start-here`, Linux and a Mac.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | The first engine pass: load the library (`cuLibraryVersion()`), one `cuRequestSync` GET over https, one `cuRequestAsync` with its message, and a tsNet-era script (`tsNetGetSync`, `tsNetGet` with its callback) on Windows, Linux and a Mac | S1 | - | each answers as `curlxt/docs/api-reference.md` and `tsnet-compat.md` say |
 | 2 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's curlxt row has a pill and a Run |
-| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Windows (Schannel), Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
+| 3 | WebSockets in the IDE (the headless Linux server engine ran loopback `ws://` and `wss://` on 2026-11-21, and Windows' IDE the rest of this row the same day, over Schannel, bar seeing a ping: nothing counts a server's pings, and the socket stayed open through 85 s of idle: `curlxt/README.md`, Status): `cuWsOpen` to a public `wss://` echo service with a handler that sends on "open" and logs "text"; `cuWsClose` and the "closed" message with 1000; a socket left open across a minute of idle (the server's pings answered); `cuWsOpenSync` with `cuWsWait` and `cuWsReadText`; on Linux and a Mac | S1 | - | each message arrives once and in order, "closed" arrives once, and the window stays responsive while a socket is open |
 | 4 | nostrxt's relay layer over `cuWs*` in place of its hand-written WebSocket framing over engine sockets, behind the same `nxr*` names | coding, after row 3 | - | nostrxt's vectors and relay harness pass unchanged over the new transport |
-| 5 | `cux_ws_wait` pumps once before it answers 1 for a message already waiting, so a loop that waits for a later state with messages unread still moves the socket (curlxt gotcha 6, found by the engine test's first run); today's contract, documented in `cuWsWait`'s block, is to read first or loop on `cuWsPoll`. A shim change: it rides the next curlxt rebuild, and the smoke test and engine test pin both orders | coding, with the next rebuild | - | a `cuWsWait` loop waiting for "closed" with messages unread ends, in the smoke test and on the engine |
-| 6 | The demo on a screen: open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
+| 6 | The demo on a screen (Windows' IDE in dark mode on 2026-11-21, the stack opened in the IDE rather than from `start-here`: every scene's picture said what its log line said and no label was cut, `curlxt/README.md`, Status): open curlxt Live from `start-here` in OXT-Beyond's IDE on Windows (in dark mode and in light), Linux and a Mac, and watch scene 1 start by itself and each other scene from its button; then close the stack and reopen it | S1 | - | each scene's picture says what its log line says; no text overlaps or is cut, none is white on a light ground; the window stays responsive throughout; Windows' firewall question, if it comes, is the only prompt |
 
 ### 2.10 box3dxt
 
