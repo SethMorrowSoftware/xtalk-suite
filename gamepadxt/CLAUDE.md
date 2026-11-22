@@ -129,6 +129,9 @@ committed under `src/code/` (2026-11-21: the desktop ones by the suite's release
 run 44848412320). The committed web archive has run in a browser: OXT-Beyond's pull
 request 612 links it into the web engine, and on 2026-11-21 that pull request's web IDE
 check attached a virtual pad, pressed a button and read it back, moved a stick, rumbled
-and lit the pad in Chromium, Firefox and WebKit. Of the committed desktop libraries only
-the 64-bit Windows DLL has met an engine, by its size (the IDE run above); the Linux runs
-used a locally built one. Open work is in the suite's `docs/WORK-PLAN.md`.
+and lit the pad in Chromium, Firefox and WebKit. Of the committed desktop libraries two
+have met an engine: the 64-bit Windows DLL, by its size (the IDE run above), and the
+`x86_64-linux` library, the committed file itself (its hash the MANIFEST's), under
+OXT-Beyond 0.2.8-dp.1's Linux desktop engine with no display, where the drive passed all
+162 checks over it (run locally, 2026-11-21); the other Linux runs used a locally built
+one. Open work is in the suite's `docs/WORK-PLAN.md`.
