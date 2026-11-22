@@ -145,6 +145,15 @@ EXEMPT = {
     # own uiStatus, in the dark palette.
     os.path.join("curlxt", "examples", "curlxt-live.livecodescript"):
         "OXT-Beyond's dark showcase look at the owner's request (2026-11-21); carries the boot self-check",
+    # pdfxt's demo is a showcase in OXT-Beyond's dark look (the Render3D
+    # Tour's palette), to the owner's ask of 2026-11-21 that the suite's
+    # demos match its polished showcase demos. It left the kit that day: the
+    # kit's palette is light and fixed, and under Windows' dark appearance
+    # OXT-Beyond gave the kit's fields white text on their white ground
+    # (the maintainer's Windows, 2026-11-21). It says every colour of every
+    # control itself, and its drive holds that (pdfxt/tests/demo-drive).
+    os.path.join("pdfxt", "examples", "pdfxt-demo.livecodescript"):
+        "a showcase in OXT-Beyond's dark look, every colour its own (2026-11-21)",
     # gamepadxt's Gamepad Lab is a showcase in the dark look of the 3D demos
     # (Render3D Tour, the physics demo, Box3D Playground), to the bar the
     # owner set on 2026-11-21: a dark stage, the OXT-Beyond header, and every
@@ -155,6 +164,17 @@ EXEMPT = {
     # 4.5 to 1 or better against what is behind it).
     os.path.join("gamepadxt", "examples", "gamepad-lab.livecodescript"):
         "a dark showcase in the 3D demos' look (the 2026-11-21 demo bar); its colours held by its drive test",
+    # ShowControl's three showcases wear OXT-Beyond's dark stage (the
+    # Render3D Tour's palette and flat buttons), not the light card look, at
+    # the owner's request of 2026-11-21: the same bar as Beyond's own demos.
+    # Each sets every field's and button's own colours, so a dark system
+    # theme cannot turn their words white on white (each demo_test pins it).
+    os.path.join("oscxt", "examples", "osc-show-surface.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
+    os.path.join("midixt", "examples", "midi-stage.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
+    os.path.join("artnetxt", "examples", "artnet-light-board.livecodescript"):
+        "OXT-Beyond's dark showcase look, by the owner's request (2026-11-21)",
 }
 
 # The three spellings that mean "this file builds a window". Until the

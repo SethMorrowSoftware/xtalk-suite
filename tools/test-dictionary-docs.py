@@ -26,6 +26,10 @@ Cases:
  12. a library block line led by "closeStack:",
      which ends the parser's library entry           -> check 7
  13. a second Description: line in one block         -> check 7
+ 14. a plain /* */ comment's line led by `on`, which
+     the parser takes for a handler                  -> check 8
+ 15. one led by `Library`, in a script library: case
+     blind, both dialects                            -> check 8
 
 USAGE
     python3 tools/test-dictionary-docs.py
@@ -163,6 +167,20 @@ def main():
         "a second Description: line in one block fails", LCB,
         once(r"^(Description:\n)", "\\1Description:\n", re.M),
         "has a second Description: line"))
+
+    # check 8, found 2026-11-21 by running the extensions site's docs step
+    # (Beyond's real parser) over ShowControl's three bindings: a plain
+    # comment's line led by a word that starts an entry. midixt's `on the
+    # wire` swallowed its library entry; a comment ABOVE the library block
+    # is where its header was
+    results.append(mutate_case(
+        "a plain comment line led by `on` fails", LCB,
+        once(r"\A", "/*\nRaw bytes, as they travel\non the wire.\n*/\n"),
+        "comment as source, and 'on' starts an entry there"))
+    results.append(mutate_case(
+        "a plain comment line led by `Library` fails, case blind, in script", LCS,
+        once(r"^(script \"enetHelpers\"\n)", "\\1/*\nThe notice.\nLibrary code follows.\n*/\n", re.M),
+        "comment as source, and 'Library' starts an entry there"))
 
     exempt = [(rel, name) for rel, names in sorted(gate.EXEMPT.items()) for name in sorted(names)]
     if not exempt:

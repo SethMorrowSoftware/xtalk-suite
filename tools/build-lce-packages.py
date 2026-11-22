@@ -92,6 +92,18 @@ EVERY EXTENSION HAS A PACKAGE (2026-11-21)
     published release's (`plan` below) is published by the workflow
     itself, so the site follows main.
 
+WHAT BEYOND'S DOCS PARSER SAYS (2026-11-21)
+    The parser that writes api.lcdoc reports a fault by printing a line,
+    "<source>: error: <message>", and goes on. tools/lce-engine-check.lc
+    sees only what it returns, so a fault that still left a library and an
+    entry behind passed: artnetxt's header comment (#200) had a line led by
+    "library implements ...", which the parser took for an entry with no
+    documentation and logged as an error while the docs step said PASS.
+    (oscxt's and midixt's, led by "handler" and "on", swallowed the library
+    line, and only those failed.) So the workflow keeps the step's output
+    and `docs-log` refuses every error the parser logged in it, and a step
+    that never printed its SUMMARY line; a warning is shown, not refused.
+
 USAGE
     python3 tools/build-lce-packages.py table
         the gate: every PACKAGES row matches the tree (files present,
@@ -118,9 +130,12 @@ USAGE
         the release notes, and release=true when any package differs. Reads the release from GitHub (GITHUB_TOKEN is
         used when set), or offline from FILE and DIR2 as
         tools/build-extensions-site.py does.
+    python3 tools/build-lce-packages.py docs-log LOG
+        the docs step's output (tools/lce-engine-check.lc docs): refuses
+        every error Beyond's docs parser logged, and a run with no SUMMARY.
 
-    tools/test-build-lce-packages.py fixture-proves `table`, `check` and
-    `plan`.
+    tools/test-build-lce-packages.py fixture-proves `table`, `check`,
+    `plan` and `docs-log`, and runs the workflow's docs and publish steps.
 """
 
 import argparse
@@ -161,10 +176,12 @@ WINDOWS = collections.OrderedDict([('x86_64-win32', ('x64', 0x8664)), ('x86-win3
 # setupapi.dll, ole32.dll and shell32.dll are what SDL, inside gamepadxt,
 # imports besides those (SetupAPI lists the controllers plugged in, ole32 is
 # COM), all three in every Windows since 2000. Beyond's list gained the same
-# three for gamepadxt (its pull requests 612 and 620)
+# three for gamepadxt (its pull requests 612 and 620); gdi32.dll is GDI,
+# which PDFium's prebuilt pdfium.dll (pdfxt ships it beside its own library)
+# imports besides kernel32, user32 and advapi32, in every Windows there is
 SYSTEM_DLLS = frozenset(('kernel32.dll', 'user32.dll', 'advapi32.dll', 'ws2_32.dll', 'winmm.dll',
                          'crypt32.dll', 'bcrypt.dll', 'iphlpapi.dll', 'mswsock.dll', 'msvcrt.dll',
-                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll'))
+                         'secur32.dll', 'setupapi.dll', 'ole32.dll', 'shell32.dll', 'gdi32.dll'))
 SYSTEM_DLL_PREFIXES = ('api-ms-win-crt-',)
 
 # The runtime DLLs copied next to the libraries that import them, as
@@ -213,8 +230,12 @@ VERSION_FROM = {
     'render3dxt': ('src/render3dxt.lcb', LCB_VERSION),
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
+    'pdfxt': ('src/pdfxt.lcb', LCB_VERSION),
     'webpxt': ('src/webpxt.lcb', LCB_VERSION),
     'barcodext': ('src/barcodext.lcb', LCB_VERSION),
+    'oscxt': ('src/osc.lcb', LCB_VERSION),
+    'midixt': ('src/midi.lcb', LCB_VERSION),
+    'artnetxt': ('src/artnet.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -251,6 +272,9 @@ LICENCES = {
     # SDL 3's zlib terms, and the BSD terms of the HIDAPI copy SDL carries,
     # are in the member's LICENSE, below its own
     'gamepadxt': [('LICENSE', None, None)],
+    # PDFium's own licence and those of what it compiles in, from the
+    # licenses/ folder of the pinned archives
+    'pdfxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
     # libwebp's BSD terms, and the patent grant that comes with it, are in
     # the member's LICENSE, below its own
     'webpxt': [('LICENSE', None, None)],
@@ -258,6 +282,11 @@ LICENCES = {
     # writer is built on (with the two fonts Zint embeds), are in the
     # member's LICENSE, below its own
     'barcodext': [('LICENSE', None, None)],
+    # tinyosc's terms (oscxt) and RtMidi's (midixt), the one component each
+    # library compiles in
+    'oscxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'midixt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'artnetxt': [('LICENSE', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -364,6 +393,15 @@ PACKAGES = [
     # no device and needs no controller.
     P('lcb', 'gamepadxt', 'org.openxtalk.library.gamepadxt', 'src/gamepadxt.lcb', 'gamepadxt',
       'gpLibraryVersion()', '^SDL 3\\.[0-9]+\\.[0-9]+$'),
+    # pdfxt (#191): read-only PDF through PDFium. Two files a platform: its
+    # own library and the pinned prebuilt PDFium beside it, which the shim
+    # loads from its own folder at run time (so no import names it); a
+    # package carries every file of a platform's folder, so both go in. It
+    # joined with no library committed, so the row waits for its first
+    # release-binaries dispatch. pdfLibraryVersion() checks the ABI first
+    # and does not load PDFium.
+    P('lcb', 'pdfxt', 'org.openxtalk.library.pdfxt', 'src/pdfxt.lcb', 'pdfxt',
+      'pdfLibraryVersion()', '^pdfxt ABI [0-9]+; PDFium chromium/[0-9]+'),
     # webpxt (2026-11-21, landed with its libraries, #199): WebP pictures
     # read and written through libwebp, compiled in. wpLibraryVersion()
     # checks the ABI first, so a library of another release fails the probe
@@ -376,6 +414,22 @@ PACKAGES = [
     # picture.
     P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
       'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
+    # ShowControl (#200): OSC, MIDI and Art-Net. oscxt and midixt joined with
+    # no library committed, so their rows waited for their first
+    # release-binaries dispatch (run 44985328988, 2026-11-22: the six
+    # desktop libraries of each). Each probe answers the loaded library's ABI
+    # number, 2 for this binding (box2dxt's b2Version() is the precedent), so
+    # a library of another release fails it by name; neither opens a socket
+    # or a port.
+    P('lcb', 'oscxt', 'org.openxtalk.library.osc', 'src/osc.lcb', 'oscxt', 'oscVersion()', '^2$'),
+    P('lcb', 'midixt', 'org.openxtalk.library.midi', 'src/midi.lcb', 'midixt', 'midiVersion()', '^2$'),
+    # artnetxt binds no library of its own: it builds and reads Art-Net
+    # packets in LCB and the engine's datagram sockets carry them. So it is
+    # a pure module (native=False): no code/ folder, nothing to wait for. Its
+    # probe builds an ArtPoll, which is 14 bytes (the ID, the OpCode, the
+    # protocol version, the flags and the diagnostic priority).
+    P('lcb', 'artnetxt', 'org.openxtalk.library.artnet', 'src/artnet.lcb', 'artnetxt',
+      'the number of bytes in artnetBuildPoll()', '^14$', native=False),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),
@@ -1156,6 +1210,38 @@ def check_packages(paths):
     return problems
 
 
+# --- the docs step's log -------------------------------------------------------
+
+# How Beyond's docs parser reports a fault (revdocsparser.livecodescript,
+# logError and logWarning: `write pFilename & ":" && "error:" && pError &
+# return to stdout`). <source> is the path of the .lcb it was given, or a
+# script library's stack long id (`stack "<path>"`), so it names the package.
+PARSER_MESSAGE = re.compile(r'^(?P<source>.+?): (?P<level>error|warning): (?P<message>.*)$')
+# lce-engine-check.lc's own lines, which are its verdicts, not the parser's
+ENGINE_LINES = ('PASS ', 'FAIL ', 'INFO ', 'SUMMARY ', '::')
+
+
+def docs_log(text):
+    """(problems, warnings) of the docs step's output: each error and
+    warning Beyond's docs parser logged, and a run that never got as far as
+    its SUMMARY line."""
+    problems, warnings = [], []
+    finished = False
+    for line in text.splitlines():
+        line = line.rstrip('\r')
+        if line.startswith('SUMMARY '):
+            finished = True
+        if line.startswith(ENGINE_LINES):
+            continue
+        m = PARSER_MESSAGE.match(line)
+        if m:
+            said = "Beyond's docs parser, on %s: %s" % (m.group('source'), m.group('message'))
+            (problems if m.group('level') == 'error' else warnings).append(said)
+    if not finished:
+        problems.append('the docs step did not finish (no SUMMARY line in its output)')
+    return problems, warnings
+
+
 # --- plan: what a release would bring to the site -------------------------------
 #
 # Since 2026-11-21 a push to main publishes its packages itself when they
@@ -1376,6 +1462,8 @@ def main(argv=None):
     pl.add_argument('--lce-dir')
     pl.add_argument('--notes')
     pl.add_argument('--github-output')
+    dl = sub.add_parser('docs-log')
+    dl.add_argument('log')
     args = ap.parse_args(argv)
     if args.cmd == 'plan' and bool(args.release_json) != bool(args.lce_dir):
         ap.error('--release-json and --lce-dir go together')
@@ -1406,6 +1494,18 @@ def main(argv=None):
         if args.cmd == 'plan':
             cmd_plan(args)
             return 0
+        if args.cmd == 'docs-log':
+            with open(args.log, encoding='utf-8', errors='replace') as f:
+                problems, warnings = docs_log(f.read())
+            for w in warnings:
+                log('WARN ' + w)
+                log('::warning title=lce packages::' + w)
+            for prob in problems:
+                log('FAIL ' + prob)
+                log('::error title=lce packages::' + prob)
+            log('%s: %d errors and %d warnings in the docs step\'s log'
+                % ('OK' if not problems else 'FAIL', len(problems), len(warnings)))
+            return 1 if problems else 0
         if args.cmd == 'check':
             problems = check_packages(args.packages)
             for prob in problems:

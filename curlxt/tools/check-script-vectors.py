@@ -269,6 +269,17 @@ class WsHandler(socketserver.BaseRequestHandler):
                     self._frame(0x81, b"last words")
                     self._frame(0x88, struct.pack(">H", 4001) + b"bye")
                     return
+                if data == b"!closelater":
+                    # a message, then the close once the client says "!go":
+                    # what a loop waiting for the close with the message
+                    # unread meets (the engine test's testSocketEndings)
+                    self._frame(0x81, b"last words")
+                    while True:
+                        first, data = self._read_frame()
+                        if first & 0x0F == 0x1 and data == b"!go":
+                            break
+                    self._frame(0x88, struct.pack(">H", 4001) + b"bye")
+                    return
                 if data == b"!drop":
                     return
                 if data == b"!frag":

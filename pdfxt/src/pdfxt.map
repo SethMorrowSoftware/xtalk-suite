@@ -1,0 +1,14 @@
+/* pdfxt.map - the linker version script for the shipped shared library.
+ *
+ * pdfxt links nothing of PDFium (it loads the file beside it at run time),
+ * so there is no vendored symbol to leak; this script makes the export list
+ * a decision instead of a default all the same (the enetxt lesson, release
+ * run 10, 2026-08-26). It keeps only pdx_*, which is all the .lcb binds by
+ * name; CMakeLists.txt gives ld64 the same pattern.
+ */
+{
+    global:
+        pdx_*;
+    local:
+        *;
+};

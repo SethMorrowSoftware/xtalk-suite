@@ -1,0 +1,383 @@
+<?lc
+-- engine-selftest.lc - pdfxt on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY FIXTURES
+--      MODULE    pdfxt.lcm, compiled from src/pdfxt.lcb by lc-compile
+--      LIBRARY   the built native library WITHOUT its extension
+--                (.../pdfxt for .../pdfxt.so), with PDFium beside it
+--      FIXTURES  the folder tests/fixtures (basic.pdf, locked.pdf and
+--                form.pdf, which tools/build-test-pdfs.py writes: its
+--                header says what is on each page)
+--
+-- tests/smoke_test.c proves the C shim. This proves the layer above it, the
+-- one a compile cannot: that every binding resolves by name in the built
+-- library, that every argument and result marshals (a Boolean as an int,
+-- UTF-8 text both ways, a drawn page as bytes, a PDF as bytes going in), and
+-- that a document opened from SCRIPT reads and draws. Two halves:
+--
+--   the SCENES, written by hand;
+--   the SWEEP, generated (tools/check-lcb-signatures.py --write, and the
+--     gate holds it): every public handler called once with zeros and
+--     empties. Those are safe by the binding's contract (a 0 handle is a
+--     no-op), so a call that throws or kills the engine here is a binding
+--     that does not match its C definition.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS or Android. It
+-- runs the Linux x86-64 library on the Linux x86-64 server engine.
+
+local sPassed, sFailed, sFixtures
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=pdfxt engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- One pixel of an imageData result as "r,g,b" (the first byte of each four
+-- is unused by the engine).
+function pixelOf pData, pWidth, pX, pY
+   local tAt
+   put (pY * pWidth + pX) * 4 into tAt
+   return byteToNum(byte tAt + 2 of pData) & comma & byteToNum(byte tAt + 3 of pData) & comma & byteToNum(byte tAt + 4 of pData)
+end pixelOf
+
+-- ---------------------------------------------------------------------
+-- The scenes
+-- ---------------------------------------------------------------------
+-- PDFium cannot be taken out of a running program: pdfShutdown stops it and
+-- keeps its library file, and once that file is loaded pdfLoad answers true
+-- for ANY folder without looking in it (its documented contract). So the
+-- refusal below holds only in a process that has not loaded PDFium yet:
+-- always true here, where the server engine is one process per run, and
+-- true on the first run in an IDE session. Run this test a second time in
+-- one IDE session and the two refusal checks cannot hold (shown on the
+-- Linux server engine, 2026-11-21: load, shut down, then pdfLoad of a
+-- missing folder answers true with no error); the global below remembers,
+-- for the life of the process, that this test loaded PDFium, and a re-run
+-- says those two were not checked instead of failing them. Another stack
+-- that loaded PDFium first is not caught by it: the detail says why.
+global gPdxSelfTestLoaded
+
+command testLibrary
+   check "ABI", pdfABIVersion() is 1, pdfABIVersion()
+   check "version text", pdfLibraryVersion() begins with "pdfxt ABI 1; PDFium chromium/", pdfLibraryVersion()
+   check "PDFium is not loaded until asked for", pdfIsLoaded() is false, pdfIsLoaded()
+   if gPdxSelfTestLoaded is true then
+      put "INFO not checked: a folder with no PDFium is refused (an earlier run in this process loaded PDFium, which stays loaded; run the test in a fresh engine for these two)" & return
+   else
+      check "a folder with no PDFium is a refusal, as a Boolean", pdfLoad("/no/such/folder/for-pdfxt") is false, \
+            "pdfLoad answered true. If PDFium was loaded earlier in this process (by another stack), the folder is not looked in and this check needs a fresh engine"
+      check "and the reason is text that names the folder", pdfLastError() contains "for-pdfxt", pdfLastError()
+   end if
+   check "PDFium loads from beside the library", pdfLoad(empty) is true and pdfIsLoaded() is true, pdfLastError()
+   put true into gPdxSelfTestLoaded
+end testLibrary
+
+command testDocument
+   local tDoc, tBytes, tFromData
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   check "a file opens", tDoc > 0 and pdfIsOpen(tDoc) is true and pdfLastError() is empty, tDoc && pdfLastError()
+   check "page count", pdfPageCount(tDoc) is 3, pdfPageCount(tDoc)
+   check "file version", pdfFileVersion(tDoc) is 14, pdfFileVersion(tDoc)
+   check "permissions are a number beyond 32 signed bits", pdfPermissions(tDoc) is 4294967295, pdfPermissions(tDoc)
+   check "text out", pdfMetadata(tDoc, "Title") is "pdfxt test file", pdfMetadata(tDoc, "Title")
+   check "text outside ASCII comes out as the character", \
+         pdfMetadata(tDoc, "Subject") is "Subject with " & numToCodepoint(937), pdfMetadata(tDoc, "Subject")
+   check "an absent entry is empty", pdfMetadata(tDoc, "Keywords") is empty, pdfMetadata(tDoc, "Keywords")
+   check "labels", pdfPageLabel(tDoc, 1) is "i" and pdfPageLabel(tDoc, 3) is "2", pdfPageLabel(tDoc, 1) && pdfPageLabel(tDoc, 3)
+   check "size is text with items", pdfPageSize(tDoc, 1) is "612,792" and item 2 of pdfPageSize(tDoc, 3) is 100, pdfPageSize(tDoc, 1)
+   check "the rotated page reports its displayed size", pdfPageSize(tDoc, 2) is "842,595" and pdfPageRotation(tDoc, 2) is 90, \
+         pdfPageSize(tDoc, 2) && pdfPageRotation(tDoc, 2)
+   check "width and height are numbers", pdfPageWidth(tDoc, 1) is 612 and pdfPageHeight(tDoc, 1) is 792, pdfPageWidth(tDoc, 1)
+   check "open count", pdfOpenCount() is 1, pdfOpenCount()
+
+   -- a PDF as bytes, across the boundary
+   put url ("binfile:" & sFixtures & "/basic.pdf") into tBytes
+   check "the fixture was read", the number of bytes in tBytes > 2000, the number of bytes in tBytes
+   put pdfOpenData(tBytes, empty) into tFromData
+   put empty into tBytes
+   check "bytes open", tFromData > 0 and tFromData is not tDoc and pdfPageCount(tFromData) is 3, tFromData && pdfLastError()
+   check "and read after the script's copy is gone", pdfPageText(tFromData, 2) is "Rotated page two", pdfPageText(tFromData, 2)
+   check "empty bytes are refused without a call", pdfOpenData(empty, empty) is 0, pdfLastError()
+   check "bytes that are no PDF are refused", pdfOpenData("this is not a PDF at all", empty) is 0 and pdfLastError() is not empty, pdfLastError()
+   pdfClose tFromData
+   check "closed", pdfIsOpen(tFromData) is false and pdfOpenCount() is 1, pdfOpenCount()
+
+   -- refusals: 0 or empty back, an explanation, no throw
+   check "a missing file", pdfOpen(sFixtures & "/no-such-file.pdf", empty) is 0 and pdfLastError() is not empty, pdfLastError()
+   check "a dead handle reads as nothing", pdfPageCount(987654) is 0 and pdfPageText(987654, 1) is empty and pdfIsOpen(987654) is false, \
+         pdfPageCount(987654)
+   pdfClose tDoc
+   pdfClose tDoc
+   check "closing twice is harmless", pdfOpenCount() is 0 and pdfPageCount(tDoc) is 0, pdfOpenCount()
+end testDocument
+
+command testPassword
+   local tDoc
+   check "a locked file needs its password", pdfOpen(sFixtures & "/locked.pdf", empty) is 0 and pdfLastError() contains "password", pdfLastError()
+   put pdfOpen(sFixtures & "/locked.pdf", "secret") into tDoc
+   check "the password, passed as text, opens it", tDoc > 0, pdfLastError()
+   check "its text", line 1 of pdfPageText(tDoc, 1) is "Hello pdfxt", pdfPageText(tDoc, 1)
+   check "printing is not allowed", (pdfPermissions(tDoc) bitAnd 4) is 0 and (pdfPermissions(tDoc) bitAnd 16) is 16, pdfPermissions(tDoc)
+   pdfClose tDoc
+end testPassword
+
+command testDrawing
+   local tDoc, tData, tPart, tBmp
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   put pdfRenderPage(tDoc, 1, 612, 792, 0) into tData
+   check "a drawn page is width x height x 4 bytes", the number of bytes in tData is 612 * 792 * 4, the number of bytes in tData
+   check "red where the red square is (imageData order)", pixelOf(tData, 612, 150, 642) is "255,0,0", pixelOf(tData, 612, 150, 642)
+   check "white paper beside it", pixelOf(tData, 612, 10, 10) is "255,255,255", pixelOf(tData, 612, 10, 10)
+   put pdfRenderPage(tDoc, 2, 842, 595, 0) into tData
+   check "the rotated page's blue square is top left", pixelOf(tData, 842, 25, 25) is "0,0,255", pixelOf(tData, 842, 25, 25)
+   put pdfRenderPageRegion(tDoc, 1, 1224, 1584, 150, 1150, 300, 280, 0) into tPart
+   check "a region", the number of bytes in tPart is 300 * 280 * 4 and pixelOf(tPart, 300, 150, 140) is "255,0,0" \
+         and pixelOf(tPart, 300, 10, 10) is "255,255,255", the number of bytes in tPart && pixelOf(tPart, 300, 150, 140)
+   put pdfRenderPageBMP(tDoc, 3, 200, 100, 0) into tBmp
+   check "a BMP file", byte 1 to 2 of tBmp is "BM" and the number of bytes in tBmp is 54 + 600 * 100, the number of bytes in tBmp
+   check "too large is refused, empty, with a reason", pdfRenderPage(tDoc, 1, 10000, 10000, 0) is empty and pdfLastError() is not empty, pdfLastError()
+   check "no such page is refused", pdfRenderPage(tDoc, 9, 10, 10, 0) is empty and pdfLastError() contains "page", pdfLastError()
+   pdfClose tDoc
+   -- form.pdf: a filled-in field, green over 20..180 across and 40..80 down,
+   -- drawn by PDFium's form module with flag 1 only
+   put pdfOpen(sFixtures & "/form.pdf", empty) into tDoc
+   put pdfRenderPage(tDoc, 1, 200, 100, 0) into tData
+   check "a form field is left out without flag 1", pixelOf(tData, 200, 170, 45) is "255,255,255", pixelOf(tData, 200, 170, 45)
+   put pdfRenderPage(tDoc, 1, 200, 100, 1) into tData
+   check "flag 1 draws the form field", pixelOf(tData, 200, 170, 45) is "0,255,0", pixelOf(tData, 200, 170, 45)
+   put pdfRenderPageRegion(tDoc, 1, 400, 200, 300, 60, 80, 60, 1) into tPart
+   check "a region draws it too", pixelOf(tPart, 80, 30, 40) is "0,255,0" and pixelOf(tPart, 80, 70, 40) is "255,255,255", \
+         pixelOf(tPart, 80, 30, 40) && pixelOf(tPart, 80, 70, 40)
+   check "the field's value is not the page's text", pdfPageText(tDoc, 1) is "Name:", pdfPageText(tDoc, 1)
+   pdfClose tDoc
+end testDrawing
+
+command testText
+   local tDoc, tBox, tRects
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   check "character count", pdfPageCharCount(tDoc, 1) is 36, pdfPageCharCount(tDoc, 1)
+   check "text comes as lines", line 1 of pdfPageText(tDoc, 1) is "Hello pdfxt" and line 2 of pdfPageText(tDoc, 1) is "second line of page one" \
+         and the number of lines of pdfPageText(tDoc, 1) is 2, oneLine(pdfPageText(tDoc, 1))
+   check "accented text arrives as characters", line 1 of pdfPageText(tDoc, 3) is "caf" & numToCodepoint(233) && "na" & numToCodepoint(239) & "ve", \
+         line 1 of pdfPageText(tDoc, 3)
+   check "a range", pdfPageTextRange(tDoc, 1, 7, 5) is "pdfxt", pdfPageTextRange(tDoc, 1, 7, 5)
+   check "search", pdfPageSearch(tDoc, 1, "pdfxt", 0) is "7,5", pdfPageSearch(tDoc, 1, "pdfxt", 0)
+   check "search gives a line a match", the number of lines of pdfPageSearch(tDoc, 3, "needle", 0) is 3 \
+         and the number of lines of pdfPageSearch(tDoc, 3, "needle", 1) is 2, oneLine(pdfPageSearch(tDoc, 3, "needle", 0))
+   check "accented text goes IN as characters", pdfPageSearch(tDoc, 3, "caf" & numToCodepoint(233), 0) is "1,4", \
+         pdfPageSearch(tDoc, 3, "caf" & numToCodepoint(233), 0)
+   put pdfPageCharBox(tDoc, 1, 1) into tBox
+   check "a character's box is left,top,right,bottom", the number of items of tBox is 4 and item 1 of tBox < item 3 of tBox \
+         and item 2 of tBox < item 4 of tBox and item 1 of tBox >= 72 and item 4 of tBox <= 74, tBox
+   check "the character at a point (numbers in)", pdfPageCharAt(tDoc, 1, (item 1 of tBox + item 3 of tBox) / 2, (item 2 of tBox + item 4 of tBox) / 2, 2) is 1, \
+         pdfPageCharAt(tDoc, 1, 80, 62, 2)
+   check "no character in the empty middle", pdfPageCharAt(tDoc, 1, 400, 400, 2) is 0, pdfPageCharAt(tDoc, 1, 400, 400, 2)
+   check "text in a rectangle (four numbers in)", pdfPageTextInRect(tDoc, 1, 0, 0, 612, 80) is "Hello pdfxt", pdfPageTextInRect(tDoc, 1, 0, 0, 612, 80)
+   put pdfPageTextRects(tDoc, 1, 1, 36) into tRects
+   check "two lines of text cover two rectangles", the number of lines of tRects is 2 and the number of items of line 2 of tRects is 4, oneLine(tRects)
+   pdfClose tDoc
+end testText
+
+command testOutlineAndLinks
+   local tDoc, tOutline, tLinks
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   put pdfOutline(tDoc) into tOutline
+   set the itemDelimiter to tab
+   check "the outline has four entries", the number of lines of tOutline is 4, oneLine(tOutline)
+   check "level, page, title", line 2 of tOutline is "2" & tab & "2" & tab & "Section 1.1" and item 3 of line 1 of tOutline is "Chapter 1", line 2 of tOutline
+   check "an entry that leaves the document has page 0", item 2 of line 4 of tOutline is 0, line 4 of tOutline
+   put pdfPageLinks(tDoc, 1) into tLinks
+   check "a web link", item 1 of tLinks is "72,47,210,77" and item 2 of tLinks is 0 and item 3 of tLinks is "https://example.org/pdfxt", tLinks
+   put pdfPageLinks(tDoc, 2) into tLinks
+   check "a link to a page", item 1 of tLinks is "395,100,420,260" and item 2 of tLinks is 1 and item 3 of tLinks is empty, tLinks
+   set the itemDelimiter to comma
+   pdfClose tDoc
+end testOutlineAndLinks
+
+-- The two ways the docs say a drawn page reaches an image, on a real one
+-- (the server engine has no window, but it has stacks and images).
+command testOnImages
+   local tDoc, tBack
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   create stack "pdfxtSelftestImages"
+   set the defaultStack to "pdfxtSelftestImages"
+   create image "asFile"
+   set the text of image "asFile" to pdfRenderPageBMP(tDoc, 3, 200, 100, 0)
+   check "an image takes the BMP as its text and sizes itself", the width of image "asFile" is 200 and the height of image "asFile" is 100, \
+         the width of image "asFile" && the height of image "asFile"
+   create image "asPixels"
+   set the width of image "asPixels" to 306
+   set the height of image "asPixels" to 396
+   set the imageData of image "asPixels" to pdfRenderPage(tDoc, 1, 306, 396, 0)
+   put the imageData of image "asPixels" into tBack
+   check "a sized image takes the drawing as its imageData", the number of bytes in tBack is 306 * 396 * 4 \
+         and pixelOf(tBack, 306, 75, 321) is "255,0,0" and pixelOf(tBack, 306, 5, 5) is "255,255,255", \
+         the number of bytes in tBack && pixelOf(tBack, 306, 75, 321)
+   delete stack "pdfxtSelftestImages"
+   pdfClose tDoc
+end testOnImages
+
+-- The boundary is TYPED: an empty or a word where a number belongs is an
+-- error script can catch, never a crash, and a later call works.
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get pdfPageCount(empty)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty document handle is a catchable error", tThrew, "it did not throw"
+   put false into tThrew
+   try
+      get pdfRenderPage(1, "two", 10, 10, 0)
+   catch tError
+      put true into tThrew
+   end try
+   check "a word where a page number belongs is a catchable error", tThrew, "it did not throw"
+   check "and the library still answers", pdfABIVersion() is 1, pdfABIVersion()
+end testTypedBoundary
+
+command testShutdown
+   local tDoc
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   get pdfOpen(sFixtures & "/basic.pdf", empty)
+   check "close all says how many", pdfCloseAll() is 2 and pdfOpenCount() is 0, pdfOpenCount()
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   pdfShutdown
+   check "shutdown closes documents and stops PDFium", pdfIsLoaded() is false and pdfIsOpen(tDoc) is false and pdfOpenCount() is 0, pdfIsLoaded()
+   pdfShutdown
+   put pdfOpen(sFixtures & "/basic.pdf", empty) into tDoc
+   check "and the next open starts it again", tDoc > 0 and pdfIsLoaded() is true and pdfPageCount(tDoc) is 3, pdfLastError()
+   pdfShutdown
+end testShutdown
+
+-- >>> BEGIN SWEEP (generated: tools/check-lcb-signatures.py --write) >>>
+-- Every public handler of src/pdfxt.lcb, in file order, called once with
+-- zeros (false for a Boolean, empty for text and bytes). One try for the
+-- lot: tName is the call that was being made when anything threw.
+command sweepEveryHandler
+   local tName
+   try
+      put "pdfABIVersion" into tName
+      get pdfABIVersion()
+      put "pdfLibraryVersion" into tName
+      get pdfLibraryVersion()
+      put "pdfLastError" into tName
+      get pdfLastError()
+      put "pdfLoad" into tName
+      get pdfLoad(empty)
+      put "pdfIsLoaded" into tName
+      get pdfIsLoaded()
+      put "pdfShutdown" into tName
+      pdfShutdown
+      put "pdfOpen" into tName
+      get pdfOpen(empty, empty)
+      put "pdfOpenData" into tName
+      get pdfOpenData(empty, empty)
+      put "pdfClose" into tName
+      pdfClose 0
+      put "pdfCloseAll" into tName
+      get pdfCloseAll()
+      put "pdfOpenCount" into tName
+      get pdfOpenCount()
+      put "pdfIsOpen" into tName
+      get pdfIsOpen(0)
+      put "pdfPageCount" into tName
+      get pdfPageCount(0)
+      put "pdfFileVersion" into tName
+      get pdfFileVersion(0)
+      put "pdfPermissions" into tName
+      get pdfPermissions(0)
+      put "pdfMetadata" into tName
+      get pdfMetadata(0, empty)
+      put "pdfPageLabel" into tName
+      get pdfPageLabel(0, 0)
+      put "pdfPageSize" into tName
+      get pdfPageSize(0, 0)
+      put "pdfPageWidth" into tName
+      get pdfPageWidth(0, 0)
+      put "pdfPageHeight" into tName
+      get pdfPageHeight(0, 0)
+      put "pdfPageRotation" into tName
+      get pdfPageRotation(0, 0)
+      put "pdfRenderPage" into tName
+      get pdfRenderPage(0, 0, 0, 0, 0)
+      put "pdfRenderPageRegion" into tName
+      get pdfRenderPageRegion(0, 0, 0, 0, 0, 0, 0, 0, 0)
+      put "pdfRenderPageBMP" into tName
+      get pdfRenderPageBMP(0, 0, 0, 0, 0)
+      put "pdfPageCharCount" into tName
+      get pdfPageCharCount(0, 0)
+      put "pdfPageText" into tName
+      get pdfPageText(0, 0)
+      put "pdfPageTextRange" into tName
+      get pdfPageTextRange(0, 0, 0, 0)
+      put "pdfPageTextInRect" into tName
+      get pdfPageTextInRect(0, 0, 0, 0, 0, 0)
+      put "pdfPageCharBox" into tName
+      get pdfPageCharBox(0, 0, 0)
+      put "pdfPageCharAt" into tName
+      get pdfPageCharAt(0, 0, 0, 0, 0)
+      put "pdfPageSearch" into tName
+      get pdfPageSearch(0, 0, empty, 0)
+      put "pdfPageTextRects" into tName
+      get pdfPageTextRects(0, 0, 0, 0)
+      put "pdfOutline" into tName
+      get pdfOutline(0)
+      put "pdfPageLinks" into tName
+      get pdfPageLinks(0, 0)
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: all 34 public handlers called with zeros and empties, none threw", true
+end sweepEveryHandler
+-- <<< END SWEEP <<<
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put $2 into sFixtures
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["pdfxt"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.pdfxt" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & pdfLibraryVersion() & return
+      testLibrary
+      testDocument
+      testPassword
+      testDrawing
+      testText
+      testOutlineAndLinks
+      testOnImages
+      testTypedBoundary
+      sweepEveryHandler
+      testShutdown
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>

@@ -287,9 +287,10 @@ MEMBERS = [
     #     foreign handlers. A number is only as good as the command that
     #     produced it, which is this file's own subject.
     #
-    # The reason is measurement, not convenience. Of those 376, the Kit names
-    # 131 and **245 are named by no script anywhere in box2dxt** - not the
-    # Kit, not the six example stacks, not the harness. Ratcheting them here
+    # The reason is measurement, not convenience. Of those 376, the Kit named
+    # 131 and **245 were named by no script anywhere in box2dxt** when this
+    # was decided - not the Kit, not the six example stacks, not the harness
+    # (the advisory row below prints today's pair). Ratcheting them here
     # would mean writing ~375 new assertions against a foreign-bound API in
     # one pass, with no engine to run them on, into the file the whole suite
     # is pasted from. box2dxt's own CLAUDE.md records its measured base rate
@@ -874,15 +875,17 @@ def holdem_handler_blocks(text):
 # structure to the holde-em floor above:
 #
 #   unlisted  a b2* handler named by NO script and not in the baseline. The
-#             floor: 245 cannot quietly become 246.
+#             floor: the count cannot quietly grow by one.
 #   promoted  a baseline name a script now DOES name. Left in, it inflates
-#             every later reading of "245".
+#             every later reading of the count (2026-11-21: harness v36 named
+#             b2LoadNativeLib and b2LoadNativeLibError, and this failed until
+#             both left the list).
 #   stale     a baseline name the .lcb no longer declares (renamed/removed).
 #
 # CONVENTIONS MATCH THE GATE, NOT A GREP. Comments are stripped and string
-# literals blanked before scanning, which is what makes this 131/245 rather
-# than the 132/244 a raw token count gives - the pair root CLAUDE.md now
-# records with that explanation.
+# literals blanked before scanning, which is what makes this 133/243 rather
+# than the 134/242 a raw token count gives (131/245 and 132/244 before
+# 2026-11-21) - the pair root CLAUDE.md records with that explanation.
 B2_RAW_SCRIPTS = "box2dxt/**/*.livecodescript"
 B2_RAW_LCB = "box2dxt/src/box2dxt.lcb"
 
@@ -917,7 +920,7 @@ B2_RAW_BASELINE = frozenset((
     "b2JointConstraintForceY", "b2JointConstraintTorque",
     "b2JointLocalAnchorAX", "b2JointLocalAnchorAY", "b2JointLocalAnchorBX",
     "b2JointLocalAnchorBY", "b2JointType", "b2JointWakeBodies",
-    "b2LoadNativeLib", "b2LoadNativeLibError", "b2LoadNativeLibHere",
+    "b2LoadNativeLibHere",
     "b2MassDataCenterX", "b2MassDataCenterY", "b2MassDataInertia",
     "b2MassDataMass", "b2MaximumLinearSpeed", "b2MotorAngularOffset",
     "b2MotorCorrectionFactor", "b2MotorLinearOffsetX",

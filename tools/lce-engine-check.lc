@@ -11,7 +11,10 @@
 --      (ide-support/revdocsparser.livecodescript, PARSER), as the IDE's
 --      revIDEExtensionUpdateAPI does. An INSTALLED IDE never makes it
 --      (revEnvironmentIsInstalled), and without it the Dictionary has no
---      entry for the extension.
+--      entry for the extension. The parser prints its own faults among
+--      these lines ("<source>: error: <message>") and goes on, so this
+--      check can pass a package it complained about: the workflow keeps
+--      the output and tools/build-lce-packages.py docs-log refuses them.
 --
 --   server-community tools/lce-engine-check.lc verify PACKAGES UTILS SCRATCH
 --      installs and loads every package listed in PACKAGES/packages.tsv,

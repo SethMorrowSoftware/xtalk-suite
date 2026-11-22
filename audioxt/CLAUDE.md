@@ -109,10 +109,26 @@ frame and nothing waiting; long work a piece a frame with its progress shown. Ev
 and button gets its own text and background colours (a system in dark mode gives a control
 with none white text, seen on Windows), and no control is a system tick box, menu or
 slider. The drive checks those, that no words are cut off (in Linux's font, which is wider
-than Windows'), and every scene at its moments. With `AUDIOXT_SHOTS=<folder>` and a display
+than Windows'), and every scene at its moments, the microphone scene also with a microphone
+that sends nothing, as a page that may not use one gets (the community gallery's): the drive
+closes the silent capture under it, and the reason must stay on the stage four seconds
+(`adMicNone` restarts the scene's clock; after the nine-second wait for sound the scene once
+ended on the next frame) in one status line that fits (`adMicNoSoundLine`, which leaves the
+device's name to the stage). With `AUDIOXT_SHOTS=<folder>` and a display
 it saves a picture of each moment: copy the drive to `Toolset/home.rev` in the windowed
 engine's working folder and run the engine with no arguments (`export snapshot` needs a
 window; `-ui` has none).
+
+The window is built with messages locked, and the lock is then RESTORED, not lifted (the
+stack builder calls the build with messages locked already): an IDE answers every control a
+script makes, names or deletes (engine note 5.15), and built with messages on, Sound Stage's
+stack file froze OXT-Beyond 0.2.8-dp.1's IDE on Windows for 59 s (2026-11-21; built locked, it
+opened there in 796 ms the same day). Its `preOpenStack` then places the window on a working
+screen, title bar included, on the desktop only (`adPlaceWindow`; in a browser the Stack Player
+lays the page out): sized round the engine's first centre, the file opened at -320,-140 there
+(engine note 5.18), and `examples/build-demo-stack.livecodescript` now saves it at 160,60. The
+drive holds both: an ear in front of every object hears no create, name or delete during the
+build (the old build sent 520), and in a windowed engine the window opens on the screen.
 
 ## Gotchas
 
@@ -137,10 +153,22 @@ the headless Linux server engine (`tests/engine-selftest.lc`, 2026-11-20, a loca
 library, through the silent device), in headless Chromium (`tests/web/`, the archive called
 from C) and in the IDE on Windows (2026-11-21, the maintainer's 64-bit OXT-Beyond: a CI-built
 `x86_64-win32` DLL loaded on WASAPI and `tests/engine-selftest.lc`, run as a script-only
-stack, passed 89 and failed 0). No engine on macOS, Android or the web has loaded it, and
-nobody has HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
+stack, passed 89 and failed 0). No engine on macOS or Android has loaded it, and nobody has
+HEARD it: verified statically; needs an OXT pass. The demo ran on the Linux desktop engine
 through the silent device, headless and in a window (`tests/demo-drive.livecodescript`,
-2026-11-21); nobody has used it by hand. Release libraries were committed on 2026-11-21 (six
-desktop platforms and four Android ABIs from the suite's release run; the web archive,
-Emscripten 6.0.12, built separately); no engine has loaded one of them yet. Open work is in
-the suite's `docs/WORK-PLAN.md`.
+2026-11-21). The same day it played in the IDE on the maintainer's Windows PC (0.2.8-dp.1)
+through a real sound device, by its own status line, meters and oscilloscope (nobody
+listened), and opened off the screen and in 59 s there; both were fixed that day: the
+fixed stack opened in 0.14 s in that release's IDE on Linux, against 1.8 s before, and in
+796 ms back on that Windows PC, on the screen, the beat playing by its meters. Release
+libraries were committed on 2026-11-21 (six desktop platforms and four Android ABIs from the
+suite's release run; the web archive, Emscripten 6.0.12, built separately). The `x86_64-linux`
+one was loaded that day by OXT-Beyond 0.2.8-dp.1's desktop engine (the drive) and its IDE
+(Sound Stage opened there), and the web archive on 2026-11-22 by OXT-Beyond 0.2.8-dp.2.1's
+web engine, which links it by SHA-256: its Stack Player played Sound Stage in headless
+Chromium in a play page made as the community stacks gallery makes one, every scene of Play
+all after one click, by the demo's own status line, oscilloscope and meters (nobody
+listened). There the microphone scene, given no microphone, showed its reason for one frame,
+and its status line was cut off at its end; both were fixed that day, and in that player the
+fixed stack showed the reason for four seconds and the whole line. No engine has loaded the
+other libraries yet. Open work is in the suite's `docs/WORK-PLAN.md`.

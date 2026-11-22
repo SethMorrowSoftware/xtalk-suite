@@ -1,0 +1,7 @@
+# build trees (any variant: build, build-asan, build-web, ...)
+build*/
+dist/
+# the runners' TAP stream
+*.tap
+__pycache__/
+*.pyc

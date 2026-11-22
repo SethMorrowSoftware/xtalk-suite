@@ -116,6 +116,7 @@ put wpAnimEncoderFinish(tWriter) into url ("binfile:" & tPath)
 | Animations open at once | 64, and 64 being written |
 | Frames in a written animation | 10,000 |
 | One frame's duration | 1 to 600,000 ms |
+| A whole animation, written or read | 2,147,483,647 ms in all (about 24.8 days) |
 | Quality | 0 to 100 |
 | Effort | 0 to 6 |
 
