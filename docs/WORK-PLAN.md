@@ -1340,7 +1340,12 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   Windows, naming the GS Wavetable synth for Sound; each close left no port and nothing
   queued (runbook section 8). On Linux it offered for Sound the port RtMidi makes to read
   its own cable, which would have played the player's notes into the stage's own input;
-  fixed the same day (`mdsReads`, its test failing first). Nobody has watched or heard it:
+  fixed the same day (`mdsReads`, its test failing first). Rebuilt there with that fix, it
+  offered no output for Sound ("There is no MIDI output here to play through."), and
+  opened again after a close threw "can't find handler midiControlChange": its stop had
+  left the mode "cable" with the cable's handles emptied, so the next open's own stop
+  silenced through an empty handle (engine note 6.4); fixed the same day
+  (`TestTheStageOpensAgainAfterAClose`, failing first). Nobody has watched or heard it:
   verified statically; needs an OXT pass (row 6). It opened without midixt in OXT-Beyond
   0.2.8-dp.1's IDE on Windows and
   said what was missing. That run found two faults in all three ShowControl showcases: each

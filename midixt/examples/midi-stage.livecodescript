@@ -451,6 +451,13 @@ command mdsStop
    put empty into sSoundOut
    put empty into sYouIns
    put empty into sYouNames
+   -- Nothing is open now, so nothing may send. Left at "cable", the mode made
+   -- the next open's own stop (an IDE keeps a closed stack in memory and
+   -- opens it again) silence the cable through its emptied handle, into
+   -- midiControlChange's Integer, which refuses one (the suite's engine
+   -- notes, 6.4): the reopen threw on the maintainer's Linux PC (2026-11-22).
+   -- The next start finds its way again (mdsConnect).
+   put "none" into sMode
 end mdsStop
 
 -- Is midixt here? The first call of an LCB library that is not loaded throws

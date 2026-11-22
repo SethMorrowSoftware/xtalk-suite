@@ -20,7 +20,9 @@ script "MidiDemoTest"
 --   * closing the window stops the show and closes every port it opened, and
 --     so does a close made with messages locked, which sends no closeStack:
 --     the loop stops itself at its next frame (after each close in that IDE a
---     frame was still queued, 2026-11-21);
+--     frame was still queued, 2026-11-21); and closed by either kind of close
+--     while it played over a cable, it opens again and plays (the reopen threw
+--     on the maintainer's Linux PC, 2026-11-22);
 --   * every scene plays with nothing going wrong and does what its words
 --     say, checked against the score worked out by hand;
 --   * over a cable (the mock's loopback) every message the player sends
@@ -795,6 +797,56 @@ on TestAClosedWindowStopsItsShow
    TestAssertEqual "the show stopped itself", demoGet("running"), false
    TestAssertEqual "and closed every port it opened", MockLiveWrappers(), tBefore
 end TestAClosedWindowStopsItsShow
+
+-- An IDE keeps a closed stack in memory and opens the same one again. Closed
+-- while it played over a cable, by either kind of close, the stage kept its
+-- mode "cable" with the cable's handles emptied, so the next open's own stop
+-- silenced the cable through an empty handle, into midiControlChange's
+-- Integer, which refuses one (the suite's engine notes, 6.4): on the
+-- maintainer's Linux PC the reopen threw "can't find handler
+-- midiControlChange" (2026-11-22, OXT-Beyond 0.2.8-dp.2, the stage's ALSA
+-- virtual port as the cable). The mock's cable is the test's own, made after
+-- the open, so each reopen here finds none and decodes.
+on TestTheStageOpensAgainAfterAClose
+   local tBefore, tState
+   MockReset
+   MockSetPortCount 0
+   get midiInputPorts()
+   get midiOutputPorts()
+   put MockLiveWrappers() into tBefore
+   demoOpen
+   demoCable
+   TestPump 300
+   TestAssertEqual "it plays over the cable", demoGet("mode"), "cable"
+   close stack sDemo
+   TestPump 200
+   TestAssertEqual "a close stops it", demoGet("running"), false
+   TestAssertEqual "and closes the cable", MockLiveWrappers(), tBefore
+   go invisible stack sDemo
+   TestPump 500
+   put demoState() into tState
+   TestAssertEqual "the reopen went right", tState["trouble"], empty
+   TestAssertEqual "the show runs again", tState["running"], true
+   TestAssert "the player plays (" & tState["sent"] & " messages)", tState["sent"] >= 3
+   TestAssertEqual "and the stage read every one", tState["read"], tState["sent"]
+   -- a close with messages locked sends no closeStack: the loop's next frame
+   -- stops the show, the same way
+   demoCable
+   TestPump 300
+   TestAssertEqual "over a cable again", demoGet("mode"), "cable"
+   lock messages
+   close stack sDemo
+   unlock messages
+   TestPump 200
+   TestAssertEqual "the show stopped itself", demoGet("running"), false
+   TestAssertEqual "and closed the cable", MockLiveWrappers(), tBefore
+   go invisible stack sDemo
+   TestPump 500
+   put demoState() into tState
+   TestAssertEqual "that reopen went right too", tState["trouble"], empty
+   TestAssertEqual "the show runs again after it", tState["running"], true
+   TestAssertEqual "and the stage read every message", tState["read"], tState["sent"]
+end TestTheStageOpensAgainAfterAClose
 
 -- The frame messages queued for the demo's loop
 function demoFramesQueued
