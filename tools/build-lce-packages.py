@@ -216,6 +216,8 @@ VERSION_FROM = {
     'xlsxt': ('src/xlsxt.lcb', LCB_VERSION),
     'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
     'pdfxt': ('src/pdfxt.lcb', LCB_VERSION),
+    'webpxt': ('src/webpxt.lcb', LCB_VERSION),
+    'barcodext': ('src/barcodext.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -255,6 +257,13 @@ LICENCES = {
     # PDFium's own licence and those of what it compiles in, from the
     # licenses/ folder of the pinned archives
     'pdfxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    # libwebp's BSD terms, and the patent grant that comes with it, are in
+    # the member's LICENSE, below its own
+    'webpxt': [('LICENSE', None, None)],
+    # zxing-cpp's Apache 2.0 text, and the BSD terms of the Zint backend its
+    # writer is built on (with the two fonts Zint embeds), are in the
+    # member's LICENSE, below its own
+    'barcodext': [('LICENSE', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -370,6 +379,18 @@ PACKAGES = [
     # and does not load PDFium.
     P('lcb', 'pdfxt', 'org.openxtalk.library.pdfxt', 'src/pdfxt.lcb', 'pdfxt',
       'pdfLibraryVersion()', '^pdfxt ABI [0-9]+; PDFium chromium/[0-9]+'),
+    # webpxt (2026-11-21, landed with its libraries, #199): WebP pictures
+    # read and written through libwebp, compiled in. wpLibraryVersion()
+    # checks the ABI first, so a library of another release fails the probe
+    # by name, and it reads no picture.
+    P('lcb', 'webpxt', 'org.openxtalk.library.webpxt', 'src/webpxt.lcb', 'webpxt',
+      'wpLibraryVersion()', '^webpxt ABI [0-9]+; libwebp [0-9]+\\.[0-9]+'),
+    # barcodext (2026-11-21, landed with its libraries, #199): barcodes and
+    # QR codes read from pictures and made into them through zxing-cpp,
+    # compiled in. bcLibraryVersion() checks the ABI first and reads no
+    # picture.
+    P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
+      'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),

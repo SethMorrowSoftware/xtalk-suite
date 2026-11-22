@@ -1,0 +1,778 @@
+/*
+barcodext.lcb - xTalk Builder (LCB) binding library for zxing-cpp, via the
+                barcode_shim C++ shim. Part of barcodext for OpenXTalk (OXT).
+
+Once this extension is loaded, every public handler below is callable
+directly from xTalk script, e.g.
+    put bcReadText(the imageData of image "photo", the width of image "photo", \
+          the height of image "photo") into tText
+
+Conventions (the shim, src/barcode_shim.cpp, is where each is enforced):
+  * A PICTURE is the engine's own pixel buffer: an image's imageData (4 bytes
+    a pixel) with its width and height. A created barcode comes back as an
+    array with "width", "height" and "imageData". Nothing is reordered on the
+    way.
+  * Nothing here throws, bar the ABI check: a refused call returns empty (an
+    empty list or array, empty text) and bcLastError() says why. A picture
+    with no barcode in it is not a refusal: the list is empty and
+    bcLastError() is empty too.
+  * A kind of barcode is named in text ("QR Code", "EAN-13", "Code 128"; the
+    spelling is forgiving: "qrcode" and "ean13" name the same kinds), and a
+    list of kinds is those names with commas between.
+  * A yes/no crosses the public boundary as a Boolean and the C boundary as
+    an int (asInt() below; `tR is not 0` on the way back).
+  * Bytes cross as a Pointer and a length. An LCB Data does not bridge to a
+    void*, so an input is MCDataGetBytePtr + MCDataGetLength and a result is
+    copied out of the shim's own buffer with MCDataCreateWithBytes. Text the
+    shim RETURNS crosses as a Pointer that textOf() copies, never as
+    ZStringNative; a short text ARGUMENT (kinds, options) crosses as
+    ZStringUTF8, which the engine builds and frees itself.
+
+The foreign handlers bind to the shared library "barcodext" (built by
+CMakeLists.txt). Bindings resolve on first use, so the library only needs to
+be present at run time.
+*/
+
+/**
+Reads QR codes and barcodes out of pictures, and makes them, with zxing-cpp.
+
+It reads and makes the common kinds: QR Code, Data Matrix, Aztec, PDF417,
+EAN-13 and EAN-8, UPC-A and UPC-E, Code 128, Code 39, Code 93, ITF, Codabar,
+DataBar and more. <bcFormats> lists them.
+
+To read, hand over a picture as an image object's imageData with its width
+and height. <bcReadText> returns the text of the first barcode found and
+<bcRead> returns every barcode with where it is in the picture. A photo
+from a camera works: the barcode may be turned, small, or one of several.
+
+To make one, <bcCreate> returns a picture (an array with "width", "height"
+and "imageData") to put into an image object, and <bcCreateSVG> returns the
+same barcode as SVG text.
+
+No call here throws on a bad picture or a bad argument. A refused call
+returns empty and <bcLastError> says why.
+
+Tags: Barcodes, Images, Library
+*/
+library org.openxtalk.library.barcodext
+
+use com.livecode.foreign
+
+-- The engine's own builders, resolved by NAME (so no leading underscore).
+-- An LCB Data does not bridge to a C pointer: an input is its byte pointer
+-- and length, and a result is built from a pointer the shim owns.
+foreign handler MCStringCreateWithBytes(in pBytes as Pointer, in pByteCount as CUInt, in pEncoding as CUInt, in pIsExternalRep as CBool, out rString as String) returns CBool binds to "<builtin>"
+foreign handler MCStringEncode(in pString as String, in pEncoding as CInt, in pIsExternalRep as CBool, out rData as Data) returns CBool binds to "<builtin>"
+foreign handler MCDataGetBytePtr(in pData as Data) returns Pointer binds to "<builtin>"
+foreign handler MCDataGetLength(in pData as Data) returns CUInt binds to "<builtin>"
+foreign handler MCDataCreateWithBytes(in pBytes as Pointer, in pLength as CUInt, out rData as Data) returns CBool binds to "<builtin>"
+
+metadata title is "Barcodes and QR codes for OpenXTalk"
+metadata author is "Seth Morrow Software"
+metadata version is "0.1.0"
+metadata summary is "Read QR codes and barcodes out of pictures, and make them, via zxing-cpp."
+
+-- =====================================================================
+-- Foreign bindings to the shim (private). One per export of
+-- src/barcode_shim.cpp; the suite's tools/check-lcb-signatures.py holds
+-- every line to the C definition it binds (return type, each parameter
+-- type).
+-- =====================================================================
+
+-- ---- the library
+private foreign handler _abi_version() returns CInt binds to "c:barcodext>bcx_abi_version!cdecl"
+private foreign handler _library_version() returns Pointer binds to "c:barcodext>bcx_library_version!cdecl"
+private foreign handler _last_error() returns Pointer binds to "c:barcodext>bcx_last_error!cdecl"
+private foreign handler _text_length(in pText as Pointer) returns CInt binds to "c:barcodext>bcx_text_length!cdecl"
+private foreign handler _format_names(in pWritable as CInt) returns Pointer binds to "c:barcodext>bcx_format_names!cdecl"
+
+-- ---- reading: the results list
+private foreign handler _read_image(in pPixels as Pointer, in pLength as CInt, in pWidth as CInt, in pHeight as CInt, in pFormats as ZStringUTF8, in pOptions as ZStringUTF8) returns CInt binds to "c:barcodext>bcx_read_image!cdecl"
+private foreign handler _result_count() returns CInt binds to "c:barcodext>bcx_result_count!cdecl"
+private foreign handler _result_text(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_text!cdecl"
+private foreign handler _result_format(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_format!cdecl"
+private foreign handler _result_content_type(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_content_type!cdecl"
+private foreign handler _result_symbology_id(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_symbology_id!cdecl"
+private foreign handler _result_position(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_position!cdecl"
+private foreign handler _result_extra(in pIndex as CInt, in pKey as ZStringUTF8) returns Pointer binds to "c:barcodext>bcx_result_extra!cdecl"
+private foreign handler _result_error(in pIndex as CInt) returns Pointer binds to "c:barcodext>bcx_result_error!cdecl"
+private foreign handler _result_bytes(in pIndex as CInt) returns CInt binds to "c:barcodext>bcx_result_bytes!cdecl"
+private foreign handler _bytes_pointer() returns Pointer binds to "c:barcodext>bcx_bytes_pointer!cdecl"
+private foreign handler _result_orientation(in pIndex as CInt) returns CInt binds to "c:barcodext>bcx_result_orientation!cdecl"
+private foreign handler _result_is_valid(in pIndex as CInt) returns CInt binds to "c:barcodext>bcx_result_is_valid!cdecl"
+private foreign handler _result_is_mirrored(in pIndex as CInt) returns CInt binds to "c:barcodext>bcx_result_is_mirrored!cdecl"
+private foreign handler _result_is_inverted(in pIndex as CInt) returns CInt binds to "c:barcodext>bcx_result_is_inverted!cdecl"
+private foreign handler _results_release() returns nothing binds to "c:barcodext>bcx_results_release!cdecl"
+
+-- ---- creating: the symbol slot and the render slot
+private foreign handler _create_symbol(in pContent as Pointer, in pLength as CInt, in pIsText as CInt, in pFormat as ZStringUTF8, in pOptions as ZStringUTF8) returns CInt binds to "c:barcodext>bcx_create_symbol!cdecl"
+private foreign handler _render_image(in pScale as CInt, in pQuietZone as CInt, in pShowText as CInt) returns CInt binds to "c:barcodext>bcx_render_image!cdecl"
+private foreign handler _render_width() returns CInt binds to "c:barcodext>bcx_render_width!cdecl"
+private foreign handler _render_height() returns CInt binds to "c:barcodext>bcx_render_height!cdecl"
+private foreign handler _render_pixels() returns Pointer binds to "c:barcodext>bcx_render_pixels!cdecl"
+private foreign handler _render_pixels_length() returns CInt binds to "c:barcodext>bcx_render_pixels_length!cdecl"
+private foreign handler _svg_text(in pScale as CInt, in pQuietZone as CInt, in pShowText as CInt) returns Pointer binds to "c:barcodext>bcx_svg_text!cdecl"
+private foreign handler _modules_text() returns Pointer binds to "c:barcodext>bcx_modules_text!cdecl"
+private foreign handler _created_release() returns nothing binds to "c:barcodext>bcx_created_release!cdecl"
+
+-- =====================================================================
+-- Helpers (private)
+-- =====================================================================
+
+private handler asInt(in pFlag as Boolean) returns Integer
+   if pFlag then
+      return 1
+   end if
+   return 0
+end handler
+
+-- The binding and the native library must come from the same release: a
+-- changed export list read through an old binding is a marshalling fault in
+-- a call that looks right in both files. The number is BCX_ABI_VERSION in
+-- src/barcode_shim.cpp (the suite's check-binary-freshness.py compares the
+-- two). Called where a script first reaches the library: every handler that
+-- reads or creates, and bcLibraryVersion.
+private handler checkABI()
+   variable tV as Integer
+   unsafe
+      put _abi_version() into tV
+   end unsafe
+   if tV is not 1 then
+      throw "barcodext: incompatible native library (this binding needs ABI 1) - update the barcodext library beside the engine"
+   end if
+end handler
+
+-- A text result of the shim, copied into a String. The shim hands back a
+-- pointer to a buffer IT owns, so the foreign handlers return Pointer and
+-- never ZStringNative: the engine frees a returned C string, and freeing a
+-- static buffer killed box3dxt's first engine run (2026-11-20). The length
+-- is the shim's, so a barcode's text that holds a zero byte is not cut
+-- short. Encoding 4 is UTF-8.
+private handler textOf(in pText as Pointer) returns String
+   variable tLength as Integer
+   variable tResult as String
+   variable tOk as CBool
+   unsafe
+      put _text_length(pText) into tLength
+      put MCStringCreateWithBytes(pText, tLength, 4, false, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return ""
+   end if
+   return tResult
+end handler
+
+-- How many bytes a Data holds.
+private handler lengthOf(in pData as Data) returns Integer
+   variable tLength as Integer
+   unsafe
+      put MCDataGetLength(pData) into tLength
+   end unsafe
+   return tLength
+end handler
+
+-- The bytes of a Data, for the shim to READ. An empty Data has no bytes to
+-- point at, so it is given a pointer that is certainly valid (the shim's own
+-- error text) beside its length of 0: the shim checks the length before it
+-- reads anything, and never reads through a pointer whose length is 0.
+private handler pointerOf(in pData as Data) returns Pointer
+   variable tPointer as Pointer
+   variable tLength as Integer
+   unsafe
+      put MCDataGetLength(pData) into tLength
+      if tLength is 0 then
+         put _last_error() into tPointer
+      else
+         put MCDataGetBytePtr(pData) into tPointer
+      end if
+   end unsafe
+   return tPointer
+end handler
+
+-- A copy of pLength bytes the shim owns, as Data.
+private handler bytesOf(in pBytes as Pointer, in pLength as Integer) returns Data
+   variable tResult as Data
+   variable tOk as CBool
+   if pLength <= 0 then
+      return the empty data
+   end if
+   unsafe
+      put MCDataCreateWithBytes(pBytes, pLength, tResult) into tOk
+   end unsafe
+   if not tOk then
+      return the empty data
+   end if
+   return tResult
+end handler
+
+-- A String as its UTF-8 bytes (encoding 4), which is what a barcode holds.
+private handler utf8Of(in pText as String) returns Data
+   variable tData as Data
+   variable tOk as CBool
+   unsafe
+      put MCStringEncode(pText, 4, false, tData) into tOk
+   end unsafe
+   if not tOk then
+      return the empty data
+   end if
+   return tData
+end handler
+
+-- One barcode of the shim's results list as an array. pIndex is 1-based.
+private handler takeResult(in pIndex as Integer) returns Array
+   variable tBarcode as Array
+   variable tP as Pointer
+   variable tN as Integer
+   put {} into tBarcode
+   unsafe
+      put _result_text(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["text"]
+   unsafe
+      put _result_format(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["format"]
+   unsafe
+      put _result_content_type(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["contentType"]
+   unsafe
+      put _result_symbology_id(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["symbologyId"]
+   unsafe
+      put _result_position(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["position"]
+   unsafe
+      put _result_extra(pIndex, "ECLevel") into tP
+   end unsafe
+   put textOf(tP) into tBarcode["ecLevel"]
+   unsafe
+      put _result_extra(pIndex, "Version") into tP
+   end unsafe
+   put textOf(tP) into tBarcode["version"]
+   unsafe
+      put _result_extra(pIndex, "") into tP
+   end unsafe
+   put textOf(tP) into tBarcode["extra"]
+   unsafe
+      put _result_error(pIndex) into tP
+   end unsafe
+   put textOf(tP) into tBarcode["error"]
+   unsafe
+      put _result_bytes(pIndex) into tN
+      put _bytes_pointer() into tP
+   end unsafe
+   put bytesOf(tP, tN) into tBarcode["bytes"]
+   unsafe
+      put _result_orientation(pIndex) into tN
+   end unsafe
+   put tN into tBarcode["orientation"]
+   unsafe
+      put _result_is_valid(pIndex) into tN
+   end unsafe
+   put tN is not 0 into tBarcode["valid"]
+   unsafe
+      put _result_is_mirrored(pIndex) into tN
+   end unsafe
+   put tN is not 0 into tBarcode["mirrored"]
+   unsafe
+      put _result_is_inverted(pIndex) into tN
+   end unsafe
+   put tN is not 0 into tBarcode["inverted"]
+   return tBarcode
+end handler
+
+-- One read, for the public spellings: every barcode as an array, and the
+-- shim's list released.
+private handler readPicture(in pImageData as Data, in pWidth as Integer, in pHeight as Integer, in pFormats as String, in pOptions as String) returns List
+   variable tFound as List
+   variable tPixels as Pointer
+   variable tCount as Integer
+   variable tIndex as Integer
+   checkABI()
+   put [] into tFound
+   put pointerOf(pImageData) into tPixels
+   unsafe
+      put _read_image(tPixels, lengthOf(pImageData), pWidth, pHeight, pFormats, pOptions) into tCount
+   end unsafe
+   repeat with tIndex from 1 up to tCount
+      push takeResult(tIndex) onto tFound
+   end repeat
+   unsafe
+      _results_release()
+   end unsafe
+   return tFound
+end handler
+
+-- One create into the shim's symbol slot. True when a symbol is there.
+private handler createSymbol(in pContent as Data, in pIsText as Boolean, in pFormat as String, in pOptions as String) returns Boolean
+   variable tPointer as Pointer
+   variable tMade as Integer
+   checkABI()
+   put pointerOf(pContent) into tPointer
+   unsafe
+      put _create_symbol(tPointer, lengthOf(pContent), asInt(pIsText), pFormat, pOptions) into tMade
+   end unsafe
+   return tMade is not 0
+end handler
+
+-- The symbol slot drawn as a picture array, and both slots released. Called
+-- after createSymbol, whatever it returned (a refused create leaves nothing
+-- to draw, and the array is empty).
+private handler takeDrawing(in pMade as Boolean, in pScale as Integer, in pQuietZone as Boolean, in pShowText as Boolean) returns Array
+   variable tPicture as Array
+   variable tDrawn as Integer
+   variable tLength as Integer
+   variable tPixels as Pointer
+   variable tWidth as Integer
+   variable tHeight as Integer
+   put {} into tPicture
+   if pMade then
+      unsafe
+         put _render_image(pScale, asInt(pQuietZone), asInt(pShowText)) into tDrawn
+      end unsafe
+      if tDrawn is not 0 then
+         unsafe
+            put _render_width() into tWidth
+            put _render_height() into tHeight
+            put _render_pixels_length() into tLength
+            put _render_pixels() into tPixels
+         end unsafe
+         put tWidth into tPicture["width"]
+         put tHeight into tPicture["height"]
+         put bytesOf(tPixels, tLength) into tPicture["imageData"]
+      end if
+   end if
+   unsafe
+      _created_release()
+   end unsafe
+   return tPicture
+end handler
+
+-- =====================================================================
+-- The library
+-- =====================================================================
+
+/**
+Summary: Returns the ABI number of the native library that is loaded.
+
+Returns: The ABI number; this binding needs 1.
+*/
+public handler bcABIVersion() returns Integer
+   variable tR as Integer
+   unsafe
+      put _abi_version() into tR
+   end unsafe
+   return tR
+end handler
+
+/**
+Summary: Returns the versions of the native library and of zxing-cpp inside it.
+
+Returns: Text such as "barcodext ABI 1; zxing-cpp 3.1.1".
+
+Example:
+put bcLibraryVersion() into field "status"
+
+Description: A good first call. It throws if the library on disk has a
+different ABI from this binding, which means the two come from different
+releases.
+*/
+public handler bcLibraryVersion() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _library_version() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns why the last call was refused.
+
+Returns: A sentence, or empty when the last call worked.
+
+Example:
+put bcCreate("hello", "EAN-13", 3) into tPicture
+if tPicture is empty then answer bcLastError()
+
+Description: No handler of this library throws on a bad picture or a bad
+argument. A refused call returns empty and leaves its reason here. A read
+that finds no barcode is not a refusal: its list is empty and so is this.
+*/
+public handler bcLastError() returns String
+   variable tP as Pointer
+   unsafe
+      put _last_error() into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the kinds of barcode this library can read.
+
+Returns: The names, with commas between: "Code 39,Code 128,EAN-13,QR Code,..."
+
+Example:
+put bcFormats() into tKinds
+replace comma with return in tKinds
+put tKinds into field "kinds"
+
+Description: A name from this list is what <bcRead> reports as a barcode's
+"format" and what <bcReadFormats> takes to narrow a read. The list also
+holds family names ("EAN/UPC", "DataBar") that stand for all their members.
+*/
+public handler bcFormats() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _format_names(0) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+/**
+Summary: Returns the kinds of barcode this library can create.
+
+Returns: The names, with commas between.
+
+Example:
+if "Data Matrix" is among the items of bcWritableFormats() then
+   put bcCreate("part 4711", "Data Matrix", 6) into tPicture
+end if
+
+Description: A name from this list is what <bcCreate> takes as the kind
+to make.
+*/
+public handler bcWritableFormats() returns String
+   variable tP as Pointer
+   checkABI()
+   unsafe
+      put _format_names(1) into tP
+   end unsafe
+   return textOf(tP)
+end handler
+
+-- =====================================================================
+-- Reading
+-- =====================================================================
+
+/**
+Summary: Finds every barcode in a picture.
+
+pImageData: The picture's pixels: the imageData of an image object.
+pWidth: The picture's width in pixels.
+pHeight: The picture's height in pixels.
+
+Returns: A list with one array for each barcode found. It is empty when
+there is none, and when the call was refused (then <bcLastError> says why).
+
+Example:
+put bcRead(the imageData of image "photo", the width of image "photo", the height of image "photo") into tFound
+repeat for each element tBarcode in tFound
+   put tBarcode["format"] & ": " & tBarcode["text"] & return after field "log"
+end repeat
+
+Description: Looks for every kind of barcode, upright or turned, dark on
+light or light on dark. Each barcode found is an array with these keys:
+
+- "text": what the barcode says, as text.
+- "format": its kind, such as "QR Code" or "EAN-13".
+- "bytes": what the barcode holds as binary data, nothing decoded.
+- "contentType": "Text", "Binary", "Mixed", "GS1", "ISO15434" or "UnknownECI".
+- "position": its four corners in the picture, from the top left clockwise,
+  as eight numbers "x1,y1,x2,y2,x3,y3,x4,y4".
+- "orientation": how far it is turned, in degrees.
+- "valid": true when it decoded without an error.
+- "error": why it could not be trusted; empty for a good one.
+- "mirrored" and "inverted": true when it was read as a mirror image, or
+  light on dark.
+- "symbologyId": the standard's identifier for the kind, such as "]Q1".
+- "ecLevel" and "version": a 2D code's error-correction level and size.
+- "extra": every further fact the reader has, as a JSON object in text.
+
+The pixels must be exactly pWidth * pHeight * 4 bytes, which is what an
+image object's imageData is. To look only for some kinds (faster, and it
+avoids a wrong guess) use <bcReadFormats>.
+*/
+public handler bcRead(in pImageData as Data, in pWidth as Integer, in pHeight as Integer) returns List
+   return readPicture(pImageData, pWidth, pHeight, "", "")
+end handler
+
+/**
+Summary: Finds the barcodes of the kinds you name in a picture.
+
+pImageData: The picture's pixels: the imageData of an image object.
+pWidth: The picture's width in pixels.
+pHeight: The picture's height in pixels.
+pFormats: The kinds to look for, with commas between, such as "QR Code" or "EAN-13,UPC-A". Empty looks for every kind.
+
+Returns: A list with one array for each barcode found, as <bcRead> returns.
+
+Example:
+put bcReadFormats(the imageData of image "ticket", 640, 480, "QR Code,Aztec") into tFound
+if the number of elements in tFound is 0 then answer "No ticket code found."
+
+Description: Naming the kinds makes a read faster and stops a picture's
+texture being taken for a kind you never use. The names are those of
+<bcFormats>; "qrcode" and "ean13" spell the same kinds. A name the library
+does not know refuses the call.
+
+Some kinds are only told apart when asked for: a UPC-A is reported as an
+EAN-13 with a leading 0 unless pFormats names "UPC-A".
+*/
+public handler bcReadFormats(in pImageData as Data, in pWidth as Integer, in pHeight as Integer, in pFormats as String) returns List
+   return readPicture(pImageData, pWidth, pHeight, pFormats, "")
+end handler
+
+/**
+Summary: Finds barcodes in a picture, with every choice the reader has.
+
+pImageData: The picture's pixels: the imageData of an image object, or with the option "gray" one byte for each pixel.
+pWidth: The picture's width in pixels.
+pHeight: The picture's height in pixels.
+pFormats: The kinds to look for, with commas between. Empty looks for every kind.
+pOptions: Read options, with commas between. Empty uses the thorough defaults.
+
+Returns: A list with one array for each barcode found, as <bcRead> returns.
+
+Example:
+-- a clean barcode this app drew itself: read it the fast way
+put bcReadAdvanced(tPixels, tWidth, tHeight, "Code 128", "pure") into tFound
+
+Example:
+-- every frame of a camera: fast, one barcode is enough
+put bcReadAdvanced(tPixels, tWidth, tHeight, "QR Code", "fast,max=1") into tFound
+
+Description: The options are words with commas between, in any case:
+
+- "fast": spend less time; a blurred or tiny barcode may be missed.
+- "noRotate": do not look for barcodes turned on their side.
+- "noInvert": do not look for light-on-dark barcodes.
+- "noDownscale": do not also try the picture scaled down.
+- "pure": the picture is a clean, upright, computer-made barcode and
+  nothing else.
+- "max=N": stop after N barcodes (1 to 255).
+- "lines=N": a linear barcode must be seen on N scan lines (1 to 20).
+- "errors": also return barcodes that were found but failed their check,
+  with "valid" false and "error" saying why.
+- "checksum": check the optional check digit of Code 39 and ITF.
+- "addon=ignore", "addon=read" or "addon=require": what to do with the
+  small 2 or 5 digit add-on beside an EAN or UPC barcode.
+- "text=hri", "text=plain", "text=eci", "text=escaped" or "text=hex": how
+  "text" is written. "hri" (the default) is what a person reads under the
+  bars; "hex" is the bytes as hex pairs.
+- "binarizer=local", "binarizer=global", "binarizer=fixed" or
+  "binarizer=bool": how grey becomes black and white. "local" (the
+  default) copes with uneven light.
+- "gray": pImageData is one byte for each pixel (0 black to 255 white),
+  not imageData.
+
+A word the reader does not know refuses the call, and <bcLastError> names
+it.
+*/
+public handler bcReadAdvanced(in pImageData as Data, in pWidth as Integer, in pHeight as Integer, in pFormats as String, in pOptions as String) returns List
+   return readPicture(pImageData, pWidth, pHeight, pFormats, pOptions)
+end handler
+
+/**
+Summary: Returns the text of the first barcode found in a picture.
+
+pImageData: The picture's pixels: the imageData of an image object.
+pWidth: The picture's width in pixels.
+pHeight: The picture's height in pixels.
+
+Returns: The barcode's text, or empty when no barcode was found.
+
+Example:
+put bcReadText(the imageData of image "photo", the width of image "photo", the height of image "photo") into field "scanned"
+
+Description: The shortest way to scan one barcode. It looks for every
+kind and returns only the text of one. Use <bcRead> to learn the kind, to
+get several barcodes, or to get binary content.
+*/
+public handler bcReadText(in pImageData as Data, in pWidth as Integer, in pHeight as Integer) returns String
+   variable tFound as List
+   variable tBarcode as Array
+   put readPicture(pImageData, pWidth, pHeight, "", "max=1") into tFound
+   if the number of elements in tFound is 0 then
+      return ""
+   end if
+   put tFound[1] into tBarcode
+   return tBarcode["text"]
+end handler
+
+-- =====================================================================
+-- Creating
+-- =====================================================================
+
+/**
+Summary: Makes a barcode as a picture.
+
+pText: What the barcode should say.
+pFormat: The kind to make, such as "QR Code", "EAN-13" or "Code 128".
+pScale: The size of the smallest bar or square in pixels, from 1 to 64.
+
+Returns: An array with the keys "width", "height" and "imageData", or an
+empty array when the call was refused (then <bcLastError> says why).
+
+Example:
+put bcCreate("https://openxtalk.org/", "QR Code", 6) into tPicture
+create image "code"
+set the width of image "code" to tPicture["width"]
+set the height of image "code" to tPicture["height"]
+set the imageData of image "code" to tPicture["imageData"]
+
+Description: The picture is black on white with the empty margin the kind
+needs to be read (its quiet zone). Its size follows from the content and
+pScale; set the image object to that size before setting its imageData.
+
+Each kind has rules about what it can say: an EAN-13 is 12 or 13 digits, a
+Code 39 has capitals and digits, a QR Code takes any text. Content a kind
+cannot hold refuses the call. The kinds are those of <bcWritableFormats>.
+*/
+public handler bcCreate(in pText as String, in pFormat as String, in pScale as Integer) returns Array
+   variable tMade as Boolean
+   put createSymbol(utf8Of(pText), true, pFormat, "") into tMade
+   return takeDrawing(tMade, pScale, true, false)
+end handler
+
+/**
+Summary: Makes a barcode as a picture, with every choice the writer has.
+
+pText: What the barcode should say.
+pFormat: The kind to make, such as "QR Code", "EAN-13" or "Code 128".
+pOptions: Create options, with commas between. Empty uses the defaults.
+pScale: The size of the smallest bar or square in pixels, from 1 to 64.
+pQuietZone: True to leave the empty margin the kind needs around it.
+pShowText: True to print the content under a linear barcode.
+
+Returns: An array with the keys "width", "height" and "imageData", or an
+empty array when the call was refused.
+
+Example:
+-- a QR code that survives a logo over its middle
+put bcCreateAdvanced(tLink, "QR Code", "ecLevel=H", 8, true, false) into tPicture
+
+Example:
+-- a product barcode with its digits printed under it
+put bcCreateAdvanced("5901234123457", "EAN-13", "", 3, true, true) into tPicture
+
+Description: The create options are words with commas between:
+
+- "ecLevel=...": how much damage the code survives. For a QR Code "L",
+  "M", "Q" or "H" (most); other kinds take a number or a percentage.
+- "version=N": the size of a 2D code, by its standard's numbering.
+- "dataMask=N": a QR Code's mask pattern.
+- "columns=N" and "rows=N": the shape of a PDF417 or a stacked DataBar.
+- "eci=...": the character set to declare, such as "eci=UTF-8".
+- "gs1": the content is GS1 data, such as "(01)09501101530003".
+- "forceSquare": only square Data Matrix sizes.
+- "readerInit": mark the code as one that programs a scanner.
+
+A word the writer does not know, or a value a kind does not accept,
+refuses the call and <bcLastError> says why.
+*/
+public handler bcCreateAdvanced(in pText as String, in pFormat as String, in pOptions as String, in pScale as Integer, in pQuietZone as Boolean, in pShowText as Boolean) returns Array
+   variable tMade as Boolean
+   put createSymbol(utf8Of(pText), true, pFormat, pOptions) into tMade
+   return takeDrawing(tMade, pScale, pQuietZone, pShowText)
+end handler
+
+/**
+Summary: Makes a barcode that holds binary data, as a picture.
+
+pData: The bytes the barcode should hold.
+pFormat: The kind to make. Only some kinds hold binary data: QR Code, Data Matrix, Aztec and PDF417 do.
+pOptions: Create options, with commas between, as <bcCreateAdvanced> takes. Empty uses the defaults.
+pScale: The size of the smallest bar or square in pixels, from 1 to 64.
+
+Returns: An array with the keys "width", "height" and "imageData", or an
+empty array when the call was refused.
+
+Example:
+put bcCreateFromData(tKeyBytes, "QR Code", "", 6) into tPicture
+
+Description: The bytes are stored as they are, with no character set
+applied. Read them back from the "bytes" key of what <bcRead> returns.
+*/
+public handler bcCreateFromData(in pData as Data, in pFormat as String, in pOptions as String, in pScale as Integer) returns Array
+   variable tMade as Boolean
+   put createSymbol(pData, false, pFormat, pOptions) into tMade
+   return takeDrawing(tMade, pScale, true, false)
+end handler
+
+/**
+Summary: Makes a barcode as SVG text.
+
+pText: What the barcode should say.
+pFormat: The kind to make, such as "QR Code" or "EAN-13".
+pOptions: Create options, with commas between, as <bcCreateAdvanced> takes. Empty uses the defaults.
+pShowText: True to print the content under a linear barcode.
+
+Returns: An SVG document as text, or empty when the call was refused.
+
+Example:
+put bcCreateSVG("5901234123457", "EAN-13", "", true) into url ("file:" & tFolder & "/label.svg")
+
+Description: SVG is a drawing, not pixels, so it prints sharp at any
+size. Use it for labels and documents; use <bcCreate> for a picture to
+show in a stack.
+*/
+public handler bcCreateSVG(in pText as String, in pFormat as String, in pOptions as String, in pShowText as Boolean) returns String
+   variable tMade as Boolean
+   variable tP as Pointer
+   variable tSvg as String
+   put createSymbol(utf8Of(pText), true, pFormat, pOptions) into tMade
+   put "" into tSvg
+   if tMade then
+      unsafe
+         put _svg_text(1, 1, asInt(pShowText)) into tP
+      end unsafe
+      put textOf(tP) into tSvg
+   end if
+   unsafe
+      _created_release()
+   end unsafe
+   return tSvg
+end handler
+
+/**
+Summary: Makes a barcode as rows of 1 and 0, for a stack that draws its own.
+
+pText: What the barcode should say.
+pFormat: The kind to make, such as "QR Code".
+pOptions: Create options, with commas between, as <bcCreateAdvanced> takes. Empty uses the defaults.
+
+Returns: Text with one line for each row of the barcode, "1" for a dark
+square and "0" for a light one, or empty when the call was refused.
+
+Example:
+put bcCreateMatrix("hello", "QR Code", "") into tRows
+put the number of lines in tRows into tSize -- 21 for the smallest QR Code
+
+Description: There is no margin around the rows: leave the kind's quiet
+zone yourself when you draw them (four squares for a QR Code). A linear
+barcode comes back as many identical rows.
+*/
+public handler bcCreateMatrix(in pText as String, in pFormat as String, in pOptions as String) returns String
+   variable tMade as Boolean
+   variable tP as Pointer
+   variable tRows as String
+   put createSymbol(utf8Of(pText), true, pFormat, pOptions) into tMade
+   put "" into tRows
+   if tMade then
+      unsafe
+         put _modules_text() into tP
+      end unsafe
+      put textOf(tP) into tRows
+   end if
+   unsafe
+      _created_release()
+   end unsafe
+   return tRows
+end handler
+
+end library

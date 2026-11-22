@@ -140,9 +140,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #
 # PDFXT JOINED 2026-11-20 the same way, and brought the first COMPANION (below).
 # GAMEPADXT joined that day too (desktop rows only: it is not built for
-# Android, docs/ANDROID.md).
+# Android, docs/ANDROID.md), and BARCODEXT AND WEBPXT.
 MEMBERS = ("sodiumxt", "torrentxt", "enetxt", "datachannelxt", "coinxt", "box2dxt",
-           "curlxt", "box3dxt", "audioxt", "render3dxt", "pdfxt", "xlsxt", "gamepadxt")
+           "curlxt", "box3dxt", "audioxt", "render3dxt", "pdfxt", "xlsxt", "gamepadxt",
+           "barcodext", "webpxt")
 EXT_FOR = {"linux": "so", "win32": "dll", "mac": "dylib", "android": "so"}
 
 # COMPANIONS (2026-11-20): a member whose library LOADS a second library from

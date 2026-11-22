@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Eighteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Twenty members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -24,10 +24,11 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   transform, move and camera texts it reads, its libraries committed 2026-11-21), pdfxt
   (PDFium, read-only: draw, text, search, outline; joined 2026-11-20 with no committed library
   yet; the one member that ships a SECOND library, a pinned prebuilt PDFium its shim loads from
-  beside itself, see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files
-  written and read; joined 2026-11-20, its libraries committed 2026-11-21) and gamepadxt (SDL
-  3's gamepad subsystem: game controllers; joined 2026-11-20, its desktop libraries and web
-  archive committed 2026-11-21; desktop and web only).
+  beside itself, see Building), xlsxt (libxlsxwriter + zlib + Expat: Excel .xlsx files written
+  and read; joined 2026-11-20, its libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad
+  subsystem: game controllers; joined 2026-11-20, its desktop libraries and web archive
+  committed 2026-11-21; desktop and web only), and webpxt (libwebp) and barcodext (zxing-cpp),
+  which joined 2026-11-20 too, their libraries committed 2026-11-21.
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -219,7 +220,8 @@ because a harness once ran against a stale in-memory library and reported failur
   **Show**), a results filter and the boot self-check. The members in the generator's
   `NO_HARNESS` (it refuses a registry member with neither a harness nor such a reason) have no
   row: since 2026-11-21, when a seventeenth row would have fitted at no pitch, they are names in
-  a band under the rows, three to a line with room for twelve, and the boot self-check
+  a band under the rows (`suNoteCell`), three to a line with room for twelve, so a new
+  harness-less member costs a third of a line, and the boot self-check
   (`suRowsFit`) fails a board whose rows or names reach the members caption. A row's Run is a
   subsequence of Run all, never a reordering, and every block tallies into its row. The kit
   builds the scaffold's four report controls under their own
@@ -341,7 +343,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, pdfxt, xlsxt, gamepadxt, barcodext, webpxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

@@ -524,6 +524,51 @@ MEMBERS = [
                     "wasm": WASM_CLOSURE_REASON},
     },
     {
+        "name": "barcodext",
+        "lib": "barcodext",
+        "lcb": ["barcodext/src/barcodext.lcb"],
+        # Its first release-binaries dispatch (run 44846691681 from 527d109,
+        # 2026-11-21) built the ten desktop and Android libraries; the web
+        # archive is built outside that workflow, with OXT-Beyond's pinned
+        # emsdk, and was committed before it (527d109).
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
+        "shim": "barcodext/src/barcode_shim.cpp",
+        "prefix": "bcx_",
+        "abi_header": "barcodext/src/barcode_shim.cpp",
+        "abi_define": "BCX_ABI_VERSION",
+        "abi_symbol": "bcx_abi_version",
+        # src/barcodext.map (GNU ld) and the same pattern for ld64 export
+        # bcx_* and nothing else, the statically linked C++ runtime included
+        # (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
+        "name": "webpxt",
+        "lib": "webpxt",
+        "lcb": ["webpxt/src/webpxt.lcb"],
+        # As barcodext's: the same release run, the web archive beside it.
+        "ships": ["x86-linux", "x86_64-linux", "arm64-linux", "x86-win32",
+                  "x86_64-win32", "universal-mac",
+                  "wasm32-emscripten",
+                  "arm64-android", "armv7-android", "x86_64-android",
+                  "x86-android"],
+        "shim": "webpxt/src/webp_shim.c",
+        "prefix": "wpx_",
+        "abi_header": "webpxt/src/webp_shim.c",
+        "abi_define": "WPX_ABI_VERSION",
+        "abi_symbol": "wpx_abi_version",
+        # src/webpxt.map and the ld64 pattern export wpx_* and nothing else:
+        # libwebp declares its API with default visibility, and the script
+        # is what keeps WebP* out (measured on x86_64-linux, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": [],
+                    "wasm": WASM_CLOSURE_REASON},
+    },
+    {
         "name": "box2dxt",
         "lib": "box2dxt",
         "lcb": ["box2dxt/src/box2dxt.lcb"],

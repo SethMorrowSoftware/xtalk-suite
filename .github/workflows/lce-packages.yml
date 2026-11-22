@@ -81,6 +81,8 @@ on:
       - 'xlsxt/src/**'
       - 'gamepadxt/src/**'
       - 'pdfxt/src/**'
+      - 'webpxt/src/**'
+      - 'barcodext/src/**'
       - 'onionxt/src/**'
       - 'nostrxt/src/**'
       - '*/examples/*-helpers.livecodescript'
