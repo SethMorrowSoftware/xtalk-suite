@@ -1,0 +1,16 @@
+/* midixt.map - linker version script for the shipped midixt shared library (ELF).
+ *
+ * Export EXACTLY the midi_* C ABI. midixt statically links RtMidi -- whose
+ * classes are marked visibility("default") under GCC whatever is defined --
+ * and, in a portable build, libstdc++/libgcc; without this script the .so
+ * exported ~160 of those symbols into the engine process, where another
+ * extension bundling its own RtMidi (or a different C++ runtime) could collide
+ * with them. CMakeLists.txt derives macOS's export list (_midi_*) from the same
+ * pattern; Windows exports only MIDI_API. The suite's
+ * tools/check-binary-freshness.py enforces the closure. */
+{
+  global:
+    midi_*;
+  local:
+    *;
+};

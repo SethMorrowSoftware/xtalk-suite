@@ -215,6 +215,9 @@ VERSION_FROM = {
     'gamepadxt': ('src/gamepadxt.lcb', LCB_VERSION),
     'webpxt': ('src/webpxt.lcb', LCB_VERSION),
     'barcodext': ('src/barcodext.lcb', LCB_VERSION),
+    'oscxt': ('src/osc.lcb', LCB_VERSION),
+    'midixt': ('src/midi.lcb', LCB_VERSION),
+    'artnetxt': ('src/artnet.lcb', LCB_VERSION),
     'onionxt': ('src/onionxt.livecodescript', r'^\s*constant\s+kOxVersion\s*=\s*"([^"]+)"'),
     'nostrxt': ('src/nostrxt.livecodescript', r'^\s*constant\s+kNxVersion\s*=\s*"([^"]+)"'),
 }
@@ -258,6 +261,11 @@ LICENCES = {
     # writer is built on (with the two fonts Zint embeds), are in the
     # member's LICENSE, below its own
     'barcodext': [('LICENSE', None, None)],
+    # tinyosc's terms (oscxt) and RtMidi's (midixt), the one component each
+    # library compiles in
+    'oscxt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'midixt': [('LICENSE', None, None), ('THIRD-PARTY-LICENSES.md', None, None)],
+    'artnetxt': [('LICENSE', None, None)],
     'onionxt': [('LICENSE', None, None)],
     'nostrxt': [('LICENSE', None, None)],
 }
@@ -376,6 +384,21 @@ PACKAGES = [
     # picture.
     P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
       'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
+    # ShowControl (#200): OSC, MIDI and Art-Net. oscxt and midixt joined with
+    # no library committed, so their rows wait for their first
+    # release-binaries dispatch. Each probe answers the loaded library's ABI
+    # number, 2 for this binding (box2dxt's b2Version() is the precedent), so
+    # a library of another release fails it by name; neither opens a socket
+    # or a port.
+    P('lcb', 'oscxt', 'org.openxtalk.library.osc', 'src/osc.lcb', 'oscxt', 'oscVersion()', '^2$'),
+    P('lcb', 'midixt', 'org.openxtalk.library.midi', 'src/midi.lcb', 'midixt', 'midiVersion()', '^2$'),
+    # artnetxt binds no library of its own: it builds and reads Art-Net
+    # packets in LCB and the engine's datagram sockets carry them. So it is
+    # a pure module (native=False): no code/ folder, nothing to wait for. Its
+    # probe builds an ArtPoll, which is 14 bytes (the ID, the OpCode, the
+    # protocol version, the flags and the diagnostic priority).
+    P('lcb', 'artnetxt', 'org.openxtalk.library.artnet', 'src/artnet.lcb', 'artnetxt',
+      'the number of bytes in artnetBuildPoll()', '^14$', native=False),
     P('lcs', 'onionxt', 'onionxt', 'src/onionxt.livecodescript', 'onionxt',
       'oxVersion()', r'^[0-9]+\.[0-9]+', stack='onionxt', title='OnionXT', author='Seth Morrow Software',
       requires=[]),

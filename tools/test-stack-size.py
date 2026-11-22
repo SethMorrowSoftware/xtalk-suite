@@ -93,8 +93,12 @@ def main():
     # uiChrome call at kXdWidth x kXdHeight (960 x 640).
     # 61 the same day: gamepadxt/examples/gamepad-lab.livecodescript,
     # Gamepad Lab, a width line and a height line at 1180 x 640.
-    if "61 stack window dimension" not in out:
-        print("test-stack-size: expected 61 measured dimensions, got:\n" + out)
+    # 67 the same day: the three ShowControl showcases, each a width line
+    # and a height line at 1100 x 620 (oscxt's osc-show-surface at kOsdW x
+    # kOsdH, midixt's midi-stage at kMdsW x kMdsH, artnetxt's
+    # artnet-light-board at kAlbW x kAlbH).
+    if "67 stack window dimension" not in out:
+        print("test-stack-size: expected 67 measured dimensions, got:\n" + out)
         return 1
 
     original = open(NOCLOUD, encoding="utf-8").read()
