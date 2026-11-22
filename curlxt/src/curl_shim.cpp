@@ -88,6 +88,8 @@ struct WsOut {
     unsigned int flags = 0;            /* CURLWS_TEXT, _BINARY, _PING ...     */
     std::vector<unsigned char> data;
     size_t pos = 0;                    /* payload bytes curl has taken        */
+    bool auto_pong = false;            /* ws_service's answer to a ping, not  */
+                                       /* a pong script sent                  */
 };
 
 /* Received messages are read off the socket only while fewer than this many
@@ -101,6 +103,13 @@ const size_t kWsInMaxMessages = 4096;   /* the same brake, for empty ones */
  * socket past this: a peer that has stopped reading must surface as an error
  * to the sender, not as memory that grows until the process dies. */
 const size_t kWsOutMax = 16u * 1024u * 1024u;
+
+/* Control frames (pings and pongs) one pass over one socket handles. They
+ * put nothing in front of script, so the high-water mark above never stops
+ * them: without this, a peer that sends them without pause would hold one
+ * pump for as long as it kept them coming. The rest wait for the next
+ * pass, and TCP slows the peer meanwhile. */
+const int kWsControlPerPass = 1024;
 
 struct Request {
     CURL *easy = nullptr;
@@ -637,8 +646,9 @@ void ws_service(Request *r, int h) {
     if (r->ws_state != CUX_WS_OPEN && r->ws_state != CUX_WS_CLOSING) return;
     if (!ws_flush(r, h)) return;
     char buf[16384];
-    while ((r->ws_in_bytes < kWsInHighWater && r->ws_in.size() < kWsInMaxMessages) ||
-           r->ws_part_open) {
+    int control = 0;   /* whole control frames handled in this pass */
+    while (((r->ws_in_bytes < kWsInHighWater && r->ws_in.size() < kWsInMaxMessages) ||
+            r->ws_part_open) && control < kWsControlPerPass) {
         size_t n = 0;
         const struct curl_ws_frame *meta = nullptr;
         CURLcode rc = curl_ws_recv(r->easy, buf, sizeof buf, &n, &meta);
@@ -660,20 +670,39 @@ void ws_service(Request *r, int h) {
                 return;
             }
         } else if (meta->flags & CURLWS_PONG) {
-            if (meta->bytesleft == 0) ++r->ws_pongs;
+            if (meta->bytesleft == 0) {
+                ++r->ws_pongs;
+                ++control;
+            }
         } else if (meta->flags & CURLWS_PING) {
             /* Answered here (CURLWS_NOAUTOPONG, see new_request). The pong
              * goes out NEXT, ahead of any backlog, but never ahead of the
              * frame at the head of the queue: libcurl may already hold part
-             * of that one, and a frame cannot be split by another. */
+             * of that one, and a frame cannot be split by another. At most
+             * ONE answer waits behind that frame: a later ping replaces its
+             * payload, as RFC 6455 5.5.3 allows (an endpoint may answer only
+             * the most recent ping). So a peer that pings and never reads
+             * cannot grow the queue, and the last pong out answers the last
+             * ping. The head is never replaced, even when it is an answer
+             * curl has reported nothing of: after CURLE_AGAIN, curl can hold
+             * a whole frame it has not yet written. */
             r->ws_ping.insert(r->ws_ping.end(), buf, buf + n);
             if (meta->bytesleft == 0) {
+                ++control;
                 if (!r->ws_close_sent) {
-                    WsOut pong;
-                    pong.flags = CURLWS_PONG;
-                    pong.data.swap(r->ws_ping);
-                    r->ws_out_bytes += pong.data.size();
-                    r->ws_out.insert(r->ws_out.begin() + (r->ws_out.empty() ? 0 : 1), std::move(pong));
+                    if (r->ws_out.size() >= 2 && r->ws_out[1].auto_pong) {
+                        WsOut &waiting = r->ws_out[1];
+                        r->ws_out_bytes -= waiting.data.size();
+                        waiting.data.swap(r->ws_ping);
+                        r->ws_out_bytes += waiting.data.size();
+                    } else {
+                        WsOut pong;
+                        pong.flags = CURLWS_PONG;
+                        pong.auto_pong = true;
+                        pong.data.swap(r->ws_ping);
+                        r->ws_out_bytes += pong.data.size();
+                        r->ws_out.insert(r->ws_out.begin() + (r->ws_out.empty() ? 0 : 1), std::move(pong));
+                    }
                 }
                 r->ws_ping.clear();
                 if (!ws_flush(r, h)) return;
@@ -1395,13 +1424,24 @@ CUX_API int CUX_CALL cux_ws_poll(void) {
  * closed, or it has left the state it was in when the wait began (so a wait
  * on a connecting socket returns when it opens). Returns 1 then, 0 on
  * timeout, or a negative error. timeout_ms < 0 waits without limit. Other
- * requests and sockets move meanwhile, as under cux_wait. */
+ * requests and sockets move meanwhile, as under cux_wait.
+ *
+ * A message already waiting answers 1 at once, but after ONE pass of the
+ * pump (no sleep): before 2026-11-21 it answered without moving anything,
+ * so a loop that waited for a LATER state (the close, a count of messages)
+ * with messages unread spun in place and the socket never moved (curlxt
+ * gotcha 6). A closed socket cannot move, so it still answers untouched. */
 CUX_API int CUX_CALL cux_ws_wait(int h, int timeout_ms) {
     CUX_GUARD_INT(CUX_ERR_THROWN,
         Request *r = lookup(h);
         if (!r) return CUX_ERR_STALE;
         if (!r->ws) { set_error("not a WebSocket"); return CUX_ERR_STATE; }
         if (r->state == CUX_STATE_NEW) { set_error("request not started"); return CUX_ERR_STATE; }
+        if (!r->ws_in.empty() && r->ws_state != CUX_WS_CLOSED) {
+            pump();
+            if (!lookup(h)) return CUX_ERR_STALE;
+            return 1;
+        }
         int entered = r->ws_state;
         auto start = std::chrono::steady_clock::now();
         for (;;) {

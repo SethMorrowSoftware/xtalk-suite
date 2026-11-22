@@ -1514,6 +1514,41 @@ the width and height keeps the centre the window has, wherever it is; only a
 stack whose centre is still the engine's first one, near the screen's
 corner, is pushed off it.
 
+### 5.19 A field lays out its first line 6 pixels above its top margin
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE on Windows x86-64 (the
+maintainer's PC), drawn and measured, and the same day measured on the
+headless Linux desktop engine (nothing drawn); the mechanism is in the engine
+source. curlxt Live's one-line labels, fields with `margins` 2 and
+`borderWidth` 0, showed their words with the tops cut off. `the formattedRect
+of line 1` of one at 16,6,600,24 was 16,2,234,16: its line box began 4 pixels
+ABOVE the field. In `engine/src/fieldf.cpp`, `getcontenty` is `rect.y +
+borderwidth - TEXT_Y_OFFSET`, `TEXT_Y_OFFSET` is 6 (`objdefs.h`), and the first
+line starts at that plus the top margin; the engine's own default margins are
+8, which start it 2 pixels under the top. `formattedHeight` takes off twice 6
+for the same reason, so a one-line field with margins of 2 reports 8 less than
+its line. A fixed line height below the font's own moves the words up further:
+the baseline is put a descent above the line's bottom
+(`MCField::do_recompute`), so the letters rise out of the line's box. curlxt
+Live's first fix did that (each label's `textHeight` set to its field's height
+less the margins), and the picture was no better. Segoe UI's own line, read
+from those boxes, was about 1.4 times the size in bold (15 at 11, 32 at 22) and
+1.5 times at 24.
+**Rule:** give a field a top margin of 6 or more (6 starts its first line at
+its top; the suite UI kit's fields have 6), and give a one-line label the
+font's own line height in a field about 1.5 times its size tall. Measure with
+`the formattedRect of line 1`, plus the field's `vScroll`, against the field's
+`rect`, not with the properties: a check that a fixed line height fitted the
+field passed over the cut-off labels.
+**Gate:** curlxt Live's boot self-check (`cdLineInside`, 2026-11-21) holds each
+of its 47 fields to it; with margins of 2 it failed all 46 that have them on
+the Linux engine (the log, with margins of its own, passed). No suite-wide
+gate.
+**Does NOT mean:** that the same margins cut the same letters everywhere: how
+far a letter rises above the line's box depends on the font, so a field can
+look whole on one platform and cut on another (only Windows has been looked
+at). Nor that a field's lower margin moves its text: it counts only in the
+formatted height and the scroll range.
+
 ## 6. Sockets and processes
 
 ### 6.1 `socketTimeout` REPEATS while a read or write is pending
@@ -1779,6 +1814,45 @@ no display server. **Gate:** curlxt's native lane
 **Does NOT mean:** that such a run checks what is drawn: a snapshot can be
 taken, but nothing here has compared one with a screen, so a stack's look
 still needs a pass on one.
+
+### 6.20 On Windows an accepted socket is named after its HANDLE, and the next connection gets that handle at once
+**OBSERVED 2026-11-21** on OXT-Beyond 0.2.8-dp.1's IDE engine (Windows x86-64,
+the maintainer's PC); the mechanism is read in the engine source. curlxt
+Live's server (`accept connections`, then `write ... to socket ... with
+message`, then `close socket` once that write was done) answered requests
+that curlxt made from the same engine, one after another: one request in
+four came back as libcurl's "Empty reply from server" (error 52) in under
+90 ms, GETs and HEADs alike, with nothing in the server's log. `the
+openSockets` named the accepted sockets `127.0.0.1:2912`, `127.0.0.1:4492`
+and `127.0.0.1:4508`: socket handles, multiples of four, where a client's
+port would be. It cost the demo's first Windows picture its HEAD tile.
+In the source (`engine/src/opensslsocket.cpp`): on Windows `acceptone()`
+names the socket `"%s:%d"` from the address and `newfd`, the HANDLE; on the
+other platforms the name carries the client's port. On Windows every socket
+also asks for FD_CLOSE (`setselect`), and on it the engine closes the handle
+itself (`w32dcw32.cpp`: `readsome()`, then `doclose()`, whose
+`deletewrites()` calls `closesocket`) and queues `socketClosed`. So: the
+client reads its answer and closes; the engine frees the handle; the next
+connection is accepted on that handle, under the same id; then the server's
+queued "written" message runs `close socket` on the id, and `close socket`
+finds the NEW connection (`IO_findsocket` takes the first socket of that
+name, after `IO_cleansockets` has swept the old, closed one from the list).
+**Rule:** a server never closes a connection by its id at a moment its
+client may already have closed it. Let the client close ("Connection:
+close", a WebSocket close frame); on `socketClosed` or `socketError` forget
+the connection without `close socket`; close a client that never closes only
+by a serial the server gave that connection when it was accepted (the id
+alone cannot say which connection it is), and only after it has had seconds
+to close (a serial knows only the accepts the script has been sent, so a
+close and a new connection both still queued would fool it); and treat an
+accepted id the server still holds as a new connection. **Gate:** curlxt Live's boot
+self-check holds its own server to this (`cdSrvTakeId`, `cdSrvReap`).
+Nothing checks the suite's other script servers yet (work plan 1.2 #34).
+**Does NOT mean:** that ids repeat on Linux or a Mac. There the id is the
+client's address and port (the same source), and curlxt Live's Linux runs,
+hundreds of connections a run, never lost one; a Mac was not tried. Nor
+that a server may never close first: the hazard is only a close by id that
+can run after the client has closed.
 
 ## 7. How to add to this file
 

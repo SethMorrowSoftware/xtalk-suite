@@ -24,9 +24,10 @@ on Android first loaded them on 2026-11-19**: OXT-Beyond pinned the twenty-eight
 built an app with all seven extensions and ran it on x86_64 emulators, where every extension's
 library loaded and answered one call (the record is below). That is the seven `x86_64-android`
 libraries, one call each; no engine has loaded an `x86-android` or an ARM one. curlxt's four
-were rebuilt at ABI 2 on 2026-11-21 (release run 44825160471, commit 02b4238, its tests run on
-the emulator again for the two x86 ABIs); the engine load was of the ABI 1 files, and no
-Android engine has loaded the ABI 2 ones committed now.
+were rebuilt at ABI 2 on 2026-11-21 (release run 44825160471, commit 02b4238, and for the 0.2.1
+shim run 44925581646, commit a336ba5, their tests run on the emulator again for the two x86 ABIs);
+the engine load was of the ABI 1 files, and no Android engine has loaded the ABI 2 ones
+committed now.
 **box3dxt joined on 2026-11-20**, after both runs: `tools/build-android.sh` names it as an eighth
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change. Its four libraries were

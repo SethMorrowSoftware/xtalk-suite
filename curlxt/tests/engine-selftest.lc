@@ -209,10 +209,11 @@ function nextText pSocket
 end nextText
 
 -- These two move the socket with cuWsPoll, not cuWsWait: cuWsWait returns
--- at once while a message is waiting (that is its contract), WITHOUT moving
--- anything, so a loop that waits for a later state with unread messages in
--- the queue would spin in place. The first engine run of this file did
--- exactly that.
+-- at once while a message is waiting, after one pass of the pump, so a loop
+-- on it that waits for a later state with unread messages never pauses.
+-- Before 2026-11-21 it moved nothing then, and the loop spun in place: the
+-- first engine run of this file did exactly that (testSocketEndings now pins
+-- the change).
 command waitClosed pSocket, pMs
    local tEnd
    put the milliseconds + pMs into tEnd
@@ -422,6 +423,28 @@ command testSocketEndings pWs
    check "the server's code and reason", cuInfo(tSock, "wsCloseCode") is 4001 and same(cuText(tSock, "wsCloseReason"), "bye"), \
          cuInfo(tSock, "wsCloseCode") && cuText(tSock, "wsCloseReason")
    check "the server's close is not a failure", cuInfo(tSock, "result") is 0, cuInfo(tSock, "result")
+   get cuFree(tSock)
+
+   -- a cuWsWait loop that waits for the close, a message unread, still ends:
+   -- cuWsWait moves the socket once before it answers for a waiting message
+   put cuWsNew(pWs & "/echo") into tSock
+   get cuStart(tSock)
+   get cuWsWait(tSock, 10000)
+   get cuWsSendText(tSock, "!closelater")
+   get cuWsWait(tSock, 10000)
+   check "a message waits, unread, the socket still open", \
+         cuInfo(tSock, "wsMessages") is 1 and cuInfo(tSock, "wsState") is 2, \
+         cuInfo(tSock, "wsMessages") && cuInfo(tSock, "wsState")
+   -- the server closes only after this, so the check above never races it
+   get cuWsSendText(tSock, "!go")
+   put the milliseconds into tStart
+   repeat while cuInfo(tSock, "wsState") is not 4 and the milliseconds - tStart < 5000
+      get cuWsWait(tSock, 100)
+   end repeat
+   check "a cuWsWait loop waiting for the close ends with the message unread", \
+         cuInfo(tSock, "wsState") is 4 and cuInfo(tSock, "wsMessages") is 1, \
+         cuInfo(tSock, "wsState") && cuInfo(tSock, "wsMessages")
+   check "and the message is still there to read", same(cuWsReadText(tSock), "last words"), "lost"
    get cuFree(tSock)
 
    -- the connection is lost

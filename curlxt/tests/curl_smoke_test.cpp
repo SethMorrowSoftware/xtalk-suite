@@ -27,7 +27,12 @@
  *     close handshake with code and reason, a dropped connection, a peer
  *     that never answers a close, a peer that never reads, the message
  *     size limit, a refused upgrade, cancel, the read high-water mark, and
- *     that cux_poll never lists a socket.
+ *     that cux_poll never lists a socket; the bounds control frames have of
+ *     their own: a peer that pings without reading cannot grow the send
+ *     queue, and one that sends control frames without pause cannot hold
+ *     one pump; and that cux_ws_wait, with a message already waiting, moves
+ *     the socket once before it answers, so a loop waiting for the close
+ *     with the message unread ends.
  */
 
 #include "cux_abi.h"
@@ -90,7 +95,14 @@ static int g_pass = 0;
 
 static std::atomic<bool> g_stop(false);
 static std::atomic<bool> g_unmasked(false);   /* the server saw an unmasked client frame */
+static std::atomic<bool> g_flood_read(false);  /* /ws/pingflood may start reading */
 static int g_port = 0;
+static int g_port_small = 0;   /* the same routes, on a 16 KB receive buffer */
+
+/* The pings /ws/pingflood sends: 25 MB of them, far more than the client's
+ * send buffer and the small-buffer listener's receive buffer hold, so a
+ * client that answered every one would have to queue most of its answers. */
+static const int kFloodPings = 200000;
 
 static bool read_request(sock_t c, std::string &head, std::string &body) {
     std::string buf;
@@ -278,6 +290,11 @@ static std::string big_payload(size_t n) {
  *   /ws-refuse   answers the upgrade with a plain 200
  *   /ws/hang     never answers the upgrade
  *   /ws/mute     upgrades, then neither reads nor writes
+ *   /ws/pingflood  sends kFloodPings pings and "pings done", reads nothing
+ *                until the test sets g_flood_read, then reads and counts
+ *                the pongs; "!count" asks how many arrived and which ping
+ *                the last one answered (asked of the small-buffer listener,
+ *                g_port_small)
  *   /ws/echo     echoes every message; a text message starting with '!' is
  *                a command that makes the server do something a client
  *                cannot otherwise provoke (fragments, a close, a drop ...) */
@@ -298,6 +315,33 @@ static void serve_ws(sock_t c, const std::string &path, const std::string &head,
         while (!g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(20));
         return;
     }
+    if (path == "/ws/pingflood") {
+        /* each payload is the ping's number, padded to the 125 bytes a
+         * control frame allows */
+        for (int i = 0; i < kFloodPings; ++i) {
+            std::string id = std::to_string(i);
+            id.resize(125, '.');
+            if (!ws_frame(c, 0x89, id)) return;
+        }
+        if (!ws_frame(c, 0x81, "pings done")) return;
+        /* The kernel can hold the whole flood on its way out, so this end
+         * is done long before the client has read it. Reading nothing
+         * until the client has looked at its queue takes a flag, not a
+         * frame: a frame from the client would wait behind its pongs. */
+        while (!g_flood_read && !g_stop) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        long long pongs = 0;
+        std::string last = "none";
+        for (;;) {
+            int first = 0;
+            std::string p;
+            if (!ws_read_frame(c, pending, first, p)) return;
+            int op = first & 0x0F;
+            if (op == 0x8) { ws_frame(c, 0x88, p); return; }
+            if (op == 0xA) { ++pongs; last = p.substr(0, p.find('.')); continue; }
+            if (op == 0x1 && p == "!count")
+                ws_frame(c, 0x81, "pongs:" + std::to_string(pongs) + " last:" + last);
+        }
+    }
     for (;;) {
         int first = 0;
         std::string p;
@@ -316,11 +360,33 @@ static void serve_ws(sock_t c, const std::string &path, const std::string &head,
             } else if (p == "!ping") ws_frame(c, 0x89, "hi");
             else if (p == "!close") { ws_frame(c, 0x81, "last words"); ws_frame(c, 0x88, close_payload(4001, "bye")); return; }
             else if (p == "!close-empty") { ws_frame(c, 0x88, ""); return; }
+            else if (p == "!close-later") {
+                /* a message, then the close once the client says "!go": the
+                 * client sees the message waiting with the socket still open
+                 * however slowly it runs, and the "!go" leaves it only if
+                 * something pumps */
+                ws_frame(c, 0x81, "last words");
+                for (;;) {
+                    int f2 = 0;
+                    std::string q;
+                    if (!ws_read_frame(c, pending, f2, q)) return;
+                    if ((f2 & 0x0F) == 0x1 && q == "!go") break;
+                }
+                ws_frame(c, 0x88, close_payload(4001, "bye"));
+                return;
+            }
             else if (p == "!drop") return;
             else if (p == "!big") ws_frame(c, 0x82, big_payload(200000));
             else if (p == "!empty") ws_frame(c, 0x81, "");
             else if (p == "!header") ws_frame(c, 0x81, header_value(head, "X-Test") + "|" + proto);
             else if (p == "!burst") { for (int i = 0; i < 5; ++i) ws_frame(c, 0x81, "m" + std::to_string(i)); }
+            else if (p == "!pongs") {
+                /* 5000 unsolicited empty pongs in ONE write, then a message */
+                std::string burst;
+                for (int i = 0; i < 5000; ++i) { burst.push_back(static_cast<char>(0x8A)); burst.push_back('\0'); }
+                if (!send_all(c, burst)) return;
+                ws_frame(c, 0x81, "pongs done");
+            }
             else if (p == "!flood") {
                 /* 8 MiB in 64 KiB messages: twice the shim's high-water mark */
                 std::string chunk(65536, 'f');
@@ -366,8 +432,15 @@ static void server_loop(sock_t ls) {
     for (std::thread &t : workers) t.join();
 }
 
-static sock_t start_server() {
+/* rcvbuf > 0 sets the listener's receive buffer BEFORE listen(), so every
+ * connection it accepts starts with that window. Left alone, Linux grows a
+ * receive buffer to tcp_rmem's limit (32 MB on some machines), and
+ * shrinking an established connection's buffer instead stalled TCP for
+ * minutes when it was tried here. */
+static sock_t start_server(int &port, int rcvbuf = 0) {
     sock_t ls = socket(AF_INET, SOCK_STREAM, 0);
+    if (rcvbuf > 0)
+        setsockopt(ls, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char *>(&rcvbuf), sizeof rcvbuf);
     sockaddr_in a;
     std::memset(&a, 0, sizeof a);
     a.sin_family = AF_INET;
@@ -377,7 +450,7 @@ static sock_t start_server() {
     listen(ls, 16);
     socklen_t al = sizeof a;
     getsockname(ls, reinterpret_cast<sockaddr *>(&a), &al);
-    g_port = ntohs(a.sin_port);
+    port = ntohs(a.sin_port);
     return ls;
 }
 
@@ -705,12 +778,12 @@ static void test_failures() {
 
 /* ------------------------------------------------------- WebSocket tests */
 
-static std::string ws_url(const char *path) {
-    return "ws://127.0.0.1:" + std::to_string(g_port) + path;
+static std::string ws_url(const char *path, int port = 0) {
+    return "ws://127.0.0.1:" + std::to_string(port ? port : g_port) + path;
 }
 
-static int ws_open(const char *path) {
-    int h = cux_ws_new(ws_url(path).c_str());
+static int ws_open(const char *path, int port = 0) {
+    int h = cux_ws_new(ws_url(path, port).c_str());
     if (h <= 0) return 0;
     if (cux_start(h) != CUX_OK) return 0;
     if (cux_ws_wait(h, 10000) != 1) return 0;
@@ -902,6 +975,26 @@ static void test_ws_endings() {
     CHECK(ws_until_closed(h) && cux_info(h, CUI_WS_CLOSE_CODE) == CUX_WS_CODE_NO_STATUS, "a close with no code is 1005");
     cux_free(h);
 
+    /* A cux_ws_wait loop that waits for the close with a message unread still
+     * ends: the wait moves the socket once before it answers for a waiting
+     * message. Before 2026-11-21 it answered without moving anything, and
+     * this loop spun until its deadline. The server closes only after the
+     * "!go" sent here, so the first check never races the close. */
+    h = ws_open("/ws/echo");
+    ws_text(h, "!close-later");
+    CHECK(cux_ws_wait(h, 10000) == 1 && cux_info(h, CUI_WS_MESSAGES) == 1 &&
+              cux_info(h, CUI_WS_STATE) == CUX_WS_OPEN,
+          "a message waits, unread, the socket still open");
+    ws_text(h, "!go");
+    auto tw = std::chrono::steady_clock::now();
+    while (cux_info(h, CUI_WS_STATE) != CUX_WS_CLOSED &&
+           std::chrono::steady_clock::now() - tw < std::chrono::seconds(5))
+        cux_ws_wait(h, 100);
+    CHECK(cux_info(h, CUI_WS_STATE) == CUX_WS_CLOSED && cux_info(h, CUI_WS_MESSAGES) == 1,
+          "a cux_ws_wait loop waiting for the close ends, the message still unread");
+    CHECK(ws_next(h) == "last words" && cux_info(h, CUI_WS_CLOSE_CODE) == 4001, "and the message and the close are both there");
+    cux_free(h);
+
     /* the server just hangs up */
     h = ws_open("/ws/echo");
     ws_text(h, "!drop");
@@ -1041,6 +1134,47 @@ static void test_ws_backpressure() {
     CHECK(!g_unmasked, "every frame this client sent was masked");
 }
 
+/* Control frames have no message waiting for script to hold them back, so
+ * they get bounds of their own. A peer that pings and never reads cannot
+ * grow the send queue: one automatic pong waits behind the frame in
+ * flight, and a later ping takes its place (RFC 6455 5.5.3 allows answering
+ * only the most recent), so the last pong out answers the last ping. And a
+ * peer that sends control frames without pause cannot hold one pump. */
+static void test_ws_control_floods() {
+    int h = ws_open("/ws/pingflood", g_port_small);
+    CHECK(h > 0 && ws_next(h, nullptr, 120000) == "pings done", "a peer that pings and never reads: every ping arrives");
+    CHECK(cux_info(h, CUI_WS_QUEUED_BYTES) <= 250.0, "the pongs waiting for the socket stay bounded (two at most)");
+    CHECK(cux_info(h, CUI_WS_STATE) == CUX_WS_OPEN, "and the socket stays open");
+    g_flood_read = true;
+    ws_text(h, "!count");
+    std::string tally = ws_next(h, nullptr, 60000);
+    CHECK(tally.rfind("pongs:", 0) == 0 &&
+              tally.find(" last:" + std::to_string(kFloodPings - 1)) != std::string::npos,
+          "once the peer reads, the last pong it gets answers the last ping");
+    cux_ws_close(h, 1000, "");
+    CHECK(ws_until_closed(h), "and the socket closes cleanly");
+    cux_free(h);
+
+    h = ws_open("/ws/echo");
+    ws_text(h, "!pongs");
+    /* let the whole burst reach this end, then count what ONE pump takes */
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    double one = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    while (one == 0 && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(10)) {
+        cux_ws_poll();
+        one = cux_info(h, CUI_WS_PONGS);
+        if (one == 0) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(one >= 1 && one <= 1024, "one pump handles at most 1024 control frames");
+    CHECK(ws_next(h) == "pongs done" && cux_info(h, CUI_WS_PONGS) == 5000,
+          "the rest are handled by the pumps that follow, none lost");
+    cux_ws_close(h, 1000, "");
+    CHECK(ws_until_closed(h), "and that socket closes cleanly too");
+    cux_free(h);
+    CHECK(!g_unmasked, "every frame this client sent was masked");
+}
+
 static void test_teardown() {
     int h = cux_request_new("GET", url("/slow").c_str());
     cux_start(h);
@@ -1064,8 +1198,10 @@ int main() {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
-    sock_t ls = start_server();
+    sock_t ls = start_server(g_port);
     std::thread server(server_loop, ls);
+    sock_t ls_small = start_server(g_port_small, 16384);
+    std::thread server_small(server_loop, ls_small);
 
     test_handle_table();
     test_lifecycle();
@@ -1077,20 +1213,25 @@ int main() {
     test_ws_open_and_messages();
     test_ws_endings();
     test_ws_backpressure();
+    test_ws_control_floods();
     test_teardown();
 
     g_stop = true;
-    /* Wake the accept() with one last connection, then close. */
-    sock_t k = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in a;
-    std::memset(&a, 0, sizeof a);
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    a.sin_port = htons(static_cast<unsigned short>(g_port));
-    connect(k, reinterpret_cast<sockaddr *>(&a), sizeof a);
-    CLOSESOCK(k);
+    /* Wake each accept() with one last connection, then close. */
+    for (int port : {g_port, g_port_small}) {
+        sock_t k = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in a;
+        std::memset(&a, 0, sizeof a);
+        a.sin_family = AF_INET;
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        a.sin_port = htons(static_cast<unsigned short>(port));
+        connect(k, reinterpret_cast<sockaddr *>(&a), sizeof a);
+        CLOSESOCK(k);
+    }
     server.join();
+    server_small.join();
     CLOSESOCK(ls);
+    CLOSESOCK(ls_small);
 
     std::printf("curl_smoke_test: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
