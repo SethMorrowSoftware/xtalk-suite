@@ -74,6 +74,9 @@ licenses, reproduced with their sources:
   render3dxt      stb_image (pinned commit)     MIT (offered as MIT or
                                                 public domain)
                   fast_obj v1.3                 MIT
+  pdfxt           PDFium chromium/8165          BSD-3-Clause, Apache-2.0
+                  (prebuilt, shipped as a       (and the permissive licenses
+                  separate library)             of the libraries inside it)
   gamepadxt       SDL 3.4.20                    Zlib
                   HIDAPI (inside SDL)           BSD-3-Clause
   webpxt          libwebp 1.6.0                 BSD-3-Clause (+ its PATENTS grant)
@@ -119,7 +122,7 @@ coinxt/THIRD-PARTY-LICENSES.md.
 
 The full license text for each is reproduced inside the member that bundles it:
 in the member's LICENSE file (sodiumxt, box2dxt, box3dxt, audioxt, render3dxt, gamepadxt, webpxt, barcodext), in a THIRD-PARTY-LICENSES.md next to
-the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, xlsxt, oscxt, midixt), or
+the member's LICENSE (torrentxt, enetxt, datachannelxt, coinxt, curlxt, pdfxt, xlsxt, oscxt, midixt), or
 alongside the vendored sources (coinxt/native/vendor/LICENSE, for the MIT
 parts). OpenSSL's licence is in an OpenSSL-LICENSE.txt next to the LICENSE of
 each member that links it (torrentxt, datachannelxt, curlxt).

@@ -168,6 +168,7 @@ repo from its own path). Exit 0 green, 1 with every problem printed.
                  declares it. Gained platforms print either way.
 """
 
+import hashlib
 import os
 import re
 import shutil
@@ -436,6 +437,33 @@ MEMBERS = [
         # build, 2026-11-20).
         "closure": {"elf": [], "pe": [], "macho": [],
                     "wasm": WASM_CLOSURE_REASON},
+    },
+    {
+        "name": "pdfxt",
+        "lib": "pdfxt",
+        "lcb": ["pdfxt/src/pdfxt.lcb"],
+        # EMPTY until the first release-binaries dispatch lands pdfxt's
+        # libraries (joined 2026-11-20 with none committed), as box3dxt's
+        # row above.
+        "ships": [],
+        "shim": "pdfxt/src/pdfium_shim.c",
+        "prefix": "pdx_",
+        "abi_header": "pdfxt/src/pdfium_shim.c",
+        "abi_define": "PDX_ABI_VERSION",
+        "abi_symbol": "pdx_abi_version",
+        # src/pdfxt.map (GNU ld) and the derived -exported_symbols_list
+        # (ld64) export pdx_* and nothing else, and the shim links no
+        # library of its own: PDFium is the companion below, loaded at run
+        # time (measured on the x86_64-linux build, 2026-11-20).
+        "closure": {"elf": [], "pe": [], "macho": []},
+        # THE FIRST COMPANION (2026-11-20). pdfxt's shim loads PDFium from
+        # the folder it is itself in, so every platform folder holds a
+        # SECOND library this member did not build: pdfium.<suffix>, copied
+        # unchanged from a prebuilt archive. It has none of this member's
+        # exports and none of its floors, so no leg below can read it; what
+        # holds it is its SHA-256, which must be the one the pin file names
+        # for the platform (companion_problems). bare name -> pin file.
+        "companions": {"pdfium": "pdfxt/src/pdfium.pin"},
     },
     {
         "name": "gamepadxt",
@@ -2714,6 +2742,56 @@ def check_fat_macho(member, path, where, binds, defs, want_abi,
     return 1
 
 
+def companion_pin(pin_rel, platform):
+    """The SHA-256 a pin file names for `platform` (the last of a row's four
+    fields: platform id, archive, archive hash, library hash), or None."""
+    try:
+        with open(os.path.join(ROOT, pin_rel), encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split("#", 1)[0].split()
+                if len(parts) == 4 and parts[0] == platform \
+                        and re.fullmatch(r"[0-9a-f]{64}", parts[3]):
+                    return parts[3]
+    except OSError:
+        return None
+    return None
+
+
+def companion_problems(member, platform, pdir, suffix):
+    """What is wrong with a member's COMPANION libraries in one platform
+    folder. A companion is a prebuilt library the member's own loads from
+    beside itself (the `companions` key of its row). The rule, both ways:
+    where either file is, the other is too; and the companion is byte for
+    byte the file the member's pin names for this platform. A companion
+    nobody pinned is "a binary nothing checks" under another name."""
+    out = []
+    name, lib = member["name"], member["lib"]
+    have_lib = os.path.exists(os.path.join(pdir, f"{lib}.{suffix}"))
+    for bare, pin_rel in sorted(member.get("companions", {}).items()):
+        fn = f"{bare}.{suffix}"
+        path = os.path.join(pdir, fn)
+        where = f"{name}/src/code/{platform}/{fn}"
+        if not os.path.exists(path):
+            if have_lib:
+                out.append(f"{where} is missing: {lib}.{suffix} loads it from "
+                           f"beside itself and opens nothing without it")
+            continue
+        if not have_lib:
+            out.append(f"{where} is here without {lib}.{suffix}: the two "
+                       f"ship together or not at all")
+        want = companion_pin(pin_rel, platform)
+        if want is None:
+            out.append(f"{where}: {pin_rel} has no readable row for "
+                       f"{platform}, so nothing says what this file should be")
+            continue
+        with open(path, "rb") as fh:
+            have = hashlib.sha256(fh.read()).hexdigest()
+        if have != want:
+            out.append(f"{where}: its SHA-256 is {have} and {pin_rel} pins "
+                       f"{want} - not the pinned file")
+    return out
+
+
 def check_member(member, problems, skips, notes, stats):
     name, lib, prefix = member["name"], member["lib"], member["prefix"]
 
@@ -2776,9 +2854,18 @@ def check_member(member, problems, skips, notes, stats):
             continue
         suffix, fmt = PLATFORMS[platform]
 
+        companions = {f"{bare}.{suffix}" for bare in member.get("companions", {})}
+        problems.extend(companion_problems(member, platform, pdir, suffix))
+        stats["companions"] = stats.get("companions", 0) + sum(
+            os.path.exists(os.path.join(pdir, c)) for c in companions)
+
         for fn in sorted(os.listdir(pdir)):
             path = os.path.join(pdir, fn)
             if fn in NON_LIBRARY_FILES:
+                continue
+            if fn in companions:
+                # Held by companion_problems above, by hash; none of the legs
+                # below can read a library this member did not build.
                 continue
             if fn != f"{lib}.{suffix}":
                 problems.append(f"{name}/src/code/{platform}/{fn}: not the "

@@ -21,8 +21,14 @@
 # ONE MEMBER HAS A FLOOR OF ITS OWN: torrentxt is built for API 24 (Android
 # 7.0; tools/build-android.sh says why beside TORRENTXT_ANDROID_API), so its
 # tests cannot load on the API 21 image. `start 24` boots the same kind of
-# image for that Android, again the member's FLOOR. The API levels this
-# script will boot are exactly the ones build-android.sh --pins names
+# image for that Android, again the member's FLOOR. ONE COMPANION HAS ONE
+# TOO: pdfxt's library is built for API 21, but the prebuilt PDFium it loads
+# beside itself was built by PDFium's builders for API 23 (Android 6.0;
+# PDFIUM_ANDROID_API there), so on the API 21 image pdfxt's tests can run
+# only their refusals. `start 23` boots that Android for pdfxt's own lane
+# (native-pdfxt.yml), the oldest on which its tests open a PDF; the release
+# job tests pdfxt on the floor, IN PART. The API levels this script will
+# boot are exactly the ones build-android.sh --pins names
 # (tools/test-build-android.py compares them): any other is refused, so a
 # typo cannot test on an Android nothing is built for. One emulator runs at
 # a time, under one serial; stop the first before starting the second.
@@ -35,7 +41,7 @@
 # tools/build-android.sh as XTALK_ANDROID_SERIAL.
 set -euo pipefail
 
-APIS="21 24"
+APIS="21 23 24"
 SERIAL="emulator-5554"
 BOOT_MINUTES="${XTALK_ANDROID_BOOT_MINUTES:-10}"
 

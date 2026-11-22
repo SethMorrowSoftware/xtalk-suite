@@ -80,6 +80,7 @@ on:
       - 'render3dxt/src/**'
       - 'xlsxt/src/**'
       - 'gamepadxt/src/**'
+      - 'pdfxt/src/**'
       - 'webpxt/src/**'
       - 'barcodext/src/**'
       - 'oscxt/src/**'
@@ -232,13 +233,20 @@ jobs:
             --openssl-licence "$RUNNER_TEMP/oxt/OpenSSL-LICENSE.txt" $RELEASE
 
       - name: Write the Dictionary docs
+        # tools/test-build-lce-packages.py runs this block, between its
+        # markers, with an engine that prints what the real one can
         run: |
+          # >>> docs
           set +e
           "$RUNNER_TEMP/oxt/engine/server-community" tools/lce-engine-check.lc docs \
             "$RUNNER_TEMP/stage" "$RUNNER_TEMP/oxt/revdocsparser.livecodescript" | tee "$RUNNER_TEMP/docs.log"
           status="${PIPESTATUS[0]}"
-          grep -q '^SUMMARY ' "$RUNNER_TEMP/docs.log" || { echo "::error::the docs step did not finish"; exit 1; }
+          # Beyond's parser goes on after an error it logs, and the engine
+          # check sees only what the parser returns: the log is read for those
+          # errors, and for the SUMMARY line of a run that finished
+          python3 tools/build-lce-packages.py docs-log "$RUNNER_TEMP/docs.log" || exit 1
           exit "$status"
+          # <<< docs
 
       - name: Pack
         run: python3 tools/build-lce-packages.py pack "$RUNNER_TEMP/stage" --out "$RUNNER_TEMP/lce" --release

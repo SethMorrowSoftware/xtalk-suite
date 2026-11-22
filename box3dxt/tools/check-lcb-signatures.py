@@ -29,7 +29,8 @@ What is held, each named when it fails:
   4. every public handler has its own doc block: a Summary, one entry per
      parameter by name, a Returns when it returns something. The IDE's
      dictionary is made from these blocks and from nothing else;
-  5. checkABI() names the shim's B3X_ABI_VERSION;
+  5. checkABI() names the shim's B3X_ABI_VERSION, and so does the doc block
+     of b3ABIVersion ("this binding needs N.", the IDE dictionary's text);
   6. the SWEEP in tests/engine-selftest.lc calls every public handler once,
      and is exactly what this tool would write.
 
@@ -325,7 +326,11 @@ def check(lcb_text, shim_text, selftest_text):
         problems.append("box3dxt.lcb:%d: public handler %s wraps no export (names are mechanical)"
                         % (public[name]["line"], name))
 
-    # 5. the ABI number
+    # 5. the ABI number, everywhere a bump must reach: the shim's define,
+    # the number checkABI() tests and the one its message names, and the
+    # doc block of b3ABIVersion, whose "this binding needs N." is what the
+    # IDE's dictionary says. The sky (ABI 3, #190) moved the first three and
+    # left the doc saying 2, and nothing here asked about it.
     abi = re.search(r"#define\s+B3X_ABI_VERSION\s+(\d+)", shim_text)
     guard = re.search(r"private handler checkABI\(\)(.*?)end handler", lcb_text, re.S)
     if not abi or not guard:
@@ -334,6 +339,10 @@ def check(lcb_text, shim_text, selftest_text):
         n = abi.group(1)
         if not re.search(r"if tV is not %s then" % n, guard.group(1)) or ("ABI %s)" % n) not in guard.group(1):
             problems.append("checkABI() does not test for, and name, the shim's ABI %s" % n)
+        said = re.findall(r"this binding needs (\d+)\.", (public.get("b3ABIVersion") or {}).get("doc") or "")
+        if said != [n]:
+            problems.append("b3ABIVersion's doc block must say once that this binding needs the shim's "
+                            "ABI %s (it says: %s)" % (n, ", ".join(said) or "nothing"))
 
     # 6. the sweep
     span = between(selftest_text, SWEEP_BEGIN, SWEEP_END)

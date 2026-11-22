@@ -45,6 +45,19 @@ ones tested on the emulator, the ARM ones built and checked, not run).
 run from the folder the emulator is handed. Its four libraries were committed on 2026-11-21 by
 its own release run (run 44874931964, commit f6c0b1a; the x86 ones tested on the emulator, the ARM
 ones built and checked, not run).
+**pdfxt joined the same day**, as an eleventh member, with one difference from every other: beside its
+own library it places `pdfium.so`, a PREBUILT PDFium its shim loads at run time, pinned by SHA-256
+in `pdfxt/src/pdfium.pin` and never built or stripped here. That file is its builders' and says
+API 23 (Android 6.0), above the suite's floor, so `--android-check` is not asked of it; the pin is.
+pdfxt's own lane (`native-pdfxt.yml`) runs its tests on an Android 6.0 emulator for the two x86
+ABIs (`tools/android-emulator.sh start 23`, the level `tools/build-android.sh --pins` names as
+`companion-api-pdfxt`), and once on the Android 5.0 one, where a test that can run only its
+refusals must say so (`XTALK_TEST_PARTIAL`, which `tools/build-android.sh` carries into its last
+line as "passed IN PART"); the release job tests pdfxt on the floor, so there it passes IN PART. The lane's run of 2026-11-21 (run 44840908920, from `3f3a348`) RAN it: the smoke
+test's 183 checks passed on the Android 6.0 emulator for both x86 ABIs, the Android 5.0 one ran
+its 12 refusal checks and said "passed IN PART", and the ARM libraries were built and checked,
+not run. None of its Android libraries is committed yet, and no OXT engine on Android has
+loaded one.
 **xlsxt, webpxt and barcodext joined the same day**, the same way: named in
 `tools/build-android.sh`, built for the four ABIs and tested on the emulator for the two x86 ones
 by their own lanes (`native-xlsxt.yml`, `native-webpxt.yml`, `native-barcodext.yml`) on every
@@ -111,6 +124,7 @@ bash tools/build-android.sh enetxt arm64-android  # writes enetxt/src/code/arm64
 bash tools/build-android.sh --list                # the members and platform ids
 bash tools/build-android.sh --pins                # the NDK, API level, OpenSSL and Boost pins
 bash tools/build-android.sh --api torrentxt       # the Android API level one member is built for
+bash tools/build-android.sh --companion pdfxt     # the file one member ships beside its own (pdfium.so)
 ```
 
 - **One NDK, pinned** (`--pins` prints it): the revision OXT-Beyond's `config/android-ndk-version`
@@ -182,7 +196,10 @@ torrentxt's tests need its own floor, Android 7.0: built for API 24, the library
 the Android 5.0 image. `tools/android-emulator.sh start 24` boots the same kind of image for that
 level, the job stops the first emulator and boots that one where torrentxt comes up in the list
 (asking `tools/build-android.sh --api <member>`, never a copied number), and the build script
-refuses, before it builds, a member whose level is above the device's. None of that has run in CI
+refuses, before it builds, a member whose level is above the device's. The script boots one more
+level, 23 (Android 6.0), for pdfxt's own lane: pdfxt is built for API 21, but the prebuilt PDFium
+it loads was built for API 23, and only there do its tests open a PDF (above, and
+`companion-api-pdfxt` in `--pins`). None of that has run in CI
 yet: it is held by `tools/test-build-android.py` against a fake adb, and the next release dispatch
 with the Android lane is its first run.
 
@@ -311,7 +328,7 @@ proof is an app on Android 11 or later, which OXT-Beyond's Android workflow runs
 these four (work plan 1.2 #33).
 
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's and xlsxt's,
+selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's, pdfxt's and xlsxt's,
 in an app; a torrentxt built for API 24 on an engine, or in an app at all.
 
 ## What differs on Android, per member
@@ -325,6 +342,7 @@ in an app; a torrentxt built for API 24 on an engine, or in an app at all.
 | box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before the call that draws returns, or, for a picture begun, by the next call that names a handle; none runs script. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built by the 2026-11-21 release run and committed (f6c0b1a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| pdfxt | Two files: `pdfxt.so` (built here, API 21) and `pdfium.so` (prebuilt, pinned, API 23). On Android 5.0 and 5.1 the extension loads and every call is refused with a reason (`pdfLastError()`); PDFs open from Android 6.0. An app reads a PDF from a path it may read, or passes bytes to `pdfOpenData`. | built and tested by its own lane, not yet by a release run; no library committed |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |
 | xlsxt | None in the library: three C libraries built from source, with no per-processor path. An app must say where a workbook's temporary files go (`xlSetTempFolder` with the engine's cache or documents folder): Android has no `/tmp` an app may write to. | built by release run 44838679488 and committed 2026-11-21 (0be6db1); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | webpxt | None. libwebp builds from source inside the member's CMake and chooses its SSE or NEON code itself. | built by the 2026-11-21 release run and committed (21f75b8), rebuilt by the 2026-11-22 one (3d35c4a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
