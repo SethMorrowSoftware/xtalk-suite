@@ -9,7 +9,7 @@ lives in `docs/OXT-ENGINE-NOTES.md`, numbered and cited by number ("engine note 
 
 Extensions and apps for OpenXTalk (OXT) and the xTalk family, each a thin binding over a proven
 native library (or pure LiveCodeScript), developed together so they release and interoperate as a
-suite. Seventeen members, all in `tools/member-registry.py` (the one table the split tooling reads;
+suite. Nineteen members, all in `tools/member-registry.py` (the one table the split tooling reads;
 the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8):
 
 - **Native extensions:** sodiumxt (libsodium), torrentxt (libtorrent), enetxt (ENet),
@@ -23,9 +23,10 @@ the other registries name members by hand, `docs/MEMBER-REPO-SPLIT.md` section 8
   imageData, with stb_image and fast_obj compiled in; joined 2026-11-20 beside box3dxt, whose
   transform, move and camera texts it reads, its libraries committed 2026-11-21), xlsxt
   (libxlsxwriter + zlib + Expat: Excel .xlsx files written and read; joined 2026-11-20, its
-  libraries committed 2026-11-21) and gamepadxt (SDL 3's gamepad subsystem: game controllers;
+  libraries committed 2026-11-21), gamepadxt (SDL 3's gamepad subsystem: game controllers;
   joined 2026-11-20, its desktop libraries and web archive committed 2026-11-21; desktop and
-  web only).
+  web only), and webpxt (libwebp) and barcodext (zxing-cpp), which joined 2026-11-20 too,
+  their libraries committed 2026-11-21.
 - **Pure-LiveCodeScript extensions:** onionxt (over a local tor daemon) and nostrxt (over coinxt
   and sodiumxt).
 - **Apps**, member-shaped so the same gates walk them: riptide (Riptide Social, implementing
@@ -214,8 +215,10 @@ because a harness once ran against a stale in-memory library and reported failur
 
 - **The board (D-23).** The paste wears the demos' look: one row per `tools/member-registry.py`
   member plus a cross-member row (a pill, its counts, a scoped **Run**, **Show**), a results filter
-  and the boot self-check. nocloud's row is a caption: the generator's `NO_HARNESS`, and it refuses
-  a registry member with neither a harness nor such a reason. A row's Run is a subsequence of Run
+  and the boot self-check. A member with no in-engine harness (the generator's `NO_HARNESS`,
+  which refuses a registry member with neither a harness nor such a reason) takes no row since
+  2026-11-20: it is a name in a three-column band under the rows (`suNoteCell`), so a new
+  harness-less member costs a third of a line. A row's Run is a subsequence of Run
   all, never a reordering, and every block tallies into its row. The kit builds the scaffold's four report controls under their own
   names, so the report plumbing is the engine-run code. Held by `check-suite-selftest.py` checks
   6b, 7 (hardened), 10b, 13b, 14, 15, 16a and 17 (fixtures `test-suite-selftest.py` and
@@ -335,7 +338,7 @@ worse than no gate, because it answers the question nobody asks twice.
 ## Building, CI and release
 
 - `tools/build-all.sh` builds the CMake members (sodiumxt, torrentxt, enetxt, datachannelxt,
-  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, gamepadxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
+  box2dxt, curlxt, box3dxt, audioxt, render3dxt, xlsxt, gamepadxt, barcodext, webpxt) with `<MEMBER>_BUILD_TESTS=ON` and `ctest --no-tests=error`, runs coinxt's
   `native/build.sh asan` self-test and KATs, every member's `tools/run-gates.sh`, the suite gates
   and `tests/cross-member-test.py`. Iterate on a shim under gcc `-fsanitize=address,undefined`
   (clang's ASan runtime is not installed here); include native headers with `-isystem`.

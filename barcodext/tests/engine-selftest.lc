@@ -1,0 +1,343 @@
+<?lc
+-- engine-selftest.lc - barcodext on a REAL engine, with no window.
+--
+-- Run by OXT-Beyond's server engine (server-community, from the -binaries
+-- archive of a release), which is the same engine core, the same LCB virtual
+-- machine and the same foreign-function interface as the IDE's:
+--
+--   server-community tests/engine-selftest.lc MODULE LIBRARY
+--      MODULE   barcodext.lcm, compiled from src/barcodext.lcb by lc-compile
+--      LIBRARY  the built native library WITHOUT its extension
+--               (.../barcodext for .../barcodext.so)
+--
+-- tests/smoke_test.cpp proves the C++ shim. This proves the layer above it,
+-- the one a compile cannot: that every binding resolves by name in the built
+-- library, that a script's text and binary strings cross both ways whole
+-- (zero bytes and UTF-8 included), that a list of barcodes arrives as a
+-- script array of arrays, that a created picture is what an image object's
+-- imageData property takes, and that a refused call comes back as empty,
+-- never as a script error.
+--
+-- Every check prints PASS or FAIL, then a line SUMMARY passed failed; the
+-- exit status is the number of failures (1 when the run did not finish).
+-- What this is NOT: a pass in the IDE or on Windows, macOS, Android or the
+-- web. It runs the Linux x86-64 library on the Linux x86-64 server engine.
+
+local sPassed, sFailed
+
+on check pName, pOk, pDetail
+   if pOk then
+      add 1 to sPassed
+      put "PASS " & pName & return
+   else
+      add 1 to sFailed
+      put "FAIL " & pName & " - " & pDetail & return
+      put "::error title=barcodext engine self-test::" & pName & " - " & pDetail & return
+   end if
+end check
+
+function oneLine pText
+   replace return with " " in pText
+   return pText
+end oneLine
+
+-- A white picture in the engine's layout with pPicture drawn onto it at
+-- pLeft, pTop: how a script puts two barcodes on one page.
+function pasteOnto pCanvas, pCanvasWidth, pPicture, pLeft, pTop
+   local tY, tRow, tStart
+   put pPicture["width"] * 4 into tRow
+   repeat with tY = 0 to pPicture["height"] - 1
+      put ((pTop + tY) * pCanvasWidth + pLeft) * 4 + 1 into tStart
+      put byte (tY * tRow + 1) to (tY * tRow + tRow) of pPicture["imageData"] into byte tStart to (tStart + tRow - 1) of pCanvas
+   end repeat
+   return pCanvas
+end pasteOnto
+
+function whiteCanvas pWidth, pHeight
+   local tRow, tOut
+   repeat pWidth times
+      put numToByte(255) & numToByte(255) & numToByte(255) & numToByte(255) after tRow
+   end repeat
+   repeat pHeight times
+      put tRow after tOut
+   end repeat
+   return tOut
+end whiteCanvas
+
+-- ---------------------------------------------------------------------
+command testLibrary
+   check "ABI", bcABIVersion() is 1, bcABIVersion()
+   check "version text", bcLibraryVersion() begins with "barcodext ABI 1; zxing-cpp 3.1.", bcLibraryVersion()
+   check "no error before any call", bcLastError() is empty, bcLastError()
+   check "the readable kinds", "QR Code" is among the items of bcFormats() and "EAN-13" is among the items of bcFormats() \
+         and "Code 128" is among the items of bcFormats(), bcFormats()
+   check "the writable kinds", "QR Code" is among the items of bcWritableFormats() and "Data Matrix" is among the items of bcWritableFormats(), \
+         bcWritableFormats()
+end testLibrary
+
+command testRoundTrips
+   local tPicture, tFound, tBarcode, tRow, tKinds
+   put bcCreate("https://openxtalk.org/", "QR Code", 4) into tPicture
+   check "a QR code is a picture array of three keys", tPicture is an array and the number of lines of the keys of tPicture is 3, \
+         the keys of tPicture && bcLastError()
+   check "its size: 25 modules and the quiet zone, 4 px each", tPicture["width"] is 132 and tPicture["height"] is 132, \
+         tPicture["width"] && tPicture["height"]
+   check "imageData is 4 bytes a pixel", the number of bytes of tPicture["imageData"] is 132 * 132 * 4, the number of bytes of tPicture["imageData"]
+   check "a good call leaves no error", bcLastError() is empty, bcLastError()
+
+   put bcRead(tPicture["imageData"], tPicture["width"], tPicture["height"]) into tFound
+   check "a read gives an array of one barcode", tFound is an array and the number of elements of tFound is 1, \
+         the number of elements of tFound && bcLastError()
+   put tFound[1] into tBarcode
+   check "a barcode is an array of fourteen keys", tBarcode is an array and the number of lines of the keys of tBarcode is 14, the keys of tBarcode
+   check "text", tBarcode["text"] is "https://openxtalk.org/", tBarcode["text"]
+   check "format", tBarcode["format"] is "QR Code", tBarcode["format"]
+   check "bytes", tBarcode["bytes"] is "https://openxtalk.org/", tBarcode["bytes"]
+   check "contentType and symbologyId", tBarcode["contentType"] is "Text" and tBarcode["symbologyId"] is "]Q1", \
+         tBarcode["contentType"] && tBarcode["symbologyId"]
+   check "position is eight numbers, the first corner at 16,16", the number of items of tBarcode["position"] is 8 \
+         and abs(item 1 of tBarcode["position"] - 16) <= 2 and abs(item 2 of tBarcode["position"] - 16) <= 2, tBarcode["position"]
+   check "orientation", tBarcode["orientation"] is 0, tBarcode["orientation"]
+   check "Booleans come back as Booleans", tBarcode["valid"] is true and tBarcode["mirrored"] is false and tBarcode["inverted"] is false, \
+         tBarcode["valid"] && tBarcode["mirrored"] && tBarcode["inverted"]
+   check "error is empty for a good barcode", tBarcode["error"] is empty, tBarcode["error"]
+   check "ecLevel and version", tBarcode["ecLevel"] is not empty and tBarcode["version"] is 2, tBarcode["ecLevel"] && tBarcode["version"]
+   check "extra is JSON text", tBarcode["extra"] begins with "{" and tBarcode["extra"] contains "ECLevel", tBarcode["extra"]
+
+   check "bcReadText", bcReadText(tPicture["imageData"], tPicture["width"], tPicture["height"]) is "https://openxtalk.org/", bcLastError()
+   -- numbers may arrive as text: a script's "132" is a number to the typed boundary
+   check "numbers given as text are numbers", bcReadText(tPicture["imageData"], "132", "132") is "https://openxtalk.org/", bcLastError()
+
+   -- one of each family, made and read back by its own name
+   put "EAN-13,5901234123457;EAN-8,96385074;UPC-A,036000291452;Code 128,Hello xTalk;Code 39,XTALK-39;Code 93,XTALK 93;" \
+         & "ITF,1234567890;Codabar,A12345B;Data Matrix,Hello xTalk;Aztec,Hello xTalk;PDF417,Hello xTalk;" \
+         & "Micro QR Code,12345;MaxiCode,Hello xTalk;DataBar Expanded,(01)09501101530003" into tKinds
+   set the itemDelimiter to ";"
+   repeat for each item tRow in tKinds
+      set the itemDelimiter to comma
+      put bcCreate(item 2 of tRow, item 1 of tRow, 3) into tPicture
+      put bcReadFormats(tPicture["imageData"], tPicture["width"], tPicture["height"], item 1 of tRow) into tFound
+      if item 1 of tRow is "UPC-A" then
+         -- zxing-cpp's text for a UPC-A is the 13-digit number
+         check item 1 of tRow && "round trip", tFound[1]["format"] is "UPC-A" and tFound[1]["text"] is "0036000291452", \
+               tFound[1]["format"] && tFound[1]["text"] && bcLastError()
+      else
+         check item 1 of tRow && "round trip", tFound[1]["format"] is item 1 of tRow and tFound[1]["text"] is item 2 of tRow, \
+               tFound[1]["format"] && tFound[1]["text"] && bcLastError()
+      end if
+      set the itemDelimiter to ";"
+   end repeat
+   set the itemDelimiter to comma
+end testRoundTrips
+
+command testTextAndBytes
+   local tPicture, tFound, tText, tData, tI
+   -- text beyond ASCII: UTF-8 in the barcode, the same characters back
+   put "Gr" & numToCodepoint(252) & numToCodepoint(223) & "e " & numToCodepoint(8364) & "5 " & numToCodepoint(26085) & numToCodepoint(26412) into tText
+   put bcCreate(tText, "QR Code", 4) into tPicture
+   put bcRead(tPicture["imageData"], tPicture["width"], tPicture["height"]) into tFound
+   check "text beyond ASCII comes back the same", tFound[1]["text"] is tText, tFound[1]["text"] && bcLastError()
+   check "and its bytes are UTF-8", tFound[1]["bytes"] is textEncode(tText, "UTF-8"), the number of bytes of tFound[1]["bytes"]
+
+   -- binary data: every byte value, a zero among the first
+   repeat with tI = 0 to 255
+      put numToByte((tI * 7) mod 256) after tData
+   end repeat
+   put bcCreateFromData(tData, "QR Code", "", 3) into tPicture
+   check "a barcode of binary data", tPicture["width"] > 0, bcLastError()
+   put bcRead(tPicture["imageData"], tPicture["width"], tPicture["height"]) into tFound
+   check "256 bytes come back byte for byte (zero bytes included)", tFound[1]["bytes"] is tData and the number of bytes of tFound[1]["bytes"] is 256, \
+         the number of bytes of tFound[1]["bytes"] && bcLastError()
+   check "its content type is Binary", tFound[1]["contentType"] is "Binary", tFound[1]["contentType"]
+   put bcCreateFromData(tData, "Data Matrix", "forceSquare", 3) into tPicture
+   check "binary data in a square Data Matrix", tPicture["width"] > 0 and tPicture["width"] is tPicture["height"], bcLastError()
+end testTextAndBytes
+
+command testOptions
+   local tLeft, tRight, tCanvas, tFound, tPicture, tPlain, tSvg, tRows
+   put bcCreate("left", "QR Code", 4) into tLeft
+   put bcCreate("right", "Data Matrix", 6) into tRight
+   put whiteCanvas(320, 140) into tCanvas
+   put pasteOnto(tCanvas, 320, tLeft, 0, 0) into tCanvas
+   put pasteOnto(tCanvas, 320, tRight, 180, 10) into tCanvas
+   put bcRead(tCanvas, 320, 140) into tFound
+   check "two barcodes on one picture", the number of elements of tFound is 2, the number of elements of tFound && bcLastError()
+   put bcReadFormats(tCanvas, 320, 140, "Data Matrix") into tFound
+   check "only the kind asked for", the number of elements of tFound is 1 and tFound[1]["text"] is "right", tFound[1]["text"] && bcLastError()
+   check "its position is on the right", item 1 of tFound[1]["position"] >= 180, tFound[1]["position"]
+   put bcReadFormats(tCanvas, 320, 140, "qrcode, datamatrix") into tFound
+   check "forgiving spelling of kinds", the number of elements of tFound is 2, bcLastError()
+   put bcReadAdvanced(tCanvas, 320, 140, "", "max=1") into tFound
+   check "max=1", the number of elements of tFound is 1, the number of elements of tFound
+   put bcReadAdvanced(tCanvas, 320, 140, "QR Code", "fast, noRotate, noInvert, text=hex") into tFound
+   check "several options, and text=hex", tFound[1]["text"] is "6C 65 66 74", tFound[1]["text"] && bcLastError()
+   put bcReadFormats(tCanvas, 320, 140, "EAN-13") into tFound
+   check "a kind that is not there: empty, and no error", tFound is empty and bcLastError() is empty, bcLastError()
+
+   put bcCreateAdvanced("options", "QR Code", "ecLevel=H,version=5", 2, false, false) into tPicture
+   check "create options: version 5 with no quiet zone is 37 modules", tPicture["width"] is 74, tPicture["width"] && bcLastError()
+   put bcRead(tPicture["imageData"], tPicture["width"], tPicture["height"]) into tFound
+   check "create options: ecLevel=H is read back", tFound[1]["ecLevel"] is "H" and tFound[1]["version"] is 5, tFound[1]["ecLevel"] && tFound[1]["version"]
+   put bcCreateAdvanced("5901234123457", "EAN-13", "", 3, true, false) into tPlain
+   put bcCreateAdvanced("5901234123457", "EAN-13", "", 3, true, true) into tPicture
+   check "the text under the bars makes the picture taller", tPicture["height"] > tPlain["height"], tPicture["height"] && tPlain["height"]
+   check "and it still reads", bcReadText(tPicture["imageData"], tPicture["width"], tPicture["height"]) is "5901234123457", bcLastError()
+
+   put bcCreateSVG("5901234123457", "EAN-13", "", true) into tSvg
+   check "SVG", tSvg contains "<svg" and tSvg contains "</svg>" and tSvg contains "901234", char 1 to 60 of tSvg
+   put bcCreateMatrix("hello", "QR Code", "") into tRows
+   check "the matrix of the smallest QR code is 21 rows of 21", the number of lines of tRows is 21 and the number of chars of line 1 of tRows is 21 \
+         and char 1 to 8 of line 1 of tRows is "11111110", the number of lines of tRows
+
+   -- a grey picture: one byte a pixel
+   local tGrey, tI
+   repeat with tI = 0 to tLeft["width"] * tLeft["height"] - 1
+      put byte (tI * 4 + 2) of tLeft["imageData"] after tGrey
+   end repeat
+   put bcReadAdvanced(tGrey, tLeft["width"], tLeft["height"], "", "gray") into tFound
+   check "a grey picture, one byte a pixel", tFound[1]["text"] is "left", bcLastError()
+end testOptions
+
+-- A refused call is empty and an explanation, never a script error.
+command testRefusals
+   local tPicture, tResult
+   put bcCreate("refuse", "QR Code", 4) into tPicture
+
+   put bcRead(empty, 10, 10) into tResult
+   check "a read of no pixels is empty, with a reason", tResult is empty and bcLastError() contains "imageData", bcLastError()
+   put bcRead(byte 1 to -2 of tPicture["imageData"], tPicture["width"], tPicture["height"]) into tResult
+   check "imageData one byte short is refused", tResult is empty and bcLastError() contains "imageData", bcLastError()
+   put bcRead(tPicture["imageData"], 0, 0) into tResult
+   check "a 0 x 0 picture is refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcRead(tPicture["imageData"], -5, 7) into tResult
+   check "a negative size is refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcReadFormats(tPicture["imageData"], tPicture["width"], tPicture["height"], "NoSuchBarcode") into tResult
+   check "an unknown kind to read is refused, and named", tResult is empty and bcLastError() contains "NoSuchBarcode", bcLastError()
+   put bcReadAdvanced(tPicture["imageData"], tPicture["width"], tPicture["height"], "", "sideways") into tResult
+   check "an unknown read option is refused, and named", tResult is empty and bcLastError() contains "sideways", bcLastError()
+   check "bcReadText of nothing is empty", bcReadText(empty, 0, 0) is empty and bcLastError() is not empty, bcLastError()
+
+   put bcCreate(empty, "QR Code", 4) into tResult
+   check "nothing to encode is refused", tResult is empty and bcLastError() contains "empty", bcLastError()
+   put bcCreate("x", empty, 4) into tResult
+   check "no kind named is refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcCreate("x", "NoSuchBarcode", 4) into tResult
+   check "an unknown kind to create is refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcCreate("letters", "EAN-13", 3) into tResult
+   check "letters in an EAN-13 are refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcCreate("x", "QR Code", 0) into tResult
+   check "a scale of 0 is refused", tResult is empty and bcLastError() contains "scale", bcLastError()
+   put bcCreate("x", "QR Code", 65) into tResult
+   check "a scale of 65 is refused", tResult is empty and bcLastError() contains "scale", bcLastError()
+   put bcCreateAdvanced("x", "QR Code", "rows=99999999999", 4, true, false) into tResult
+   check "a create option the library would choke on is refused here", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcCreateAdvanced("x", "QR Code", "nonsense", 4, true, false) into tResult
+   check "an unknown create option is refused, and named", tResult is empty and bcLastError() contains "nonsense", bcLastError()
+   check "a refused SVG is empty", bcCreateSVG("letters", "EAN-13", "", false) is empty and bcLastError() is not empty, bcLastError()
+   check "a refused matrix is empty", bcCreateMatrix(empty, "QR Code", "") is empty and bcLastError() is not empty, bcLastError()
+   put bcCreateFromData(empty, "QR Code", "", 4) into tResult
+   check "no data to encode is refused", tResult is empty and bcLastError() is not empty, bcLastError()
+   put bcCreate("fine", "QR Code", 4) into tResult
+   check "and the next good call clears the error", tResult is not empty and bcLastError() is empty, bcLastError()
+end testRefusals
+
+-- The reason the picture is in the engine's layout: an image object takes
+-- it, and gives it back, with no conversion. (The server engine has no
+-- window, but it has image objects.)
+command testImageObject
+   local tPicture
+   put bcCreate("an image object", "QR Code", 5) into tPicture
+   try
+      create stack "barcodextSelftest"
+      set the defaultStack to "barcodextSelftest"
+      create image "code"
+      set the width of image "code" to tPicture["width"]
+      set the height of image "code" to tPicture["height"]
+      set the imageData of image "code" to tPicture["imageData"]
+   catch tError
+      put "INFO this engine builds no image object here (" & oneLine(line 1 of tError) & "): the image checks are skipped" & return
+      exit testImageObject
+   end try
+   check "an image object takes a created barcode, and its own imageData reads", \
+         bcReadText(the imageData of image "code", the width of image "code", the height of image "code") is "an image object", bcLastError()
+   delete stack "barcodextSelftest"
+end testImageObject
+
+command testTypedBoundary
+   local tThrew
+   put false into tThrew
+   try
+      get bcRead("abcd", empty, 1)
+   catch tError
+      put true into tThrew
+   end try
+   check "an empty width is a catchable script error (pass 0, not empty)", tThrew, "bcRead(x, empty, 1) did not throw on this engine"
+end testTypedBoundary
+
+-- Every public handler, called once with zeros and empties: none may throw.
+-- tools/check-shim-coverage.py holds this list to the binding's public
+-- handlers, so a new one cannot be left out.
+command sweepEveryHandler
+   local tName
+   try
+      put "bcABIVersion" into tName
+      get bcABIVersion()
+      put "bcLibraryVersion" into tName
+      get bcLibraryVersion()
+      put "bcLastError" into tName
+      get bcLastError()
+      put "bcFormats" into tName
+      get bcFormats()
+      put "bcWritableFormats" into tName
+      get bcWritableFormats()
+      put "bcRead" into tName
+      get bcRead(empty, 0, 0)
+      put "bcReadFormats" into tName
+      get bcReadFormats(empty, 0, 0, empty)
+      put "bcReadAdvanced" into tName
+      get bcReadAdvanced(empty, 0, 0, empty, empty)
+      put "bcReadText" into tName
+      get bcReadText(empty, 0, 0)
+      put "bcCreate" into tName
+      get bcCreate(empty, empty, 0)
+      put "bcCreateAdvanced" into tName
+      get bcCreateAdvanced(empty, empty, empty, 0, false, false)
+      put "bcCreateFromData" into tName
+      get bcCreateFromData(empty, empty, empty, 0)
+      put "bcCreateSVG" into tName
+      get bcCreateSVG(empty, empty, empty, false)
+      put "bcCreateMatrix" into tName
+      get bcCreateMatrix(empty, empty, empty)
+   catch tError
+      check "sweep: " & tName, false, oneLine(tError)
+      exit sweepEveryHandler
+   end try
+   check "sweep: every public handler called with zeros and empties, none threw", true
+end sweepEveryHandler
+
+-- ---------------------------------------------------------------------
+put 0 into sPassed
+put 0 into sFailed
+put "INFO engine " & the version && the platform && the processor & return
+try
+   set the revLibraryMapping["barcodext"] to $1
+   load extension from file $0
+   check "the extension loads", the result is empty and "org.openxtalk.library.barcodext" is among the lines of the loadedExtensions, \
+         "result '" & oneLine(the result) & "'"
+   if sFailed is 0 then
+      put "INFO " & bcLibraryVersion() & return
+      testLibrary
+      testRoundTrips
+      testTextAndBytes
+      testOptions
+      testRefusals
+      testImageObject
+      testTypedBoundary
+      sweepEveryHandler
+   end if
+catch tError
+   check "the run finished", false, oneLine(tError)
+end try
+put "SUMMARY " & sPassed && sFailed & return
+quit sFailed
+?>
