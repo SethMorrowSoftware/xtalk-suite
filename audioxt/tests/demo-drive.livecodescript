@@ -17,7 +17,9 @@ script "audioxtDemoDrive"
 -- scene in turn (the beat, the sound round your head, the synth, the tape),
 -- and the drive checks each one at its moments. Then it does what a person
 -- would, by clicking: picks the silent microphone from the sound devices
--- panel and plays the microphone scene, pauses and resumes, drags the
+-- panel and plays the microphone scene, then plays it again with a
+-- microphone that sends nothing (a page that may not use one, as the
+-- community gallery's, gets none), pauses and resumes, drags the
 -- volume, moves the sound to the silent device, runs every check and
 -- copies the results, and closes the stack. A CI machine has no sound card:
 -- the window itself falls back to the silent device, and says so.
@@ -510,6 +512,28 @@ command drStage
    drShot "5-playback"
    drCheck drWaitFor("phase", "faster", 8000), "then once more, faster", drHandle("phase")
    drCheck drWaitFor("scene", 0, 8000) and drField("EndName") is "Your microphone", "and the card comes", drField("EndName")
+
+   -- 5 again, with a microphone that sends nothing, as a page that may not
+   -- use one gets (in a community gallery play page, 2026-11-22, the reason
+   -- was on the stage for one frame and the status line was cut off at its
+   -- end). The silent microphone always sends silence, so the capture is
+   -- closed under the scene before it has read anything.
+   drClick "Sc5"
+   put drHandle("mic") into tMic
+   drCheck drHandle("scene") is 5 and tMic > 0 and auCaptureIsRunning(tMic), "the microphone scene listens again", \
+         drField("mFacts")
+   auCaptureClose tMic
+   drCheck drWaitFor("phase", "none", 14000), "with nothing heard, after its wait it says so", drHandle("phase")
+   drCheck drField("Caption") is "No microphone here" and drField("mRecText") is empty \
+         and drField("mFacts") contains "No sound arrived from the microphone." \
+         and drField("Status") is drHandle("micnosound"), "plainly, on the stage and in one status line", drField("Status")
+   drShot "5-none"
+   drWait 2000
+   drCheck drHandle("scene") is 5 and drHandle("phase") is "none", "and leaves the reason up to be read", drHandle("phase")
+   drCheck drWaitFor("scene", 0, 8000) and drField("EndName") is "Your microphone" \
+         and drField("Status") is drHandle("micnosound"), "then the card comes, the status line still saying why", \
+         drField("Status")
+   drFits "5-none-end"
 
    -- pause, resume, the volume knob
    drClick "Sc2"
