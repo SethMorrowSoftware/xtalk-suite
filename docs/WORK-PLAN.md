@@ -1158,11 +1158,14 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   gamepad step in Chromium, Firefox and WebKit: a virtual pad attached, a button pressed
   and read back as an event, a stick, rumble and the light, the pad unplugged, and SDL's
   assertions at 0 (Chromium's log read; the other two passed the same check). No real pad
-  has been read in a browser. Of the desktop libraries only the `x86_64-win32` DLL has met
-  an engine: the Windows IDE run above loaded a DLL of its size (1,936,384 bytes, not
-  hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC). The Linux runs used a
-  locally built library, and no engine has loaded the committed Linux, 32-bit Windows or
-  Mac ones.
+  has been read in a browser. Of the desktop libraries two have met an engine: the
+  `x86_64-win32` DLL, as the Windows IDE run above loaded a DLL of its size (1,936,384
+  bytes, not hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC); and the
+  `x86_64-linux` library, the committed file itself (by its hash), under OXT-Beyond
+  0.2.8-dp.1's Linux desktop engine with no display, where the drive passed all 162
+  checks over it (run locally, 2026-11-21). The other Linux runs used a locally built
+  library, and no engine has loaded the committed 32-bit Windows, 32-bit or arm64 Linux
+  or Mac ones.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
   2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
 
@@ -1296,7 +1299,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `oscxt/src/code/` holds every desktop platform and the freshness gate demands them |
 | 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac. (2026-11-22: installed on Windows, `oscVersion()` 2 and the self-test's 29 checks and UDP loopback passed in the IDE; installed on Linux, the self-test passed in the standalone engine; no real peer yet, no Mac.) | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
-| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them publishes it | after #1 | - | the package installs from the site in an IDE |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
@@ -1340,11 +1343,19 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   Windows, naming the GS Wavetable synth for Sound; each close left no port and nothing
   queued (runbook section 8). On Linux it offered for Sound the port RtMidi makes to read
   its own cable, which would have played the player's notes into the stage's own input;
-  fixed the same day (`mdsReads`, its test failing first). Nobody has watched or heard it:
-  verified statically; needs an OXT pass (row 6). It opened without midixt in OXT-Beyond
-  0.2.8-dp.1's IDE on Windows and
-  said what was missing. That run found two faults in all three ShowControl showcases: each
-  opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
+  fixed the same day (`mdsReads`, its test failing first). Rebuilt there with that fix, it
+  offered no output for Sound ("There is no MIDI output here to play through."), and
+  opened again after a close threw "can't find handler midiControlChange": its stop had
+  left the mode "cable" with the cable's handles emptied, so the next open's own stop
+  silenced through an empty handle (engine note 6.4); fixed the same day
+  (`TestTheStageOpensAgainAfterAClose`, failing first), and built from the fix it opened
+  again after either kind of close on both PCs, with no error; left playing 10 s on
+  Linux, it read back through ALSA all 86 messages its player sent, 3 ms from send to
+  stage on average: its first messages through a MIDI service (runbook section 8).
+  Nobody has watched or heard it: verified statically; needs an OXT pass (row 6). It
+  opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and said what was
+  missing. That run found two faults in all three ShowControl showcases: each opened
+  with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
   OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
   5.15). Fixed the same day: each builds with messages locked and centres its window, held
   by two engine tests that failed against the old build. Built so, it opened there that
@@ -1361,10 +1372,10 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `midixt/src/code/` holds every desktop platform and the freshness gate demands them |
 | 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports). (Linux, 2026-11-22: Tier 3 passed through ALSA on the maintainer's PC, every check run; no keyboard or DAW yet.) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
-| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them publishes it | after #1 | - | the package installs from the site in an IDE |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
-| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in. (2026-11-22, hidden in OXT-Beyond's IDE on the maintainer's PCs, 10 s of play each: on Linux, over its virtual port through ALSA, the stage read all 86 messages the player sent, 3 ms from send to stage, and its close left no port; on Windows with no loopMIDI port it decoded all 86. Not yet on a screen, heard, on a Mac, through a loopMIDI port or with a keyboard.) | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
 
 ### 2.19 artnetxt
 
@@ -1407,7 +1418,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | The first IDE pass: install the extension, then `examples/artnet-selftest.livecodescript` on Windows, Linux and a Mac | S1 | - | the self-test is green on each |
 | 2 | A real node or desk: ArtPoll discovery finds it and a DMX universe drives a fixture (or a node's own monitor), and a desk's ArtDmx arrives in script | S1 + Art-Net gear | - | the fixture follows the faders, and the desk's levels read back |
-| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day | S1, after the merge | - | the package installs from the site in an IDE |
+| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day. Published 2026-11-22 by the run of #200's merge (run 44973801763 from 9d534bd: pre-release v2026.11.22.2; the site rebuilt by run 44973913732). No IDE has installed it from the site yet | S1, after the merge | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
