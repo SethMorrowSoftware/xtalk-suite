@@ -239,6 +239,32 @@ def setup_packages(setup_text):
     return set(w for line in m.group(1).split("\n") for w in _strip_comment(line).split())
 
 
+# What one job leaves must never reach the next (review of PR 209,
+# 2026-11-22): coinxt's 32-bit pack row writes a `gcc -m32` cc into
+# $HOME/bin and the pack rows build drivers in /tmp. On GitHub's machines
+# both die with the machine; on the PC each runner needs its own HOME and
+# /tmp, emptied by both hooks, and the stand-in sudo and the hooks must sit
+# where a job cannot write.
+ISOLATION = (
+    ("each runner its own /tmp", r"^PrivateTmp=yes$"),
+    ("each runner its own HOME", r"^Environment=HOME=\$dir/_home$"),
+    ("the stand-in sudo first on PATH, from a root-owned folder",
+     r"^printf '%s\\n' \"\$OPT/bin:"),
+    ("the shim and hooks root-owned", r'^install -d -m 755 -o root -g root "\$OPT" "\$OPT/bin" "\$OPT/hooks"$'),
+    ("job-started empties HOME and /tmp",
+     r'cat > "\$OPT/hooks/job-started\.sh" <<EOF\n(?:(?!^EOF$).*\n)*"\$OPT/hooks/clean\.sh"\nEOF'),
+    ("job-completed empties HOME and /tmp",
+     r'cat > "\$OPT/hooks/job-completed\.sh" <<EOF\n(?:(?!^EOF$).*\n)*"\$OPT/hooks/clean\.sh"\nEOF'),
+    ("clean.sh empties the runner's HOME", r'find "\$HOME" -mindepth 1 -delete'),
+    ("clean.sh empties the job's /tmp", r"find /tmp /var/tmp -mindepth 1 -user ghrunner -delete"),
+)
+
+
+def isolation_problems(setup_text):
+    return ["setup-linux-runner.sh: missing %s" % what
+            for what, rx in ISOLATION if not re.search(rx, setup_text, re.M)]
+
+
 class Shim:
     """The real stand-in sudo, over a fake dpkg that knows `packages`."""
 
@@ -433,9 +459,16 @@ def fixtures(shim):
 
 def main():
     with open(SETUP) as f:
-        packages = setup_packages(f.read())
+        setup_text = f.read()
+    packages = setup_packages(setup_text)
     shim = Shim(packages)
     failures = fixtures(shim)
+    for what, rx in ISOLATION:          # each rule must see its own removal
+        if not re.search(rx, setup_text, re.M):
+            continue                    # reported below as missing
+        broken = re.sub(rx, "", setup_text, flags=re.M)
+        if not isolation_problems(broken):
+            failures.append("isolation rule %r cannot see its own removal" % what)
     if failures:
         print("test-pc-runner-lanes: FIXTURES FAILED - the check cannot be trusted:")
         for x in failures:
@@ -445,7 +478,7 @@ def main():
     for p in sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml"))):
         with open(p) as f:
             workflows[os.path.relpath(p, ROOT)] = f.read()
-    problems = check(workflows, shim)
+    problems = isolation_problems(setup_text) + check(workflows, shim)
     routed = sum(1 for t in workflows.values() if "seth-pc" in t)
     if problems:
         print("test-pc-runner-lanes: FAIL")

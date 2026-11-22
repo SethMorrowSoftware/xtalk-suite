@@ -52,6 +52,13 @@ the screen. Both caps below are enforced by the operating system, not asked of t
 | Disk I/O | idle class | Low I/O priority |
 | Memory | `MemoryMax` 12G for all runners together | 8 GB, in the same job object |
 | Disk | a job does not start with under 5 GB free; its checkout is deleted when it ends | the same, 4 GB |
+| What a job leaves | its checkout, its HOME and its /tmp are emptied when it starts and when it ends; each runner has its own HOME and (systemd `PrivateTmp`) its own /tmp; the stand-in `sudo` and the hooks sit in root-owned `/opt/ghrunner` | the checkout and the runner's own temp folder, which the runner clears per job |
+
+**Nothing carries over.** On GitHub's machines whatever a job writes outside its checkout dies with
+the machine; on a PC it would reach the next job. coinxt's 32-bit pack row writes a `gcc -m32` `cc`
+into `$HOME/bin` and the pack rows build their drivers in `/tmp`, so a later 64-bit job would have
+picked up the 32-bit compiler (review of PR 209, 2026-11-22). Hence the Linux row above, held by
+`tools/test-pc-runner-lanes.py` with the rest.
 
 **No root for jobs.** The lanes were written for GitHub's machines, where `sudo apt-get install` is
 free. On the Linux PC the setup script installs the toolchain once, as root, and the jobs' `sudo`
@@ -97,4 +104,6 @@ On Windows the first design (a service, capped afterwards by a SYSTEM task) was 
 on every process, so the runner ran uncapped and jobs stayed switched off; the cap-starts-the-runner
 design replaced it the same day. Observed on that PC (2026-11-21): the cap's log says it joined the
 job, and its state file lists Runner.Listener inside it at 25% and 8 GB. No job has run under it yet,
-so the cap has not been seen holding a build.
+so the cap has not been seen holding a build. The Linux runners were registered on 2026-11-21 by the first version of
+`setup-linux-runner.sh`, before HOME and /tmp were kept per job; run the current one again on that PC
+before `PC_RUNNERS_LINUX` is set.

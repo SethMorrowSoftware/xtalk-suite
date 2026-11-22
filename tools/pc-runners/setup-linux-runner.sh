@@ -42,6 +42,7 @@ CPU_QUOTA=${CPU_QUOTA:-800%}      # 8 of this PC's 20 threads, for all its runne
 MEMORY_MAX=${MEMORY_MAX:-12G}
 MIN_FREE_GB=${MIN_FREE_GB:-5}
 HOME_DIR=/var/lib/ghrunner
+OPT=/opt/ghrunner
 LABELS=seth-pc
 
 die() { echo "setup-linux-runner: $*" >&2; exit 1; }
@@ -75,26 +76,44 @@ if ! id ghrunner > /dev/null 2>&1; then
 fi
 passwd -l ghrunner > /dev/null
 chmod 750 "$HOME_DIR"
-install -d -o ghrunner -g ghrunner "$HOME_DIR/bin" "$HOME_DIR/hooks"
-install -m 755 -o root -g root "$HERE/sudo" "$HOME_DIR/bin/sudo"
+# The stand-in sudo and the hooks live where a job cannot write (root-owned
+# $OPT): a job that could edit them could leave anything for the next job.
+install -d -m 755 -o root -g root "$OPT" "$OPT/bin" "$OPT/hooks"
+install -m 755 -o root -g root "$HERE/sudo" "$OPT/bin/sudo"
+rm -rf "$HOME_DIR/bin" "$HOME_DIR/hooks"     # where the first version put them
 
-cat > "$HOME_DIR/hooks/job-started.sh" <<EOF
+# Each job starts and ends with an empty HOME and /tmp. A job writes there
+# (coinxt's 32-bit pack row puts a `gcc -m32` cc in $HOME/bin, and the pack
+# rows build their drivers in /tmp), and on GitHub's machines that dies with
+# the machine; here it would reach the next job (review of PR 209,
+# 2026-11-22). Each runner has its own HOME, and systemd gives each its own
+# /tmp (PrivateTmp), so two runners on this PC never share either.
+cat > "$OPT/hooks/clean.sh" <<'CLEAN'
+#!/usr/bin/env bash
+case "${HOME:-}" in
+  /var/lib/ghrunner/*/_home) find "$HOME" -mindepth 1 -delete 2> /dev/null || true ;;
+esac
+find /tmp /var/tmp -mindepth 1 -user ghrunner -delete 2> /dev/null || true
+CLEAN
+cat > "$OPT/hooks/job-started.sh" <<EOF
 #!/usr/bin/env bash
 free=\$(df -BG --output=avail "$HOME_DIR" | tail -1 | tr -dc 0-9)
 if [ "\$free" -lt $MIN_FREE_GB ]; then
   echo "::error::The PC runner has only \${free} GB of disk free (it needs $MIN_FREE_GB); not starting, so the PC's disk is never filled."
   exit 1
 fi
+"$OPT/hooks/clean.sh"
 EOF
-cat > "$HOME_DIR/hooks/job-completed.sh" <<'EOF'
+cat > "$OPT/hooks/job-completed.sh" <<EOF
 #!/usr/bin/env bash
 # The checkout and build tree go when the job ends: the PC's disk is shared
-# with the person using it.
-if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE" ]; then
-  rm -rf "${GITHUB_WORKSPACE:?}"/* "${GITHUB_WORKSPACE:?}"/.[!.]* 2> /dev/null || true
+# with the person using it. So do HOME and /tmp.
+if [ -n "\${GITHUB_WORKSPACE:-}" ] && [ -d "\$GITHUB_WORKSPACE" ]; then
+  rm -rf "\${GITHUB_WORKSPACE:?}"/* "\${GITHUB_WORKSPACE:?}"/.[!.]* 2> /dev/null || true
 fi
+"$OPT/hooks/clean.sh"
 EOF
-chmod 755 "$HOME_DIR/hooks/"*.sh
+chmod 755 "$OPT/hooks/"*.sh
 
 echo "== the slice every runner on this PC shares"
 cat > /etc/systemd/system/ghrunner.slice <<EOF
@@ -136,18 +155,21 @@ sudo -u ghrunner -H bash -c "cd '$dir' && ./config.sh --unattended --replace \
   --name '$name' --labels '$LABELS' --work _work"
 
 # The jobs' environment: the stand-in sudo first, and the two hooks
-printf '%s\n' "$HOME_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > "$dir/.path"
+install -d -o ghrunner -g ghrunner -m 700 "$dir/_home"
+printf '%s\n' "$OPT/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > "$dir/.path"
 cat >> "$dir/.env" <<EOF
-ACTIONS_RUNNER_HOOK_JOB_STARTED=$HOME_DIR/hooks/job-started.sh
-ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$HOME_DIR/hooks/job-completed.sh
+ACTIONS_RUNNER_HOOK_JOB_STARTED=$OPT/hooks/job-started.sh
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$OPT/hooks/job-completed.sh
 EOF
 chown ghrunner:ghrunner "$dir/.path" "$dir/.env"
 
 (cd "$dir" && ./svc.sh install ghrunner)
 unit=$(cat "$dir/.service")
 install -d "/etc/systemd/system/$unit.d"
-cat > "/etc/systemd/system/$unit.d/low-priority.conf" <<'EOF'
+cat > "/etc/systemd/system/$unit.d/low-priority.conf" <<EOF
 [Service]
+Environment=HOME=$dir/_home
+PrivateTmp=yes
 Slice=ghrunner.slice
 Nice=15
 CPUSchedulingPolicy=batch
