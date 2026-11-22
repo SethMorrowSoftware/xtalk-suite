@@ -538,7 +538,7 @@ end uiMenuSource
 -- the Kit (below) or the UI kit (above) uses.
 -- =====================================================================
 -- bump when the built chrome changes, so a newer paste rebuilds it once
-constant kOiUIVersion = "1"
+constant kOiUIVersion = "2"
 -- the view, in card pixels: 768 x 456, five by three
 constant kOiViewL = 16
 constant kOiViewT = 58
@@ -618,6 +618,13 @@ command oiNewGame
    b3kSetFog kOiSky, 32, 75
    b3kSetLight -0.45, -1, -0.5
    b3kSetAmbient "84,90,104"
+   -- In a web page render3dxt draws on ONE thread, inside the frame: with
+   -- smooth edges (each pixel the average of 2 x 2 samples, the Kit's
+   -- default) that was 57 ms of every frame and the game ran at 14
+   -- pictures a second in the gallery's player (2026-11-22). Single
+   -- samples cost 15 ms. A desktop draws on every core in the background
+   -- and keeps the smooth edges.
+   if oiOnWeb() then b3kSetSmooth 1
    oiBuildIsland
    b3kPlayerMake kOiStartX, kOiStartY, kOiStartZ, "capsule", "61,110,200"
    -- the orbit's target given too: the camera starts ON the player, where
@@ -985,6 +992,7 @@ end oiRendererLabel
 
 function oiRendererWords
    if b3kRenderer() is "render3dxt" then
+      if oiOnWeb() then return "render3dxt draws: textured and lit."
       return "render3dxt draws: textured, lit, smooth edges."
    end if
    if b3kRenderer() is "box3dxt" then
@@ -995,6 +1003,11 @@ function oiRendererWords
    end if
    return "Nothing draws (" & b3kRenderer() & ")."
 end oiRendererWords
+
+-- true in a web page (the Stack Player), where the engine says HTML5
+function oiOnWeb
+   return the platform is "HTML5"
+end oiOnWeb
 
 command oiWin
    local tSecs
@@ -1050,6 +1063,11 @@ command oiBuildUI
    -- the view sits on a card of its own; the Kit makes the image
    uiPanel "oiViewCard", (kOiViewL - 6) & comma & (kOiViewT - 6) & comma & \
          (kOiViewL + kOiViewW + 6) & comma & (kOiViewT + kOiViewH + 6)
+   -- no soft shadow under the view: the view is drawn sixty times a
+   -- second, and the engine redrew the shadow beneath it every time
+   -- (in the web player that cost about 10 ms of every frame,
+   -- 2026-11-22). The hairline still sets the card off the page.
+   set the dropShadow of graphic "oiViewCard" to empty
    b3kViewMake kOiViewL, kOiViewT, kOiViewW, kOiViewH
    -- the side panel
    put 816 into tL
