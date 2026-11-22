@@ -71,6 +71,11 @@ self-test's `sweepEveryHandler`. `tools/check-shim-coverage.py` refuses any of t
    Intel half. With two entries in `CMAKE_OSX_ARCHITECTURES` the member's CMake configures
    itself once per architecture and joins the results under the usual names (the comment in
    `CMakeLists.txt` has the failure it came from). The join has run only in CI.
+8. **A whole animation ends by 2,147,483,647 ms (`WPX_MAX_TOTAL_MS`), written or read.**
+   libwebp keeps a frame's start in an int on both sides, and the writer's own limits
+   (10,000 frames of up to 600,000 ms) would pass it: the writer refuses the frame that
+   would end later, and `wpx_anim_open` sums a file's durations in 64 bits and refuses one
+   that adds up to more, before libwebp's decoder can overflow on it.
 
 ## Status
 
@@ -85,4 +90,8 @@ failed); the IDE on the maintainer's Windows PC (OXT-Beyond 0.2.8-dp.1, 64-bit) 
 gallery's WebP Studio encoded a picture and decoded it back; and OXT-Beyond's Android check app
 (its pull request 614) called `wpLibraryVersion()` on an Android 16 x86_64 emulator. No IDE on
 Linux or a Mac, no engine on macOS or the web, and no ARM or 32-bit library has run it:
-verified statically; needs an OXT pass. Open work is in the suite's `docs/WORK-PLAN.md`.
+verified statically; needs an OXT pass. The animation-length limit (gotcha 8) came on
+2026-11-22, and the web archive was rebuilt from it that day; the engine self-test passes
+over a library built from it on that server engine (93 checks, none failed) and fails
+exactly its five new checks over the libraries committed 2026-11-21, which predate it until
+a release dispatch rebuilds them. Open work is in the suite's `docs/WORK-PLAN.md`.

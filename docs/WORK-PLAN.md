@@ -1144,6 +1144,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's webpxt row has a pill and a Run |
 | 6 | A demo stack (open a WebP file, show it, save an image as WebP; the kit's look) | coding | - | a paste-and-run example in `webpxt/examples/` |
 | 7 | Adopt and publish `SethMorrowSoftware/webpxt` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+| 8 | The animation-length limit (found by Codex in review of the pull request that brought webpxt in): a whole animation ends by 2,147,483,647 ms (about 24.8 days), written or read, because libwebp keeps a frame's start in a 32-bit int both ways. FIXED in source 2026-11-22: `wpx_animenc_add` refuses the frame that would end an animation later (before, the 3,580th frame of ten minutes overflowed and the file read back with a frame of 0 ms) and `wpx_anim_open` refuses a file whose frames add up to more (before, libwebp's decoder overflowed). The smoke test and `tests/engine-selftest.lc` hold both sides; the engine test passes on the server engine over a library built from the fix and fails exactly its five new checks over the libraries committed 2026-11-21. The web archive was rebuilt with emsdk 6.0.12. Still owed: the release-binaries dispatch that rebuilds the other ten libraries from the fix | a dispatch (`build: named`, `members: webpxt`) | - | `webpxt/src/code/` holds libraries built from the fix |
 
 ### 2.16 barcodext
 
