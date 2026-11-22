@@ -32,7 +32,10 @@ committed now.
 member, its own lane (`native-box3dxt.yml`) builds it for the four ABIs with that script and runs
 its tests on the emulator for the two x86 ones on every change. Its four libraries were
 committed on 2026-11-20 by its own release run (run 44806507517, commit 6d132d3; the x86 ones
-tested on the emulator, the ARM ones built and checked, not run). The counts in this page's dated records are of the seven members of those runs.
+tested on the emulator, the ARM ones built and checked, not run), and the `x86_64-android` one
+answered one call in an app on 2026-11-21 (the record is below). The four were rebuilt at ABI 3
+the same day by release run 44914775780 (the x86 ones tested on the emulator again, the ARM ones
+built and checked, not run); no engine has loaded those. The counts in this page's dated records are of the seven members of those runs.
 **audioxt joined the same day**, the same way: a member of `tools/build-android.sh`, built
 for the four ABIs and tested on the emulator for the two x86 ones by `native-audioxt.yml`. Its
 four libraries were committed on 2026-11-21 from release run 44847619287 (commit 78223d8; the x86
@@ -236,6 +239,14 @@ the package, the binding resolves and that call returns; no socket was opened, n
 started, no world stepped. And the device was x86_64: the
 `x86-android` and the ARM libraries rode in the package and were not loaded.
 
+**box3dxt in an app, 2026-11-21** (OXT-Beyond pull request 606, head 52cd87d, merged the same
+day; its Android builder job on linux-x86_64, run 44863595033). The same probe app with
+box3dxt's extension added, its libraries taken from the suite at 46ad996 and each checked
+against its pinned SHA-256: on the Android 13 and the Android 16 (16 KB pages) x86_64
+emulators, `b3LibraryVersion()` answered `box3dxt ABI 2; Box3D 0.2.0` (both read back from the
+job's log). One call, as above: no world was stepped. Those were the ABI 2 files of 6d132d3;
+the ABI 3 ones committed now (release run 44914775780) have not been in an app.
+
 **webpxt and barcodext in an app, 2026-11-21** (OXT-Beyond pull request 614, head 03ac97d, not
 yet merged when this was written; its `Android builder on linux-x86_64` job, run 44906425449).
 That change pins both members at 4daa6da, whose Android libraries are the ones 21f75b8
@@ -298,8 +309,8 @@ proof is an app on Android 11 or later, which OXT-Beyond's Android workflow runs
 these four (work plan 1.2 #33).
 
 Not run anywhere yet: any ARM library; any `x86-android` library on an engine; any member's
-selftest or demo on an Android engine; box3dxt's, render3dxt's and xlsxt's libraries in an app;
-a torrentxt built for API 24 on an engine, or in an app at all.
+selftest or demo on an Android engine; box3dxt's ABI 3 libraries, and render3dxt's and xlsxt's,
+in an app; a torrentxt built for API 24 on an engine, or in an app at all.
 
 ## What differs on Android, per member
 
@@ -309,7 +320,7 @@ a torrentxt built for API 24 on an engine, or in an app at all.
 | coinxt | Entropy comes from `arc4random_buf` (bionic's, kernel-seeded): `getrandom()` only arrived in API 28 and the library targets API 21. | self-test run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
 | torrentxt | Built for API 24 (Android 7.0), not 21: libtorrent then learns the device's addresses with `getifaddrs()` and uses no netlink socket, which Android 11 and later refuse an app. On that path libtorrent watches for no address changes (a session does not notice the device moving between networks) and, with no route table to read, listens on the unspecified address itself, which its own source calls a best effort that does not follow BEP 32 and BEP 45 for the IPv6 DHT (read in libtorrent 2.0.11, not exercised). An app must give save paths it may write to (the engine's documents or cache folder, not `/tmp`), and Android stops background network use it has not been told about. | rebuilt at API 24 on 2026-11-21 (run 44914897842, commit d47060f): tests run on an Android 7.0 emulator (both x86 ABIs), as the shell user. No engine has loaded these four, and no app on Android 11 or later has started a session of them: needs an OXT pass on Android. The API 21 builds they replace (tests run on the emulator 2026-11-18, loaded by an engine in an app 2026-11-19 for one call) started a session paused in an app on Android 13 and 16 ("The torrent stall"); an app still carrying those must `btSessionResume` it and name the address to listen on. ARM: built, not run |
 | datachannelxt, enetxt | None in the library. | tests run on the emulator 2026-11-18 (both x86 ABIs). Loaded by an engine in an app 2026-11-19 (x86_64, one call). ARM: built, not run |
-| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3); tested on the emulator for the two x86 ABIs, the ARM ones not run |
+| box3dxt | None. Box3D picks its AVX2 solver at run time, so the x86_64 library needs no flag; the 32-bit x86 one is built with SSE2 arithmetic; the ARM ones use NEON. | built by the 2026-11-20 release run and committed (6d132d3), the `x86_64-android` one answering one call in an app (2026-11-21); rebuilt at ABI 3 by release run 44914775780; tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | audioxt | None in the library: miniaudio finds AAudio (API 26 and later) or OpenSL ES at run time and links neither. An app that records must hold the `RECORD_AUDIO` permission, which the binding does NOT declare for it (most stacks only play), and must ask the person at run time. | built by the 2026-11-21 release run and committed (78223d8); tested on the emulator for the two x86 ABIs (through miniaudio's silent device), the ARM ones not run; no sound has been played on an Android device |
 | render3dxt | None. Plain C with no SIMD of its own; the 32-bit x86 library is built with SSE2 arithmetic. Its drawing threads are bionic's pthreads, joined before the call that draws returns, or, for a picture begun, by the next call that names a handle; none runs script. A model or picture is read from the path an app gives it, so an app passes paths it may read (its own files, not another app's). | built by the 2026-11-21 release run and committed (f6c0b1a); tested on the emulator for the two x86 ABIs, the ARM ones not run |
 | gamepadxt | Not built: SDL's Android joystick code is driven from SDL's own Java activity (`SDLActivity`, `SDLControllerManager`), and an OXT app has the engine's activity instead. Reading controllers on Android would need that Java side written for the engine. | not built for Android |

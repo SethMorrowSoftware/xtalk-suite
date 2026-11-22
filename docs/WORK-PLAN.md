@@ -909,7 +909,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 ### 2.10 box3dxt
 
 - Joined 2026-11-20: Box3D (pinned to a commit; it has no tagged release yet) behind the
-  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20) and the `b3*` binding, whose names are mechanical. Records: the
+  `b3x_*` C shim (ABI 2 since the renderer, 2026-11-20; ABI 3 since the sky, 2026-11-21) and the `b3*` binding, whose names are mechanical. Records: the
   shim's smoke test and random-call test, clean under ASan/UBSan with Box3D's asserts on,
   also as a 32-bit build and as WebAssembly under node; and `tests/engine-selftest.lc` on
   OXT-Beyond's headless Linux server engine over a locally built library (2026-11-20), which
@@ -928,10 +928,16 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   de53e6c, commit 6d132d3: six desktop rows and four Android ids, ABI 2 with the renderer),
   and the web archive beside them, built with emsdk 6.0.12 outside that workflow as the other
   members' are. The `ships` row lists all eleven. The engine and IDE runs above used locally
-  built libraries. The web archive is the one an engine has loaded: on 2026-11-21 a web engine
-  built locally from OXT-Beyond's pull request 606 linked it from that pull request's pin
-  (this repository at 46ad996, its SHA-256 checked) and played Orb Island in Chromium. No
-  engine has loaded a desktop or Android one yet.
+  built libraries. Of those ABI 2 files three met an engine on 2026-11-21: the web archive (a
+  web engine built locally from OXT-Beyond's pull request 606 linked it from that pull
+  request's pin, this repository at 46ad996, its SHA-256 checked, and played Orb Island in
+  Chromium), the `x86_64-win32` DLL (installed in OXT-Beyond 0.2.8-dp.1's IDE on Windows, its
+  SHA-256 read there; row 2) and the `x86_64-android` library (one call in an app that
+  OXT-Beyond's pull request 606 built). All eleven were rebuilt at ABI 3 the same day (the
+  web archive by hand with the sky, commit 562242c; the ten by release run 44914775780, commit
+  938befc), and of those only the `x86_64-linux` library has met an engine: OXT-Beyond
+  0.2.8-dp.1's Linux server engine loaded it (its SHA-256 as committed) and passed the engine
+  self-test, the Kit's test and Orb Island's with it, with render3dxt and without.
 - Publishing: `SethMorrowSoftware/box3dxt` exists; a publish-members run adopts it
   (`--adopt box3dxt`) once this member's changes are on main.
 - The b3k game Kit (2026-11-21): `src/box3dxt-kit.livecodescript`, box2dxt's b2k Kit in 3D,
@@ -944,13 +950,15 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   in a browser (2026-11-21, Chromium): a web engine built locally from OXT-Beyond's pull
   request 606, with the committed web archives of box3dxt and render3dxt linked in, ran its
   frame loop at about 12 pictures a second with nothing in the console; its keys were not
-  driven. No IDE has run either:
+  driven. The same day it played in the web-2026.11.21 pre-release's Stack Player, keys and
+  mouse driven, built into a stack file for the community gallery (row 13). No IDE has run
+  either:
   verified statically; needs an OXT pass (row 10).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-20 (run 44806507517, commit 6d132d3, and the web archive): the first release-binaries dispatch with `members: box3dxt`, then the `ships` row | - | - | `box3dxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
+| 2 | The IDE pass with the RELEASE library, installed as an extension: `b3LibraryVersion()`, the drop scene of its README in a frame loop, a ray cast and a contact event, on Windows, Linux and a Mac. (Linux ran these on 2026-11-20 over a locally built library that was loaded by hand, not installed. Windows ran them on 2026-11-21 with the ABI 2 release library installed, from script in a hidden stack, the steps in a loop and not on a timer: box3dxt's README, "Status". Of the ABI 3 libraries committed since, only the `x86_64-linux` one has met an engine: OXT-Beyond 0.2.8-dp.1's Linux server engine, 2026-11-21, under the engine, Kit and Orb Island tests, not in an IDE.) | S1, after #1 | - | each answers as `box3dxt/docs/api-reference.md` says |
 | 3 | The web archive (`wasm32-emscripten/box3dxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | `b3LibraryVersion()` answers in the web IDE |
 | 4 | An lce package and a place on the extensions site. PACKAGED 2026-11-21: `box3dxt-0.1.0.lce` (`org.openxtalk.library.boxthreed`, the six desktop rows and the four Android ids) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `b3LibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine). The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's box3dxt row has a pill and a Run |
@@ -960,7 +968,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 10 | Orb Island and the Kit in an IDE: the eight checks under "WHAT TO VERIFY" in the game's header (the window, walking, the orbs, the toys, falling, the mouse, the keys and buttons, the light and dark appearance), with box3dxt alone and with render3dxt, on Windows, Linux and a Mac | S1 | - | each check answers as the header says, or the Kit is fixed |
 | 11 | The Kit's engine tests with render3dxt in CI: the native lane runs `tests/engine-kit.lc` and `tests/engine-demo.lc` with box3dxt's renderer only, because it was written before render3dxt joined main (#182, 2026-11-21); both pass with render3dxt locally (2026-11-21) | coding: the lane builds render3dxt's library and module too, and the published member takes render3dxt as a gate sibling | - | a lane runs both with render3dxt's module and library |
 | 12 | The Kit shipped as a script library beside the extension: a `.lce` of its own and an entry in OXT-Beyond's extension list, as box2dxt's Kit has, probed by `b3kVersion()`. PACKAGED 2026-11-21: `box3dxt-kit-0.1.0.lce` (the stack `box3dxt-kit`, requiring `org.openxtalk.library.boxthreed`) is a row of `tools/build-lce-packages.py`, loaded and probed by the workflow's engine check on every run, and on the extensions site from the release that change's push to main publishes. Still owed: the entry in OXT-Beyond's extension list, and an IDE answer | OXT-Beyond | - | `b3kVersion()` answers 1 in an IDE with nothing pasted |
-| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine) | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
+| 13 | Orb Island in the community gallery (oxt-community-stacks), playing in a browser. The Stack Player sets the rect a stack was saved with back after its openStack has run, so the listed file must be saved at the game's built size (1104 by 640): one saved before its first opening shows at 256 by 256 (found 2026-11-21 on a local web engine). Built so on 2026-11-21 (its window built once, then saved at 1104 by 640) and played in the web-2026.11.21 pre-release's Stack Player, the gallery's pinned one, keys and mouse driven (section 2.10's prose); the gallery's pull request 22 lists it, to merge once the gallery's player has render3dxt | row 3, and a web pre-release that moves the gallery's player pins | - | the gallery plays it |
 
 ### 2.11 render3dxt
 

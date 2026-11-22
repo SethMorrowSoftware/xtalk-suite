@@ -526,6 +526,8 @@ private foreign handler _render_set_camera(in pEyeX as CDouble, in pEyeY as CDou
 private foreign handler _render_camera() returns Pointer binds to "c:box3dxt>b3x_render_camera!cdecl"
 private foreign handler _render_set_light(in pX as CDouble, in pY as CDouble, in pZ as CDouble) returns nothing binds to "c:box3dxt>b3x_render_set_light!cdecl"
 private foreign handler _render_set_background(in pRed as CInt, in pGreen as CInt, in pBlue as CInt) returns nothing binds to "c:box3dxt>b3x_render_set_background!cdecl"
+private foreign handler _render_set_sky(in pTopRed as CInt, in pTopGreen as CInt, in pTopBlue as CInt, in pBottomRed as CInt, in pBottomGreen as CInt, in pBottomBlue as CInt) returns nothing binds to "c:box3dxt>b3x_render_set_sky!cdecl"
+private foreign handler _render_sky() returns Pointer binds to "c:box3dxt>b3x_render_sky!cdecl"
 private foreign handler _shape_set_color(in pShape as CInt, in pRed as CInt, in pGreen as CInt, in pBlue as CInt) returns nothing binds to "c:box3dxt>b3x_shape_set_color!cdecl"
 private foreign handler _shape_clear_color(in pShape as CInt) returns nothing binds to "c:box3dxt>b3x_shape_clear_color!cdecl"
 private foreign handler _shape_color(in pShape as CInt) returns Pointer binds to "c:box3dxt>b3x_shape_color!cdecl"
@@ -564,8 +566,8 @@ private handler checkABI()
    unsafe
       put _abi_version() into tV
    end unsafe
-   if tV is not 2 then
-      throw "box3dxt: incompatible native library (this binding needs ABI 2) - update the box3dxt library beside the engine"
+   if tV is not 3 then
+      throw "box3dxt: incompatible native library (this binding needs ABI 3) - update the box3dxt library beside the engine"
    end if
 end handler
 
@@ -628,7 +630,7 @@ end handler
 /**
 Summary: Returns the versions of the native library and of Box3D inside it.
 
-Returns: Text such as "box3dxt ABI 2; Box3D 0.2.0".
+Returns: Text such as "box3dxt ABI 3; Box3D 0.2.0".
 
 Example:
 put b3LibraryVersion() into field "status"
@@ -7088,11 +7090,55 @@ pGreen: Green, 0 to 255.
 pBlue: Blue, 0 to 255.
 
 Description: A number outside 0 to 255 is refused and the colour stays.
+One colour for the whole picture; <b3RenderSetSky> paints two that run
+into each other.
 */
 public handler b3RenderSetBackground(in pRed as Integer, in pGreen as Integer, in pBlue as Integer) returns nothing
    unsafe
       _render_set_background(pRed, pGreen, pBlue)
    end unsafe
+end handler
+
+/**
+Summary: Sets a sky: the colours the renderer paints where there is no shape, from the picture's top to its bottom.
+
+pTopRed: Red of the picture's top row, 0 to 255.
+
+pTopGreen: Green of the top row, 0 to 255.
+
+pTopBlue: Blue of the top row, 0 to 255.
+
+pBottomRed: Red of the picture's bottom row, 0 to 255.
+
+pBottomGreen: Green of the bottom row, 0 to 255.
+
+pBottomBlue: Blue of the bottom row, 0 to 255.
+
+Description: Each row of the picture is one colour, and the rows run evenly
+from the top colour to the bottom one. A number outside 0 to 255 is refused
+and both colours stay. <b3RenderSetBackground> sets one colour for the
+whole picture again. New with ABI 3 of the library.
+*/
+public handler b3RenderSetSky(in pTopRed as Integer, in pTopGreen as Integer, in pTopBlue as Integer, in pBottomRed as Integer, in pBottomGreen as Integer, in pBottomBlue as Integer) returns nothing
+   unsafe
+      _render_set_sky(pTopRed, pTopGreen, pTopBlue, pBottomRed, pBottomGreen, pBottomBlue)
+   end unsafe
+end handler
+
+/**
+Summary: Returns the colours the renderer paints where there is no shape.
+
+Returns: Six numbers as text: "topRed,topGreen,topBlue,bottomRed,bottomGreen,bottomBlue".
+
+Description: What <b3RenderSetSky> or <b3RenderSetBackground> last
+accepted; after the second, the two colours are the same.
+*/
+public handler b3RenderSky() returns String
+   variable tP as Pointer
+   unsafe
+      put _render_sky() into tP
+   end unsafe
+   return textOf(tP)
 end handler
 
 /**

@@ -421,9 +421,11 @@ worse than no gate, because it answers the question nobody asks twice.
   selftest has run on an Android engine, and no `x86-android` or ARM library has been loaded by
   one. curlxt's four were rebuilt at ABI 2 on 2026-11-21 (run 44825160471, commit 02b4238, and
   for its 0.2.1 shim run 44925581646, commit a336ba5); the engine load was of its ABI 1 files.
-  The four members that open sockets declare `metadata android.permissions is "INTERNET"` in
-  their `.lcb`, which OXT-Beyond's standalone builder writes into an app's manifest (observed in
-  that app, 2026-11-19).
+  box3dxt's ABI 2 `x86_64-android` library answered one call in OXT-Beyond's pull request 606 app
+  the same day, and its four were then rebuilt at ABI 3 (run 44914775780), which no app has
+  carried. The four members that open sockets declare
+  `metadata android.permissions is "INTERNET"` in their `.lcb`, which OXT-Beyond's standalone
+  builder writes into an app's manifest (observed in that app, 2026-11-19).
 - **History.** Run 12 (2026-08-27) was the first dispatch to reach its commit stage; runs 5, 10 and
   11 died on a missing Perl module, 70 leaked ENet symbols in enetxt's mac dylib, and a commit
   allowlist `[a-z]+xt` that could not match box2dxt. Every native member's CURRENT binaries come
