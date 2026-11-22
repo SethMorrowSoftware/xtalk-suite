@@ -92,6 +92,18 @@ EVERY EXTENSION HAS A PACKAGE (2026-11-21)
     published release's (`plan` below) is published by the workflow
     itself, so the site follows main.
 
+WHAT BEYOND'S DOCS PARSER SAYS (2026-11-21)
+    The parser that writes api.lcdoc reports a fault by printing a line,
+    "<source>: error: <message>", and goes on. tools/lce-engine-check.lc
+    sees only what it returns, so a fault that still left a library and an
+    entry behind passed: artnetxt's header comment (#200) had a line led by
+    "library implements ...", which the parser took for an entry with no
+    documentation and logged as an error while the docs step said PASS.
+    (oscxt's and midixt's, led by "handler" and "on", swallowed the library
+    line, and only those failed.) So the workflow keeps the step's output
+    and `docs-log` refuses every error the parser logged in it, and a step
+    that never printed its SUMMARY line; a warning is shown, not refused.
+
 USAGE
     python3 tools/build-lce-packages.py table
         the gate: every PACKAGES row matches the tree (files present,
@@ -118,9 +130,12 @@ USAGE
         the release notes, and release=true when any package differs. Reads the release from GitHub (GITHUB_TOKEN is
         used when set), or offline from FILE and DIR2 as
         tools/build-extensions-site.py does.
+    python3 tools/build-lce-packages.py docs-log LOG
+        the docs step's output (tools/lce-engine-check.lc docs): refuses
+        every error Beyond's docs parser logged, and a run with no SUMMARY.
 
-    tools/test-build-lce-packages.py fixture-proves `table`, `check` and
-    `plan`.
+    tools/test-build-lce-packages.py fixture-proves `table`, `check`,
+    `plan` and `docs-log`, and runs the workflow's docs and publish steps.
 """
 
 import argparse
@@ -1194,6 +1209,38 @@ def check_packages(paths):
     return problems
 
 
+# --- the docs step's log -------------------------------------------------------
+
+# How Beyond's docs parser reports a fault (revdocsparser.livecodescript,
+# logError and logWarning: `write pFilename & ":" && "error:" && pError &
+# return to stdout`). <source> is the path of the .lcb it was given, or a
+# script library's stack long id (`stack "<path>"`), so it names the package.
+PARSER_MESSAGE = re.compile(r'^(?P<source>.+?): (?P<level>error|warning): (?P<message>.*)$')
+# lce-engine-check.lc's own lines, which are its verdicts, not the parser's
+ENGINE_LINES = ('PASS ', 'FAIL ', 'INFO ', 'SUMMARY ', '::')
+
+
+def docs_log(text):
+    """(problems, warnings) of the docs step's output: each error and
+    warning Beyond's docs parser logged, and a run that never got as far as
+    its SUMMARY line."""
+    problems, warnings = [], []
+    finished = False
+    for line in text.splitlines():
+        line = line.rstrip('\r')
+        if line.startswith('SUMMARY '):
+            finished = True
+        if line.startswith(ENGINE_LINES):
+            continue
+        m = PARSER_MESSAGE.match(line)
+        if m:
+            said = "Beyond's docs parser, on %s: %s" % (m.group('source'), m.group('message'))
+            (problems if m.group('level') == 'error' else warnings).append(said)
+    if not finished:
+        problems.append('the docs step did not finish (no SUMMARY line in its output)')
+    return problems, warnings
+
+
 # --- plan: what a release would bring to the site -------------------------------
 #
 # Since 2026-11-21 a push to main publishes its packages itself when they
@@ -1414,6 +1461,8 @@ def main(argv=None):
     pl.add_argument('--lce-dir')
     pl.add_argument('--notes')
     pl.add_argument('--github-output')
+    dl = sub.add_parser('docs-log')
+    dl.add_argument('log')
     args = ap.parse_args(argv)
     if args.cmd == 'plan' and bool(args.release_json) != bool(args.lce_dir):
         ap.error('--release-json and --lce-dir go together')
@@ -1444,6 +1493,18 @@ def main(argv=None):
         if args.cmd == 'plan':
             cmd_plan(args)
             return 0
+        if args.cmd == 'docs-log':
+            with open(args.log, encoding='utf-8', errors='replace') as f:
+                problems, warnings = docs_log(f.read())
+            for w in warnings:
+                log('WARN ' + w)
+                log('::warning title=lce packages::' + w)
+            for prob in problems:
+                log('FAIL ' + prob)
+                log('::error title=lce packages::' + prob)
+            log('%s: %d errors and %d warnings in the docs step\'s log'
+                % ('OK' if not problems else 'FAIL', len(problems), len(warnings)))
+            return 1 if problems else 0
         if args.cmd == 'check':
             problems = check_packages(args.packages)
             for prob in problems:

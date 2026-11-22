@@ -14,7 +14,10 @@ misses a package's files (curlxt's since it joined), lets a row wait for
 libraries its member has never committed but never one that ships them,
 that `plan` tells what a release would bring the site from made-up
 releases, and the workflow's publish block, RUN against a gh that answers
-as GitHub would.
+as GitHub would. Also that `docs-log` refuses every error Beyond's docs
+parser logged in the docs step's output (artnetxt's first header made one
+that the engine check passed), with the workflow's docs step RUN over an
+engine that prints what the real one printed.
 
     python3 tools/test-build-lce-packages.py
 """
@@ -596,12 +599,18 @@ exit 0
 """
 
 
-def publish_block(text):
-    m = re.search(r'\n( *)# >>> publish\n(.*?)\n *# <<< publish', text, re.S)
+def marked_block(text, name):
+    """The lines of lce-packages.yml between `# >>> name` and `# <<< name`,
+    unindented: the shell a step runs."""
+    m = re.search(r'\n( *)# >>> %s\n(.*?)\n *# <<< %s' % (name, name), text, re.S)
     if not m:
         return None
     indent = m.group(1)
     return '\n'.join(l[len(indent):] if l.startswith(indent) else l for l in m.group(2).split('\n')) + '\n'
+
+
+def publish_block(text):
+    return marked_block(text, 'publish')
 
 
 def test_publish(tmp):
@@ -683,6 +692,105 @@ def test_publish(tmp):
            and 'press Publish' in out, repr(calls))
 
 
+# --- the docs step's log (2026-11-21) ---------------------------------------------
+
+# The docs step's lines as OXT-Beyond v0.2.7-rc.6's server engine printed
+# them, over #200's first headers (artnetxt's, oscxt's and midixt's .lcb at
+# e74c338) beside main's packages: artnetxt's error left a library and its
+# entries behind, so the engine check said PASS for it; oscxt's did not
+DOCS_STAGE = '/runner/stage'
+DOCS_INFO = 'INFO engine 9.7.1-OXT Linux x86_64'
+ARTNET_ERROR = (DOCS_STAGE + '/artnetxt/artnet.lcb: error: Required documentation not found for library '
+                'implements the published protocol ("Art-Net compatible"); no')
+OSC_ERROR = DOCS_STAGE + '/oscxt/osc.lcb: error: No extension name found'
+OSC_WARNING = DOCS_STAGE + '/oscxt/osc.lcb: warning: Invalid library-level docs'
+OSC_FAIL = ('FAIL oscxt api.lcdoc - the parser returned no library with entries: Name: oscBuildBundle  '
+            'Type: handler')
+OSC_ANNOTATION = '::error title=lce packages::oscxt api.lcdoc - the parser returned no library with entries'
+
+FAKE_ENGINE = r"""#!/bin/sh
+cat "$FAKE_OUT"
+exit "$FAKE_STATUS"
+"""
+
+
+def test_docs_log(tmp):
+    def lines(*ls):
+        return '\n'.join(ls) + '\n'
+
+    clean = lines(DOCS_INFO, 'PASS sodiumxt api.lcdoc', 'PASS onionxt api.lcdoc', 'SUMMARY 2 0')
+    expect('docs-log: a clean run passes', lce.docs_log(clean) == ([], []), repr(lce.docs_log(clean)))
+    artnet = lines(DOCS_INFO, ARTNET_ERROR, 'PASS artnetxt api.lcdoc', 'PASS sodiumxt api.lcdoc', 'SUMMARY 2 0')
+    problems, warnings = lce.docs_log(artnet)
+    expect('docs-log: an error the parser logged is refused though the engine check said PASS (artnetxt)',
+           len(problems) == 1 and '/artnetxt/artnet.lcb' in problems[0] and 'library implements' in problems[0]
+           and not warnings, repr((problems, warnings)))
+    osc = lines(DOCS_INFO, OSC_ERROR, OSC_WARNING, OSC_FAIL, OSC_ANNOTATION, 'SUMMARY 0 1')
+    problems, warnings = lce.docs_log(osc)
+    expect('docs-log: ...and beside the engine check\'s own FAIL, the parser\'s error once (oscxt)',
+           len(problems) == 1 and 'No extension name found' in problems[0], repr(problems))
+    expect('docs-log: a warning is shown, not refused',
+           len(warnings) == 1 and 'Invalid library-level docs' in warnings[0], repr(warnings))
+    script = lines('stack "/runner/stage/onionxt/onionxt.livecodescript": error: No extension name found',
+                   'SUMMARY 1 0')
+    problems, _ = lce.docs_log(script)
+    expect('docs-log: a script library\'s error names its stack',
+           len(problems) == 1 and 'stack "/runner/stage/onionxt/onionxt.livecodescript"' in problems[0],
+           repr(problems))
+    engine_fail = lines('FAIL x api.lcdoc - Execution error: error: at line 3', 'SUMMARY 0 1')
+    expect('docs-log: the engine check\'s own lines are not read as the parser\'s',
+           lce.docs_log(engine_fail) == ([], []), repr(lce.docs_log(engine_fail)))
+    problems, _ = lce.docs_log(lines(DOCS_INFO, 'PASS sodiumxt api.lcdoc'))
+    expect('docs-log: a run with no SUMMARY line did not finish',
+           len(problems) == 1 and 'did not finish' in problems[0], repr(problems))
+    expect('docs-log: CRLF lines read the same', lce.docs_log(clean.replace('\n', '\r\n')) == ([], []))
+    path = os.path.join(tmp, 'docs.log')
+    with open(path, 'w') as f:
+        f.write(artnet)
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        code = lce.main(['docs-log', path])
+    expect('docs-log: the command fails it, with an annotation naming the file',
+           code == 1 and '::error title=lce packages::Beyond\'s docs parser, on /runner/stage/artnetxt/artnet.lcb'
+           in out.getvalue(), repr((code, out.getvalue())))
+
+    with open(lce.WORKFLOW, encoding='utf-8') as f:
+        block = marked_block(f.read(), 'docs')
+    expect('docs: the step is marked in lce-packages.yml, and reads its log with docs-log',
+           block is not None and 'build-lce-packages.py docs-log "$RUNNER_TEMP/docs.log"' in block)
+    if block is None or not shutil.which('bash'):
+        print('SKIP docs: no bash here; the step is not run')
+        return
+    runner = os.path.join(tmp, 'runner')
+    os.makedirs(os.path.join(runner, 'oxt', 'engine'))
+    engine = os.path.join(runner, 'oxt', 'engine', 'server-community')
+    with open(engine, 'w') as f:
+        f.write(FAKE_ENGINE)
+    os.chmod(engine, 0o755)
+
+    def run(text, status=0):
+        out_path = os.path.join(tmp, 'engine-out')
+        with open(out_path, 'w') as f:
+            f.write(text)
+        env = dict(os.environ, RUNNER_TEMP=runner, FAKE_OUT=out_path, FAKE_STATUS=str(status))
+        p = subprocess.run(['bash', '-c', block], env=env, cwd=lce.ROOT, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+        return p.returncode, p.stdout
+
+    code, out = run(clean)
+    expect('docs: the step passes a clean run', code == 0, repr((code, out)))
+    code, out = run(artnet)
+    expect('docs: ...fails one whose parser logged an error, though the engine exited 0',
+           code == 1 and 'FAIL Beyond\'s docs parser, on /runner/stage/artnetxt/artnet.lcb' in out, repr((code, out)))
+    code, out = run(lines(DOCS_INFO, OSC_FAIL, 'SUMMARY 0 1'), status=1)
+    expect('docs: ...fails with the engine when the engine check failed', code == 1, repr((code, out)))
+    code, out = run(lines(DOCS_INFO, 'PASS sodiumxt api.lcdoc'))
+    expect('docs: ...fails a run that never printed its SUMMARY', code == 1 and 'did not finish' in out,
+           repr((code, out)))
+    code, out = run(lines(DOCS_INFO, OSC_WARNING, 'PASS oscxt api.lcdoc', 'SUMMARY 1 0'))
+    expect('docs: ...and passes a warning, annotated', code == 0 and '::warning title=lce packages::' in out,
+           repr((code, out)))
+
+
 def main():
     with tempfile.TemporaryDirectory() as tmp:
         test_check(tmp)
@@ -698,6 +806,8 @@ def main():
         test_plan(tmp)
     with tempfile.TemporaryDirectory() as tmp:
         test_publish(tmp)
+    with tempfile.TemporaryDirectory() as tmp:
+        test_docs_log(tmp)
     if FAILURES:
         print('FAIL: %d fixture(s) did not hold' % len(FAILURES))
         return 1
