@@ -300,9 +300,9 @@ all eleven member repositories at 16:11 UTC on 2026-09-23 (recorded in
 [MEMBER-REPO-SPLIT.md](MEMBER-REPO-SPLIT.md)). CoinXT's own `gates.yml` pays the
 multi-hour wallet-gate cost on every publish (that file's section 9). Members that
 joined later are adopted one dispatch at a time (that file's section 6): curlxt on
-2026-11-15, box3dxt on 2026-11-21, and audioxt, xlsxt, render3dxt, gamepadxt, webpxt and
-barcodext on 2026-11-22. pdfxt's repository waits empty for its adoption, and that day's
-publish run found none for oscxt, midixt or artnetxt (sections 2.17 to 2.20).
+2026-11-15, box3dxt on 2026-11-21, and audioxt, xlsxt, render3dxt, gamepadxt, webpxt,
+barcodext, pdfxt, oscxt, midixt and artnetxt on 2026-11-22, so every member of
+`tools/member-registry.py` is published into its own repository.
 
 **Permanent exemptions, recorded rather than open:** onionxt's 11 engine-socket
 coverage exemptions (only the engine can mint a socket id); `release-binaries.yml`'s
@@ -1326,8 +1326,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   its listener, held by the same test, strengthened first, and a Windows pass with oscxt
   loaded (2026-11-22, opened hidden) found no socket listed and nothing queued after its
   close (runbook section 8).
-- Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
-  then a publish-members run adopts it (`--adopt oscxt`).
+- Publishing: `SethMorrowSoftware/oscxt` (created empty by the owner on 2026-11-22) was
+  adopted the same day (publish-members run 45074787966 at ce705cb, 2 commits; row 6), and
+  each green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1336,7 +1337,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
-| 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
+| 6 | DONE 2026-11-22 (publish-members run 45074787966 at ce705cb, 2 commits): the adoption of `SethMorrowSoftware/oscxt` | - | - | the repository holds the member's history |
 | 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme. (2026-11-22, with oscxt loaded, on Windows and Linux: opened hidden, it said "Nothing to set up" and its close left no socket and nothing queued; nobody has seen it on a screen with oscxt.) | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 
 ### 2.18 midixt
@@ -1410,8 +1411,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   until the browser has answered, held by two engine tests that hand it the web layer's
   words and failed against the stage before them; verified statically; needs a pass in a
   browser (row 8).
-- Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
-  then a publish-members run adopts it (`--adopt midixt`).
+- Publishing: `SethMorrowSoftware/midixt` (created empty by the owner on 2026-11-22) was
+  adopted the same day (publish-members run 45074787966 at ce705cb, 5 commits; row 5), and
+  each green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1419,7 +1421,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports). (Linux, 2026-11-22: Tier 3 passed through ALSA on the maintainer's PC, every check run; no keyboard or DAW yet.) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
 | 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
-| 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
+| 5 | DONE 2026-11-22 (publish-members run 45074787966 at ce705cb, 5 commits): the adoption of `SethMorrowSoftware/midixt` | - | - | the repository holds the member's history |
 | 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in. (2026-11-22, hidden in OXT-Beyond's IDE on the maintainer's PCs, 10 s of play each: on Linux, over its virtual port through ALSA, the stage read all 86 messages the player sent, 3 ms from send to stage, and its close left no port; on Windows with no loopMIDI port it decoded all 86. Not yet on a screen, heard, on a Mac, through a loopMIDI port or with a keyboard.) | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
 | 7 | The web archive linked into OXT-Beyond's web engine (its `tools/oxt/xtalk-extensions.json` pins it by SHA-256, as it pins the other members'), then in a web player release | OXT-Beyond | - | `midiVersion()` answers 2 in the web IDE |
 | 8 | Web MIDI in a browser: the web IDE or Stack Player in Chrome, the browser's question answered yes and no, a loopback port (loopMIDI, the IAC Driver) found as MIDI Stage's cable, Sound through a real output, a keyboard's notes in blue, and MIDI Stage in the community gallery's player (its frame allows no MIDI: it must decode and say so) | after #7 + a browser with Web MIDI | - | the stage reads what the player sends through the loopback port, and in the gallery it plays on, saying the frame does not allow MIDI |
@@ -1458,8 +1460,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   held by the same test, strengthened first, which failed on the headless engine too, and a
   Windows pass of that fix found nothing of the show listed a second after either kind of
   close, the self-test's stop likewise (runbook section 8).
-- Publishing: `SethMorrowSoftware/artnetxt` does not exist yet. The owner creates it
-  EMPTY, then a publish-members run adopts it (`--adopt artnetxt`).
+- Publishing: `SethMorrowSoftware/artnetxt` (created empty by the owner on 2026-11-22)
+  was adopted the same day (publish-members run 45074787966 at ce705cb, 2 commits; row 6),
+  and each green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
@@ -1468,7 +1471,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day. Published 2026-11-22 by the run of #200's merge (run 44973801763 from 9d534bd: pre-release v2026.11.22.2; the site rebuilt by run 44973913732). No IDE has installed it from the site yet | S1, after the merge | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
-| 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |
+| 6 | DONE 2026-11-22 (publish-members run 45074787966 at ce705cb, 2 commits): the adoption of `SethMorrowSoftware/artnetxt` | - | - | the repository holds the member's history |
 | 7 | The showcase on a desktop engine: `examples/artnet-light-board.livecodescript` on Windows, Linux and a Mac; then with `kAlbAlsoTo` naming a real node, and paused with a desk sending universe 0 | S1 (+ Art-Net gear for the node and desk) | - | it opens whole on the screen within two seconds, all five scenes play by themselves, the node's fixture follows the board, the desk drives the rig, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 | 8 | The headless engine's rare abort at quit: 5 of 355 runs of `demo_test::TestAlsoToSendsOnlyWhenItNamesANode` on 2026-11-21 (OXT-Beyond's `9.7.1-OXT` build 25923, Linux x86_64; 1 of 211 with the showcase before that day's closed-window fix, 4 of 144 after) never exited. In one run of each, gdb found glibc reporting a corrupt heap (`free(): corrupted unsorted chunks`) as the engine freed its objects at quit, from the same engine frames, and the engine's abort handler then waiting in `exit()` on malloc's lock until the runner killed it, the run's TAP output lost with it. One run under valgrind's memcheck reported no invalid read or write (only mismatched free and delete pairs, from 7 sites). The likeliest cause, found the same day (engine note 6.21; INFERRED from the engine's source): the test closed its own listener after it had heard the show, which leaves the show's address listed as a socket on a closed descriptor and the engine's socket thread spinning over it, and at quit `X_close` frees every socket, and the list, without that thread's lock, and only later stops the thread. Since the same day the test closes the names its listener heard first, the show and the self-test do the same, and the members' test runner closes whatever a run left listed before it quits (`scCloseLeftSockets`). 700 runs of the test with its fix (the show's too, the runner's not), the same day: none failed, 350 of them counted by the test's own PASS line; under the earlier rate about ten would have. Other suites were not counted | S1 (Linux) | - | reported to OXT-Beyond (the lock in `X_close`, or a listener's closing taking its senders' names with it), and the test passes 1000 runs in a row |
 
@@ -1512,8 +1515,9 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   row. The companion rule (both files or neither, the PDFium the pinned bytes) is held by the
   installer, the freshness gate and the Android script, by fixtures; no dispatch has
   exercised it yet.
-- Publishing: `SethMorrowSoftware/pdfxt` was created empty by the owner on 2026-11-20; a
-  publish-members run adopts it (`--adopt pdfxt`).
+- Publishing: `SethMorrowSoftware/pdfxt` (created empty by the owner on 2026-11-20) was
+  adopted on 2026-11-22 (publish-members run 45074787966 at ce705cb, 2 commits), and each
+  green main publishes it from then on.
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
