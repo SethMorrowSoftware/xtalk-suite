@@ -1,0 +1,238 @@
+{
+ "_comment": "Shared MIDI 1.0 vectors: decode (raw bytes -> midiDecode record) and encode (convenience sender -> bytes, channels 1..16 with the documented wrap/clamp rules). Checked by tests/vectors_reference_test.py and the LCB binding under lc-run (encode via the mock midi library's sent log).",
+ "decode": [
+  {
+   "name": "note on ch1",
+   "hex": "903c64",
+   "kind": "noteOn",
+   "channel": 1,
+   "data1": 60,
+   "data2": 100
+  },
+  {
+   "name": "note on velocity 0 is note off",
+   "hex": "903c00",
+   "kind": "noteOff",
+   "channel": 1,
+   "data1": 60,
+   "data2": 0
+  },
+  {
+   "name": "note off ch1",
+   "hex": "803c40",
+   "kind": "noteOff",
+   "channel": 1,
+   "data1": 60,
+   "data2": 64
+  },
+  {
+   "name": "note on ch16",
+   "hex": "9f7f7f",
+   "kind": "noteOn",
+   "channel": 16,
+   "data1": 127,
+   "data2": 127
+  },
+  {
+   "name": "control change ch1 CC7",
+   "hex": "b00760",
+   "kind": "controlChange",
+   "channel": 1,
+   "data1": 7,
+   "data2": 96
+  },
+  {
+   "name": "program change ch4",
+   "hex": "c305",
+   "kind": "programChange",
+   "channel": 4,
+   "data1": 5,
+   "data2": 0
+  },
+  {
+   "name": "channel pressure ch2",
+   "hex": "d140",
+   "kind": "channelPressure",
+   "channel": 2,
+   "data1": 64
+  },
+  {
+   "name": "poly aftertouch ch3",
+   "hex": "a23c20",
+   "kind": "polyAftertouch",
+   "channel": 3,
+   "data1": 60,
+   "data2": 32
+  },
+  {
+   "name": "pitch bend centre ch6",
+   "hex": "e50040",
+   "kind": "pitchBend",
+   "channel": 6,
+   "value14": 8192
+  },
+  {
+   "name": "pitch bend min",
+   "hex": "e00000",
+   "kind": "pitchBend",
+   "channel": 1,
+   "value14": 0
+  },
+  {
+   "name": "pitch bend max",
+   "hex": "e07f7f",
+   "kind": "pitchBend",
+   "channel": 1,
+   "value14": 16383
+  },
+  {
+   "name": "sysex",
+   "hex": "f07e7f0601f7",
+   "kind": "sysex",
+   "channel": 0
+  },
+  {
+   "name": "timing clock (system)",
+   "hex": "f8",
+   "kind": "system",
+   "channel": 0
+  },
+  {
+   "name": "MTC quarter frame (system)",
+   "hex": "f135",
+   "kind": "system",
+   "channel": 0,
+   "data1": 53
+  }
+ ],
+ "encode": [
+  {
+   "name": "note on ch1 60 100",
+   "call": "noteOn",
+   "channel": 1,
+   "a": 60,
+   "b": 100,
+   "hex": "903c64"
+  },
+  {
+   "name": "note on ch16",
+   "call": "noteOn",
+   "channel": 16,
+   "a": 60,
+   "b": 100,
+   "hex": "9f3c64"
+  },
+  {
+   "name": "channel 17 wraps to ch1",
+   "call": "noteOn",
+   "channel": 17,
+   "a": 60,
+   "b": 100,
+   "hex": "903c64"
+  },
+  {
+   "name": "channel 0 normalizes to ch16",
+   "call": "noteOn",
+   "channel": 0,
+   "a": 60,
+   "b": 100,
+   "hex": "9f3c64"
+  },
+  {
+   "name": "channel -1 normalizes to ch15",
+   "call": "noteOn",
+   "channel": -1,
+   "a": 60,
+   "b": 100,
+   "hex": "9e3c64"
+  },
+  {
+   "name": "note > 127 clamps to 127",
+   "call": "noteOn",
+   "channel": 1,
+   "a": 200,
+   "b": 100,
+   "hex": "907f64"
+  },
+  {
+   "name": "negative velocity clamps to 0",
+   "call": "noteOn",
+   "channel": 1,
+   "a": 60,
+   "b": -5,
+   "hex": "903c00"
+  },
+  {
+   "name": "note off",
+   "call": "noteOff",
+   "channel": 2,
+   "a": 61,
+   "b": 64,
+   "hex": "813d40"
+  },
+  {
+   "name": "control change",
+   "call": "controlChange",
+   "channel": 1,
+   "a": 7,
+   "b": 96,
+   "hex": "b00760"
+  },
+  {
+   "name": "program change (2 bytes)",
+   "call": "programChange",
+   "channel": 4,
+   "a": 5,
+   "b": 0,
+   "hex": "c305"
+  },
+  {
+   "name": "channel pressure (2 bytes)",
+   "call": "channelPressure",
+   "channel": 2,
+   "a": 64,
+   "b": 0,
+   "hex": "d140"
+  },
+  {
+   "name": "pitch bend centre",
+   "call": "pitchBend",
+   "channel": 1,
+   "a": 8192,
+   "b": 0,
+   "hex": "e00040"
+  },
+  {
+   "name": "pitch bend 0",
+   "call": "pitchBend",
+   "channel": 1,
+   "a": 0,
+   "b": 0,
+   "hex": "e00000"
+  },
+  {
+   "name": "pitch bend max",
+   "call": "pitchBend",
+   "channel": 1,
+   "a": 16383,
+   "b": 0,
+   "hex": "e07f7f"
+  },
+  {
+   "name": "pitch bend below range clamps",
+   "call": "pitchBend",
+   "channel": 1,
+   "a": -1,
+   "b": 0,
+   "hex": "e00000"
+  },
+  {
+   "name": "pitch bend above range clamps",
+   "call": "pitchBend",
+   "channel": 1,
+   "a": 20000,
+   "b": 0,
+   "hex": "e07f7f"
+  }
+ ]
+}

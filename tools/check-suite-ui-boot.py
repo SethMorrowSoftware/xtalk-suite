@@ -34,8 +34,10 @@ and the filter, Show and Copy buttons pressed the same way. The scenarios, in
 order, in ONE window (a maintainer opens the stack once and keeps pressing):
 
   build        every name the script uses exists, every rect fits 1200 x 640,
-               no two rows overlap, the three results fields share one rect
-               and exactly one shows; a second build builds nothing.
+               no two rows overlap, the members with no harness sit in the
+               band under the rows (since 2026-11-21), the three results
+               fields share one rect and exactly one shows; a second build
+               builds nothing.
   routing      a right-click, a press on a field or a panel and the Run all
                button's mouseDown all pass on; the key check refuses nocloud
                and an unknown key.
@@ -1164,7 +1166,7 @@ def rect_of(ctl):
 
 
 def row_controls(board, key):
-    names = ["suName", "suNote", "suPill", "suCount", "suRun", "suShow"]
+    names = ["suName", "suPill", "suCount", "suRun", "suShow"]
     out = [board.ctl(n + key) for n in names]
     out.append(board.ctl("suPill" + key + "Bg"))
     return [ct for ct in out if ct is not None]
@@ -1208,10 +1210,33 @@ def check_build(c, board):
          repr(rects))
     c.eq("exactly one results view shows",
          sum(1 for v in views if board.visible(v)), 1)
-    c.eq("every member with no harness has a caption and no Run",
-         [(k, board.ctl("suNote" + k) is not None, board.ctl("suRun" + k) is None)
-          for k in board.no_harness],
-         [(k, True, True) for k in board.no_harness])
+    # Since the seventeenth row would have fitted at no pitch (2026-11-21;
+    # work plan 2.13 #9) a member with no harness has no row: its name sits
+    # in the band under the rows, between the band's caption and the members
+    # caption, with no pill, no count and no Run (and, since the band's
+    # first engine draw that day, no "gates" beside it to squeeze the name).
+    # The rows' controls end above the band's caption. The boot self-check's
+    # suRowsFit asks the members caption half of this from inside the paste;
+    # this asks it from the built window, and the band's caption half too.
+    band = rect_of(board.ctl("suNotesCap"))
+    cap = rect_of(board.ctl("suMembersCap"))
+    placed = []
+    for k in board.no_harness:
+        r = rect_of(board.ctl("suName" + k))
+        placed.append((k, r is not None and band is not None
+                       and cap is not None and r[1] >= band[3]
+                       and r[3] <= cap[1],
+                       all(board.ctl(n + k) is None for n in
+                           ("suNote", "suPill", "suCount", "suRun", "suShow"))))
+    c.eq("every member with no harness is a name in the band, under its "
+         "caption and above the members caption, with no pill and no Run",
+         placed, [(k, True, True) for k in board.no_harness])
+    ends = [rect_of(ct)[3] for k in board.keys if k not in board.no_harness
+            for ct in row_controls(board, k)]
+    c.ck("every row with a Run ends above the band's caption",
+         band is not None and bool(ends) and max(ends) <= band[1],
+         "the rows end at %r; the band's caption is at %r"
+         % (max(ends) if ends else None, band))
     c.eq("the scaffold's two buttons keep their names under the board's "
          "labels", (board.ctl("stRerun").props.get("label"),
                     board.ctl("stCopy").props.get("label")),
