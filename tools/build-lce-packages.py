@@ -415,8 +415,9 @@ PACKAGES = [
     P('lcb', 'barcodext', 'org.openxtalk.library.barcodext', 'src/barcodext.lcb', 'barcodext',
       'bcLibraryVersion()', '^barcodext ABI [0-9]+; zxing-cpp [0-9]+\\.[0-9]+'),
     # ShowControl (#200): OSC, MIDI and Art-Net. oscxt and midixt joined with
-    # no library committed, so their rows wait for their first
-    # release-binaries dispatch. Each probe answers the loaded library's ABI
+    # no library committed, so their rows waited for their first
+    # release-binaries dispatch (run 44985328988, 2026-11-22: the six
+    # desktop libraries of each). Each probe answers the loaded library's ABI
     # number, 2 for this binding (box2dxt's b2Version() is the precedent), so
     # a library of another release fails it by name; neither opens a socket
     # or a port.

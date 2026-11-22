@@ -12,7 +12,9 @@ in `src/midi_shim.h` equals the literal in `checkABI()` of the binding) -> ONE l
 `midixt.{so,dll,dylib}` (bare token) -> the LCB binding `src/midi.lcb`
 (`org.openxtalk.library.midi`, public `midi*`). `examples/midi-helpers.livecodescript` is the
 poll dispatcher most stacks use; `examples/midi-selftest.livecodescript` the in-OXT
-self-test.
+self-test. On the web the same shim runs over `src/midi_web.c`, midixt's own Web MIDI layer
+(no RtMidi code), in ONE wasm object, `src/code/wasm32-emscripten/midixt.a`, which a web
+engine links in (As built, below).
 
 `examples/midi-stage.livecodescript` is the showcase (2026-11-21, by Seth Morrow): OXT-Beyond's dark look
 (EXEMPT from the suite's UI kit by the owner's request), a player and a stage joined by a virtual port, a loopback driver's pair, or, with neither, `midiDecode`. It CARRIES
@@ -26,7 +28,18 @@ opened 390 px past the screen's left edge (2026-11-21). `TestTheWindowIsBuiltQui
 frame once its stack is closed, so a close made with messages locked, which sends no closeStack,
 cannot leave it running unseen in the IDE's memory with its ports open (after each close there a
 frame was still queued; `TestAClosedWindowStopsItsShow`), and a Windows pass of that fix found
-nothing queued after either kind of close (the same day).
+nothing queued after either kind of close (the same day). Its stop leaves it no mode to send
+through, so it opens again after either kind of close: closed while it played over a cable, it
+kept the mode "cable" with the cable's handles emptied, the next open's own stop silenced
+through an empty handle into a typed `Integer` (engine note 6.4), and the reopen threw "can't
+find handler midiControlChange" on the maintainer's Linux PC (2026-11-22, its ALSA virtual
+port the cable; `TestTheStageOpensAgainAfterAClose` failed against it). On the web the
+virtual port is refused, and a listing's error carries the web layer's reason after the
+library's words, which `mdsWebWhy` keeps and `mdsCableHint` words (a frame without MIDI, a question out, a refusal, no Web MIDI, a page that is not
+secure). While the browser has not answered, `mdsAskAgain` looks again each second from the
+show's own loop, then connects. The mock speaks a desktop's errors, so the tests hand
+`mdsHeard` the web's (`TestOnTheWebEachReasonHasItsWords`,
+`TestOnTheWebItWaitsForTheBrowsersAnswer`, both failing against the stage before them).
 
 It is the MIDI third of ShowControl (Seth Morrow Software's OSC, MIDI and Art-Net
 extensions), which joined the suite on 2026-11-21 as oscxt, midixt and artnetxt. The library
@@ -91,6 +104,12 @@ extension upgrades in place and its stacks keep working. Only the library's file
   fit the caller's drain block to the next drain: a popped message is never dropped. The
   binding's block (2 + 65535 + 4) always fits one, so the stash's drop path is unreachable
   from LCB.
+- **The two port listers stay.** Counting and naming ports needs an RtMidi instance: the
+  shim makes one per direction on first use and keeps it for the life of the process (one
+  whose backend failed is made again). ALSA lists them as two clients with no port, "RtMidi
+  Input Client" and "RtMidi Output Client", after every port has closed: two such clients
+  stayed in the IDE on the maintainer's Linux PC after MIDI Stage closed (2026-11-22).
+  Nothing can connect to a client with no port.
 - **`midiLoadNativeLibError` keeps its reason**, read from `dlerror()` when
   `midiLoadNativeLib` fails. ShowControl's read it when asked, and the engine binds a
   foreign handler on its first call, which ate the pending error: the first answer was
@@ -98,6 +117,31 @@ extension upgrades in place and its stacks keep working. Only the library's file
 - **Virtual ports without a name** get "ShowControl In" / "ShowControl Out", the RtMidi
   clients "RtMidi Input Client" / "RtMidi Output Client": the names ShowControl's ports have
   always shown, so a DAW's saved routing still finds them.
+- **The web archive (2026-11-22).** RtMidi 6.0.0's own Web MIDI backend cannot serve a poll:
+  its input goes only to a callback (rule 1 registers none) and piles up there, an open
+  before the browser has answered silently does nothing, and it throws JavaScript errors out
+  through the engine. So `src/midi_web.c` implements the part of RtMidi's C API the shim
+  calls over Web MIDI, datachannelxt's pattern: the browser's events land in a JavaScript
+  queue a poll drains, nothing calls into WebAssembly from an event, and ONE `EM_JS` import
+  whose body is a try/catch turns any throw into a refused call and a reason (rule 2 in
+  JavaScript). Its header comment lists the RtMidi behaviour it keeps (the filters, the
+  queue's limit, the delta times, the snprintf rules) and the browser's side (access asked
+  once, with SysEx, at the first call that needs a port; a refusal stands for the page's
+  life; a frame whose permissions policy leaves MIDI out refused at once with nothing
+  asked; a port the browser could not open says so at every poll or send until closed).
+  The shim is unchanged but for two things under `__EMSCRIPTEN__`: virtual ports refused
+  before the browser is asked, and `err_set_backend`, which adds the web layer's reason
+  (`midixt_web_why`, named outside `midi_*` because the freshness gate holds every
+  column-0 `midi_*` name to the exports). The desktop code is untouched: a Linux build from
+  before and after matched byte for byte in `.text`, `.rodata` and its exports, the mock's
+  too (2026-11-22). CMake generates
+  `midixt_web_exports()` from the `.lcb`'s binds; the archive builds the same bytes in any
+  folder. `tests/midi_web_test.c` runs under node over `tests/web/fake-web-midi.js` (five
+  scenes, one page each), and ENDS WITH `exit()`, linked `-sEXIT_RUNTIME=1`: under
+  Asyncify a main that has slept returns into nothing, so its value never became node's
+  exit status, and every scene of a layer broken on purpose passed until it did (ctest's
+  `FAIL_REGULAR_EXPRESSION` holds the printed verdict too). Nineteen such breakages are
+  each caught now.
 - **The mock** (`tests/mock/`) reproduces each behaviour above, so the C, LCB and Script
   suites drive every failure path with no MIDI service. It is built as `build/mock/midixt.*`
   under the shipped name and must never ship (`tools/package-extension.py` refuses it;
@@ -120,7 +164,7 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
 1. **A `Data` does not bridge to a foreign `Pointer`.** Sends pass `MCDataGetBytePtr`; the
    drain fills a raw `MCMemoryAllocate` block copied back with `MCDataCreateWithBytes`.
 2. **Never return a `ZString` from a foreign handler**: the engine frees it (engine note
-   6.18; no gate refuses the form yet). Names and the last error come back
+   6.18; the checker's check 24 refuses the form). Names and the last error come back
    through caller buffers (bytes written, or `-needed`); `dlerror()`'s text as a
    `Pointer`, copied at once.
 3. **A NUL cannot cross as a `ZString`**: the engine throws "cannot export char U+0000". The
@@ -138,9 +182,25 @@ listener, as ShowControl's did, and the error is re-thrown after `end try` (a th
 Verified natively on x86_64 Linux (the mock tests under ASan/UBSan; the real library's smoke
 test on its no-service path) and on OXT-Beyond's headless engine (9.7.1-OXT, Linux x86_64,
 2026-11-21): the LCB suite under lc-run, and the Script suite in the standalone engine with
-`-ui`, over locally built libraries. No MIDI service has carried a message on the record yet
-(the self-test's Tier 3 skipped: no ALSA sequencer where it ran). No desktop IDE and no
-Windows or macOS engine has loaded it: verified statically; needs an OXT pass. Its showcase
-has opened without it in OXT-Beyond 0.2.8-dp.1's IDE on Windows (2026-11-21): it said what
-was missing, and that run found the two faults above. No libraries are committed yet. Open
-work is in the suite's `docs/WORK-PLAN.md`.
+`-ui`, over locally built libraries, and both again on 2026-11-22 over the committed
+`x86_64-linux` library. Its six desktop libraries were committed that day (release run
+44985328988), and the maintainer's two PCs installed it over them (the suite's runbook,
+section 8). On Linux, OXT-Beyond 0.2.8-dp.2's IDE loaded it and the self-test passed in the
+standalone engine with every check run (38), its Tier 3 loopback through an ALSA virtual
+port among them: the first MIDI service on the record to carry its messages. On Windows,
+0.2.8-dp.1's IDE compiled the binding and loaded it, `midiVersion()` answered 2 and listed
+the GS Wavetable synth, and the self-test passed (29; 2 skipped, Windows MM having no
+virtual ports). The showcase opened hidden on both and left no port and nothing queued when
+closed; on Linux it offered for Sound the port that reads its own cable, fixed the same day
+(`mdsReads`). Rebuilt there with that fix, it offered no output ("There is no MIDI output
+here to play through."), and a reopen after a close threw, fixed the same day (above):
+built from the fix, it opened again after either kind of close on both PCs, with no error,
+and left playing 10 s on Linux it read back through ALSA all 86 messages its player sent
+(3 ms from send to stage on average): its first messages through a MIDI service. It had
+opened without midixt in 0.2.8-dp.1's IDE on Windows (2026-11-21) and said what was
+missing; that run found the two Windows faults above. No message through CoreMIDI,
+Windows MM or a MIDI keyboard is on the record, and no engine has loaded the mac, 32-bit or
+ARM libraries: verified statically; needs an OXT pass. The web archive (2026-11-22) has run
+only under node, against a stand-in for the browser's Web MIDI, and no web engine links it
+yet: verified statically; needs a pass in a browser. Open work is in the suite's
+`docs/WORK-PLAN.md`.

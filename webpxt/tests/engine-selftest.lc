@@ -85,6 +85,46 @@ function sameColour pA, pB
    return true
 end sameColour
 
+-- Little-endian bytes of a WebP field, pCount of them.
+function leBytes pValue, pCount
+   local tOut, tI
+   repeat with tI = 1 to pCount
+      put numToByte(pValue mod 256) after tOut
+      put pValue div 256 into pValue
+   end repeat
+   return tOut
+end leBytes
+
+-- An animated WebP of pCount 1 x 1 frames, each shown for pDuration ms
+-- (the format's field holds up to 16777215), made by hand around the VP8L
+-- chunk of a still this library writes: a file from elsewhere can say what
+-- this library's writer refuses to. The same file tests/smoke_test.c makes.
+function animationByHand pCount, pDuration
+   local tStill, tAt, tSize, tWhole, tChunk, tFrames, tI, tBody
+   put wpEncodeLossless(numToByte(0) & numToByte(200) & numToByte(100) & numToByte(50), empty, 1, 1) into tStill
+   put 13 into tAt
+   repeat while tAt + 7 <= the number of bytes of tStill
+      put byteToNum(byte tAt + 4 of tStill) + 256 * byteToNum(byte tAt + 5 of tStill) \
+            + 65536 * byteToNum(byte tAt + 6 of tStill) + 16777216 * byteToNum(byte tAt + 7 of tStill) into tSize
+      put 8 + tSize + tSize mod 2 into tWhole
+      if byte tAt to tAt + 3 of tStill is "VP8L" then
+         put byte tAt to tAt + tWhole - 1 of tStill into tChunk
+         exit repeat
+      end if
+      add tWhole to tAt
+   end repeat
+   if tChunk is empty then return empty
+   -- An ANMF per frame: x, y, width and height less one (all 0), the
+   -- duration, a byte of flags, then the frame's own chunk.
+   repeat with tI = 1 to pCount
+      put "ANMF" & leBytes(16 + the number of bytes of tChunk, 4) & leBytes(0, 12) & leBytes(pDuration, 3) \
+            & numToByte(0) & tChunk after tFrames
+   end repeat
+   -- VP8X: the animation flag and a 1 x 1 canvas; ANIM: background 0, loops 0.
+   put "VP8X" & leBytes(10, 4) & numToByte(2) & leBytes(0, 9) & "ANIM" & leBytes(6, 4) & leBytes(0, 6) & tFrames into tBody
+   return "RIFF" & leBytes(4 + the number of bytes of tBody, 4) & "WEBP" & tBody
+end animationByHand
+
 -- ---------------------------------------------------------------------
 command testLibrary
    check "ABI", wpABIVersion() is 1, wpABIVersion()
@@ -256,6 +296,76 @@ command testAnimation
    check "a writer of no size is refused", wpAnimEncoderCreate(0, 0, 0, 75, false) is 0 and wpLastError() is not empty, wpLastError()
 end testAnimation
 
+-- A whole animation ends by 2147483647 ms (about 24.8 days), written or
+-- read: libwebp keeps a frame's start in a 32-bit int both ways, and the
+-- writer's own limits (10000 frames of up to 600000 ms) would have carried
+-- it past that. The refusals come back as false and as 0, never as a script
+-- error, and a refused frame leaves the writer as it was.
+command testAnimationLength
+   local tDot, tWriter, tAdded, tFile, tAnim, tFrame, tFrames, tTotal, tWrong, tInfo
+   put numToByte(0) & numToByte(200) & numToByte(100) & numToByte(50) into tDot
+   put wpAnimEncoderCreate(1, 1, 0, 75, true) into tWriter
+   check "a 1 x 1 animation writer", tWriter > 0, tWriter && wpLastError()
+   put 0 into tAdded
+   -- 3579 frames of ten minutes end at 2147400000 ms; a 3580th would end past the limit.
+   repeat 3579 times
+      if wpAnimEncoderAddFrame(tWriter, tDot, empty, 600000) then add 1 to tAdded
+   end repeat
+   check "3579 frames of ten minutes are added", tAdded is 3579 and wpAnimEncoderFrameCount(tWriter) is 3579, tAdded && wpLastError()
+   check "a frame that would end the animation after 2147483647 ms is refused (false)", \
+         wpAnimEncoderAddFrame(tWriter, tDot, empty, 600000) is false and wpLastError() contains "in all", wpLastError()
+   check "the refusal leaves the writer as it was", wpAnimEncoderIsValid(tWriter) is true and wpAnimEncoderFrameCount(tWriter) is 3579, \
+         wpAnimEncoderFrameCount(tWriter)
+   check "a frame that ends it at 2147483647 ms exactly is added", wpAnimEncoderAddFrame(tWriter, tDot, empty, 83647) is true, wpLastError()
+   check "one millisecond more is refused", wpAnimEncoderAddFrame(tWriter, tDot, empty, 1) is false, wpLastError()
+   put wpAnimEncoderFinish(tWriter) into tFile
+   check "the longest animation is written", the number of bytes of tFile > 40 and wpAnimEncoderOpenCount() is 0, wpLastError()
+   put wpAnimOpen(tFile) into tAnim
+   check "the longest animation opens", tAnim > 0, wpLastError()
+   put 0 into tFrames
+   put 0 into tTotal
+   put 0 into tWrong
+   repeat
+      put wpAnimNextFrame(tAnim) into tFrame
+      if tFrame is empty then exit repeat
+      add 1 to tFrames
+      if tFrame["duration"] <= 0 then add 1 to tWrong
+      add tFrame["duration"] to tTotal
+   end repeat
+   check "its frames add up to 2147483647 ms, none read as 0", tFrames > 0 and tWrong is 0 and tTotal is 2147483647, \
+         tFrames && tTotal && tWrong
+   wpAnimClose tAnim
+
+   -- A file from elsewhere: 128 frames of 16777215 ms end at 2147483520, inside
+   -- the limit; 129 would end past it, and are refused at open.
+   put animationByHand(128, 16777215) into tFile
+   put wpAnimOpen(tFile) into tAnim
+   check "128 frames of 16777215 ms made by hand open", tAnim > 0 and wpAnimFrameCount(tAnim) is 128, tAnim && wpLastError()
+   put 0 into tFrames
+   put 0 into tTotal
+   put 0 into tWrong
+   repeat
+      put wpAnimNextFrame(tAnim) into tFrame
+      if tFrame is empty then exit repeat
+      add 1 to tFrames
+      if tFrame["duration"] is not 16777215 then add 1 to tWrong
+      add tFrame["duration"] to tTotal
+   end repeat
+   check "they read as 128 frames, 2147483520 ms in all", tFrames is 128 and tWrong is 0 and tTotal is 2147483520, \
+         tFrames && tTotal && tWrong
+   wpAnimClose tAnim
+   put animationByHand(129, 16777215) into tFile
+   put wpInfo(tFile) into tInfo
+   check "the facts of 129 frames still read (they hold no time)", tInfo["frames"] is 129 and tInfo["animated"] is true, \
+         tInfo["frames"] && wpLastError()
+   put wpAnimOpen(tFile) into tAnim
+   check "129 frames of 16777215 ms are refused at open (0)", tAnim is 0 and wpLastError() contains "add up to" and wpAnimOpenCount() is 0, \
+         tAnim && wpLastError()
+   if tAnim > 0 then wpAnimClose tAnim
+   put wpDecode(tFile) into tFrame
+   check "its first frame still decodes as a picture", tFrame["width"] is 1 and tFrame["height"] is 1, wpLastError()
+end testAnimationLength
+
 -- The reason the picture is in the engine's layout: an image object takes
 -- it, and gives it back, with no conversion. (The server engine has no
 -- window, but it has image objects.)
@@ -378,6 +488,7 @@ try
       testLossy
       testRefusals
       testAnimation
+      testAnimationLength
       testImageObject
       testTypedBoundary
       sweepEveryHandler

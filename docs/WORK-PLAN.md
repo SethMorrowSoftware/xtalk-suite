@@ -330,7 +330,6 @@ keeping the scaffold for its report.
 | 29 | **Install the .lce packages through an IDE's Extension Manager.** `lce-packages.yml` (2026-10-21) builds one `.lce` per extension and, on every run, validates each with extension-utils' own `extensionValidateLCEPackage`, extracts it with revZip, maps its code folder and loads and probes it on OXT-Beyond's server engine, Linux x86-64 only. One IDE install is on record: on 2026-10-21 `sodiumxt-0.1.0.lce` (built by this tool from 1d4557c's tree) was installed through `revIDEExtensionInstall` in the maintainer's OXT-Beyond IDE on Windows x86-64: it landed in the user extensions folder with `api.lcdoc`, `module.lcm`, `manifest.xml`, the source and all six code folders, loaded, mapped `code/x86_64-win32/sodiumxt`, and `sxVersion()` answered `SodiumXT 0.1.0 (libsodium 1.0.22)`. Still owed: every other package in a running IDE on Windows (the enetxt and box2dxt packages on a PC WITHOUT the Visual C++ Redistributable, which is what their bundled runtime is for), macOS and stock LiveCode Community 9.6.3 (whose IDE loads a `module.lcm` from OXT-Beyond's lc-compile, same bytecode header, or recompiles it from the `.lcb` beside it), and the Dictionary entry each `api.lcdoc` gives | A package that only one engine and one platform have loaded; verified statically for the rest; needs an IDE pass | S | an engine session |
 | 31 | **The script members and the apps on Android.** onionxt needs a Tor it can reach (an app cannot start a daemon the way a desktop does): decide whether a Tor app's SOCKS port (Orbot) is the supported path, and what becomes of the control-port calls there; nostrxt should need nothing (pure script over coinxt, sodiumxt and sockets): its two library files were read on 2026-11-18 and call nothing a desktop alone has ([ANDROID.md](ANDROID.md)), and it has not run on an Android engine; riptide, nocloud and holde-em build 1200 x 640 desktop windows and have no phone layout | The pivot of 2026-11-18 asked for as much of the suite on Android as possible; the native members came first | L | owner (onionxt's path) |
 | 32 | **The dangling `else if`.** Check 20 refuses a bare `else` after a single-line `if`, but not an `else if ... then` there, which the engine binds to the single-line `if` just the same (engine note 3.6: `190` "if: missing 'end if'" at the handler's end; gamepadxt's demo had it twice, found only by compiling). The form is legal when that else is meant for the single-line `if`, so the rule is the indentation: refuse an `else` or `else if` written to the LEFT of the single-line `if` before it. Every carrier's copy, with `tools/test-checker.py` fixtures both ways | The checker passed a script the engine refused | S | none |
-| 33 | **torrentxt at API 24: the proof in an app.** The four libraries were rebuilt for API 24 on 2026-11-21 (run 44914897842, commit d47060f) and their tests ran on an Android 7.0 emulator for the two x86 ABIs ([ANDROID.md](ANDROID.md), "The rebuild at API 24"). That is the shell user on an Android older than the refusal, so the fix itself is unseen. Pin the four in OXT-Beyond, whose Android workflow then runs its torrent test inside an app on Android 13 and 16, and make that test fail on a session born paused (today it resumes one and says KNOWN LIMIT); have it listen on the unspecified address once too, which no run has tried in an app. Then replace the status paragraph, the table row and this item with the record | Until an app on Android 11 or later starts a session unpaused, the fix is a reading of libtorrent's source and a test on Android 7.0 | S | OXT-Beyond pinning the commit |
 | 34 | **Check the suite's script servers against engine note 6.20.** On Windows an accepted socket's id is its handle, which the next connection gets as soon as the engine closes the old one, so a `close socket` by id that can run after the client has closed (in a write's message, a timer, `socketClosed` or `socketError`) closes the NEXT connection. curlxt Live lost one request in four to it on 2026-11-21 and now lets the client close, forgets on `socketClosed` without closing, and closes a straggler only by a serial (`cdSrvTakeId`, `cdSrvReap`). Read each other server for the same shape: holde-em (`holde-em/src/holdem.livecodescript`), torrentxt's `torrent-dht-channels` and `torrent-quickshare`, coinxt's `coin-wallet`, onionxt (`onionxt/src/onionxt.livecodescript`, its demo, its tests and the `onion-httpd` spike), the suite closing pass, nocloud and riptide-social; fix each site that has it, with a headless check where the family interpreter can drive one | Found on the maintainer's Windows PC through curlxt Live's server (engine note 6.20); the other servers were not looked at, and most of them run on Windows | M | none |
 
 ### 1.3 Engine work (suite-level)
@@ -788,10 +787,9 @@ keeping the scaffold for its report.
   failed `b2LoadNativeLib` was empty (6.19) and the process then aborted with a double
   free. The reason is now read at the failure and kept, for `b2LoadNativeLib` and
   `b2LoadNativeLibHere`; a scratch lc-run probe passed three runs out of three, and
-  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9).
-  Verified under lc-run; needs an OXT pass. Still to do: the unified checker refuses
-  the form in every member (ShowControl's checker did; a change of its own, since it
-  touches every member's copy).
+  harness v36's `stTestLoaderErrorKept` asserts it on a Linux engine (engine #9). The
+  checker's check 24 now refuses the form in every member. Verified under lc-run;
+  needs an OXT pass.
 
 **Coding.**
 
@@ -1059,27 +1057,47 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   stack; that window is driven on the Linux engine (`xlsxt/tests/demo-drive.livecodescript`)
   and ran that day on the Windows PC under its dark theme: the tour's four scenes, About's
   checks 39/0, every word readable, and one clipped column, fixed after (checked on Linux
-  only). Everything else is verified statically; needs an OXT pass.
+  only). OXT-Beyond 0.2.8-dp.2.1 builds it in: that repository's pull request 620 (merged
+  2026-11-22; it carried 618, which replaced 605) pins it to 9ebbd6e, and its checks ran the
+  committed files on 2026-11-21 (head e5d79df). The web IDE check's `xlsx` step passed again
+  in the three browsers (run 44955451513; read back from the Chromium job's log, and the
+  Firefox and WebKit jobs, which fail on a step that fails or does not finish, passed). Its
+  Android builder (run 44955451306) put the `x86_64-android` library in the check app, and on
+  an Android 13 x86_64 emulator and an Android 16 one with 16 KB pages `xlLibraryVersion()`
+  answered `xlsxt ABI 1; libxlsxwriter 1.2.4; zlib 1.4; Expat 2.10.0` and the app's xlsxt test
+  passed: a workbook of 5409 bytes written in the app's documents folder with no temporary
+  folder set (the shim then uses the workbook's own folder), a zip, read back cell for cell
+  and as one grid, nothing left open (read back from the job's log, both emulators). The same
+  test passed that day on 0.2.8-dp.2's Linux standalone engine, headless, over the committed
+  `x86_64-linux` library, in a probe script made by the check's own handlers. On
+  2026-11-22 the demo, saved as a stack for the community gallery (its pull request 19),
+  played in 0.2.8-dp.2.1's Stack Player in headless Chromium: the tour to its end, About's
+  checks 39/0 (row 10). That pull request merged the same day, and the gallery's Publish
+  run opened the stack in the player on the published site.
+  Everything else is verified statically; needs an OXT pass.
 - Binaries: committed 2026-11-21 by its first release-binaries dispatch (run 44838679488
   from b2d4a6c, commit 0be6db1: six desktop rows and four Android ids, ABI 1), beside the
   web archive committed before it (built with emsdk 6.0.12 outside that workflow, as the
-  other members' are). The `ships` row lists all eleven. No engine has loaded a desktop or
-  Android one yet: the runs above used locally built or lane-built libraries, and the
-  browser run the web archive.
+  other members' are). The `ships` row lists all eleven. Beside the web archive, two have
+  met an engine, both on 2026-11-21 (above): `x86_64-android` in OXT-Beyond's check app on
+  two emulators and `x86_64-linux` on 0.2.8-dp.2's Linux standalone engine. No engine has
+  loaded the Windows, Mac, 32-bit or ARM ones yet: the Windows runs above used the native
+  lane's DLL.
 - Publishing: `SethMorrowSoftware/xlsxt` exists and is empty (created by the owner,
   2026-11-20); a publish-members run adopts it (`--adopt xlsxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44838679488, commit 0be6db1, beside the web archive): the first release-binaries dispatch with `members: xlsxt`, then the `ships` row | - | - | `xlsxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
+| 2 | The first IDE pass: install the extension, `xlLibraryVersion()`, the export and import handlers of its README, on Windows, Linux and a Mac (Windows begun 2026-11-21 on the native lane's DLL: `xlLibraryVersion()`, the engine self-test 64/0 in the IDE, the demo's checks 39/0; the release DLL, Linux and a Mac remain; OXT-Beyond 0.2.8-dp.2.1 builds the release libraries in, so its IDE needs no install) | S1, after #1 | - | each answers as `xlsxt/docs/api-reference.md` says |
 | 3 | A workbook it wrote (formats, a date, a formula, a chart, a picture, text outside ASCII) opened in Excel and in LibreOffice, and one saved by each read back | S1 | - | both open it without a repair prompt and show what was written; both files read back cell for cell |
 | 4 | The adoption of `SethMorrowSoftware/xlsxt` (`publish-members.yml` dispatch, `adopt: xlsxt`) | owner | - | the repository holds the member's history |
-| 5 | The web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is (linked by OXT-Beyond's pull request 605, whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit on 2026-11-21; open until that work merges there) | OXT-Beyond | - | `xlLibraryVersion()` answers in the web IDE |
+| 5 | DONE 2026-11-22: the web archive (`wasm32-emscripten/xlsxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is, by OXT-Beyond's pull request 620 (0.2.8-dp.2.1, carrying 618, which replaced 605), whose web IDE check had `xlLibraryVersion()` answer and a workbook written and read back in Chromium, Firefox and WebKit (run 44955451513, 2026-11-21, as 605's had). OXT-Beyond 0.2.8-dp.2.1, published 2026-11-22, carries it in its web IDE and its Stack Player, whose `xlLibraryVersion()` answered in Chromium that day (row 10) | - | - | `xlLibraryVersion()` answers in the web IDE |
 | 6 | An lce package and a place on the extensions site. PACKAGED 2026-11-21: its row in `tools/build-lce-packages.py` waited until #1's libraries landed, and `xlsxt-0.1.0.lce` (`org.openxtalk.library.xlsxt`, the six desktop rows and the four Android ids; the web archive is in no package) built from that tree passed the workflow's engine check run locally (validated, loaded and `xlLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine). The site lists it from the release the first push to main after that publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 7 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's xlsxt row has a pill and a Run |
 | 8 | `xlsxt/examples/xlsxt-demo.livecodescript` (Spreadsheet Studio) used by a person: the Showcase's tour and each scene, each tab's Make and Save, Open on a file from Excel, a click on a cell, Run every check (driven on the Linux engine by `xlsxt/tests/demo-drive.livecodescript` since 2026-11-21; on Windows on 2026-11-21 a session on the maintainer's PC built the first window and ran its checks, 39/0, and found its words white on white under the dark theme; the same day the demo was rebuilt as a self-playing showcase in OXT-Beyond's dark look, every colour named by the stack, and that window ran on the same PC under the dark theme: the tour's four scenes, About's checks 39/0, every word readable, one clipped column fixed after and checked on Linux only; a light theme, Make and Save by hand and a file opened in Excel remain) | S1, after #1 | - | the tour plays smoothly, the window looks right under a dark and a light theme, and the saved files open in Excel |
-| 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set | S1, after #1 | - | the file is on the device and reads back |
+| 9 | On Android, a workbook written and read by an engine, with `xlSetTempFolder` set (begun 2026-11-21: OXT-Beyond's check app, its pull request 620, wrote one in the app's documents folder with no temporary folder set and read it back cell for cell on Android 13 and 16 x86_64 emulators, above; with `xlSetTempFolder` set, and on an ARM device, remain) | S1, after #1 | - | the file is on the device and reads back |
+| 10 | DONE 2026-11-22 (the gallery's pull request 19, squash 44f94cb, after its pull request 24 moved the player's pins to OXT-Beyond 0.2.8-dp.2.1): Spreadsheet Studio in the community gallery (oxt-community-stacks), playing in a browser, the stack saved by `xlsxt/examples/build-demo-stack.livecodescript`. Before the merge, in a gallery built locally with those pins, the stack opened in headless Chromium with `xlLibraryVersion()` on its status line, played its tour to the end and passed About's checks 39/0; after it, the gallery's Publish run (44989253439) opened it in the player on the published site | - | - | the gallery plays it |
 
 ### 2.13 audioxt
 
@@ -1102,17 +1120,22 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   device, by its own status line, meters and oscilloscope, but opened off the screen and
   froze the IDE for 59 s on opening; both were fixed the same day (engine notes 5.15 and
   5.18): the fixed stack opened in 0.14 s in that release's IDE on Linux, against 1.8 s
-  before, and in 796 ms back in the Windows IDE, on the screen (runbook section 8). Nobody
-  has heard it: for everything beyond those runs it is verified statically; needs an OXT
-  pass.
+  before, and in 796 ms back in the Windows IDE, on the screen (runbook section 8). On
+  2026-11-22 OXT-Beyond 0.2.8-dp.2.1's web engine, which links the committed web archive,
+  played the demo in headless Chromium in a community gallery play page, every scene of
+  Play all by its own report (row 3); its microphone scene, given no microphone there,
+  showed its reason for one frame and cut its status line off at its end, both fixed that
+  day (runbook section 8). Nobody has heard it: for everything beyond those runs it is
+  verified statically; needs an OXT pass.
 - Binaries: committed 2026-11-21. The six desktop rows and four Android ids came from its
   first release-binaries dispatch (run 44847619287 from 7dcbb41, commit 78223d8; the shim's only
   later change is inside `#if defined(__EMSCRIPTEN__)`, so they are what this tree builds for
   those platforms), and the web archive (`src/code/wasm32-emscripten/audioxt.a`, Emscripten
   6.0.12, the same bytes from two build folders) was built outside that workflow, as the other
-  members' are. The `ships` row lists all eleven. Only the `x86_64-linux` one has been loaded
-  by an engine: OXT-Beyond 0.2.8-dp.1's desktop engine and IDE, running the demo
-  (2026-11-21); the earlier runs above used locally built or CI-built libraries.
+  members' are. The `ships` row lists all eleven. Two have been loaded by an engine: the
+  `x86_64-linux` one, by OXT-Beyond 0.2.8-dp.1's desktop engine and IDE, running the demo
+  (2026-11-21), and the web archive, by OXT-Beyond 0.2.8-dp.2.1's web engine, running the
+  demo (2026-11-22); the earlier runs above used locally built or CI-built libraries.
 - Publishing: `SethMorrowSoftware/audioxt` was created empty by the owner on 2026-11-20; a
   publish-members run adopts it (`--adopt audioxt`).
 
@@ -1120,11 +1143,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44847619287, commit 78223d8, and the web archive): the first release-binaries dispatch, then the `ships` row | - | - | `audioxt/src/code/` holds every platform and the freshness gate demands them |
 | 2 | The first IDE pass, with ears: install the extension, `auLibraryVersion()`, the README's music-and-click stack, a tone, a clone played several times at once, and a microphone recorded to a WAV and played back, on Windows, Linux and a Mac | S1, after #1 | - | each is HEARD and answers as `audioxt/docs/api-reference.md` says |
-| 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is | OXT-Beyond | - | a tone is heard in the web IDE after one click |
+| 3 | The web archive (`wasm32-emscripten/audioxt.a`) linked into OXT-Beyond's web engine, as box2dxt's is. LINKED in OXT-Beyond 0.2.8-dp.2.1 (its `tools/oxt/xtalk-extensions.json` pins the committed archive by SHA-256), whose web Stack Player played Sound Stage in headless Chromium on 2026-11-22 after one click, by the demo's own status line, oscilloscope and meters, nobody listening (runbook section 8) | OXT-Beyond | - | a tone is heard in the web IDE after one click |
 | 4 | Android on a device: a sound played, and a recording made by an app that holds `RECORD_AUDIO` | S1, after #1 | - | both happen on a phone |
 | 5 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site. PACKAGED 2026-11-21: `audioxt-0.1.0.lce` (`org.openxtalk.library.audioxt`, the six desktop rows and the four Android ids; the web archive is in no package) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `auLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine, no device opened). The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 6 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's audioxt row has a pill and a Run |
-| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening; fixed the same day to open on the screen and quickly, and re-run there: 796 ms, on the screen) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
+| 7 | `audioxt/examples/audioxt-demo.livecodescript` (Sound Stage) used by a person, with ears: Play all through a real sound device, the 3D scene on headphones, the microphone scene with a real microphone, Run the checks and Copy the results (driven on the Linux desktop engine through the silent device, headless and in a window, by `audioxt/tests/demo-drive.livecodescript` since 2026-11-21; played on Windows through a real device that day with nobody listening; fixed the same day to open on the screen and quickly, and re-run there: 796 ms, on the screen; played in OXT-Beyond 0.2.8-dp.2.1's web player in headless Chromium on 2026-11-22, nobody listening, where the microphone scene, given no microphone, showed its reason for one frame and cut its status line off at its end, both fixed that day and the drive checking it since) | S1, after #1 | - | each scene is heard as its caption says, the checks pass, and the window opens on the screen within a second |
 | 8 | Ogg Vorbis, only if asked for: it needs stb_vorbis beside the header, fuzzed before it ships | owner decision | - | decided |
 | 9 | The suite board's band, which replaced the pitch of 25 that sixteen rows had needed (box3dxt #7 and render3dxt #10 until then): the members with no harness (thirteen since webpxt, barcodext, oscxt, midixt, artnetxt and pdfxt joined: artnetxt, audioxt, barcodext, box3dxt, curlxt, gamepadxt, midixt, nocloud, oscxt, pdfxt, render3dxt, webpxt, xlsxt) are names under the eleven rows, three to a line. Twelve filled the band's four lines above the members caption at a row pitch of 29, so pdfxt's name, the thirteenth (2026-11-22), brought the pitch to 28: a row's controls (+5 to +29) still clear the next row's (+33), the rows end at 445, and the band has five lines above the caption, room for fifteen, the fifth ending at 544. The boot self-check's `suRowsFit` and `tools/check-suite-ui-boot.py` (its fixtures ab and ac) fail a board whose rows run into the band or whose band runs into the members caption. Measured on OXT-Beyond's Linux desktop engine on 2026-11-21 with gamepadxt in it and seven names (the board built alone, read back, and pictured under a virtual display; no person has looked at it): the rows do not touch, the band's three lines end at 523, above the caption at 546, and every name reads in full bar nocloud's, which wrapped in its 108-pixel cell. DRAWN on the Linux headless engine under a virtual display the same day with oscxt, midixt and artnetxt in it instead (runbook section 8): rows and band clear of each other and of the caption, every word whole once a name took its whole cell, 152 wide (beside a muted "gates", No Cloud Quick Share had lost its last word). DRAWN again on that engine once gamepadxt's merge made the band ten names: four lines, the fourth above the caption, every word whole, `suRowsFit` passing (runbook section 8). DRAWN again once webpxt's and barcodext's merge made it twelve, its whole room: four full lines, the fourth (midixt, artnetxt, No Cloud Quick Share) above the caption, every word whole, `suRowsFit` passing (runbook section 8). DRAWN again once pdfxt's merge made it thirteen at the pitch of 28: eleven rows, none touching the next, and five lines, the fifth (No Cloud Quick Share) above the caption, every word whole, `suRowsFit` passing (runbook section 8) | S1 | 48 | the same on Windows and a Mac, in their own fonts |
 
@@ -1154,11 +1177,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   committed archive into its web engine, and that pull request's web IDE check ran a
   gamepad step in Chromium, Firefox and WebKit: a virtual pad attached, a button pressed
   and read back as an event, a stick, rumble and the light, the pad unplugged, and SDL's
-  assertions at 0 (Chromium's log read; the other two passed the same check). No real pad
-  has been read in a browser. Of the desktop libraries only the `x86_64-win32` DLL has met
-  an engine: the Windows IDE run above loaded a DLL of its size (1,936,384 bytes, not
-  hashed), staged at 08:21 UTC, after commit fdcb830 (08:13 UTC). The Linux runs used a
-  locally built library, and no engine has loaded the committed Linux, 32-bit Windows or
+  assertions at 0 (Chromium's log read; the other two passed the same check). OXT-Beyond
+  0.2.8-dp.2.1 ships that archive (its pull request 620 took 612's changes; its
+  `tools/oxt/xtalk-extensions.json` pins the committed archive by SHA-256), and on
+  2026-11-22 Gamepad Lab, as the community gallery shares it (that repository's pull
+  request 20), played in that release's Stack Player in headless Chromium: gamepadxt
+  found, the showcases on the software pad, and a pad the test put into the browser's
+  Gamepad API (a standard mapping with an Xbox One S id, no device) taken over when
+  plugged in, its south button and left stick read through SDL's Emscripten driver
+  (runbook section 8). No real pad has been read in a browser. Of the desktop libraries two
+  have met an engine: the `x86_64-win32` DLL, as the Windows IDE run above loaded a DLL of
+  its size (1,936,384 bytes, not hashed), staged at 08:21 UTC, after commit fdcb830 (08:13
+  UTC); and the `x86_64-linux` library, the committed file itself (by its hash), under
+  OXT-Beyond 0.2.8-dp.1's Linux desktop engine with no display, where the drive passed all
+  162 checks over it (run locally, 2026-11-21). The other Linux runs used a locally built
+  library, and no engine has loaded the committed 32-bit Windows, 32-bit or arm64 Linux or
   Mac ones.
 - Publishing: `SethMorrowSoftware/gamepadxt` exists, created empty by the owner on
   2026-11-20; a publish-members run adopts it (`--adopt gamepadxt`).
@@ -1167,7 +1200,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | DONE 2026-11-21 (run 44848412320, commit fdcb830, and the web archive): the first release-binaries dispatch with `members: gamepadxt`, then the `ships` row | - | - | `gamepadxt/src/code/` holds every desktop platform and the freshness gate demands them |
 | 2 | The first pass with a REAL controller in an IDE: install the extension, `gpStart()`, the frame loop of its README, a button event, a stick, hot-plug (pull it out and put it back), rumble; on Windows, Linux and a Mac, with at least an Xbox and a PlayStation pad. Gamepad Lab (`gamepadxt/examples/gamepad-lab.livecodescript`) shows every one of those steps in its window, so the pass can be: open it, plug the pad in, press, push, pull it out. On Windows it has already opened in the IDE and played on its software pad (2026-11-21), so there the pass is the controller alone | S1, after #1, a controller | - | each answers as `gamepadxt/docs/getting-started.md` says |
-| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine (its pull request 612, whose web IDE check read a virtual pad in three browsers on 2026-11-21), and a REAL pad read in a browser after a button press | OXT-Beyond's 612 merged, a controller | - | `gpPads()` lists a real pad in the web IDE |
+| 3 | The web archive (`wasm32-emscripten/gamepadxt.a`) linked into OXT-Beyond's web engine (its pull request 612, whose web IDE check read a virtual pad in three browsers on 2026-11-21), and a REAL pad read in a browser after a button press. LINKED in OXT-Beyond 0.2.8-dp.2.1 (its `tools/oxt/xtalk-extensions.json` pins the committed archive by SHA-256), whose web Stack Player ran Gamepad Lab in headless Chromium on 2026-11-22 and read a pad the test put into the browser's Gamepad API, no device (runbook section 8). Still owed: a real pad | a controller | - | `gpPads()` lists a real pad in the web IDE |
 | 4 | An lce package (`tools/build-lce-packages.py`) and a place on the extensions site. PACKAGED 2026-11-21: `gamepadxt-0.1.0.lce` (`org.openxtalk.library.gamepadxt`, the six desktop rows; no Android ids, on purpose, as its `ships` row says, and the web archive is in no package) is a row of `tools/build-lce-packages.py`, and a package built from that change's tree passed the workflow's engine check run locally (validated, loaded and `gpLibraryVersion()` probed on OXT-Beyond v0.2.7-rc.6's Linux server engine, no device opened). Its Windows DLLs import only DLLs every Windows has (SDL's SetupAPI, COM and shell32 among them, which the builder's list gained as Beyond's did), so no Visual C++ runtime goes beside them. The site lists it from the release the first push to main after that change publishes. Still owed: an install from the site in an IDE (verified statically; needs an OXT pass) | S1, after that release | - | the package installs from the site |
 | 5 | An in-engine harness folded into the suite paste (virtual pads make one possible without hardware), replacing its NO_HARNESS entry | coding | - | the board's gamepadxt row has a pill and a Run |
 | 6 | b2k Kit input from a pad: a b2k game steered by a controller through gamepadxt. (The pad tester half of this row landed 2026-11-21 as Gamepad Lab, `gamepadxt/examples/gamepad-lab.livecodescript`; its record is in `gamepadxt/CLAUDE.md`'s status.) | coding | - | a b2k game played with a controller |
@@ -1192,7 +1225,11 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   extension: `wpLibraryVersion()` answered, and the community gallery's WebP Studio encoded a
   picture and decoded it back (runbook section 8). OXT-Beyond's Android check app (its pull
   request 614, run 44906425449) called `wpLibraryVersion()` on an Android 16 x86_64 emulator.
-  No engine has loaded the other committed libraries.
+  All ten were rebuilt on 2026-11-22 for the animation-length limit (row 8: run 44965414934
+  from 17cbef6, commit 3d35c4a), beside a web archive rebuilt by hand (17cbef6), and
+  `tests/engine-selftest.lc` passed over the rebuilt `x86_64-linux` library on the same server
+  engine (93 checks, none failed). The Windows IDE and Android app records above are of the
+  2026-11-21 libraries; no engine has loaded the other rebuilt ones.
 - Publishing: `SethMorrowSoftware/webpxt` exists, empty; a publish-members run adopts it
   (`--adopt webpxt`).
 
@@ -1205,6 +1242,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 | 5 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's webpxt row has a pill and a Run |
 | 6 | A demo stack (open a WebP file, show it, save an image as WebP; the kit's look) | coding | - | a paste-and-run example in `webpxt/examples/` |
 | 7 | Adopt and publish `SethMorrowSoftware/webpxt` | owner (the Run workflow form) | - | the repository holds the member with its `Suite-Commit:` trailers |
+| 8 | DONE 2026-11-22 (run 44965414934, commit 3d35c4a, and the web archive): the animation-length limit (found by Codex in review of the pull request that brought webpxt in): a whole animation ends by 2,147,483,647 ms (about 24.8 days), written or read, because libwebp keeps a frame's start in a 32-bit int both ways. Fixed 2026-11-22: `wpx_animenc_add` refuses the frame that would end an animation later (before, the 3,580th frame of ten minutes overflowed and the file read back with a frame of 0 ms) and `wpx_anim_open` refuses a file whose frames add up to more (before, libwebp's decoder overflowed). The smoke test and `tests/engine-selftest.lc` hold both sides; the engine test passes on the server engine over the rebuilt `x86_64-linux` library (93 checks, none failed) and fails exactly its five new checks over the libraries committed 2026-11-21. The web archive was rebuilt by hand with emsdk 6.0.12, the other ten by the release-binaries dispatch (`build: named`, `members: webpxt`) | - | - | `webpxt/src/code/` holds libraries built from the fix |
 
 ### 2.16 barcodext
 
@@ -1246,11 +1284,20 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   ASan/UBSan (23 million fuzz inputs, 2026-11-21); the LCB suite under lc-run and the
   Script suite in OXT-Beyond's standalone engine with `-ui` (real UDP and the interop peer
   included) on Linux x86_64 over a locally built library (2026-11-21), which its native
-  lane repeats on Linux, Windows and a Mac. No desktop IDE has loaded it: verified
-  statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (six desktop rows in `cmake-members`), and the change after it lists the platforms in
-  `check-binary-freshness.py`'s `ships` row. No Android build (`tools/build-android.sh`'s
+  lane repeats on Linux, Windows and a Mac. Its IDE installs of 2026-11-22 are under
+  Binaries; beyond them it is verified statically; needs an OXT pass.
+- Binaries: committed 2026-11-22 by its first release-binaries dispatch (run 44985328988
+  from 80c3b28, `build: named` with midixt, commit 0996fba: the six desktop rows, ABI 2),
+  and the `ships` row lists all six. The same day the LCB and Script suites passed over the
+  committed `x86_64-linux` library on OXT-Beyond's headless Linux engine (23 and 39 tests,
+  328 and 255 checks, none failed or skipped), and the extensions site's pipeline built its
+  package here, which installed and loaded on the pinned Linux server engine, `oscVersion()`
+  answering 2. Then the maintainer's two PCs installed it over those libraries (runbook
+  section 8): on Windows, OXT-Beyond 0.2.8-dp.1's IDE compiled the binding and loaded it,
+  `oscVersion()` answered 2 and the self-test passed (29 checks and its UDP loopback, its
+  sockets closed by its stop); on Linux, 0.2.8-dp.2's IDE loaded it from packages staged by
+  the site's builder, and the self-test passed in the standalone engine. No engine has
+  loaded the mac, 32-bit or ARM libraries. No Android build (`tools/build-android.sh`'s
   `DESKTOP_ONLY`: none has run yet).
 - The showcase, `examples/osc-show-surface.livecodescript` (2026-11-21, by Seth Morrow;
   OXT-Beyond's dark look by the owner's request): its engine tests passed on OXT-Beyond's
@@ -1269,20 +1316,21 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   That pass found the Light Board's closed show still listing a socket named by the
   address its board sent from (engine note 6.21); this one, with oscxt loaded, does the
   same on the headless engine. Fixed the same day: the show closes every sender's name with
-  its listener, held by the same test, strengthened first; that fix needs a Windows pass
-  with oscxt loaded (row 7).
+  its listener, held by the same test, strengthened first, and a Windows pass with oscxt
+  loaded (2026-11-22, opened hidden) found no socket listed and nothing queued after its
+  close (runbook section 8).
 - Publishing: `SethMorrowSoftware/oscxt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt oscxt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: oscxt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `oscxt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
-| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
+| 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `oscxt/src/code/` holds every desktop platform and the freshness gate demands them |
+| 2 | The first IDE pass: install the extension, `oscVersion()`, then `examples/osc-selftest.livecodescript` and a message to and from a real OSC peer (TouchOSC, QLab, Max) on Windows, Linux and a Mac. (2026-11-22: installed on Windows, `oscVersion()` 2 and the self-test's 29 checks and UDP loopback passed in the IDE; installed on Linux, the self-test passed in the standalone engine; no real peer yet, no Mac.) | S1, after #1 | - | the self-test is green and the peer shows and sends what the README says |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `oscVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's oscxt row has a pill and a Run |
 | 5 | An Android library, built and run on the emulator like the other members' | coding | - | `build-android.sh` lists oscxt and its tests run on the x86 emulators |
 | 6 | The adoption of `SethMorrowSoftware/oscxt` | owner | - | the repository holds the member's history |
-| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
+| 7 | The showcase on a desktop engine: `examples/osc-show-surface.livecodescript` from start-here on Windows, Linux and a Mac, in a light and a dark system theme. (2026-11-22, with oscxt loaded, on Windows and Linux: opened hidden, it said "Nothing to set up" and its close left no socket and nothing queued; nobody has seen it on a screen with oscxt.) | S1, after #1 | - | it opens whole on the screen within two seconds, all five scenes play by themselves, every word fits and none is white on white, the footer says what it found, and a second after its window closes nothing of its loop is queued and none of its sockets is listed |
 
 ### 2.18 midixt
 
@@ -1293,19 +1341,54 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   backend's failures, clean under ASan/UBSan; the real library's smoke test on its
   no-service path; the LCB and Script suites on OXT-Beyond's headless Linux engine over
   locally built libraries (2026-11-21), which its native lane repeats on Linux, Windows and
-  a Mac. No MIDI service has carried a message on the record (no ALSA sequencer where it
-  ran), and no desktop IDE has loaded it: verified statically; needs an OXT pass.
-- Binaries: none committed when it joined; the first release-binaries dispatch lands them
-  (the Linux rows install ALSA's headers in the manylinux containers), and the change
-  after it fills its `ships` row. No Android library: RtMidi's Android backend needs API
-  29 and JNI, above the suite's API 21 floor.
+  a Mac. Its IDE installs of 2026-11-22, and the first MIDI service on its record (ALSA),
+  are under Binaries; beyond them it is verified statically; needs an OXT pass.
+- Binaries: committed 2026-11-22 by oscxt's dispatch (run 44985328988, commit 0996fba: the
+  six desktop rows, ABI 2; the Linux libraries link ALSA's `libasound.so.2`, the Windows
+  ones WINMM and KERNEL32 alone), and the `ships` row lists all six. The same day the LCB
+  and Script suites passed over the committed `x86_64-linux` library on OXT-Beyond's
+  headless Linux engine, beside the mock (25 and 38 tests, 191 and 322 checks, none failed;
+  with no MIDI service there the real library took its no-service path and said so, and
+  the checks that need a service skipped), and the extensions site's pipeline built its
+  package here, which installed and loaded on the pinned Linux server engine,
+  `midiVersion()` answering 2. Then the maintainer's two PCs installed it over those
+  libraries (runbook section 8). On Linux, OXT-Beyond 0.2.8-dp.2's IDE loaded it and the
+  self-test passed in the standalone engine with every check run (38), its Tier 3 loopback
+  among them: a note, a controller, a bend and a SysEx through an ALSA virtual port and back,
+  the first MIDI service on its record. On Windows, 0.2.8-dp.1's IDE compiled the binding and
+  loaded it, `midiVersion()` answered 2, the ports listed were the GS Wavetable synth alone,
+  and the self-test passed (29; 2 skipped, Windows MM having no virtual ports). Two port-less
+  ALSA clients, the shim's two port listers, stay for the life of the process
+  (`midixt/CLAUDE.md`, "As built"). No engine has loaded the mac, 32-bit or ARM libraries. No
+  Android library: RtMidi's Android backend needs API 29 and JNI, above the suite's API 21
+  floor. The web archive (`wasm32-emscripten/midixt.a`, 2026-11-22, built by hand with
+  Emscripten 6.0.12 as the other members' are): the same shim over midixt's own Web MIDI
+  layer, `src/midi_web.c` (RtMidi 6.0.0's Web MIDI backend delivers input only to a
+  callback, which a poll never reads), its tests run under node against a stand-in for the
+  browser's Web MIDI (`tests/web/fake-web-midi.js`), and the `ships` row lists it. No web
+  engine links it yet (row 7) and no browser has run it: verified statically; needs a pass
+  in a browser.
 - The showcase, `examples/midi-stage.livecodescript` (2026-11-21, by Seth Morrow): its
   engine tests passed on OXT-Beyond's headless Linux engine the same day, over the mock
-  library and over the real one with no MIDI service (where it decodes and says why). No
-  service has carried its messages and nobody has heard it: verified statically; needs an
-  OXT pass (row 6). It opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and
-  said what was missing. That run found two faults in all three ShowControl showcases: each
-  opened with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
+  library and over the real one with no MIDI service (where it decodes and says why). On
+  2026-11-22, with midixt installed, it opened hidden in the IDE on the maintainer's Linux
+  PC, its virtual port made and found again through ALSA ("Nothing to set up"), and on
+  Windows, naming the GS Wavetable synth for Sound; each close left no port and nothing
+  queued (runbook section 8). On Linux it offered for Sound the port RtMidi makes to read
+  its own cable, which would have played the player's notes into the stage's own input;
+  fixed the same day (`mdsReads`, its test failing first). Rebuilt there with that fix, it
+  offered no output for Sound ("There is no MIDI output here to play through."), and
+  opened again after a close threw "can't find handler midiControlChange": its stop had
+  left the mode "cable" with the cable's handles emptied, so the next open's own stop
+  silenced through an empty handle (engine note 6.4); fixed the same day
+  (`TestTheStageOpensAgainAfterAClose`, failing first), and built from the fix it opened
+  again after either kind of close on both PCs, with no error; left playing 10 s on
+  Linux, it read back through ALSA all 86 messages its player sent, 3 ms from send to
+  stage on average: its first messages through a MIDI service (runbook section 8).
+  Nobody has watched or heard it: verified statically; needs an OXT pass (row 6). It
+  opened without midixt in OXT-Beyond 0.2.8-dp.1's IDE on Windows and said what was
+  missing. That run found two faults in all three ShowControl showcases: each opened
+  with its left 390 pixels off the screen, and held the IDE as it opened (81 s here;
   OSC Show Surface 42 s, the Light Board 112 s), built with messages unlocked (engine note
   5.15). Fixed the same day: each builds with messages locked and centres its window, held
   by two engine tests that failed against the old build. Built so, it opened there that
@@ -1314,18 +1397,25 @@ extension, true multi-layer parallax (waits on transparent overlay art).
   close a frame of the show's loop was still queued, and the IDE keeps a closed stack in
   memory. Fixed the same day: the loop stops itself once its stack is closed, held by an
   engine test that failed first, and a Windows pass of that fix found nothing queued after
-  either kind of close (runbook section 8). It opens no socket.
+  either kind of close (runbook section 8). It opens no socket. On the web (2026-11-22) it
+  says the web's reasons in its footer (a frame that does not allow MIDI, as a gallery's
+  player is; a question the person has not answered; a refusal) and looks again each second
+  until the browser has answered, held by two engine tests that hand it the web layer's
+  words and failed against the stage before them; verified statically; needs a pass in a
+  browser (row 8).
 - Publishing: `SethMorrowSoftware/midixt` does not exist yet. The owner creates it EMPTY,
   then a publish-members run adopts it (`--adopt midixt`).
 
 | # | What | Needs | Runbook | Done when |
 |---|---|---|---|---|
-| 1 | The first release-binaries dispatch with `members: midixt`, then the `ships` row | owner (pressing Run is rule 5's decision) | - | `midixt/src/code/` holds every platform and the freshness gate demands them |
-| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
-| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and WAITs for #1's libraries; the first lce-packages run after they land builds the package, and on main publishes it | after #1 | - | the package installs from the site in an IDE |
+| 1 | DONE 2026-11-22 (run 44985328988, commit 0996fba): the first release-binaries dispatch with `members: oscxt midixt`, then the `ships` row | - | - | `midixt/src/code/` holds every desktop platform and the freshness gate demands them |
+| 2 | Real MIDI on the record: `examples/midi-selftest.livecodescript`'s Tier 3 (a virtual port looped back) and a hardware keyboard or a DAW sending notes in, on Linux (ALSA), a Mac (CoreMIDI) and Windows (where only hardware or a loopback driver works: Windows MM has no virtual ports). (Linux, 2026-11-22: Tier 3 passed through ALSA on the maintainer's PC, every check run; no keyboard or DAW yet.) | S1 + MIDI gear, after #1 | - | notes in and out arrive in order with their timing, and a DAW's saved routing finds "ShowControl In" / "ShowControl Out" |
+| 3 | Its place on the extensions site: its package row went in when it joined (2026-11-21; the probe, `midiVersion()`, must answer 2) and waited for #1's libraries; since they landed the package builds (2026-11-22: built here, installed and loaded on the pinned Linux server engine, the probe answering 2), and the first lce-packages run on main after them published it the same day (run 45013496611 from 2b3fb81: pre-release v2026.11.22.5; the site rebuilt by run 45014091443). No IDE has installed it from the site yet | after #1 | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's midixt row has a pill and a Run |
 | 5 | The adoption of `SethMorrowSoftware/midixt` | owner | - | the repository holds the member's history |
-| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
+| 6 | The showcase on a desktop engine with a real MIDI service: `examples/midi-stage.livecodescript` on a Mac and Linux (its virtual port), on Windows with and without a loopMIDI port, Sound through the GS Wavetable synth, and a keyboard plugged in. (2026-11-22, hidden in OXT-Beyond's IDE on the maintainer's PCs, 10 s of play each: on Linux, over its virtual port through ALSA, the stage read all 86 messages the player sent, 3 ms from send to stage, and its close left no port; on Windows with no loopMIDI port it decoded all 86. Not yet on a screen, heard, on a Mac, through a loopMIDI port or with a keyboard.) | S1 + a MIDI keyboard, after #1 | - | it opens whole on the screen within two seconds, the footer names the cable, the stage shows every note the player sends, Sound plays and stops with nothing left sounding, the keyboard's notes show in blue, and closing its window closes every port it opened |
+| 7 | The web archive linked into OXT-Beyond's web engine (its `tools/oxt/xtalk-extensions.json` pins it by SHA-256, as it pins the other members'), then in a web player release | OXT-Beyond | - | `midiVersion()` answers 2 in the web IDE |
+| 8 | Web MIDI in a browser: the web IDE or Stack Player in Chrome, the browser's question answered yes and no, a loopback port (loopMIDI, the IAC Driver) found as MIDI Stage's cable, Sound through a real output, a keyboard's notes in blue, and MIDI Stage in the community gallery's player (its frame allows no MIDI: it must decode and say so) | after #7 + a browser with Web MIDI | - | the stage reads what the player sends through the loopback port, and in the gallery it plays on, saying the frame does not allow MIDI |
 
 ### 2.19 artnetxt
 
@@ -1368,7 +1458,7 @@ extension, true multi-layer parallax (waits on transparent overlay art).
 |---|---|---|---|---|
 | 1 | The first IDE pass: install the extension, then `examples/artnet-selftest.livecodescript` on Windows, Linux and a Mac | S1 | - | the self-test is green on each |
 | 2 | A real node or desk: ArtPoll discovery finds it and a DMX universe drives a fixture (or a node's own monitor), and a desk's ArtDmx arrives in script | S1 + Art-Net gear | - | the fixture follows the faders, and the desk's levels read back |
-| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day | S1, after the merge | - | the package installs from the site in an IDE |
+| 3 | Its place on the extensions site: its package row, a pure LCB module with no code folder, went in when it joined (2026-11-21; the probe builds an ArtPoll, which must be 14 bytes), and the lce-packages run of the push to main that brings it publishes the package. Staged, documented by Beyond's docs parser and packed here with the workflow's tools the same day. Published 2026-11-22 by the run of #200's merge (run 44973801763 from 9d534bd: pre-release v2026.11.22.2; the site rebuilt by run 44973913732). No IDE has installed it from the site yet | S1, after the merge | - | the package installs from the site in an IDE |
 | 4 | An in-engine harness folded into the suite paste, replacing its NO_HARNESS entry | coding | - | the board's artnetxt row has a pill and a Run |
 | 5 | On Android, broadcast discovery and DMX from an engine (Internet permission ticked) | S1 | - | the virtual node or a real one sees the app |
 | 6 | The adoption of `SethMorrowSoftware/artnetxt` | owner | - | the repository holds the member's history |

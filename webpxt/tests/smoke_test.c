@@ -549,6 +549,141 @@ static void test_animation(void)
     for (i = 0; i < 4; i++) picture_free(&frames[i]);
 }
 
+/* Little-endian fields of a WebP file, for the file made by hand below. */
+static void put_le(uint8_t *at, uint32_t value, int bytes)
+{
+    for (int i = 0; i < bytes; i++) at[i] = (uint8_t)(value >> (8 * i));
+}
+
+/* An animated WebP of `count` 1 x 1 frames, each shown for `duration`
+ * milliseconds (the format's field holds up to 16,777,215), made by hand
+ * around the VP8L chunk of a still this library writes: a file from
+ * elsewhere can say what this library's writer refuses to. */
+static blob animation_by_hand(int count, int duration)
+{
+    picture dot = picture_make(1, 1, 1, 0);
+    blob still, file;
+    const uint8_t *chunk = NULL;
+    int chunkLength = 0;   /* the whole VP8L chunk: tag, size, data, pad */
+    int at;
+    uint8_t *out;
+    if (wpx_encode_image(dot.pixels, 4, NULL, 0, 1, 1, 75, 1, 0) <= 0) {
+        printf("FAIL the test could not write its 1 x 1 still: %s\n", wpx_last_error());
+        exit(2);
+    }
+    still = output_copy();
+    for (at = 12; at + 8 <= still.length;) {
+        uint32_t size = (uint32_t)still.bytes[at + 4] | ((uint32_t)still.bytes[at + 5] << 8)
+                        | ((uint32_t)still.bytes[at + 6] << 16) | ((uint32_t)still.bytes[at + 7] << 24);
+        int whole = 8 + (int)size + (int)(size & 1);
+        if (memcmp(still.bytes + at, "VP8L", 4) == 0) {
+            chunk = still.bytes + at;
+            chunkLength = whole;
+            break;
+        }
+        at += whole;
+    }
+    if (chunk == NULL || at + chunkLength > still.length) {
+        printf("FAIL the test's 1 x 1 still has no VP8L chunk\n");
+        exit(2);
+    }
+    /* RIFF header, VP8X (10 bytes), ANIM (6), then an ANMF per frame: 16
+     * bytes of placement and duration, then the frame's own chunk. */
+    file.length = 12 + 18 + 14 + count * (8 + 16 + chunkLength);
+    file.bytes = (uint8_t *)calloc((size_t)file.length, 1);
+    if (file.bytes == NULL) {
+        printf("FAIL out of memory in the test itself\n");
+        exit(2);
+    }
+    out = file.bytes;
+    memcpy(out, "RIFF", 4);
+    put_le(out + 4, (uint32_t)file.length - 8, 4);
+    memcpy(out + 8, "WEBP", 4);
+    out += 12;
+    memcpy(out, "VP8X", 4);
+    put_le(out + 4, 10, 4);
+    out[8] = 0x02;                     /* the animation flag; canvas 1 x 1 (sides less one: 0) */
+    out += 18;
+    memcpy(out, "ANIM", 4);
+    put_le(out + 4, 6, 4);             /* background 0, loops 0 (for ever) */
+    out += 14;
+    for (int i = 0; i < count; i++) {
+        memcpy(out, "ANMF", 4);
+        put_le(out + 4, (uint32_t)(16 + chunkLength), 4);
+        put_le(out + 8 + 12, (uint32_t)duration, 3);   /* x, y, width and height less one: all 0 */
+        memcpy(out + 8 + 16, chunk, (size_t)chunkLength);
+        out += 8 + 16 + chunkLength;
+    }
+    free(still.bytes);
+    picture_free(&dot);
+    return file;
+}
+
+/* A whole animation ends by INT_MAX milliseconds (about 24.8 days), written
+ * or read: libwebp keeps a frame's start in an int both ways, and 10,000
+ * frames of ten minutes each would have carried the writer's past it. */
+static void test_animation_length(void)
+{
+    picture dot = picture_make(1, 1, 1, 0);
+    blob file;
+    long long total = 0;
+    int writer, reader, added = 0, frames = 0, zero = 0, i;
+
+    writer = wpx_animenc_create(1, 1, 0, 75, 1, 0);
+    CHECK(writer > 0, "a 1 x 1 animation writer");
+    /* 3,579 frames of ten minutes end at 2,147,400,000 ms; a 3,580th would end past INT_MAX. */
+    for (i = 0; i < 3579; i++) added += wpx_animenc_add(writer, dot.pixels, 4, NULL, 0, 600000);
+    CHECK(added == 3579 && wpx_animenc_frame_count(writer) == 3579, "3,579 frames of ten minutes: %d added", added);
+    CHECK(wpx_animenc_add(writer, dot.pixels, 4, NULL, 0, 600000) == 0 && strstr(wpx_last_error(), "in all") != NULL,
+          "a frame that would end the animation after INT_MAX ms is refused");
+    CHECK(wpx_animenc_frame_count(writer) == 3579 && wpx_animenc_is_valid(writer) == 1,
+          "the refusal leaves the writer as it was");
+    CHECK(wpx_animenc_add(writer, dot.pixels, 4, NULL, 0, 83647) == 1, "a frame that ends it at INT_MAX exactly");
+    CHECK(wpx_animenc_add(writer, dot.pixels, 4, NULL, 0, 1) == 0, "one millisecond more is refused");
+    CHECK(wpx_animenc_finish(writer) > 0, "the longest animation is written");
+    file = output_copy();
+    reader = wpx_anim_open(file.bytes, file.length);
+    CHECK(reader > 0, "the longest animation opens");
+    while (wpx_anim_next(reader) == 1) {
+        frames++;
+        if (wpx_anim_frame_duration(reader) <= 0) zero++;
+        total += wpx_anim_frame_duration(reader);
+    }
+    CHECK(frames > 0 && zero == 0 && total == 2147483647LL,
+          "its %d frames add up to %lld ms (%d of them read as 0 ms or less)", frames, total, zero);
+    wpx_anim_close(reader);
+    free(file.bytes);
+
+    /* A file from elsewhere: 128 frames of 16,777,215 ms end at 2,147,483,520,
+     * inside the limit; 129 would end past it, and are refused at open. */
+    file = animation_by_hand(128, 16777215);
+    reader = wpx_anim_open(file.bytes, file.length);
+    CHECK(reader > 0 && wpx_anim_frame_count(reader) == 128, "128 frames of 16,777,215 ms open: %d frames",
+          wpx_anim_frame_count(reader));
+    frames = zero = 0;
+    total = 0;
+    while (wpx_anim_next(reader) == 1) {
+        frames++;
+        if (wpx_anim_frame_duration(reader) != 16777215) zero++;
+        total += wpx_anim_frame_duration(reader);
+    }
+    CHECK(frames == 128 && zero == 0 && total == 2147483520LL, "they read as %d frames, %lld ms in all (%d wrong)",
+          frames, total, zero);
+    wpx_anim_close(reader);
+    free(file.bytes);
+    file = animation_by_hand(129, 16777215);
+    CHECK(wpx_info_read(file.bytes, file.length) == 1 && wpx_info_frame_count() == 129,
+          "the facts of 129 frames still read (they hold no time)");
+    reader = wpx_anim_open(file.bytes, file.length);
+    CHECK(reader == 0 && strstr(wpx_last_error(), "add up to") != NULL && wpx_anim_open_count() == 0,
+          "129 frames of 16,777,215 ms are refused at open");
+    if (reader > 0) wpx_anim_close(reader);
+    CHECK(wpx_decode_image(file.bytes, file.length) == 1 && wpx_image_width() == 1,
+          "its first frame still decodes as a picture");
+    free(file.bytes);
+    picture_free(&dot);
+}
+
 static void test_handles(void)
 {
     picture p = picture_make(8, 8, 1, 0);
@@ -659,6 +794,7 @@ int main(int argc, char **argv)
     test_refusals();
     test_pixel_cap();
     test_animation();
+    test_animation_length();
     test_handles();
     test_known_file();
     wpx_image_release();

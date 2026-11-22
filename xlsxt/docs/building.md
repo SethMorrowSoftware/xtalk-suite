@@ -71,9 +71,10 @@ python3 tools/check-web-names.py --write --from build/libxlsxt_deps.a
 ```
 
 OXT-Beyond's web engine first linked the archive in that repository's pull request 605
-(2026-11-21, not merged yet), whose web IDE check wrote a workbook and read it back in
-Chromium, Firefox and WebKit. In a browser a workbook is written to, and read from, the
-engine's in-memory file system.
+(2026-11-21), whose web IDE check wrote a workbook and read it back in Chromium, Firefox and
+WebKit. That pull request did not merge; OXT-Beyond 0.2.8-dp.2.1 links the archive instead
+(its pull request 620, merged 2026-11-22, pinned to 9ebbd6e), and the same check passed there.
+In a browser a workbook is written to, and read from, the engine's in-memory file system.
 
 ## The engine self-test
 
