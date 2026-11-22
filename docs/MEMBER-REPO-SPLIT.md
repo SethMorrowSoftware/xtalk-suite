@@ -75,8 +75,9 @@ tree was identical), which confirms the verbatim copy-in.
    kept **public**: a private one bills Actions minutes (coinxt's gate job runs
    for hours) and its forks cannot run its gates.
 2. **The token** is a fine-grained personal access token: resource owner
-   `SethMorrowSoftware`; repository access "Only select repositories" = the
-   eleven ("Public repositories" is read-only, so every push is refused);
+   `SethMorrowSoftware`; repository access "Only select repositories" = every
+   member repository, the eleven at setup and each later member's once it exists
+   ("Public repositories" is read-only, so every push is refused);
    **Contents** and **Workflows** both **Read and write** (a permission is added
    at Read-only, so set both; without Workflows every push touching
    `.github/workflows/` is refused). Give it an expiry and calendar the date.
@@ -197,6 +198,24 @@ written closed by hand rather than walked transitively (the registry says why):
 | riptide | `SethMorrowSoftware/RipTide` | the capstone's pre-suite home | 47 |
 | nocloud | `SethMorrowSoftware/nocloud` | the pre-suite home | 29 |
 | holde-em | `SethMorrowSoftware/hold-em` | the pre-suite `hold-em` repository | 29 |
+
+Members that joined later are adopted one dispatch at a time, each once its
+repository exists EMPTY and the token can push there (section 2, step 5):
+
+| Member | Repository | Adopted | Run, at suite commit | Commits at adoption |
+|---|---|---|---|---|
+| curlxt | `SethMorrowSoftware/curlxt` | 2026-11-15 | 43681066515, 3a5a9e0 | 1 |
+| box3dxt | `SethMorrowSoftware/box3dxt` | 2026-11-21 | 44920434025, 59b4072 | 3 |
+| audioxt | `SethMorrowSoftware/audioxt` | 2026-11-22 | 45057822892, 75d0713 | 5 |
+| render3dxt | `SethMorrowSoftware/render3dxt` | 2026-11-22 | 45057822892, 75d0713 | 5 |
+| gamepadxt | `SethMorrowSoftware/gamepadxt` | 2026-11-22 | 45057822892, 75d0713 | 3 |
+| xlsxt | `SethMorrowSoftware/xlsxt` | 2026-11-22 | 45057822892, 75d0713 | 6 |
+| barcodext | `SethMorrowSoftware/barcodext` | 2026-11-22 | 45057822892, 75d0713 | 2 |
+| webpxt | `SethMorrowSoftware/webpxt` | 2026-11-22 | 45057822892, 75d0713 | 3 |
+
+On 2026-11-22 four members were not adopted yet: pdfxt, whose repository exists
+and is empty, and oscxt, midixt and artnetxt, for which that day's publish run
+found no repository.
 
 The names live ONLY in `tools/member-registry.py`; to rename a repository,
 change the registry and re-run `sync-member-workflows.py` and
