@@ -212,10 +212,13 @@ repository exists EMPTY and the token can push there (section 2, step 5):
 | xlsxt | `SethMorrowSoftware/xlsxt` | 2026-11-22 | 45057822892, 75d0713 | 6 |
 | barcodext | `SethMorrowSoftware/barcodext` | 2026-11-22 | 45057822892, 75d0713 | 2 |
 | webpxt | `SethMorrowSoftware/webpxt` | 2026-11-22 | 45057822892, 75d0713 | 3 |
+| pdfxt | `SethMorrowSoftware/pdfxt` | 2026-11-22 | 45074787966, ce705cb | 2 |
+| oscxt | `SethMorrowSoftware/oscxt` | 2026-11-22 | 45074787966, ce705cb | 2 |
+| midixt | `SethMorrowSoftware/midixt` | 2026-11-22 | 45074787966, ce705cb | 5 |
+| artnetxt | `SethMorrowSoftware/artnetxt` | 2026-11-22 | 45074787966, ce705cb | 2 |
 
-On 2026-11-22 four members were not adopted yet: pdfxt, whose repository exists
-and is empty, and oscxt, midixt and artnetxt, for which that day's publish run
-found no repository.
+With the last four, adopted on 2026-11-22, every member of
+`tools/member-registry.py` is published into its own repository.
 
 The names live ONLY in `tools/member-registry.py`; to rename a repository,
 change the registry and re-run `sync-member-workflows.py` and

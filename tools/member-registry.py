@@ -185,17 +185,17 @@ MEMBERS = [
     Member("oscxt", "oscxt", "extension", OWNER + "/oscxt",
            native=True, siblings=[],
            mirror_note="born in the suite from ShowControl's osc extension "
-                       "(2026-11-21); its repository is to be created empty "
+                       "(2026-11-21); its repository was created empty "
                        "for the suite to publish into"),
     Member("midixt", "midixt", "extension", OWNER + "/midixt",
            native=True, siblings=[],
            mirror_note="born in the suite from ShowControl's midi extension "
-                       "(2026-11-21); its repository is to be created empty "
+                       "(2026-11-21); its repository was created empty "
                        "for the suite to publish into"),
     Member("artnetxt", "artnetxt", "extension", OWNER + "/artnetxt",
            native=True, siblings=[],
            mirror_note="born in the suite from ShowControl's artnet extension "
-                       "(2026-11-21); its repository is to be created empty "
+                       "(2026-11-21); its repository was created empty "
                        "for the suite to publish into"),
     Member("onionxt", "OnionXT", "extension", OWNER + "/OnionXT",
            native=False, siblings=[],
