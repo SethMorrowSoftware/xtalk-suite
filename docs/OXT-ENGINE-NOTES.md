@@ -102,13 +102,34 @@ are worth hunting for deliberately.
 **Gate:** the unified `check-livecodescript.py` antipattern set,
 fixture-tested in `tools/test-checker.py` against both spellings.
 
-### 1.8 `the detailedFiles` is a compile-time "bad factor"
-**OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24. A line reading `the detailedFiles` fails to
-compile with a "bad factor" error: OXT does not accept it as a factor (the
-log calls it a LiveCode/OXT divergence; no LiveCode run is recorded here).
-**Rule:** use `the files` (and `the folders`) and fetch any per-file detail
-separately. **Gate:** none (no tree file uses it).
-**Does NOT mean:** `the files` and `the folders` are fine.
+### 1.8 `the detailedFiles` is a misspelling: the property is `the detailed files`, two words
+**Corrected 2026-11-25** (Bill Milby's report on the OpenXTalk forum, the
+same day). This entry said that `the detailedFiles` failing to compile was a
+LiveCode/OXT divergence. It is not: the spelling is wrong. The property is
+`the detailed files` (two words), or `files(pFolder, "detailed")`;
+`detailedFiles` is no keyword, so `the detailedFiles` is a "bad factor" on
+LiveCode too (LiveCode 11 flags it in a script, by the reporter's account).
+**OBSERVED 2026-11-25** on OXT-Beyond's Linux server engine
+(9.7.1-BeyondEngine, x86-64), each line set as a handler's script with
+`set the script`: `put the detailedFiles into x` was refused (`the result`
+began `117,3,5`, 117 being "Expression: bad factor" in the engine's
+parse-error list, then `301`, `166` and `165` lines), while
+`put the detailed files into x`, `put files(tFolder, "detailed") into x`,
+`put the long files into x` and `put the files into x` compiled and each
+listed the folder's two files. OXT-Beyond's own scripts use
+`the detailed files` (the IDE's `revidelibrary.8.livecodescript`, its
+libURL, its diff library), and its test suite asserts both spellings
+(`tests/lcs/core/files/folders.livecodescript`).
+The original record (OBSERVED, undated: the family's living-gotcha log in
+`onionxt/templates/CLAUDE.md` section 16, byte-identical in
+`coinxt/templates/`, promoted here 2026-09-24) saw a real error; only its
+cause was wrong.
+**Rule:** write `the detailed files` or `files(pFolder, "detailed")` when a
+listing's sizes and dates are wanted; `the files` and `the folders` stay
+fine. **Gate:** none (no tree file uses the one-word spelling in code).
+**Does NOT mean:** that the tree's scripts must change: they list folders with
+`the files` / `the folders` and fetch detail separately, which is correct, only
+more work than it needs to be.
 
 ### 1.9 A bitwise call `bitAnd(x, y)`, or `^` inside a compound expression, is "double binary operator"
 **OBSERVED, undated**: the family's living-gotcha log (`onionxt/templates/CLAUDE.md` section 16, byte-identical in `coinxt/templates/`), whose seed entries are "confirmed on-engine in the family" from before the suite existed; this tree has carried them since its assembly (327235a, 2026-08-07) and no run date survives, so none is asserted. Promoted here 2026-09-24; the call form was hit again as holde-em's H7
@@ -1022,16 +1043,37 @@ day.
 
 ## 3. Control flow
 
-### 3.1 `repeat with i = A to B step N` does not honour the step
+### 3.1 `repeat with i = A to B step N` can run once more, with `i` past B
+(Title until 2026-11-25: "does not honour the step". The step IS honoured;
+what goes wrong is the last pass. See the correction below.)
 **OBSERVED** by an operator at an engine after every gate was green (the
-checker's record carries no date). `i` walked one at a time, so `cxHexDecode`
-read one character past the pairs and threw `not a hex digit` over VALID input.
-**Rule:** `repeat while` with an explicit `add N to i`.
+checker's record carries no date). `cxHexDecode` read one character past the
+pairs and threw `not a hex digit` over VALID input. The record said `i`
+walked one at a time.
+**Corrected 2026-11-25** from the engine source and a run. The loop tests
+`i` BEFORE it adds the step: it stops only once the value it is about to
+leave has reached B, so when B - A is not a multiple of N the last pass runs
+with `i` past B (`MCKeywordsExecRepeatWith`, OXT-Beyond's
+`engine/src/exec-keywords.cpp`, the code LiveCode's 8.x engines carry).
+**OBSERVED 2026-11-25** on OXT-Beyond's Linux server engine
+(9.7.1-BeyondEngine): `repeat with i = 1 to 6 step 2` ran with i = 1, 3, 5
+and **7**; `1 to 7 step 2` and `1 to 9 step 2` stopped at B exactly;
+`10 to 1 step -3` ran 10, 7, 4, 1. A hex walk with `step 2` over six
+characters took a fourth, empty pair, which is the `cxHexDecode` symptom; a
+walk of one at a time would not have read past the end. So the step works,
+and the hazard is the overshoot (the member prose that counted "64x the
+tiles" from a one-at-a-time walk predates this correction).
+**Rule (unchanged):** `repeat while` with an explicit `add N to i`, whose
+bound says exactly what it means.
 **Gate:** `check_engine_hostile_constructs`. It was the only occurrence in the
 suite: a construct nobody else uses is a construct nobody else has proved.
 
 ### 3.2 `throw` from inside a `catch` block does not reach the caller
-**OBSERVED**, same run as 3.1. The handler falls through and returns whatever
+**OBSERVED**, same run as 3.1. **Not reproduced 2026-11-25** on OXT-Beyond's Linux
+server engine (9.7.1-BeyondEngine): a function whose `catch` set the
+`itemDelimiter` and threw again reached its caller's `try`, which caught
+`rethrown:boom`. The original run's engine is not recorded; the rule stays
+until an engine run shows the failing case again or the gate is reviewed. The handler falls through and returns whatever
 its result variable holds. Nine `itemDelimiter` guards did this; one was
 `cxMnemonicValidate`, so a MISTYPED seed phrase was reported VALID.
 **Rule:** capture the error in a local, close the `try`, throw after `end try`.

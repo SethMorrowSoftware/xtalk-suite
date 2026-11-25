@@ -273,8 +273,10 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    recurrence in that member's deck-derivation path. GATE: every checker copy refuses a
    `throw` inside a `catch` (`.livecodescript` only; docstring check 9); `return` inside
    a catch stays legal.
-11. **`repeat with i = A to B step N` does not honour the increment.** i walks one at a
-   time. Use `repeat while` with an explicit `add N to i`. Found the same day it cost a
+11. **`repeat with i = A to B step N` can make a last pass with i past B.** The engine
+   tests i before adding the step, so when B - A is not a multiple of N one more pass
+   runs (suite engine note 3.1, corrected 2026-11-25: this entry once said i walks one
+   at a time, and the counts below were reckoned that way). Use `repeat while` with an explicit `add N to i`. Found the same day it cost a
    money library: a hex decoder rejected valid input with its own "not a hex digit"
    error, i.e. the library blaming the caller's data. And it was NOT a one-off, however
    rare it first looked: the box2dxt fold (2026-08-14) found 29 more `step` loops in
@@ -588,8 +590,10 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
   FIX:     it is an environment issue (service not running / wrong port), handled by the `socketError`
            path; surface it cleanly, do not treat it as a crash.
 - SYMPTOM: a compile-time "bad factor" error on a line reading `the detailedFiles`.
-  CAUSE:   OXT does not accept `the detailedFiles` as a factor (a LiveCode/OXT divergence).
-  FIX:     use `the files` (and `the folders`) and fetch any per-file detail separately.
+  CAUSE:   a misspelling, not a LiveCode/OXT divergence: the property is two words,
+           `the detailed files`, and LiveCode refuses `the detailedFiles` too (corrected
+           2026-11-25; suite engine note 1.8).
+  FIX:     write `the detailed files`, or `files(pFolder, "detailed")`.
 - SYMPTOM: a local listener "works" (no error raised) but every connection to it dies; with an onion
            service in front, every visit returns an empty response.
   CAUSE:   `accept connections on port N` failed to bind (Windows 10013 WSAEACCES: a reserved port

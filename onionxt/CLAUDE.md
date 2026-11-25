@@ -176,8 +176,8 @@ throwing "reinstall"; gcc ASan + UBSan, headers `-isystem`, binary + `MANIFEST.s
 - **`oxPublishService` is publish-only**: `ADD_ONION` without the socket, an `external` teardown guard;
   the external server must enforce loopback.
 - **`oxhUnroute`** exists for the demo's live swap between `oxhRoute "/"` and `oxhServeFiles` at the
-  SAME onion. onion-httpd lists folders with `the files` / `the folders`; `the detailedFiles` is a
-  compile-time "bad factor" on OXT.
+  SAME onion. onion-httpd lists folders with `the files` / `the folders` (`the detailed files`, two
+  words, would also work; the one-word `the detailedFiles` is a misspelling: engine note 1.8).
 - **The loopback guard parses by SHAPE**: `oxHostOfSocket` drops `|name`, unbrackets, else takes
   everything up to the LAST colon; an empty host is a REFUSAL, printed with the raw id.
 - **Coverage**: the suite's `tools/check-suite-coverage.py` prints this member's ratio. Its exemptions
