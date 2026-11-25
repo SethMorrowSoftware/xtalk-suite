@@ -17330,8 +17330,8 @@ end waTick
 -- THE WINDOW
 --
 -- Every control of every screen is created ONCE, at open, and screens are
--- switched by visibility. There is no reparenting in this engine (no way to
--- move a control into a group after the fact), so a "tab" is a naming
+-- switched by visibility. Controls are not grouped (`relayer ... to front of
+-- group` could move one into a group, but the design never needed it), so a "tab" is a naming
 -- convention plus a show/hide sweep, and that is what this is: every screen's
 -- controls are named "<code>_<thing>", the sweep matches the first three
 -- characters, and the chrome and the navigation rail match none of them and
@@ -19366,8 +19366,8 @@ end waWalletAdvice
 
 private command waPaintChoice pPrefix, pNames, pActive
    -- A segmented control made of ordinary buttons: the active one is
-   -- hilited. There is no radio-group construction to do here because there
-   -- is no reparenting, so the group is a naming convention and this handler.
+   -- hilited. There is no radio-group construction to do here: the buttons
+   -- are not grouped, so the group is a naming convention and this handler.
    local tI, tName
    put 1 into tI
    repeat while cwListAt(pNames, tI) is not ""

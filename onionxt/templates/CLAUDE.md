@@ -273,8 +273,10 @@ on-engine pass. Keep both gates green in CI on every push / PR.
    recurrence in that member's deck-derivation path. GATE: every checker copy refuses a
    `throw` inside a `catch` (`.livecodescript` only; docstring check 9); `return` inside
    a catch stays legal.
-11. **`repeat with i = A to B step N` does not honour the increment.** i walks one at a
-   time. Use `repeat while` with an explicit `add N to i`. Found the same day it cost a
+11. **`repeat with i = A to B step N` can make a last pass with i past B.** The engine
+   tests i before adding the step, so when B - A is not a multiple of N one more pass
+   runs (suite engine note 3.1, corrected 2026-11-25: this entry once said i walks one
+   at a time, and the counts below were reckoned that way). Use `repeat while` with an explicit `add N to i`. Found the same day it cost a
    money library: a hex decoder rejected valid input with its own "not a hex digit"
    error, i.e. the library blaming the caller's data. And it was NOT a one-off, however
    rare it first looked: the box2dxt fold (2026-08-14) found 29 more `step` loops in
@@ -417,9 +419,12 @@ inside an adopter. Start a new demo from the master (a standalone adopter copies
 and ideally that gate with it). The traps below are the WHY behind how the kit is built, and they
 still apply to any control you create beside it:
 
-- **There is NO reparenting.** LiveCode has no `set the owner` to move a control into a group. Create
-  controls on the card (`create field "x"`, `create button "y"`, `create graphic "z"`), track each
-  logical group's membership in a script-local table, and SHOW/HIDE by name to switch "tabs" / panels.
+- **Reparent with `relayer`, not `set the owner`.** `relayer button "b" to front of group "g"`
+  moves a control into a group (and `to front of card` back out). This entry once said there was
+  no reparenting at all; corrected 2026-11-25 (Bill Milby's note; OXT-Beyond's 9.7.1 server
+  engine moved a button into a group that way). The kit still creates its controls on the card,
+  tracks each logical group's membership in a script-local table, and SHOW/HIDEs by name to
+  switch "tabs" / panels: that design stands on its own, it does not depend on this.
 - **`set the textFont` reads a comma as `fontname,language`** (a Unicode language tag), NOT a CSS-style
   fallback list. `"Courier New,Courier,monospace"` is misparsed. Use a SINGLE font name (`"Courier"` is
   the portable monospace).
@@ -588,8 +593,10 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
   FIX:     it is an environment issue (service not running / wrong port), handled by the `socketError`
            path; surface it cleanly, do not treat it as a crash.
 - SYMPTOM: a compile-time "bad factor" error on a line reading `the detailedFiles`.
-  CAUSE:   OXT does not accept `the detailedFiles` as a factor (a LiveCode/OXT divergence).
-  FIX:     use `the files` (and `the folders`) and fetch any per-file detail separately.
+  CAUSE:   a misspelling, not a LiveCode/OXT divergence: the property is two words,
+           `the detailed files`, and LiveCode refuses `the detailedFiles` too (corrected
+           2026-11-25; suite engine note 1.8).
+  FIX:     write `the detailed files`, or `files(pFolder, "detailed")`.
 - SYMPTOM: a local listener "works" (no error raised) but every connection to it dies; with an onion
            service in front, every visit returns an empty response.
   CAUSE:   `accept connections on port N` failed to bind (Windows 10013 WSAEACCES: a reserved port
@@ -704,8 +711,11 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
 - SYMPTOM: `type conversion error` at runtime, on a GUI engine, in front of a person - in one case
            killing a poll chain and leaving the app silently dead rather than reporting anything.
   CAUSE:   confirmed on-engine (2026-08-18, on Linux): EMPTY is not a value for a DECLARED `.lcb`
-           parameter type. `Integer`, `Real`, `Number` and `Boolean` all refuse it, and LiveCode
-           Builder has no optional parameters - so every typed parameter of every public handler is
+           parameter type. `Integer`, `Real`, `Number` and `Boolean` all refuse it. LCB has no
+           MISSING parameters (a call that leaves one out throws), but it has nullable ones:
+           `in pN as optional Number` takes empty as `nothing` (test `pN is not nothing`); this
+           family declares none (corrected 2026-11-25, Bill Milby's note; suite engine note 6.4).
+           So every plain typed parameter of every public handler is
            a place a script can hand the engine something it must refuse. The instance: a teardown
            emptied the handle it had just used, and the SECOND teardown message (transports deliver
            one per peer, and a failed connect produces one of its own) passed empty to an `Integer`.

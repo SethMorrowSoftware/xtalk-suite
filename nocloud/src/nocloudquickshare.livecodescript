@@ -6155,8 +6155,9 @@ function qsMakeTorCode pOnion, pName, pSalt, pVerifier
       qsB64(pSalt) & ":" & qsB64(pVerifier)
 end qsMakeTorCode
 
--- Byte size of a file WITHOUT loading it whole into memory. OpenXTalk does not support
--- 'the detailedFiles', so historically we read the whole file to count it - O(file size)
+-- Byte size of a file WITHOUT loading it whole into memory. 'the detailedFiles' was thought
+-- unsupported (it is a misspelling of 'the detailed files', which works: engine note 1.8),
+-- so historically we read the whole file to count it - O(file size)
 -- I/O that also FROZE the UI thread and DOUBLED the disk reads for every download (size
 -- pass + send pass). Now we find the size with an O(log n) SEEK PROBE (a handful of
 -- single-byte reads), and only fall back to the old linear count if the probe cannot
@@ -9502,11 +9503,11 @@ command qsFsWatchdog pStream
    send ("qsFsWatchdog " & pStream) to me in kOnionSendTimeout milliseconds
 end qsFsWatchdog
 
--- Build the directory-listing page. Uses `the files` / `the folders` (portable;
--- `the detailedFiles` is a compile-time "bad factor" on some OXT engines). Names are
+-- Build the directory-listing page. Uses `the files` / `the folders` (the one-word
+-- `the detailedFiles` is a misspelling of `the detailed files`: engine note 1.8). Names are
 -- HTML-escaped and path-encoded; links are relative so a subfolder browses in.
--- Per-file sizes are omitted (OXT has no cheap size call - sizing every file would
--- read each one just to draw a page); the size is in each file's Content-Length.
+-- Per-file sizes are omitted (`the detailed files` could give them cheaply; this
+-- lister reads names only); the size is in each file's Content-Length.
 -- The browsable directory page (used by BOTH transports). A card with a header
 -- (folder icon + path + item-count pill), one rounded row per entry with a
 -- type-coloured icon, and a brand footer. Per-file sizes are omitted on purpose (OXT

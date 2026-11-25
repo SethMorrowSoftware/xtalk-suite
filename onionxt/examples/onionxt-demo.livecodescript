@@ -6,8 +6,8 @@
 -- strip, a persistent status bar, and one content panel per feature. Controls use
 -- a "prefix:role" naming scheme (the prefix is the owning tab, the role is the
 -- control's job), so a single mouseUp router dispatches every click by parsing
--- the target's name, and each tab shows/hides its controls by name (no groups -
--- LiveCode has no "set the owner" reparent).
+-- the target's name, and each tab shows/hides its controls by name (no groups,
+-- by design; `relayer` could move a control into one).
 --
 -- HOW TO RUN: make a new mainstack, set its stack script to this file, and open
 -- it. That is the whole setup - this demo is SELF-CONTAINED: onionxt, the
@@ -3123,8 +3123,8 @@ References: oxhSetRoot (handler), oxhUnroute (handler)
 */
 command oxhServeFiles pFolder
    -- File-sharing mode: serve every file under pFolder by path AND auto-generate a
-   -- directory-listing page (names and download links; no sizes, because
-   -- `the detailedFiles` is an OXT compile-time bad factor) for "/" and each
+   -- directory-listing page (names and download links; no sizes: it lists with
+   -- `the files`, not `the detailed files`; engine note 1.8) for "/" and each
    -- subfolder, so a visitor can browse and download without you writing an index.
    -- A folder's own index.html, if present, still takes precedence over the listing.
    put oxhStripTrailingSlash(pFolder) into sOxhRoot
@@ -3444,8 +3444,8 @@ end oxhSendFile
 private function oxhListingHtml pDiskFolder, pUrlPath
    -- Build a directory-listing page for pDiskFolder (a disk path ending in "/"),
    -- served at pUrlPath (a URL path ending in "/"). Uses `the files` / `the folders`
-   -- (portable; `the detailedFiles` is not recognized on every OXT engine and is a
-   -- compile-time "bad factor" there). Names are HTML-escaped (a file named
+   -- (the one-word `the detailedFiles` is a "bad factor" everywhere, a misspelling
+   -- of `the detailed files`: engine note 1.8). Names are HTML-escaped (a file named
    -- "<script>" cannot inject) and path-encoded for the hrefs; links are relative
    -- to pUrlPath, so a subfolder link browses in and ".." goes up.
    local tSaved, tFiles, tFolders, tName, tOut
@@ -5933,7 +5933,7 @@ end shutdownRequest
 
 private command demoRegisterTab pTabKey, pRoleList
    -- Record this tab's full control names ("prefix:role") in sTabControls and hide
-   -- them; demoShowTab toggles their visibility. No groups, no reparenting.
+   -- them; demoShowTab toggles their visibility. No groups.
    local tI, tRole, tSaved, tNames, tCtrl
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma

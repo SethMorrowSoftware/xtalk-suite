@@ -35,8 +35,8 @@ Three engine constructs the wallet uses and riptide's model does not:
 
   1. `the number of controls of this card` and `control N of this card`.
      waShow sweeps the card by INDEX rather than by a registry, because a
-     screen is a name prefix and not a group - the engine has no reparenting
-     and the family's other multi-screen stacks do the same.
+     screen is a name prefix and not a group (by design: `relayer` could
+     group them; corrected 2026-11-25) and the family's other multi-screen stacks do the same.
   2. the IMAGE control. The Receive screen paints a QR into one, which is the
      only way a BMP this layer builds becomes something a phone can read.
      (`there is a|no image` is riptide's own now: the carried self-check block
