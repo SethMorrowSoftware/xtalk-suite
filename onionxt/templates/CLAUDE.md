@@ -711,8 +711,11 @@ Seed entries (confirmed on-engine in the family; keep them, add to them):
 - SYMPTOM: `type conversion error` at runtime, on a GUI engine, in front of a person - in one case
            killing a poll chain and leaving the app silently dead rather than reporting anything.
   CAUSE:   confirmed on-engine (2026-08-18, on Linux): EMPTY is not a value for a DECLARED `.lcb`
-           parameter type. `Integer`, `Real`, `Number` and `Boolean` all refuse it, and LiveCode
-           Builder has no optional parameters - so every typed parameter of every public handler is
+           parameter type. `Integer`, `Real`, `Number` and `Boolean` all refuse it. LCB has no
+           MISSING parameters (a call that leaves one out throws), but it has nullable ones:
+           `in pN as optional Number` takes empty as `nothing` (test `pN is not nothing`); this
+           family declares none (corrected 2026-11-25, Bill Milby's note; suite engine note 6.4).
+           So every plain typed parameter of every public handler is
            a place a script can hand the engine something it must refuse. The instance: a teardown
            emptied the handle it had just used, and the SECOND teardown message (transports deliver
            one per peer, and a failed connect produces one of its own) passed empty to an `Integer`.

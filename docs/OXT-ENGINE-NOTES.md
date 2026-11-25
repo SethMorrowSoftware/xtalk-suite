@@ -1781,6 +1781,17 @@ handle, above all on teardown and in harnesses (a throw costs the WHOLE run).
 **Gate:** `tools/check-lcb-call-types.py` (arity, emptied handles, event keys
 `_fieldKey` cannot return); it found this plus eight teardown paths that would
 have turned a clean skip into a dead run.
+**Does NOT mean:** that LCB cannot take empty at all. A parameter declared
+`optional` is nullable: **OBSERVED 2026-11-25** (Bill Milby's note the same
+day) on OXT-Beyond's Linux server engine (9.7.1-BeyondEngine), with a library
+compiled by its `lc-compile`, `testParam(in pN as optional Number)` answered
+`testParam(5)` with 5, `testParam(empty)` with its `pN is nothing` branch
+and `testParam("7")` with 7; `testParam()` with the argument LEFT OUT threw
+(885, then 219), and a plain `in pN as Number` threw on empty (899, then 219).
+So LCB has no missing parameters but does have nullable ones. This family
+declares none, so the rule and the gate above stand; a new binding may choose
+`optional` where empty should mean "none" (`check-lcb-call-types.py` would
+then need to learn it).
 
 ### 6.5 An LCB error's LINE NUMBER resolves against the source tree on disk
 **OBSERVED 2026-08-18.**
