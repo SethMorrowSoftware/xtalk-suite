@@ -419,9 +419,12 @@ inside an adopter. Start a new demo from the master (a standalone adopter copies
 and ideally that gate with it). The traps below are the WHY behind how the kit is built, and they
 still apply to any control you create beside it:
 
-- **There is NO reparenting.** LiveCode has no `set the owner` to move a control into a group. Create
-  controls on the card (`create field "x"`, `create button "y"`, `create graphic "z"`), track each
-  logical group's membership in a script-local table, and SHOW/HIDE by name to switch "tabs" / panels.
+- **Reparent with `relayer`, not `set the owner`.** `relayer button "b" to front of group "g"`
+  moves a control into a group (and `to front of card` back out). This entry once said there was
+  no reparenting at all; corrected 2026-11-25 (Bill Milby's note; OXT-Beyond's 9.7.1 server
+  engine moved a button into a group that way). The kit still creates its controls on the card,
+  tracks each logical group's membership in a script-local table, and SHOW/HIDEs by name to
+  switch "tabs" / panels: that design stands on its own, it does not depend on this.
 - **`set the textFont` reads a comma as `fontname,language`** (a Unicode language tag), NOT a CSS-style
   fallback list. `"Courier New,Courier,monospace"` is misparsed. Use a SINGLE font name (`"Courier"` is
   the portable monospace).

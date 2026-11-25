@@ -912,6 +912,7 @@ on openStack
    ecStart
    -- LAST, not first: the check reads state ecStart establishes (the extension
    -- probe, the armed dashboard) and asserting before it would test nothing.
+   ecScRun
 end openStack
 
 on closeStack

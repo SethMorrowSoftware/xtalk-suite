@@ -6,8 +6,8 @@
 -- strip, a persistent status bar, and one content panel per feature. Controls use
 -- a "prefix:role" naming scheme (the prefix is the owning tab, the role is the
 -- control's job), so a single mouseUp router dispatches every click by parsing
--- the target's name, and each tab shows/hides its controls by name (no groups -
--- LiveCode has no "set the owner" reparent).
+-- the target's name, and each tab shows/hides its controls by name (no groups,
+-- by design; `relayer` could move a control into one).
 --
 -- HOW TO RUN: make a new mainstack, set its stack script to this file, and open
 -- it. That is the whole setup - this demo is SELF-CONTAINED: onionxt, the
@@ -5933,7 +5933,7 @@ end shutdownRequest
 
 private command demoRegisterTab pTabKey, pRoleList
    -- Record this tab's full control names ("prefix:role") in sTabControls and hide
-   -- them; demoShowTab toggles their visibility. No groups, no reparenting.
+   -- them; demoShowTab toggles their visibility. No groups.
    local tI, tRole, tSaved, tNames, tCtrl
    put the itemDelimiter into tSaved
    set the itemDelimiter to comma

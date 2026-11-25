@@ -1058,7 +1058,9 @@ with `i` past B (`MCKeywordsExecRepeatWith`, OXT-Beyond's
 **OBSERVED 2026-11-25** on OXT-Beyond's Linux server engine
 (9.7.1-BeyondEngine): `repeat with i = 1 to 6 step 2` ran with i = 1, 3, 5
 and **7**; `1 to 7 step 2` and `1 to 9 step 2` stopped at B exactly;
-`10 to 1 step -3` ran 10, 7, 4, 1. A hex walk with `step 2` over six
+`10 to 1 step -3` ran 10, 7, 4, 1; `0 to 2 step 0.5` ran 0, 0.5, 1, 1.5,
+2 (Bill Milby found steps, 0.5 among them, working on the latest build the
+same day). A hex walk with `step 2` over six
 characters took a fourth, empty pair, which is the `cxHexDecode` symptom; a
 walk of one at a time would not have read past the end. So the step works,
 and the hazard is the overshoot (the member prose that counted "64x the
