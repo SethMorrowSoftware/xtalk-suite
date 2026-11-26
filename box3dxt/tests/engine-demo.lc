@@ -2,7 +2,7 @@
 -- engine-demo.lc - Orb Island (examples/box3dxt-orb-island.livecodescript),
 -- the b3k Kit's example game, on a REAL engine with no window.
 --
---   server-community tests/engine-demo.lc MODULE LIBRARY DEMO PROBE [R3MODULE R3LIBRARY]
+--   server-community tests/engine-demo.lc MODULE LIBRARY DEMO PROBE [R3MODULE R3LIBRARY [GPMODULE GPLIBRARY [AUMODULE AULIBRARY]]]
 --      MODULE     box3dxt.lcm, compiled from src/box3dxt.lcb by lc-compile;
 --                 "-" runs the game WITHOUT box3dxt (it must say why and
 --                 throw nothing)
@@ -11,6 +11,10 @@
 --      PROBE      the full path of tests/engine-demo-probe.livecodescript
 --      R3MODULE   optional: render3dxt.lcm, to run the game over render3dxt
 --      R3LIBRARY  optional: the built render3dxt library without its extension
+--      GPMODULE, GPLIBRARY  optional: gamepadxt's, to drive the game with a
+--                 virtual pad ("-" leaves it out)
+--      AUMODULE, AULIBRARY  optional: audioxt's, to play its sounds into
+--                 audioxt's silent test device ("-" leaves it out)
 --
 -- The game file becomes the script of a stack made here, exactly as a
 -- player pastes it (so the ENGINE compiles it, the embedded Kit included),
@@ -23,7 +27,7 @@
 -- exit status is the number of failures.
 
 global gPrOut, gPrPassed, gPrFailed
-local sPassed, sFailed, sR3, sB3
+local sPassed, sFailed, sR3, sB3, sGp, sAu
 
 on check pName, pOk, pDetail
    if pOk is true then
@@ -53,13 +57,27 @@ try
       put true into sB3
    end if
    put false into sR3
-   if $4 is not empty then
+   if $4 is not empty and $4 is not "-" then
       set the revLibraryMapping["render3dxt"] to $5
       load extension from file $4
       check "render3dxt loads", the result is empty, oneLine(the result)
       put true into sR3
    end if
-   put "INFO box3dxt loaded: " & sB3 & "; render3dxt loaded: " & sR3 & return
+   put false into sGp
+   if $6 is not empty and $6 is not "-" then
+      set the revLibraryMapping["gamepadxt"] to $7
+      load extension from file $6
+      check "gamepadxt loads", the result is empty, oneLine(the result)
+      put true into sGp
+   end if
+   put false into sAu
+   if $8 is not empty and $8 is not "-" then
+      set the revLibraryMapping["audioxt"] to $9
+      load extension from file $8
+      check "audioxt loads", the result is empty, oneLine(the result)
+      put true into sAu
+   end if
+   put "INFO box3dxt loaded: " & sB3 & "; render3dxt loaded: " & sR3 & "; gamepadxt loaded: " & sGp & "; audioxt loaded: " & sAu & return
    create stack "OrbIsland"
    set the defaultStack to "OrbIsland"
    set the script of stack "OrbIsland" to URL ("file:" & $2)
@@ -68,7 +86,7 @@ try
    set the script of button "Probe" of card 1 of stack "OrbIsland" to URL ("file:" & $3)
    check "the probe compiles", the result is empty, oneLine(the result)
    if sFailed is 0 then
-      send ("prRunAll" && sR3 & comma & sB3) to button "Probe" of card 1 of stack "OrbIsland"
+      send ("prRunAll" && sR3 & comma & sB3 & comma & sGp & comma & sAu) to button "Probe" of card 1 of stack "OrbIsland"
       put gPrOut
       add gPrPassed to sPassed
       add gPrFailed to sFailed

@@ -171,6 +171,14 @@ carries on. `b3kStop` stops the loop altogether; `b3kStart` starts it again.
 `b3kStepOnce` runs exactly one frame of one step, paused or not, for a Step
 button or a test.
 
+**Smooth steps.** Whole sixtieths fit a frame rate that is a sixtieth's
+multiple. At 26 pictures a second (a web page) some frames run two steps and
+some three, and what moves seems to lurch. `b3kSetStepMode "smooth"` spends
+each frame's whole time instead, in equal steps no longer than a sixtieth
+(38 ms as three steps of 12.7 ms), so things move exactly as far as the time
+that passed. `b3kStepOnce` still takes one sixtieth, so a game stepped by
+hand, and its tests, land where they always did. Orb Island runs smooth.
+
 A frame runs inside one `try`, so an error in your `b3kFrame` handler can
 never leave the screen locked. The error is kept for you in `b3kFrameError()`
 instead of being lost.
@@ -274,6 +282,61 @@ b3kSetVisible tZone, false               -- hide the picture; it still collides
 `b3kColor(tCrate)` reads a colour back and `b3kIsVisible(tZone)` whether a
 picture shows. What box3dxt's renderer cannot show, it skips: a checker or a
 texture keeps the thing's colour there (section 15).
+
+**Glow and lamps** (render3dxt only):
+
+```
+b3kSetGlow tOrb, "160,110,0"                 -- shines in the shade too
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6       -- a warm lamp, 6 m of light
+put the result into tLamp
+b3kMoveLamp tLamp, 1, 2.5, 0
+b3kRemoveLamp tLamp
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"  -- a low evening sun
+```
+
+A glow is added to a thing's own colour whatever the lights do; it lights
+the thing, not what is near it. A lamp lights what is within its range, more
+the nearer it is. Lighting is worked out at the corners of each shape, so a
+lamp shows best on rounded things and small boxes; a big flat box whose
+corners are all out of range is not lit by it. A world holds seven lamps
+beside the sun; `b3kLamps()` lists them, and they go with `b3kClear` and
+`b3kTeardown`. The sun's colour (the fourth argument of `b3kSetLight`) starts
+a warm white.
+
+**A model's look** (render3dxt only): `b3kSetLook` draws a 3D model (OBJ
+text, or a file's path) in place of a thing's shape. The thing still
+collides, falls and is picked as its shape, so a box can look like a carved
+platform and a capsule like a character:
+
+```
+b3kSetLook b3kPlayer(), tHeroObj, tHeroMtl    -- the OBJ text and its .mtl text
+b3kSetLook b3kPlayer(), empty                 -- the capsule again
+```
+
+The model's origin sits at the thing's centre and turns with it, so fit the
+model to the shape before (Orb Island's `tools/build-game-models.py` does
+this). With OBJ text, give the material text too, or the model is white; it
+keeps its own colours, and a colour, checker or glow set on the thing shows
+again when the look comes off. Things wearing the same model share one copy
+of it. box3dxt's renderer keeps drawing the shape.
+
+**A look in parts, and poses.** A character whose arms and legs move is
+several models, one a part: `b3kAddLookPart` adds one by name (an empty
+model takes it away), and `b3kPoseLookPart` sets where it sits and how it
+turns and scales, in the thing's own space, so the parts go wherever the
+thing goes. `b3kSetLookPose` poses the whole look on top, which is how a
+character squashes as it lands or leans into a run, and how a thing can bob
+without moving its body:
+
+```
+b3kAddLookPart b3kPlayer(), "arm-left", tArmObj, tArmMtl
+b3kPoseLookPart b3kPlayer(), "arm-left", -0.3, 0.9, 0, 40, 0, 0  -- x,y,z, then degrees about x,y,z
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.1, 0.85, 1.1  -- squashed
+```
+
+Turns are taken about x, then y, then z, and a pose may end with three
+scales. Play an animation by posing the parts each frame from its frames
+(Orb Island's `oiAnimPose` reads Kenney's idle, walk and jump that way).
 
 Materials decide how things feel:
 
@@ -630,6 +693,8 @@ while things exist; their pictures are remade.
 |---|---|---|
 | colour, light direction (`b3kSetLight`), background | yes | yes |
 | ambient light (`b3kSetAmbient`), fog (`b3kSetFog`) | yes | no |
+| the sun's colour, glow (`b3kSetGlow`) and lamps (`b3kAddLamp`) | yes | no: white light, the plain colour |
+| a model's look (`b3kSetLook`), its parts and poses | yes | no: the shape |
 | smooth edges (`b3kSetSmooth`, 1 to 4) | yes | no |
 | checkers and textures | yes | the thing's colour |
 | a model's own materials | yes | its hull, in one colour |
@@ -650,6 +715,18 @@ draws. The loop does both by itself.
 - **The size of the view matters most.** Halve both sides and a picture costs
   a quarter as much. `b3kViewMake` takes 16 to 2048 pixels a side.
 - `b3kSetSmooth 1` makes render3dxt's edges jagged but faster.
+- **In a web page render3dxt draws on one thread, and the cost is pixels.**
+  Every pixel a shape covers is drawn, even one that a later shape then
+  covers, so a big shape hidden under the ground still costs its whole size.
+  render3dxt draws in the order things were made: make the ground LAST and a
+  pixel of it already hidden by a tree is refused by its depth alone. The
+  sky behind everything costs almost nothing, so a view with sky in it is
+  cheaper than one full of ground. Orb Island 1.2 measured these
+  (2026-11-26).
+- **In a web page, writing a field costs a frame.** Orb Island's side panel
+  took 12 ms to redraw each time its words changed (headless Chromium,
+  2026-11-26), and four writes a second were its hitches. Write a score or a
+  clock once a second there, and only when the words change.
 - `b3kStats()` is one line: pictures drawn in the last second, things, bodies
   awake, the renderer, and whether a frame has caught an error. Put it in a
   field while you build a game.
@@ -676,23 +753,46 @@ error in the extension's typed interface). And raw calls are in Box3D's terms
 
 ## 18. The example game: Orb Island
 
-`examples/box3dxt-orb-island.livecodescript` is a small, complete game on the
-Kit: walk a floating island, find eight golden orbs, and do not fall off the
-edge. It is one file: open it from the suite's start-here launcher, or paste
-it into a new stack's script and reopen the stack.
+`examples/box3dxt-orb-island.livecodescript` is a complete game on the Kit:
+walk a floating island 60 metres square, find sixteen golden orbs, and do not
+fall into the sea. It is one file: open it from the suite's start-here
+launcher, or paste it into a new stack's script and reopen the stack.
 
 Each part of the Kit carries part of the game:
 
 | In the game | From the Kit |
 |---|---|
-| the world, the loop and the sea | `b3kSetup`, `b3kStart`, `b3kPause`, `b3kKillFloor` |
+| the world, the loop and the fall into the sea | `b3kSetup`, `b3kStart`, `b3kPause`, `b3kKillFloor` |
 | the view and the renderer swap (V) | `b3kViewMake`, `b3kUseRenderer` |
+| the evening light, the glowing orbs and crystals, the lanterns | `b3kSetLight` with a colour, `b3kSetFog`, `b3kSetGlow`, `b3kAddLamp` |
 | the camera | `b3kCamFollow` (from `b3kPlayerMake`), `b3kCamMouseOrbit`, `b3kCamShake` |
-| the island, the ramp, the stairs and the lift | `b3kAddGround`, `b3kAddStaticBox`, `b3kAddRamp`, `b3kAddPlatform` with `b3kGlideTo` |
+| the island, the ramp, the stairs, the lift and the sky lift | `b3kAddGround`, `b3kAddStaticBox`, `b3kAddRamp`, `b3kAddPlatform` with `b3kGlideTo` |
+| the hill | `b3kAddStaticModel` with OBJ text the game writes |
+| stands of trees, standing stones, crystals | `b3kSpawnCone`, `b3kSpawnCylinder` and `b3kSpawnBox`, then `b3kSetType "static"` and `b3kSetRotation` |
+| the windmill's sails and the beacon's beam | kinematic things turned by `b3kSetSpin` |
 | the sweeper and the wrecking ball | a motor-driven `b3kHinge`, a `b3kRope`, `b3kNoCollide` |
-| the orbs and the jump pad | sensors, on `b3kSensorEnter` |
-| the player | `b3kPlayerMake`, `b3kPlayerJump`, `b3kPlayerRespawn` on `b3kFell` |
+| the orbs, the jump pad, the sea, the flags, the plate and the crumbling platforms | sensors, on `b3kSensorEnter` and `b3kSensorExit` |
+| the vault's gate and its pressure plate, the turning platform | `b3kAddPlatform` with `b3kGlideTo`, and `b3kSetSpin` |
+| crumbling platforms that fall and come back | `b3kAddStaticBox`, then `b3kSetType "dynamic"` and `b3kSetDensity` |
+| the flags, platforms, gate, clouds, trees, grass, round isles, lifts and vault walls as Kenney's models | `b3kSetLook` |
+| the player's idle, walk and jump, his squash, lean and the orbs' bob | `b3kAddLookPart`, `b3kPoseLookPart`, `b3kSetLookPose` |
+| the player's shadow | `b3kRayHit` down from the player |
+| the player, and a gamepad's stick | `b3kPlayerMake`, `b3kPlayerJump`, `b3kPlayerSteer`, `b3kPlayerRespawn` on `b3kFell` |
 | kicking a crate with the mouse | `b3kThingAt`, unless `b3kCamDragged()` |
+
+Two more of the suite's extensions join in when they are loaded, and the
+game runs without them: **gamepadxt** (a controller walks, looks, jumps and
+blasts, and rumbles when an orb is found) and **audioxt** (a sea that swells,
+a chime a note higher for each orb, jumps, blasts, a splash and a fanfare,
+all tones and noise made on the spot).
+
+The models are Kenney's (kenney.nl), from his Platformer, City Builder and
+FPS starter kits, CC0 (public domain): `examples/models/` holds them and says
+which is which.
+A web page has no folder of files beside a stack, so
+`tools/build-game-models.py` turns each into OBJ text with flat colours,
+fitted to the shape it is drawn on, and writes it into the game between its
+`GAME MODELS` markers; its `--check` is a gate.
 
 The game's own code sits above the embedded Kit, which is a verbatim copy of
 `src/box3dxt-kit.livecodescript` between two marker lines. Never edit the copy:
@@ -700,9 +800,16 @@ change the Kit in `src/` and run `python3 tools/sync-embedded-kit.py`.
 
 `tests/engine-demo.lc` plays the game on OXT-Beyond's headless server engine:
 it builds the window, walks to an orb, collects them all, falls into the sea,
-rides the pad and the lift, kicks, blasts and drops crates, swaps the
-renderer, and presses every button and key, with box3dxt alone, with
-render3dxt too, and with no extension at all. What only a person at a real
+rides the pad, the lift and the sky lift, topples the dominoes, kicks, blasts
+and drops crates, presses the plate with the heavy crate and with the player,
+crumbles a platform, touches a flag and falls back to it, bumps a stand of
+trees, falls off the round isle where a square one's corner was, watches the
+character idle, walk and jump with its shadow under it and dust where it
+lands, swaps the renderer,
+and presses every button and key, with
+box3dxt alone and with no extension at all; given render3dxt, gamepadxt (a
+virtual pad) and audioxt (its silent device) too, it checks the lamps, the
+pad's controls and the sounds. What only a person at a real
 window can judge (the feel of the controls, the mouse, the look in the light
 and dark appearance) is listed under "WHAT TO VERIFY" in the game's header.
 

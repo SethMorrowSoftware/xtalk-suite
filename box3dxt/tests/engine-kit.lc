@@ -880,6 +880,276 @@ command testRenderers
    noFrameError "renderers"
 end testRenderers
 
+-- the sun's colour, a thing's glow and the lamps (render3dxt draws them;
+-- box3dxt's renderer keeps them, unseen, for when render3dxt comes back)
+function brightness pRGB
+   set the itemDelimiter to comma
+   return item 1 of pRGB + item 2 of pRGB + item 3 of pRGB
+end brightness
+
+-- b3kSetLook: a model drawn in place of a thing's shape, its own colours
+-- from its material text; the shape still collides; things wearing one
+-- model share one mesh; an empty look puts the shape back
+command testLook
+   local tBox, tTwo, tPlain, tLooked, tObj, tMtl, tMeshes, tCounts
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kAddStaticBox 0, 0.5, 0, 1, 1, 1, "128,128,128"
+   put the result into tBox
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "40,40,40"
+   b3kSetLight 0, 0, -1
+   b3kDraw
+   put viewPixel(80, 60) into tPlain
+   -- a square facing the camera, 2 m across, its centre at the box's
+   put "mtllib model.mtl" & return & "v -1 -1 0.6" & return & "v 1 -1 0.6" & return & "v 1 1 0.6" & return & "v -1 1 0.6" & return & \
+         "vn 0 0 1" & return & "usemtl red" & return & "f 1//1 2//1 3//1" & return & "f 1//1 3//1 4//1" & return into tObj
+   put "newmtl red" & return & "Kd 0.9 0.1 0.1" & return into tMtl
+   b3kSetLook tBox, tObj, tMtl
+   b3kDraw
+   put viewPixel(80, 60) into tLooked
+   if sR3 then
+      check "a look draws the model in its own colour", item 1 of tLooked > item 2 of tLooked + 80 and item 1 of tLooked > item 3 of tLooked + 80, tPlain && tLooked
+      put r3LiveCounts() into tCounts
+      put item 3 of tCounts into tMeshes
+      b3kAddStaticBox 3, 0.5, 0, 1, 1, 1, "128,128,128"
+      put the result into tTwo
+      b3kSetLook tTwo, tObj, tMtl
+      check "two things wearing one model share its mesh", item 3 of r3LiveCounts() is tMeshes, tCounts && r3LiveCounts()
+      b3kSetColor tBox, "0,0,200"
+      b3kDraw
+      check "a colour set on a looked thing leaves the model's own", viewPixel(80, 60) is tLooked, tLooked && viewPixel(80, 60)
+      b3kUseRenderer "box3dxt"
+      b3kUseRenderer "render3dxt"
+      b3kDraw
+      check "a renderer swap keeps the look", viewPixel(80, 60) is tLooked, tLooked && viewPixel(80, 60)
+   else
+      check "box3dxt's renderer keeps drawing the shape under a look", tLooked is tPlain, tPlain && tLooked
+   end if
+   -- a ray's travel is its length: 10 m from the camera through the box
+   check "the shape still collides, not the model", b3kRayHit(0, 0.5, 4, 0, 0, -10) is tBox and prNearK(b3kHitDistance(), 3.5, 0.05), \
+         b3kHitDistance()
+   b3kSetLook tBox, empty
+   b3kDraw
+   if sR3 then
+      check "an empty look puts the shape back, in its colour", item 3 of viewPixel(80, 60) > item 1 of viewPixel(80, 60) + 40, viewPixel(80, 60)
+   else
+      check "an empty look leaves the shape", brightness(viewPixel(80, 60)) > 0, viewPixel(80, 60)
+   end if
+   b3kSetLook 987654, tObj, tMtl
+   check "a look on no thing is harmless", b3kFrameError() is empty, b3kFrameError()
+   b3kRemove tBox
+   b3kClear
+   check "b3kClear after looks is clean", b3kThingCount() is 0, b3kThingCount()
+end testLook
+
+-- The step mode: fixed by default; smooth spends a running frame's whole
+-- time in equal steps; b3kStepOnce is one sixtieth in either mode, so a
+-- hand-stepped world lands where it always did
+command testStepMode
+   local tBall, tFixed, tSmooth, tLift, tT, tY0
+   freshWorld
+   check "the step mode starts fixed", b3kStepMode() is "fixed", b3kStepMode()
+   b3kSpawnBall 0, 5, 0, 0.5
+   put the result into tBall
+   repeat 30 times
+      b3kStepOnce
+   end repeat
+   put b3kPosition(tBall) into tFixed
+   freshWorld
+   b3kSetStepMode "smooth"
+   check "b3kSetStepMode smooth", b3kStepMode() is "smooth", b3kStepMode()
+   b3kSpawnBall 0, 5, 0, 0.5
+   put the result into tBall
+   repeat 30 times
+      b3kStepOnce
+   end repeat
+   put b3kPosition(tBall) into tSmooth
+   check "b3kStepOnce takes the same step in either mode", tSmooth is tFixed, tFixed && tSmooth
+   -- the running loop, smooth: things move and a glide arrives on time
+   b3kSpawnBall 2, 5, 0, 0.5
+   put the result into tBall
+   put b3kY(tBall) into tY0
+   b3kAddPlatform -2, 1, 0, 1, 0.2, 1
+   put the result into tLift
+   b3kGlideTo tLift, -2, 2, 0, 0.3
+   b3kStart
+   put the milliseconds into tT
+   repeat until the milliseconds - tT > 900
+      wait 20 milliseconds with messages
+   end repeat
+   b3kPause
+   check "the smooth loop runs: a ball falls", b3kY(tBall) < tY0 - 0.5, tY0 && b3kY(tBall)
+   check "and a glide arrives", not b3kIsGliding(tLift) and prNearK(b3kY(tLift), 2, 0.01), b3kPosition(tLift)
+   check "and no frame threw", b3kFrameError() is empty, b3kFrameError()
+   b3kStop
+   b3kSetStepMode "anything else"
+   check "any other mode is fixed", b3kStepMode() is "fixed", b3kStepMode()
+   b3kClear
+end testStepMode
+
+function prNearK pA, pB, pTolerance
+   if pA is not a number then return false
+   return abs(pA - pB) <= pTolerance
+end prNearK
+
+-- A look in parts (b3kAddLookPart), each part posed (b3kPoseLookPart),
+-- and the whole look posed (b3kSetLookPose): what the Orb Island's
+-- character is made of. Pixels are read with render3dxt; box3dxt's own
+-- renderer draws the shape and must take every call harmlessly.
+command testLookParts
+   local tBox, tRed, tBlue, tSq, tNodes
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kAddStaticBox 0, 0.5, 0, 0.4, 0.4, 0.4, "40,40,40"
+   put the result into tBox
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "40,40,40"
+   b3kSetLight 0, 0, -1
+   -- a square 0.4 m across facing the camera, in front of the box
+   put "v -0.2 -0.2 0.6" & return & "v 0.2 -0.2 0.6" & return & "v 0.2 0.2 0.6" & return & "v -0.2 0.2 0.6" & return & \
+         "vn 0 0 1" & return & "usemtl c" & return & "f 1//1 2//1 3//1" & return & "f 1//1 3//1 4//1" & return into tSq
+   put "newmtl c" & return & "Kd 0.9 0.1 0.1" & return into tRed
+   put "newmtl c" & return & "Kd 0.1 0.1 0.9" & return into tBlue
+   if sR3 then put item 2 of r3LiveCounts() into tNodes
+   b3kAddLookPart tBox, "a", "mtllib model.mtl" & return & tSq, tRed
+   b3kAddLookPart tBox, "b", "mtllib model.mtl" & return & tSq, tBlue
+   b3kPoseLookPart tBox, "a", 1, 0, 0
+   b3kDraw
+   if sR3 then
+      -- about 48 pixels a metre at the box, 3.4 m off with a 40 degree view
+      check "a look in two parts draws both", prIsBlue(viewPixel(80, 60)) and prIsRed(viewPixel(128, 60)), \
+            viewPixel(80, 60) && viewPixel(128, 60)
+      -- two nodes, one a part, in place of the shape's one
+      check "each part is a node of its own, in the shape's place", item 2 of r3LiveCounts() is tNodes + 1, tNodes && r3LiveCounts()
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 90
+      b3kDraw
+      check "the whole look turns, its parts with it", prIsRed(viewPixel(80, 12)) and not prIsRed(viewPixel(128, 60)), \
+            viewPixel(80, 12) && viewPixel(128, 60)
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 0, 0.5, 0.5, 0.5
+      b3kDraw
+      check "and scales, the parts drawn in", prIsRed(viewPixel(104, 60)) and prIsBlue(viewPixel(80, 60)), \
+            viewPixel(104, 60) && viewPixel(80, 60)
+      b3kPoseLookPart tBox, "a", 0, 1, 0
+      b3kDraw
+      check "a part posed again moves", prIsRed(viewPixel(80, 36)) and not prIsRed(viewPixel(104, 60)), \
+            viewPixel(80, 36) && viewPixel(104, 60)
+      b3kAddLookPart tBox, "a", empty
+      b3kDraw
+      check "an empty part is taken away", not prIsRed(viewPixel(80, 36)) and prIsBlue(viewPixel(80, 60)), \
+            viewPixel(80, 36) && viewPixel(80, 60)
+   else
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 90
+      b3kAddLookPart tBox, "a", empty
+      b3kDraw
+      check "box3dxt's renderer takes parts and poses harmlessly", b3kFrameError() is empty and brightness(viewPixel(80, 60)) > 0, \
+            b3kFrameError() && viewPixel(80, 60)
+   end if
+   b3kPoseLookPart 987654, "a", 1, 0, 0
+   b3kSetLookPose 987654, 0, 1, 0
+   b3kAddLookPart 987654, "a", tSq, tRed
+   check "parts and poses on no thing are harmless", b3kFrameError() is empty, b3kFrameError()
+   b3kClear
+   check "b3kClear after parts is clean", b3kThingCount() is 0, b3kThingCount()
+end testLookParts
+
+function prIsRed pRgb
+   return item 1 of pRgb > item 2 of pRgb + 80 and item 1 of pRgb > item 3 of pRgb + 80
+end prIsRed
+
+function prIsBlue pRgb
+   return item 3 of pRgb > item 1 of pRgb + 80 and item 3 of pRgb > item 2 of pRgb + 80
+end prIsBlue
+
+command testLampsAndGlow
+   local tBall, tLamp, tDark, tLit, tGlow, tCounts, tI, tLamps
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kSpawnBall 0, 0.5, 0, 1, "128,128,128"
+   put the result into tBall
+   b3kSetType tBall, "static"
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "10,10,10"
+   -- the sunlight travels away from the camera (+z) and lights the far
+   -- side of the ball: the face the camera sees is in the shade
+   b3kSetLight 0, 0, 1
+   b3kDraw
+   put viewPixel(80, 60) into tDark
+   b3kSetGlow tBall, "0,160,0"
+   check "b3kGlow reads the glow back", b3kGlow(tBall) is "0,160,0", b3kGlow(tBall)
+   b3kDraw
+   put viewPixel(80, 60) into tGlow
+   if sR3 then
+      check "a glow lights the shaded side green", item 2 of tGlow > item 2 of tDark + 60 and item 2 of tGlow > item 1 of tGlow + 60, tDark && tGlow
+   else
+      check "box3dxt's renderer keeps the plain colour under a glow", tGlow is tDark, tDark && tGlow
+   end if
+   b3kSetGlow tBall, empty
+   check "an empty glow is none", b3kGlow(tBall) is empty, b3kGlow(tBall)
+   b3kDraw
+   check "and the shade comes back", viewPixel(80, 60) is tDark, tDark && viewPixel(80, 60)
+   b3kAddLamp 0, 0.5, 2, "255,255,255", 6, 2
+   put the result into tLamp
+   check "b3kAddLamp gives a lamp", tLamp is a number and b3kLamps() is tLamp, tLamp && b3kLamps()
+   b3kDraw
+   put viewPixel(80, 60) into tLit
+   if sR3 then
+      check "a lamp in front lights the shaded side", brightness(tLit) > brightness(tDark) + 120, tDark && tLit
+      check "render3dxt holds the sun and the lamp", item 6 of r3LiveCounts() is 2, r3LiveCounts()
+      b3kMoveLamp tLamp, 0, 0.5, -3
+      b3kDraw
+      check "a lamp moved behind the ball leaves the front in the shade", brightness(viewPixel(80, 60)) < brightness(tDark) + 30, tDark && viewPixel(80, 60)
+      b3kMoveLamp tLamp, 0, 0.5, 2
+      b3kUseRenderer "box3dxt"
+      check "box3dxt's renderer: the lamp is kept", b3kLamps() is tLamp and item 1 of r3LiveCounts() is 0, b3kLamps() && r3LiveCounts()
+      b3kUseRenderer "render3dxt"
+      check "back to render3dxt: the lamp shines again", item 6 of r3LiveCounts() is 2, r3LiveCounts()
+      b3kDraw
+      check "where it was moved to", brightness(viewPixel(80, 60)) > brightness(tDark) + 120, tDark && viewPixel(80, 60)
+      -- a warm sun on the face the camera sees: the lamp first goes far
+      -- away, so the sun's colour alone shows
+      b3kMoveLamp tLamp, 0, 50, 0
+      b3kSetLight 0, 0, -1, "255,120,40"
+      b3kDraw
+      check "the sun takes a colour", item 1 of viewPixel(80, 60) > item 3 of viewPixel(80, 60) + 50, viewPixel(80, 60)
+      b3kSetLight 0, 0, 1, "255,248,236"
+   else
+      check "box3dxt's renderer draws no lamps", tLit is tDark, tDark && tLit
+   end if
+   b3kRemoveLamp tLamp
+   check "b3kRemoveLamp takes it away", b3kLamps() is empty, b3kLamps()
+   b3kRemoveLamp tLamp
+   if sR3 then check "and gives render3dxt its light back", item 6 of r3LiveCounts() is 1, r3LiveCounts()
+   repeat with tI = 1 to 7
+      b3kAddLamp tI, 2, 0
+   end repeat
+   b3kAddLamp 8, 2, 0
+   put the result into tLamp
+   put b3kLamps() into tLamps
+   check "a world holds seven lamps, no more", the number of lines of tLamps is 7 and tLamp is empty, oneLine(tLamps) && tLamp
+   check "and the eighth says why", b3kLastError() contains "seven lamps", b3kLastError()
+   b3kSetGlow tBall, "40,40,0"
+   b3kClear
+   check "b3kClear takes the lamps", b3kLamps() is empty, b3kLamps()
+   if sR3 then check "and their lights", item 6 of r3LiveCounts() is 1, r3LiveCounts()
+   b3kAddGround 20
+   b3kSpawnBall 0, 0.5, 0, 1
+   check "a new thing has no glow", b3kGlow(the result) is empty, empty
+   b3kAddLamp 1, 1, 1
+   b3kSetLight -0.45, -1, -0.35, "255,248,236"
+   b3kTeardown
+   check "b3kTeardown takes the lamps", b3kLamps() is empty, b3kLamps()
+   if sR3 then check "teardown gives render3dxt back every light", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+   b3kAddLamp 0, 0, 0
+   b3kMoveLamp 1, 0, 0, 0
+   b3kSetGlow 3, "red"
+   check "lamps and glow with no world are harmless", b3kLamps() is empty and b3kFrameError() is empty, b3kLamps()
+   noFrameError "lamps and glow"
+end testLampsAndGlow
+
 command testTeardown
    freshWorld
    b3kSpawnBall 0, 2, 0, 1
@@ -942,6 +1212,10 @@ try
       testPlayer
       testGlideAndMore
       testRenderers
+      testLampsAndGlow
+      testLook
+      testLookParts
+      testStepMode
       testTeardown
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && oneLine(b3AssertText()) && b3UnstableCount()

@@ -38,11 +38,12 @@
 -- WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
 --         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
 --         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
---         b3kSetSubsteps n / b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
+--         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+--         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
 --         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
---         b3kSetBackground color / b3kSetLight dx,dy,dz / b3kSetAmbient color /
+--         b3kSetBackground color / b3kSetLight dx,dy,dz[,color] / b3kSetAmbient color /
 --         b3kSetFog color,near,far / b3kSetSmooth 1..4 / b3kSetRenderMode mode /
 --         b3kDraw / b3kSync
 -- CAMERA  b3kCamOrbit yaw,pitch,dist[,tx,ty,tz] / b3kCamOrbitBy dYaw,dPitch /
@@ -62,7 +63,14 @@
 --         b3kIsGliding(thing)
 -- SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
---         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing)
+--         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
+--         b3kSetGlow thing,color / b3kGlow(thing) /
+--         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
+--         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
+--         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
+--         b3kSetLookPose thing,x,y,z[,rx,ry,rz,sx,sy,sz]
+-- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
+--         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
 -- BODY    b3kSetType thing,"static"|"kinematic"|"dynamic" / b3kType(thing) /
 --         b3kSetGravityScale thing,s / b3kSetDamping thing,lin[,ang] /
@@ -128,6 +136,9 @@ constant kB3kPalette = "231,96,76;240,172,64;94,170,92;72,140,214;160,106,200;23
 -- the world and the loop
 local sWorld, sAnchor, sRunning, sPaused, sGen
 local sSub, sAccum, sLast, sFrameMS, sFrames, sFpsCount, sFpsStart, sFps
+-- the step mode (empty or "fixed", or "smooth") and how far the smooth
+-- steps have taken the simulation clock from sFrames whole sixtieths
+local sStepMode, sSimDrift
 local sFrameObj, sFrameAuto, sContactObj, sKillY, sKillTick
 local sLastError, sFrameError, sSpawnCount, sEvents
 -- the things: every table is keyed by the thing (its body handle)
@@ -139,6 +150,17 @@ local sGround, sGroundSize, sGroundY
 local sView, sViewW, sViewH, sRenderer, sWant, sStale, sBegun
 local sScene, sSun, sMeshes, sMats
 local sBg, sAmbient, sLight, sFog, sSmooth, sMode
+-- the sun's colour, each thing's glow, and the lamps: sLamp[n] is
+-- "x,y,z;r,g,b;intensity;range" and sLampR3[n] its render3dxt light
+local sSunColor, sGlow, sLamp, sLampR3, sLampCount
+-- a model drawn in place of a thing's own shape (b3kSetLook): its OBJ text
+-- or file, its material text, its scale, and the key of its shared mesh
+local sLook, sLookMtl, sLookScale, sLookKey
+-- a look's moving parts (b3kAddLookPart) and poses (b3kPoseLookPart,
+-- b3kSetLookPose): [thing][part] -> source, materials, scale, mesh key,
+-- node, pose; [thing] -> the whole look's pose; [thing] -> true when posed
+local sPartSrc, sPartMtl, sPartScale, sPartKey, sPartNode, sPartPose
+local sPose, sPosed
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -460,6 +482,7 @@ command b3kSetup pGx, pGy, pGz
    put empty into sKillY
    put 0 into sKillTick
    put 0 into sFrames
+   put 0 into sSimDrift
    -- the messages' default home is the card current now: its script and
    -- its stack's script (where a pasted Kit sits) both hear them. "me" would
    -- be wrong for a Kit used as a library: the library itself, which holds
@@ -656,6 +679,48 @@ command b3kSetSubsteps pN
 end b3kSetSubsteps
 
 /**
+Summary: Choose how the running loop divides a frame's time into physics steps.
+
+pMode: "fixed" (the default) or "smooth".
+
+Example:
+b3kSetStepMode "smooth"
+
+Description:
+"fixed" steps a sixtieth of a second at a time and carries what is left of
+a frame over to the next one, so a frame runs a whole number of steps: at 26
+pictures a second some frames run two and some three, and what moves seems
+to speed up and slow down. "smooth" uses up each frame's time in equal
+steps no longer than a sixtieth (38 ms as three of 12.7 ms), so things move
+as far as the time that passed. <b3kStepOnce> always takes one sixtieth, in
+either mode. The mode is kept until it is set again.
+
+References: b3kStepMode (handler), b3kStart (handler), b3kStepOnce (handler)
+*/
+command b3kSetStepMode pMode
+   if pMode is "smooth" then
+      put "smooth" into sStepMode
+   else
+      put "fixed" into sStepMode
+   end if
+end b3kSetStepMode
+
+/**
+Summary: The step mode set by <b3kSetStepMode>.
+
+Returns: "fixed" or "smooth".
+
+Example:
+put b3kStepMode() into field "Mode"
+
+References: b3kSetStepMode (handler)
+*/
+function b3kStepMode
+   if sStepMode is "smooth" then return "smooth"
+   return "fixed"
+end b3kStepMode
+
+/**
 Summary: Choose the object that receives b3kFrame and b3kFell.
 
 pObject: A reference to an object, such as the long id of this card;
@@ -745,6 +810,10 @@ command b3kClear
    repeat for each line tThing in tAll
       b3kRemove tThing
    end repeat
+   put the keys of sLamp into tAll
+   repeat for each line tThing in tAll
+      b3kRemoveLamp tThing
+   end repeat
    b3kTablesReset
    put true into sStale
 end b3kClear
@@ -790,9 +859,22 @@ private command b3kTablesReset
    put empty into sOwnMat
    put empty into sOwnTex
    put empty into sChecker
+   put empty into sGlow
    put empty into sTexPath
    put empty into sModel
    put empty into sModelPath
+   put empty into sLook
+   put empty into sLookMtl
+   put empty into sLookScale
+   put empty into sLookKey
+   put empty into sPartSrc
+   put empty into sPartMtl
+   put empty into sPartScale
+   put empty into sPartKey
+   put empty into sPartNode
+   put empty into sPartPose
+   put empty into sPose
+   put empty into sPosed
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -805,6 +887,11 @@ private command b3kTablesReset
    put empty into sPlayer
    put empty into sCamFollow
    put empty into sEvents
+   -- the lamps go with the things (b3kClear destroys their render3dxt
+   -- lights first; b3kTeardown's scene took them with it)
+   put empty into sLamp
+   put empty into sLampR3
+   put 0 into sLampCount
 end b3kTablesReset
 
 -- =====================================================================
@@ -852,14 +939,30 @@ end b3kStep
 
 -- the body of a frame; the caller holds the lock and the try
 private command b3kFrameWork
+   local tN, tDt
    b3kInputTick
    b3kPlayerTick
    b3kGlideTick
    put empty into sEvents
-   repeat while sAccum >= kB3kStepMs
-      b3kWorldStep
-      subtract kB3kStepMs from sAccum
-   end repeat
+   if sStepMode is "smooth" then
+      -- the frame's whole time, in as few equal steps as keep each no
+      -- longer than a sixtieth (the accumulator is capped above, so no
+      -- more than kB3kMaxSteps)
+      if sAccum >= 1 then
+         put trunc(sAccum / kB3kStepMs) into tN
+         if tN * kB3kStepMs < sAccum then add 1 to tN
+         put sAccum / tN into tDt
+         repeat tN times
+            b3kWorldStep tDt
+         end repeat
+         put 0 into sAccum
+      end if
+   else
+      repeat while sAccum >= kB3kStepMs
+         b3kWorldStep
+         subtract kB3kStepMs from sAccum
+      end repeat
+   end if
    b3kKillTick
    b3kCamTick
    b3kDispatchEvents
@@ -896,12 +999,25 @@ command b3kStepOnce
    put 0 into sAccum
 end b3kStepOnce
 
+-- the simulation clock in milliseconds: whole sixtieths, and what smooth
+-- steps added or took away (0 in the fixed mode, so the same number as ever)
+private function b3kSimMs
+   return sFrames * kB3kStepMs + b3kNum(sSimDrift, 0)
+end b3kSimMs
+
 -- one physics step, its events harvested and its moves carried to the
 -- picture. Box3D keeps only the LAST step's events and moves, so they are
 -- read after every step, not once a frame.
-private command b3kWorldStep
+private command b3kWorldStep pDtMs
    local tCount, i, tA, tB
-   b3WorldStep sWorld, kB3kStepS, sSub
+   if pDtMs is empty then
+      b3WorldStep sWorld, kB3kStepS, sSub
+   else
+      -- a smooth step (b3kSetStepMode): its own length, and the clock
+      -- told how far it differs from a sixtieth
+      b3WorldStep sWorld, pDtMs / 1000, sSub
+      add pDtMs - kB3kStepMs to sSimDrift
+   end if
    -- the simulation clock: the player's coyote and buffer windows run on it
    add 1 to sFrames
    -- touches
@@ -1170,6 +1286,9 @@ private command b3kSceneMake
    repeat for each key tThing in sKind
       b3kVisualMake tThing
    end repeat
+   repeat for each key tThing in sLamp
+      b3kLampMake tThing
+   end repeat
 end b3kSceneMake
 
 -- the scene's background, ambient light, sun, fog and smoothing
@@ -1194,11 +1313,13 @@ private command b3kSceneLook
    if sSun is not empty then
       if not r3LightIsValid(sSun) then put empty into sSun
    end if
+   if sSunColor is empty then put "255,248,236" into sSunColor
    if sSun is empty then
-      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, 255, 248, 236, 1) into sSun
+      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, \
+            item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1) into sSun
    else
       r3LightSetDirection sSun, item 1 of sLight, item 2 of sLight, item 3 of sLight
-      r3LightSetColor sSun, 255, 248, 236, 1
+      r3LightSetColor sSun, item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1
    end if
    if sFog is not empty then
       r3SceneSetFog sScene, item 1 of sFog, item 2 of sFog, item 3 of sFog, item 4 of sFog, item 5 of sFog
@@ -1232,6 +1353,8 @@ private command b3kSceneFree
    end if
    put empty into sScene
    put empty into sSun
+   put empty into sLampR3
+   put empty into sPartNode
    put empty into sMeshes
    put empty into sMats
    put empty into sNode
@@ -1266,17 +1389,26 @@ pDy: The y of the direction; negative shines down.
 
 pDz: The z of the direction.
 
+pColor: The sunlight's colour (render3dxt only); empty keeps it as it
+is. It starts a warm white, "255,248,236".
+
 Example:
 b3kSetLight -0.4, -1, -0.3
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"   -- a low evening sun
 
 Description:
 Both renderers light from this direction; a surface facing away keeps a
-dim shade, so nothing goes black.
+dim shade, so nothing goes black. box3dxt's renderer lights in white.
 
 References: b3kSetAmbient (handler)
 */
-command b3kSetLight pDx, pDy, pDz
-   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then exit b3kSetLight
+command b3kSetLight pDx, pDy, pDz, pColor
+   if pColor is not empty then put b3kRGB(pColor, "255,248,236") into sSunColor
+   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then
+      b3kSceneLook
+      put true into sStale
+      exit b3kSetLight
+   end if
    put b3kNum(pDx, 0) & comma & b3kNum(pDy, -1) & comma & b3kNum(pDz, 0) into sLight
    b3kSceneLook
    put true into sStale
@@ -1371,6 +1503,143 @@ command b3kSetRenderMode pMode
 end b3kSetRenderMode
 
 /**
+Summary: Hang a lamp in the world: a light that shines from a point (render3dxt only).
+
+pX: The x of the lamp.
+
+pY: The y of the lamp.
+
+pZ: The z of the lamp.
+
+pColor: Its colour; empty is a warm "255,214,150".
+
+pRange: How far its light reaches, in metres; empty means 8.
+
+pIntensity: How bright, 0 to 4; empty means 1.
+
+Returns: (through the result) the lamp, a whole number, or empty when there
+is no world or the world already has seven lamps.
+
+Example:
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6
+put the result into tLamp
+
+Description:
+Things within the range are lit from the lamp as well as the sun, more
+the nearer they are. Lighting is worked out at the corners of each shape,
+so a lamp shows best on rounded things and small boxes; a big flat box
+whose corners are all out of range is not lit by it. A world holds at most
+seven lamps beside the sun. Lamps go with <b3kClear> and <b3kTeardown>,
+and come back when the renderer changes. box3dxt's renderer has no lamps.
+
+References: b3kMoveLamp (handler), b3kRemoveLamp (handler), b3kSetGlow (handler)
+*/
+command b3kAddLamp pX, pY, pZ, pColor, pRange, pIntensity
+   local tId
+   if sWorld is empty then return empty
+   if the number of lines of the keys of sLamp >= 7 then
+      put "a world holds at most seven lamps" into sLastError
+      return empty
+   end if
+   add 1 to sLampCount
+   put sLampCount into tId
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & ";" & \
+         b3kRGB(pColor, "255,214,150") & ";" & max(0, min(4, b3kNum(pIntensity, 1))) & ";" & \
+         max(0.1, min(1000, b3kNum(pRange, 8))) into sLamp[tId]
+   b3kLampMake tId
+   put true into sStale
+   return tId
+end b3kAddLamp
+
+/**
+Summary: Move a lamp.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+pX: The new x.
+
+pY: The new y.
+
+pZ: The new z.
+
+Example:
+b3kMoveLamp tLamp, b3kX(tTorch), b3kY(tTorch) + 0.5, b3kZ(tTorch)
+
+Description:
+A lamp that is not there is ignored.
+
+References: b3kAddLamp (handler)
+*/
+command b3kMoveLamp pLamp, pX, pY, pZ
+   local tSpec
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kMoveLamp
+   put sLamp[pLamp] into tSpec
+   set the itemDelimiter to ";"
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) into item 1 of tSpec
+   put tSpec into sLamp[pLamp]
+   set the itemDelimiter to comma
+   if sLampR3[pLamp] is not empty then
+      r3LightSetPosition sLampR3[pLamp], b3kNum(pX, 0), b3kNum(pY, 0), b3kNum(pZ, 0)
+   end if
+   put true into sStale
+end b3kMoveLamp
+
+/**
+Summary: Take a lamp away.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+Example:
+b3kRemoveLamp tLamp
+
+Description:
+Removing a lamp that is not there is harmless.
+
+References: b3kAddLamp (handler), b3kLamps (handler)
+*/
+command b3kRemoveLamp pLamp
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kRemoveLamp
+   if sLampR3[pLamp] is not empty then r3LightDestroy sLampR3[pLamp]
+   delete variable sLampR3[pLamp]
+   delete variable sLamp[pLamp]
+   put true into sStale
+end b3kRemoveLamp
+
+/**
+Summary: The lamps there are.
+
+Returns: One lamp a line, oldest first; empty if there are none.
+
+Example:
+put the number of lines of b3kLamps() into tCount
+
+References: b3kAddLamp (handler)
+*/
+function b3kLamps
+   local tKeys
+   put the keys of sLamp into tKeys
+   sort lines of tKeys numeric
+   return tKeys
+end b3kLamps
+
+-- a lamp's render3dxt light, when render3dxt draws
+private command b3kLampMake pLamp
+   local tSpec, tPos, tRGB, tPower, tRange, tLight
+   if sRenderer is not "render3dxt" or sScene is empty then exit b3kLampMake
+   put sLamp[pLamp] into tSpec
+   if tSpec is empty then exit b3kLampMake
+   set the itemDelimiter to ";"
+   put item 1 of tSpec into tPos
+   put item 2 of tSpec into tRGB
+   put item 3 of tSpec into tPower
+   put item 4 of tSpec into tRange
+   set the itemDelimiter to comma
+   put r3LightCreatePoint(sScene, item 1 of tPos, item 2 of tPos, item 3 of tPos, \
+         item 1 of tRGB, item 2 of tRGB, item 3 of tRGB, tPower, tRange) into tLight
+   if tLight is a number and tLight > 0 then put tLight into sLampR3[pLamp]
+end b3kLampMake
+
+/**
 Summary: Draw the picture now.
 
 Example:
@@ -1391,6 +1660,7 @@ command b3kDraw
    put false into sStale
    put false into sBegun
    if sRenderer is "render3dxt" then
+      b3kPosedSyncAll
       b3kShow r3SceneRender(sScene, sViewW, sViewH)
    else if sRenderer is "box3dxt" then
       b3kOwnRender
@@ -1431,6 +1701,7 @@ private command b3kNodeSync pThing
    repeat for each item tNode in sNode[pThing]
       r3NodeSetTransformText tNode, tXf
    end repeat
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kNodeSync
 
 -- the frame's drawing: with render3dxt, show the picture begun last frame
@@ -1443,6 +1714,7 @@ private command b3kFrameDraw
          put false into sBegun
          b3kShow r3SceneFrame(sScene)
       end if
+      b3kPosedSyncAll
       if sStale is true then
          put false into sStale
          put (r3SceneRenderBegin(sScene, sViewW, sViewH) > 0) into sBegun
@@ -2347,41 +2619,66 @@ private command b3kVisualMake pThing
    set the itemDelimiter to comma
    put sDims[pThing] into tD
    put empty into tMesh
-   switch sGeo[pThing]
-      case "box"
-         put "box:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "ball"
-         put "ball:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "capsule"
-         put "capsule:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "cylinder"
-         put "cylinder:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "model"
-         if sModelPath[pThing] is not empty then
-            put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+   -- a thing with parts (b3kAddLookPart) and no look draws its parts alone
+   if sPartSrc[pThing] is an array and sLookKey[pThing] is empty then
+      b3kPartsMake pThing
+      exit b3kVisualMake
+   end if
+   -- a look (b3kSetLook) is drawn instead of the shape: one mesh for every
+   -- thing that wears the same model, kept with the shapes' meshes
+   if sLookKey[pThing] is not empty then
+      put sLookKey[pThing] into tKey
+      if sMeshes[tKey] is empty then
+         if sLook[pThing] contains return then
+            put r3MeshParseObj(sLook[pThing], sLookMtl[pThing]) into tMesh
          else
-            put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            put r3MeshLoadObj(sLook[pThing]) into tMesh
          end if
-         if tMesh is a number and tMesh > 0 then
-            put tMesh into sOwnMesh[pThing]
-            put b3kNum(sScale[pThing], 1) into tScale
-         else
-            put empty into tMesh
-         end if
-         break
-   end switch
+         if tMesh is a number and tMesh > 0 then put tMesh into sMeshes[tKey]
+      end if
+      put sMeshes[tKey] into tMesh
+      if tMesh is a number and tMesh > 0 then
+         put b3kNum(sLookScale[pThing], 1) into tScale
+         put "look" into tD
+      end if
+   end if
+   if tD is not "look" then
+      switch sGeo[pThing]
+         case "box"
+            put "box:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "ball"
+            put "ball:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "capsule"
+            put "capsule:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "cylinder"
+            put "cylinder:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "model"
+            if sModelPath[pThing] is not empty then
+               put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+            else
+               put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            end if
+            if tMesh is a number and tMesh > 0 then
+               put tMesh into sOwnMesh[pThing]
+               put b3kNum(sScale[pThing], 1) into tScale
+            else
+               put empty into tMesh
+            end if
+            break
+      end switch
+   end if
    -- a hull, a cone, a mesh, or a model that would not load: exactly the
    -- triangles box3dxt collides with
    if tMesh is not a number or tMesh <= 0 then
@@ -2398,7 +2695,40 @@ private command b3kVisualMake pThing
    r3NodeSetTag tNode, pThing
    b3kVisualLook pThing
    if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   if sPartSrc[pThing] is an array then b3kPartsMake pThing
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kVisualMake
+
+-- a thing's parts as nodes of their own, untagged (the moves of a step
+-- leave them alone: b3kPoseSync places them), listed in sNode as well so
+-- visibility and removal reach them
+private command b3kPartsMake pThing
+   local tPart, tKey, tNode
+   repeat for each key tPart in sPartSrc[pThing]
+      if sPartNode[pThing][tPart] is not empty then next repeat
+      put sPartKey[pThing][tPart] into tKey
+      if sMeshes[tKey] is empty then
+         if sPartSrc[pThing][tPart] contains return then
+            get r3MeshParseObj(sPartSrc[pThing][tPart], sPartMtl[pThing][tPart])
+         else
+            get r3MeshLoadObj(sPartSrc[pThing][tPart])
+         end if
+         if it is a number and it > 0 then put it into sMeshes[tKey]
+      end if
+      if sMeshes[tKey] is empty then next repeat
+      put r3NodeCreate(sScene, sMeshes[tKey]) into tNode
+      if tNode is not a number or tNode <= 0 then next repeat
+      put tNode into sPartNode[pThing][tPart]
+      if sNode[pThing] is empty then
+         put tNode into sNode[pThing]
+      else
+         put comma & tNode after sNode[pThing]
+      end if
+      if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   end repeat
+   put true into sPosed[pThing]
+   b3kPoseSync pThing
+end b3kPartsMake
 
 -- the node's material: a checker, a picture file, the model's own, or a
 -- plain colour. A thing's old checker or texture material is freed first.
@@ -2414,6 +2744,12 @@ private command b3kVisualLook pThing
    put empty into sOwnMat[pThing]
    put empty into sOwnTex[pThing]
    put empty into tMat
+   -- a look (b3kSetLook) and parts (b3kAddLookPart) wear their models' own
+   -- materials
+   if sLookKey[pThing] is not empty or sPartSrc[pThing] is an array then
+      put true into sStale
+      exit b3kVisualLook
+   end if
    if sChecker[pThing] is not empty then
       set the itemDelimiter to ";"
       put item 1 of sChecker[pThing] into tA
@@ -2435,9 +2771,13 @@ private command b3kVisualLook pThing
       if tMat is a number and tMat > 0 then
          r3MaterialSetTexture tMat, tTex
          put tMat into sOwnMat[pThing]
+         if sGlow[pThing] is not empty then
+            set the itemDelimiter to comma
+            r3MaterialSetEmissive tMat, item 1 of sGlow[pThing], item 2 of sGlow[pThing], item 3 of sGlow[pThing]
+         end if
       end if
    else if sOwnLook[pThing] is not true then
-      put b3kColorMat(sColor[pThing]) into tMat
+      put b3kColorMat(sColor[pThing], sGlow[pThing]) into tMat
    end if
    if tMat is a number and tMat > 0 then
       repeat for each item tHandle in sNode[pThing]
@@ -2447,14 +2787,21 @@ private command b3kVisualLook pThing
    put true into sStale
 end b3kVisualLook
 
--- one shared render3dxt material for each plain colour
-private function b3kColorMat pRGB
-   if sMats[pRGB] is empty then
+-- one shared render3dxt material for each plain colour, and for each
+-- colour and glow together ("r,g,b/r,g,b")
+private function b3kColorMat pRGB, pGlow
+   local tKey
+   put pRGB into tKey
+   if pGlow is not empty then put pRGB & "/" & pGlow into tKey
+   if sMats[tKey] is empty then
       set the itemDelimiter to comma
-      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[pRGB]
-      r3MaterialSetSpecular sMats[pRGB], 0.25, 24
+      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[tKey]
+      r3MaterialSetSpecular sMats[tKey], 0.25, 24
+      if pGlow is not empty then
+         r3MaterialSetEmissive sMats[tKey], item 1 of pGlow, item 2 of pGlow, item 3 of pGlow
+      end if
    end if
-   return sMats[pRGB]
+   return sMats[tKey]
 end b3kColorMat
 
 /**
@@ -3079,7 +3426,7 @@ References: b3kIsGliding (handler), b3kAddPlatform (handler)
 command b3kGlideTo pThing, pX, pY, pZ, pSeconds
    if sKind[pThing] is empty then exit b3kGlideTo
    put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
-         (sFrames * kB3kStepMs + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
+         (b3kSimMs() + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
 end b3kGlideTo
 
 /**
@@ -3108,7 +3455,7 @@ private command b3kGlideTick
       put sGlide[tThing] into tG
       -- the simulation clock, so a pause or a stalled frame does not
       -- shorten the trip
-      put (item 4 of tG - sFrames * kB3kStepMs) / 1000 into tLeft
+      put (item 4 of tG - b3kSimMs()) / 1000 into tLeft
       if tLeft <= kB3kStepS or not b3BodyIsValid(tThing) then
          if b3BodyIsValid(tThing) then
             b3BodySetPosition tThing, item 1 of tG, item 2 of tG, item 3 of tG
@@ -3260,6 +3607,52 @@ function b3kColor pThing
 end b3kColor
 
 /**
+Summary: Make a thing glow with a light of its own (render3dxt only).
+
+pThing: The thing.
+
+pColor: The glow's colour, added to the thing's whatever the lights do;
+empty or "0,0,0" turns it off.
+
+Example:
+b3kSetGlow tOrb, "160,110,0"      -- a gold that shines in the shade
+
+Description:
+A glow lights the thing itself, not what is near it: put a lamp beside it
+with <b3kAddLamp> for that. It works with a colour, a checker or a picture.
+box3dxt's renderer keeps the plain colour.
+
+References: b3kGlow (handler), b3kAddLamp (handler), b3kSetColor (handler)
+*/
+command b3kSetGlow pThing, pColor
+   if sKind[pThing] is empty then exit b3kSetGlow
+   if pColor is empty then
+      delete variable sGlow[pThing]
+   else
+      put b3kRGB(pColor, "0,0,0") into sGlow[pThing]
+      if sGlow[pThing] is "0,0,0" then delete variable sGlow[pThing]
+   end if
+   b3kVisualLook pThing
+   put true into sStale
+end b3kSetGlow
+
+/**
+Summary: A thing's glow.
+
+pThing: The thing.
+
+Returns: "r,g,b", or empty for a thing that does not glow.
+
+Example:
+if b3kGlow(tOrb) is empty then b3kSetGlow tOrb, "120,90,0"
+
+References: b3kSetGlow (handler)
+*/
+function b3kGlow pThing
+   return sGlow[pThing]
+end b3kGlow
+
+/**
 Summary: Give a thing a checkerboard look (render3dxt only).
 
 pThing: The thing.
@@ -3314,6 +3707,330 @@ command b3kSetTexture pThing, pPath
    put empty into sChecker[pThing]
    b3kVisualLook pThing
 end b3kSetTexture
+
+/**
+Summary: Draw a 3D model (Wavefront OBJ) in place of a thing's own shape (render3dxt only).
+
+pThing: The thing.
+
+pSource: The OBJ text itself, or the full path of a .obj file; empty puts the thing's own shape back.
+
+pMaterials: The text of the model's material (.mtl) file, for OBJ text; empty leaves the model white. A path reads the materials and pictures its file names.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
+
+Description:
+Only the picture changes: the thing still collides, falls and is
+picked as its own shape, so a box can look like a carved platform and
+a capsule like a character. The model's origin sits at the thing's
+centre and turns with it. Things wearing the same model share one copy
+of it. The model keeps its own colours: a colour, checker, picture or
+glow set on the thing shows again when the look is taken off, and
+box3dxt's renderer keeps drawing the shape in the thing's colour.
+
+References: b3kSpawnModel (handler), b3kAddStaticModel (handler), b3kSetColor (handler)
+*/
+command b3kSetLook pThing, pSource, pMaterials, pScale
+   local tHandle
+   if sKind[pThing] is empty then exit b3kSetLook
+   if pSource is empty then
+      delete variable sLook[pThing]
+      delete variable sLookMtl[pThing]
+      delete variable sLookScale[pThing]
+      delete variable sLookKey[pThing]
+   else
+      put pSource into sLook[pThing]
+      put pMaterials into sLookMtl[pThing]
+      put max(0.0001, b3kNum(pScale, 1)) into sLookScale[pThing]
+      put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sLookKey[pThing]
+   end if
+   -- a new picture: the old nodes and any mesh they alone owned go first
+   b3kVisualRemake pThing
+end b3kSetLook
+
+/**
+Summary: Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
+
+pThing: The thing.
+
+pPart: The part's name, any word.
+
+pSource: The part's model: OBJ text, or the full path of a .obj file. Its origin is the point it turns about (a hip, a shoulder); empty takes the part away.
+
+pMaterials: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
+
+Description:
+Parts are drawn with the thing, and turn and move with it; place and
+turn each one inside the thing with <b3kPoseLookPart>. A thing with parts
+and no <b3kSetLook> draws its parts instead of its shape. Parts change
+only the picture: the thing collides as its shape. Things that share a part's
+model share one copy of it. box3dxt's renderer draws the shape.
+
+References: b3kPoseLookPart (handler), b3kSetLookPose (handler), b3kSetLook (handler)
+*/
+command b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale
+   local tNode
+   if sKind[pThing] is empty or pPart is empty then exit b3kAddLookPart
+   -- the old node, if the part was there
+   put sPartNode[pThing][pPart] into tNode
+   if tNode is not empty then
+      if sScene is not empty then r3NodeDestroy tNode
+      delete variable sPartNode[pThing][pPart]
+      put b3kItemOut(sNode[pThing], tNode) into sNode[pThing]
+   end if
+   if pSource is empty then
+      delete variable sPartSrc[pThing][pPart]
+      delete variable sPartMtl[pThing][pPart]
+      delete variable sPartScale[pThing][pPart]
+      delete variable sPartKey[pThing][pPart]
+      delete variable sPartPose[pThing][pPart]
+      if sPartSrc[pThing] is not an array then
+         -- no parts left: the shape (or the look) is drawn as before
+         delete variable sPartSrc[pThing]
+         b3kVisualRemake pThing
+      end if
+      put true into sStale
+      exit b3kAddLookPart
+   end if
+   put pSource into sPartSrc[pThing][pPart]
+   put pMaterials into sPartMtl[pThing][pPart]
+   put max(0.0001, b3kNum(pScale, 1)) into sPartScale[pThing][pPart]
+   put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sPartKey[pThing][pPart]
+   put true into sPosed[pThing]
+   -- the first part takes the place of the shape's picture
+   if the number of lines of the keys of sPartSrc[pThing] is 1 and sLookKey[pThing] is empty then
+      b3kVisualRemake pThing
+   else if sScene is not empty and sNode[pThing] is not empty then
+      b3kPartsMake pThing
+   end if
+   put true into sStale
+end b3kAddLookPart
+
+/**
+Summary: Place and turn one part of a thing's look.
+
+pThing: The thing.
+
+pPart: The part's name, from <b3kAddLookPart>.
+
+pX: Where the part's origin sits, in metres across the thing (its own x); empty means 0.
+
+pY: Up the thing; empty means 0.
+
+pZ: Along the thing, forward being +z; empty means 0.
+
+pRx: Degrees about the thing's x (a leg swinging forward and back); empty means 0.
+
+pRy: Degrees about its y (turning); empty means 0.
+
+pRz: Degrees about its z (an arm raised sideways); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up; empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kPoseLookPart tHero, "leg left", 0.15, -0.5, 0, 30 * sin(tPhase)
+
+Description:
+The turn is made about x, then y, then z. Call it as often as the part
+moves, every frame for a walk: it only remembers the pose, and the parts
+are placed once when the picture is drawn.
+
+References: b3kAddLookPart (handler), b3kSetLookPose (handler)
+*/
+command b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sPartSrc[pThing][pPart] is empty then exit b3kPoseLookPart
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPartPose[pThing][pPart]
+   put true into sStale
+end b3kPoseLookPart
+
+/**
+Summary: Move, turn and stretch a thing's whole look within it (render3dxt only).
+
+pThing: The thing.
+
+pX: Metres across the thing; empty means 0.
+
+pY: Metres up it; empty means 0.
+
+pZ: Metres along it; empty means 0.
+
+pRx: Degrees about its x (a lean forward); empty means 0.
+
+pRy: Degrees about its y; empty means 0.
+
+pRz: Degrees about its z (a lean to the side); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up (below 1 squashes); empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
+
+Description:
+For bounce and character: a squash on landing, a stretch in a jump, a
+lean into a run, a bob when still. The look and its parts move together;
+the thing collides as before. With no pose given, or every value empty,
+the look sits as it was made.
+
+References: b3kSetLook (handler), b3kPoseLookPart (handler)
+*/
+command b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sKind[pThing] is empty then exit b3kSetLookPose
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPose[pThing]
+   put true into sPosed[pThing]
+   put true into sStale
+end b3kSetLookPose
+
+-- "x,y,z,qx,qy,qz,qw,sx,sy,sz" from a place, degrees and stretches
+private function b3kPoseText pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   return b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
+         b3kQuatEuler(b3kNum(pRx, 0), b3kNum(pRy, 0), b3kNum(pRz, 0)) & comma & \
+         b3kNum(pSx, 1) & comma & b3kNum(pSy, 1) & comma & b3kNum(pSz, 1)
+end b3kPoseText
+
+-- a turn about x, then y, then z (degrees) as a quaternion "x,y,z,w"
+private function b3kQuatEuler pRx, pRy, pRz
+   local tCr, tSr, tCp, tSp, tCy, tSy
+   put cos(pRx * pi / 360) into tCr
+   put sin(pRx * pi / 360) into tSr
+   put cos(pRy * pi / 360) into tCp
+   put sin(pRy * pi / 360) into tSp
+   put cos(pRz * pi / 360) into tCy
+   put sin(pRz * pi / 360) into tSy
+   return (tSr * tCp * tCy - tCr * tSp * tSy) & comma & (tCr * tSp * tCy + tSr * tCp * tSy) & comma & \
+         (tCr * tCp * tSy - tSr * tSp * tCy) & comma & (tCr * tCp * tCy + tSr * tSp * tSy)
+end b3kQuatEuler
+
+-- the product of two quaternions "x,y,z,w": pA turned by pB first
+private function b3kQuatMul pA, pB
+   local tAx, tAy, tAz, tAw, tBx, tBy, tBz, tBw
+   set the itemDelimiter to comma
+   put item 1 of pA into tAx
+   put item 2 of pA into tAy
+   put item 3 of pA into tAz
+   put item 4 of pA into tAw
+   put item 1 of pB into tBx
+   put item 2 of pB into tBy
+   put item 3 of pB into tBz
+   put item 4 of pB into tBw
+   return (tAw * tBx + tAx * tBw + tAy * tBz - tAz * tBy) & comma & (tAw * tBy - tAx * tBz + tAy * tBw + tAz * tBx) & comma & \
+         (tAw * tBz + tAx * tBy - tAy * tBx + tAz * tBw) & comma & (tAw * tBw - tAx * tBx - tAy * tBy - tAz * tBz)
+end b3kQuatMul
+
+-- the point "x,y,z" turned by the quaternion pQ
+private function b3kQuatTurn pQ, pX, pY, pZ
+   local tQX, tQY, tQZ, tQW, tTX, tTY, tTZ
+   set the itemDelimiter to comma
+   put item 1 of pQ into tQX
+   put item 2 of pQ into tQY
+   put item 3 of pQ into tQZ
+   put item 4 of pQ into tQW
+   -- t = 2 (q x v); v' = v + w t + q x t
+   put 2 * (tQY * pZ - tQZ * pY) into tTX
+   put 2 * (tQZ * pX - tQX * pZ) into tTY
+   put 2 * (tQX * pY - tQY * pX) into tTZ
+   return (pX + tQW * tTX + tQY * tTZ - tQZ * tTY) & comma & (pY + tQW * tTY + tQZ * tTX - tQX * tTZ) & comma & \
+         (pZ + tQW * tTZ + tQX * tTY - tQY * tTX)
+end b3kQuatTurn
+
+-- a list without one item
+private function b3kItemOut pList, pItem
+   local tItem, tOut
+   put empty into tOut
+   repeat for each item tItem in pList
+      if tItem is not pItem then put tItem & comma after tOut
+   end repeat
+   delete the last char of tOut
+   return tOut
+end b3kItemOut
+
+-- a thing's picture made again: its nodes go, then b3kVisualMake
+private command b3kVisualRemake pThing
+   local tHandle
+   if sScene is not empty then
+      repeat for each item tHandle in sNode[pThing]
+         r3NodeDestroy tHandle
+      end repeat
+      repeat for each item tHandle in sOwnMesh[pThing]
+         r3MeshDestroy tHandle
+      end repeat
+   end if
+   put empty into sNode[pThing]
+   put empty into sOwnMesh[pThing]
+   delete variable sPartNode[pThing]
+   b3kVisualMake pThing
+   put true into sStale
+end b3kVisualRemake
+
+-- every posed thing placed, once a picture: the moves of the steps put a
+-- tagged node at its body, and a part's node is untagged; a pose changed
+-- by the game a dozen times a frame is placed once, here
+private command b3kPosedSyncAll
+   local tThing
+   repeat for each key tThing in sPosed
+      b3kPoseSync tThing
+   end repeat
+end b3kPosedSyncAll
+
+-- a posed thing's nodes placed: the body, then the whole look's pose,
+-- then each part's own
+private command b3kPoseSync pThing
+   local tXf, tBq, tRoot, tRq, tRs, tP, tQ, tNode, tPart, tPose, tAt, tLook, tParts, tScale
+   if sRenderer is not "render3dxt" or sScene is empty or sNode[pThing] is empty then exit b3kPoseSync
+   put b3BodyTransform(pThing) into tXf
+   if tXf is empty then exit b3kPoseSync
+   set the itemDelimiter to comma
+   put item 4 to 7 of tXf into tBq
+   put sPose[pThing] into tRoot
+   if tRoot is empty then put "0,0,0,0,0,0,1,1,1,1" into tRoot
+   put item 4 to 7 of tRoot into tRq
+   put item 8 to 10 of tRoot into tRs
+   -- the look's own node (not a part): the root pose alone
+   put empty into tParts
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] & comma after tParts
+   end repeat
+   put b3kNum(sLookScale[pThing], b3kNum(sScale[pThing], 1)) into tScale
+   put b3kQuatTurn(tBq, item 1 of tRoot, item 2 of tRoot, item 3 of tRoot) into tP
+   put b3kQuatMul(tBq, tRq) into tQ
+   repeat for each item tNode in sNode[pThing]
+      if (comma & tParts) contains (comma & tNode & comma) then next repeat
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      if sLookKey[pThing] is not empty or sPose[pThing] is not empty then
+         r3NodeSetScale tNode, tScale * item 1 of tRs, tScale * item 2 of tRs, tScale * item 3 of tRs
+      end if
+   end repeat
+   -- each part: its place stretched and turned by the root pose, then the
+   -- body's turn; its turn the body's, the root's and its own
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] into tNode
+      put sPartPose[pThing][tPart] into tPose
+      if tPose is empty then put "0,0,0,0,0,0,1,1,1,1" into tPose
+      put b3kQuatTurn(tRq, item 1 of tPose * item 1 of tRs, item 2 of tPose * item 2 of tRs, item 3 of tPose * item 3 of tRs) into tAt
+      put b3kQuatTurn(tBq, item 1 of tRoot + item 1 of tAt, item 2 of tRoot + item 2 of tAt, item 3 of tRoot + item 3 of tAt) into tP
+      put b3kQuatMul(b3kQuatMul(tBq, tRq), item 4 to 7 of tPose) into tQ
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      put sPartScale[pThing][tPart] into tScale
+      r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
+   end repeat
+end b3kPoseSync
 
 /**
 Summary: Show or hide a thing's picture.
@@ -3911,9 +4628,22 @@ command b3kRemove pThing
    delete variable sOwnMat[pThing]
    delete variable sOwnTex[pThing]
    delete variable sChecker[pThing]
+   delete variable sGlow[pThing]
    delete variable sTexPath[pThing]
    delete variable sModel[pThing]
    delete variable sModelPath[pThing]
+   delete variable sLook[pThing]
+   delete variable sLookMtl[pThing]
+   delete variable sLookScale[pThing]
+   delete variable sLookKey[pThing]
+   delete variable sPartSrc[pThing]
+   delete variable sPartMtl[pThing]
+   delete variable sPartScale[pThing]
+   delete variable sPartKey[pThing]
+   delete variable sPartNode[pThing]
+   delete variable sPartPose[pThing]
+   delete variable sPose[pThing]
+   delete variable sPosed[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]
@@ -5517,7 +6247,7 @@ private command b3kPlayerLaunch pSpeed
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    b3BodySetVelocity sPlayer, item 1 of tV, pSpeed, item 3 of tV
-   put sFrames * kB3kStepMs into sPlayJumpAt
+   put b3kSimMs() into sPlayJumpAt
    put empty into sPlayGroundAt
    put empty into sPlayWantAt
    put false into sPlayGround
@@ -5615,7 +6345,7 @@ private command b3kPlayerTick
       b3kPlayerForget false
       exit b3kPlayerTick
    end if
-   put sFrames * kB3kStepMs into tNow
+   put b3kSimMs() into tNow
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    put item 1 of tV into tVx

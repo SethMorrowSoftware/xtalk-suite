@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 168 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 180 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -41,11 +41,12 @@ handlers below and to the messages the Kit sends (`b3kContact`, `b3kEndContact`,
 WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
-        b3kSetSubsteps n / b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
+        b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+        b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 TARGETS b3kFrameTarget obj / b3kContactTarget obj
 VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
-        b3kSetBackground color / b3kSetLight dx,dy,dz / b3kSetAmbient color /
+        b3kSetBackground color / b3kSetLight dx,dy,dz[,color] / b3kSetAmbient color /
         b3kSetFog color,near,far / b3kSetSmooth 1..4 / b3kSetRenderMode mode /
         b3kDraw / b3kSync
 CAMERA  b3kCamOrbit yaw,pitch,dist[,tx,ty,tz] / b3kCamOrbitBy dYaw,dPitch /
@@ -65,7 +66,14 @@ SCENERY b3kAddGround [size,y,colorA,colorB] / b3kAddWalls [height] /
         b3kIsGliding(thing)
 SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
-        b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing)
+        b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
+        b3kSetGlow thing,color / b3kGlow(thing) /
+        b3kSetLook thing,objTextOrPath[,mtlText,scale] /
+        b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
+        b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
+        b3kSetLookPose thing,x,y,z[,rx,ry,rz,sx,sy,sz]
+LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
+        b3kRemoveLamp lamp / b3kLamps()
 MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
 BODY    b3kSetType thing,"static"|"kinematic"|"dynamic" / b3kType(thing) /
         b3kSetGravityScale thing,s / b3kSetDamping thing,lin[,ang] /
@@ -438,6 +446,36 @@ b3kSetSubsteps 8   -- tall stacks stand steadier
 
 See also: [`b3kSetup`](#b3ksetup)
 
+### `b3kSetStepMode`
+
+`b3kSetStepMode pMode`
+
+Choose how the running loop divides a frame's time into physics steps.
+
+- `pMode`: "fixed" (the default) or "smooth".
+
+"fixed" steps a sixtieth of a second at a time and carries what is left of a frame over to the next one, so a frame runs a whole number of steps: at 26 pictures a second some frames run two and some three, and what moves seems to speed up and slow down. "smooth" uses up each frame's time in equal steps no longer than a sixtieth (38 ms as three of 12.7 ms), so things move as far as the time that passed. [`b3kStepOnce`](#b3ksteponce) always takes one sixtieth, in either mode. The mode is kept until it is set again.
+
+```
+b3kSetStepMode "smooth"
+```
+
+See also: [`b3kStepMode`](#b3kstepmode), [`b3kStart`](#b3kstart), [`b3kStepOnce`](#b3ksteponce)
+
+### `b3kStepMode`
+
+`b3kStepMode()`
+
+The step mode set by [`b3kSetStepMode`](#b3ksetstepmode).
+
+Returns: "fixed" or "smooth".
+
+```
+put b3kStepMode() into field "Mode"
+```
+
+See also: [`b3kSetStepMode`](#b3ksetstepmode)
+
 ### `b3kFrameTarget`
 
 `b3kFrameTarget pObject`
@@ -649,18 +687,20 @@ See also: [`b3kSetLight`](#b3ksetlight), [`b3kSetFog`](#b3ksetfog)
 
 ### `b3kSetLight`
 
-`b3kSetLight pDx, pDy, pDz`
+`b3kSetLight pDx, pDy, pDz, pColor`
 
 Set the direction the sunlight travels.
 
 - `pDx`: The x of the direction.
 - `pDy`: The y of the direction; negative shines down.
 - `pDz`: The z of the direction.
+- `pColor`: The sunlight's colour (render3dxt only); empty keeps it as it is. It starts a warm white, "255,248,236".
 
-Both renderers light from this direction; a surface facing away keeps a dim shade, so nothing goes black.
+Both renderers light from this direction; a surface facing away keeps a dim shade, so nothing goes black. box3dxt's renderer lights in white.
 
 ```
 b3kSetLight -0.4, -1, -0.3
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"   -- a low evening sun
 ```
 
 See also: [`b3kSetAmbient`](#b3ksetambient)
@@ -724,6 +764,79 @@ b3kSetRenderMode "outline"
 ```
 
 See also: [`b3kUseRenderer`](#b3kuserenderer)
+
+### `b3kAddLamp`
+
+`b3kAddLamp pX, pY, pZ, pColor, pRange, pIntensity`
+
+Hang a lamp in the world: a light that shines from a point (render3dxt only).
+
+- `pX`: The x of the lamp.
+- `pY`: The y of the lamp.
+- `pZ`: The z of the lamp.
+- `pColor`: Its colour; empty is a warm "255,214,150".
+- `pRange`: How far its light reaches, in metres; empty means 8.
+- `pIntensity`: How bright, 0 to 4; empty means 1.
+
+Returns: (through the result) the lamp, a whole number, or empty when there is no world or the world already has seven lamps.
+
+Things within the range are lit from the lamp as well as the sun, more the nearer they are. Lighting is worked out at the corners of each shape, so a lamp shows best on rounded things and small boxes; a big flat box whose corners are all out of range is not lit by it. A world holds at most seven lamps beside the sun. Lamps go with [`b3kClear`](#b3kclear) and [`b3kTeardown`](#b3kteardown), and come back when the renderer changes. box3dxt's renderer has no lamps.
+
+```
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6
+put the result into tLamp
+```
+
+See also: [`b3kMoveLamp`](#b3kmovelamp), [`b3kRemoveLamp`](#b3kremovelamp), [`b3kSetGlow`](#b3ksetglow)
+
+### `b3kMoveLamp`
+
+`b3kMoveLamp pLamp, pX, pY, pZ`
+
+Move a lamp.
+
+- `pLamp`: A lamp, from [`b3kAddLamp`](#b3kaddlamp).
+- `pX`: The new x.
+- `pY`: The new y.
+- `pZ`: The new z.
+
+A lamp that is not there is ignored.
+
+```
+b3kMoveLamp tLamp, b3kX(tTorch), b3kY(tTorch) + 0.5, b3kZ(tTorch)
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp)
+
+### `b3kRemoveLamp`
+
+`b3kRemoveLamp pLamp`
+
+Take a lamp away.
+
+- `pLamp`: A lamp, from [`b3kAddLamp`](#b3kaddlamp).
+
+Removing a lamp that is not there is harmless.
+
+```
+b3kRemoveLamp tLamp
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp), [`b3kLamps`](#b3klamps)
+
+### `b3kLamps`
+
+`b3kLamps()`
+
+The lamps there are.
+
+Returns: One lamp a line, oldest first; empty if there are none.
+
+```
+put the number of lines of b3kLamps() into tCount
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp)
 
 ### `b3kDraw`
 
@@ -1598,6 +1711,39 @@ put b3kColor(tCrate) into tWas
 
 See also: [`b3kSetColor`](#b3ksetcolor)
 
+### `b3kSetGlow`
+
+`b3kSetGlow pThing, pColor`
+
+Make a thing glow with a light of its own (render3dxt only).
+
+- `pThing`: The thing.
+- `pColor`: The glow's colour, added to the thing's whatever the lights do; empty or "0,0,0" turns it off.
+
+A glow lights the thing itself, not what is near it: put a lamp beside it with [`b3kAddLamp`](#b3kaddlamp) for that. It works with a colour, a checker or a picture. box3dxt's renderer keeps the plain colour.
+
+```
+b3kSetGlow tOrb, "160,110,0"      -- a gold that shines in the shade
+```
+
+See also: [`b3kGlow`](#b3kglow), [`b3kAddLamp`](#b3kaddlamp), [`b3kSetColor`](#b3ksetcolor)
+
+### `b3kGlow`
+
+`b3kGlow(pThing)`
+
+A thing's glow.
+
+- `pThing`: The thing.
+
+Returns: "r,g,b", or empty for a thing that does not glow.
+
+```
+if b3kGlow(tOrb) is empty then b3kSetGlow tOrb, "120,90,0"
+```
+
+See also: [`b3kSetGlow`](#b3ksetglow)
+
 ### `b3kSetChecker`
 
 `b3kSetChecker pThing, pColorA, pColorB, pCells`
@@ -1633,6 +1779,96 @@ b3kSetTexture tCrate, specialFolderPath("resources") & "/crate.png"
 ```
 
 See also: [`b3kSetChecker`](#b3ksetchecker)
+
+### `b3kSetLook`
+
+`b3kSetLook pThing, pSource, pMaterials, pScale`
+
+Draw a 3D model (Wavefront OBJ) in place of a thing's own shape (render3dxt only).
+
+- `pThing`: The thing.
+- `pSource`: The OBJ text itself, or the full path of a .obj file; empty puts the thing's own shape back.
+- `pMaterials`: The text of the model's material (.mtl) file, for OBJ text; empty leaves the model white. A path reads the materials and pictures its file names.
+- `pScale`: A size multiplier; empty means 1.
+
+Only the picture changes: the thing still collides, falls and is picked as its own shape, so a box can look like a carved platform and a capsule like a character. The model's origin sits at the thing's centre and turns with it. Things wearing the same model share one copy of it. The model keeps its own colours: a colour, checker, picture or glow set on the thing shows again when the look is taken off, and box3dxt's renderer keeps drawing the shape in the thing's colour.
+
+```
+b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
+```
+
+See also: [`b3kSpawnModel`](#b3kspawnmodel), [`b3kAddStaticModel`](#b3kaddstaticmodel), [`b3kSetColor`](#b3ksetcolor)
+
+### `b3kAddLookPart`
+
+`b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale`
+
+Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
+
+- `pThing`: The thing.
+- `pPart`: The part's name, any word.
+- `pSource`: The part's model: OBJ text, or the full path of a .obj file. Its origin is the point it turns about (a hip, a shoulder); empty takes the part away.
+- `pMaterials`: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
+- `pScale`: A size multiplier; empty means 1.
+
+Parts are drawn with the thing, and turn and move with it; place and turn each one inside the thing with [`b3kPoseLookPart`](#b3kposelookpart). A thing with parts and no [`b3kSetLook`](#b3ksetlook) draws its parts instead of its shape. Parts change only the picture: the thing collides as its shape. Things that share a part's model share one copy of it. box3dxt's renderer draws the shape.
+
+```
+b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
+```
+
+See also: [`b3kPoseLookPart`](#b3kposelookpart), [`b3kSetLookPose`](#b3ksetlookpose), [`b3kSetLook`](#b3ksetlook)
+
+### `b3kPoseLookPart`
+
+`b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz`
+
+Place and turn one part of a thing's look.
+
+- `pThing`: The thing.
+- `pPart`: The part's name, from [`b3kAddLookPart`](#b3kaddlookpart).
+- `pX`: Where the part's origin sits, in metres across the thing (its own x); empty means 0.
+- `pY`: Up the thing; empty means 0.
+- `pZ`: Along the thing, forward being +z; empty means 0.
+- `pRx`: Degrees about the thing's x (a leg swinging forward and back); empty means 0.
+- `pRy`: Degrees about its y (turning); empty means 0.
+- `pRz`: Degrees about its z (an arm raised sideways); empty means 0.
+- `pSx`: A stretch across; empty means 1.
+- `pSy`: A stretch up; empty means 1.
+- `pSz`: A stretch along; empty means 1.
+
+The turn is made about x, then y, then z. Call it as often as the part moves, every frame for a walk: it only remembers the pose, and the parts are placed once when the picture is drawn.
+
+```
+b3kPoseLookPart tHero, "leg left", 0.15, -0.5, 0, 30 * sin(tPhase)
+```
+
+See also: [`b3kAddLookPart`](#b3kaddlookpart), [`b3kSetLookPose`](#b3ksetlookpose)
+
+### `b3kSetLookPose`
+
+`b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz`
+
+Move, turn and stretch a thing's whole look within it (render3dxt only).
+
+- `pThing`: The thing.
+- `pX`: Metres across the thing; empty means 0.
+- `pY`: Metres up it; empty means 0.
+- `pZ`: Metres along it; empty means 0.
+- `pRx`: Degrees about its x (a lean forward); empty means 0.
+- `pRy`: Degrees about its y; empty means 0.
+- `pRz`: Degrees about its z (a lean to the side); empty means 0.
+- `pSx`: A stretch across; empty means 1.
+- `pSy`: A stretch up (below 1 squashes); empty means 1.
+- `pSz`: A stretch along; empty means 1.
+
+For bounce and character: a squash on landing, a stretch in a jump, a lean into a run, a bob when still. The look and its parts move together; the thing collides as before. With no pose given, or every value empty, the look sits as it was made.
+
+```
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
+```
+
+See also: [`b3kSetLook`](#b3ksetlook), [`b3kPoseLookPart`](#b3kposelookpart)
 
 ### `b3kSetVisible`
 
