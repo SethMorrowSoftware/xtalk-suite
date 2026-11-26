@@ -63,7 +63,8 @@
 -- SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
---         b3kSetGlow thing,color / b3kGlow(thing)
+--         b3kSetGlow thing,color / b3kGlow(thing) /
+--         b3kSetLook thing,objTextOrPath[,mtlText,scale]
 -- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
 --         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -145,6 +146,9 @@ local sBg, sAmbient, sLight, sFog, sSmooth, sMode
 -- the sun's colour, each thing's glow, and the lamps: sLamp[n] is
 -- "x,y,z;r,g,b;intensity;range" and sLampR3[n] its render3dxt light
 local sSunColor, sGlow, sLamp, sLampR3, sLampCount
+-- a model drawn in place of a thing's own shape (b3kSetLook): its OBJ text
+-- or file, its material text, its scale, and the key of its shared mesh
+local sLook, sLookMtl, sLookScale, sLookKey
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -804,6 +808,10 @@ private command b3kTablesReset
    put empty into sTexPath
    put empty into sModel
    put empty into sModelPath
+   put empty into sLook
+   put empty into sLookMtl
+   put empty into sLookScale
+   put empty into sLookKey
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -2515,41 +2523,61 @@ private command b3kVisualMake pThing
    set the itemDelimiter to comma
    put sDims[pThing] into tD
    put empty into tMesh
-   switch sGeo[pThing]
-      case "box"
-         put "box:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "ball"
-         put "ball:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "capsule"
-         put "capsule:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "cylinder"
-         put "cylinder:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "model"
-         if sModelPath[pThing] is not empty then
-            put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+   -- a look (b3kSetLook) is drawn instead of the shape: one mesh for every
+   -- thing that wears the same model, kept with the shapes' meshes
+   if sLookKey[pThing] is not empty then
+      put sLookKey[pThing] into tKey
+      if sMeshes[tKey] is empty then
+         if sLook[pThing] contains return then
+            put r3MeshParseObj(sLook[pThing], sLookMtl[pThing]) into tMesh
          else
-            put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            put r3MeshLoadObj(sLook[pThing]) into tMesh
          end if
-         if tMesh is a number and tMesh > 0 then
-            put tMesh into sOwnMesh[pThing]
-            put b3kNum(sScale[pThing], 1) into tScale
-         else
-            put empty into tMesh
-         end if
-         break
-   end switch
+         if tMesh is a number and tMesh > 0 then put tMesh into sMeshes[tKey]
+      end if
+      put sMeshes[tKey] into tMesh
+      if tMesh is a number and tMesh > 0 then
+         put b3kNum(sLookScale[pThing], 1) into tScale
+         put "look" into tD
+      end if
+   end if
+   if tD is not "look" then
+      switch sGeo[pThing]
+         case "box"
+            put "box:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "ball"
+            put "ball:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "capsule"
+            put "capsule:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "cylinder"
+            put "cylinder:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "model"
+            if sModelPath[pThing] is not empty then
+               put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+            else
+               put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            end if
+            if tMesh is a number and tMesh > 0 then
+               put tMesh into sOwnMesh[pThing]
+               put b3kNum(sScale[pThing], 1) into tScale
+            else
+               put empty into tMesh
+            end if
+            break
+      end switch
+   end if
    -- a hull, a cone, a mesh, or a model that would not load: exactly the
    -- triangles box3dxt collides with
    if tMesh is not a number or tMesh <= 0 then
@@ -2582,6 +2610,11 @@ private command b3kVisualLook pThing
    put empty into sOwnMat[pThing]
    put empty into sOwnTex[pThing]
    put empty into tMat
+   -- a look (b3kSetLook) wears the model's own materials
+   if sLookKey[pThing] is not empty then
+      put true into sStale
+      exit b3kVisualLook
+   end if
    if sChecker[pThing] is not empty then
       set the itemDelimiter to ";"
       put item 1 of sChecker[pThing] into tA
@@ -3541,6 +3574,60 @@ command b3kSetTexture pThing, pPath
 end b3kSetTexture
 
 /**
+Summary: Draw a 3D model (Wavefront OBJ) in place of a thing's own shape (render3dxt only).
+
+pThing: The thing.
+
+pSource: The OBJ text itself, or the full path of a .obj file; empty puts the thing's own shape back.
+
+pMaterials: The text of the model's material (.mtl) file, for OBJ text; empty leaves the model white. A path reads the materials and pictures its file names.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
+
+Description:
+Only the picture changes: the thing still collides, falls and is
+picked as its own shape, so a box can look like a carved platform and
+a capsule like a character. The model's origin sits at the thing's
+centre and turns with it. Things wearing the same model share one copy
+of it. The model keeps its own colours: a colour, checker, picture or
+glow set on the thing shows again when the look is taken off, and
+box3dxt's renderer keeps drawing the shape in the thing's colour.
+
+References: b3kSpawnModel (handler), b3kAddStaticModel (handler), b3kSetColor (handler)
+*/
+command b3kSetLook pThing, pSource, pMaterials, pScale
+   local tHandle
+   if sKind[pThing] is empty then exit b3kSetLook
+   if pSource is empty then
+      delete variable sLook[pThing]
+      delete variable sLookMtl[pThing]
+      delete variable sLookScale[pThing]
+      delete variable sLookKey[pThing]
+   else
+      put pSource into sLook[pThing]
+      put pMaterials into sLookMtl[pThing]
+      put max(0.0001, b3kNum(pScale, 1)) into sLookScale[pThing]
+      put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sLookKey[pThing]
+   end if
+   -- a new picture: the old node and any mesh it alone owned go first
+   if sScene is not empty then
+      repeat for each item tHandle in sNode[pThing]
+         r3NodeDestroy tHandle
+      end repeat
+      repeat for each item tHandle in sOwnMesh[pThing]
+         r3MeshDestroy tHandle
+      end repeat
+   end if
+   put empty into sNode[pThing]
+   put empty into sOwnMesh[pThing]
+   b3kVisualMake pThing
+   put true into sStale
+end b3kSetLook
+
+/**
 Summary: Show or hide a thing's picture.
 
 pThing: The thing.
@@ -4140,6 +4227,10 @@ command b3kRemove pThing
    delete variable sTexPath[pThing]
    delete variable sModel[pThing]
    delete variable sModelPath[pThing]
+   delete variable sLook[pThing]
+   delete variable sLookMtl[pThing]
+   delete variable sLookScale[pThing]
+   delete variable sLookKey[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]

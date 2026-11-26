@@ -295,6 +295,23 @@ beside the sun; `b3kLamps()` lists them, and they go with `b3kClear` and
 `b3kTeardown`. The sun's colour (the fourth argument of `b3kSetLight`) starts
 a warm white.
 
+**A model's look** (render3dxt only): `b3kSetLook` draws a 3D model (OBJ
+text, or a file's path) in place of a thing's shape. The thing still
+collides, falls and is picked as its shape, so a box can look like a carved
+platform and a capsule like a character:
+
+```
+b3kSetLook b3kPlayer(), tHeroObj, tHeroMtl    -- the OBJ text and its .mtl text
+b3kSetLook b3kPlayer(), empty                 -- the capsule again
+```
+
+The model's origin sits at the thing's centre and turns with it, so fit the
+model to the shape before (Orb Island's `tools/build-game-models.py` does
+this). With OBJ text, give the material text too, or the model is white; it
+keeps its own colours, and a colour, checker or glow set on the thing shows
+again when the look comes off. Things wearing the same model share one copy
+of it. box3dxt's renderer keeps drawing the shape.
+
 Materials decide how things feel:
 
 | Call | Range | Starts at |
@@ -651,6 +668,7 @@ while things exist; their pictures are remade.
 | colour, light direction (`b3kSetLight`), background | yes | yes |
 | ambient light (`b3kSetAmbient`), fog (`b3kSetFog`) | yes | no |
 | the sun's colour, glow (`b3kSetGlow`) and lamps (`b3kAddLamp`) | yes | no: white light, the plain colour |
+| a model's look (`b3kSetLook`) | yes | no: the shape |
 | smooth edges (`b3kSetSmooth`, 1 to 4) | yes | no |
 | checkers and textures | yes | the thing's colour |
 | a model's own materials | yes | its hull, in one colour |
@@ -723,7 +741,10 @@ Each part of the Kit carries part of the game:
 | trees, standing stones, crystals | `b3kSpawnCone`, `b3kSpawnCylinder` and `b3kSpawnBox`, then `b3kSetType "static"` and `b3kSetRotation` |
 | the windmill's sails and the beacon's beam | kinematic things turned by `b3kSetSpin` |
 | the sweeper and the wrecking ball | a motor-driven `b3kHinge`, a `b3kRope`, `b3kNoCollide` |
-| the orbs, the jump pad and the sea | sensors, on `b3kSensorEnter` |
+| the orbs, the jump pad, the sea, the flags, the plate and the crumbling platforms | sensors, on `b3kSensorEnter` and `b3kSensorExit` |
+| the vault's gate and its pressure plate, the turning platform | `b3kAddPlatform` with `b3kGlideTo`, and `b3kSetSpin` |
+| crumbling platforms that fall and come back | `b3kAddStaticBox`, then `b3kSetType "dynamic"` and `b3kSetDensity` |
+| the player, the flags, the platforms, the gate and the clouds as Kenney's models | `b3kSetLook` |
 | the player, and a gamepad's stick | `b3kPlayerMake`, `b3kPlayerJump`, `b3kPlayerSteer`, `b3kPlayerRespawn` on `b3kFell` |
 | kicking a crate with the mouse | `b3kThingAt`, unless `b3kCamDragged()` |
 
@@ -733,6 +754,13 @@ blasts, and rumbles when an orb is found) and **audioxt** (a sea that swells,
 a chime a note higher for each orb, jumps, blasts, a splash and a fanfare,
 all tones and noise made on the spot).
 
+The models are Kenney's (kenney.nl), from his Starter Kit 3D Platformer,
+CC0 (public domain): `examples/models/` holds them and says which is which.
+A web page has no folder of files beside a stack, so
+`tools/build-game-models.py` turns each into OBJ text with flat colours,
+fitted to the shape it is drawn on, and writes it into the game between its
+`GAME MODELS` markers; its `--check` is a gate.
+
 The game's own code sits above the embedded Kit, which is a verbatim copy of
 `src/box3dxt-kit.livecodescript` between two marker lines. Never edit the copy:
 change the Kit in `src/` and run `python3 tools/sync-embedded-kit.py`.
@@ -740,7 +768,9 @@ change the Kit in `src/` and run `python3 tools/sync-embedded-kit.py`.
 `tests/engine-demo.lc` plays the game on OXT-Beyond's headless server engine:
 it builds the window, walks to an orb, collects them all, falls into the sea,
 rides the pad, the lift and the sky lift, topples the dominoes, kicks, blasts
-and drops crates, swaps the renderer, and presses every button and key, with
+and drops crates, presses the plate with the heavy crate and with the player,
+crumbles a platform, touches a flag and falls back to it, swaps the renderer,
+and presses every button and key, with
 box3dxt alone and with no extension at all; given render3dxt, gamepadxt (a
 virtual pad) and audioxt (its silent device) too, it checks the lamps, the
 pad's controls and the sounds. What only a person at a real

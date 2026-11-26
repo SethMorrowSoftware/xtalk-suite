@@ -120,6 +120,7 @@ command prRunAll pR3, pB3, pGp, pAu
    prRenderers pR3
    prButtonsAndKeys
    prGamepad pGp
+   prPlatformer
    prTiming pR3
    prCheck "no frame of the game threw", b3kFrameError() is empty, prLine(b3kFrameError())
    prClose
@@ -205,8 +206,8 @@ command prBuild pR3
       prCheck "the island has its orb " & tName, b3kThingNamed("orb " & tName) is not empty, tName
    end repeat
    put b3kThingCount() into tCount
-   prCheck "the island is 164 things with the player", tCount is 164, tCount
-   prCheck "C may drop sixty more", oiMaxThings() is 223, oiMaxThings()
+   prCheck "the island is 175 things with the player", tCount is 175, tCount
+   prCheck "C may drop sixty more", oiMaxThings() is 234, oiMaxThings()
    prCheck "the player stands at the start", b3kPlayer() is not empty and \
          prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 22, 0.01), b3kPosition(b3kPlayer())
    prCheck "the player walks faster than the Kit's default", b3kPlayerGet("moveSpeed") is 6.5, b3kPlayerGet("moveSpeed")
@@ -423,13 +424,13 @@ command prButtonsAndKeys
    prCheck "and ticks again", the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
    dispatch "keyDown" to stack "OrbIsland" with "r"
-   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 164 and b3kIsRunning() is true, \
+   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 175 and b3kIsRunning() is true, \
          prField("oiScore") && b3kThingCount() && b3kIsRunning()
    prCheck "with the clock and falls at zero", prField("oiTime") is "Time  0.0 s      Falls  0", prField("oiTime")
    b3kPause
    prSteps 30
    dispatch "mouseUp" to button "oiRestart" of card 1 of stack "OrbIsland" with 1
-   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 164, \
+   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 175, \
          prField("oiScore") && b3kThingCount()
    b3kPause
    dispatch "keyDown" to stack "OrbIsland" with "a"
@@ -511,6 +512,71 @@ command prCorners
    b3kPlayerRespawn 0, 1, 22
    prSteps 30
 end prCorners
+
+-- the platformer pieces: the plate and the vault's gate, the crumbling
+-- and turning platforms out east, and the checkpoint flags
+command prPlatformer
+   local tCrate, tGate, tPlate, tTurn, tA, tCrumble, tFlag, tSpot
+   put b3kThingNamed("heavy crate") into tCrate
+   put b3kThingNamed("gate") into tGate
+   put b3kThingNamed("plate") into tPlate
+   prCheck "the vault has a gate, a plate and a heavy crate", tCrate is not empty and tGate is not empty and tPlate is not empty, \
+         tCrate && tGate && tPlate
+   prCheck "the gate starts shut", prNear(b3kY(tGate), 1.6, 0.05) and not oiPlateIsDown(), b3kPosition(tGate)
+   -- the crate set on the plate holds it down, and the gate sinks
+   b3kMoveTo tCrate, 22, 0.9, -17
+   prSteps 90
+   prCheck "a crate on the plate presses it", oiPlateIsDown(), b3kPosition(tCrate) && b3kPosition(tPlate)
+   prCheck "and the gate sinks into the ground", b3kY(tGate) < -1.5, b3kPosition(tGate)
+   -- taken off, the gate rises again a little later
+   b3kMoveTo tCrate, 19.5, 0.9, -19.5
+   prSteps 30
+   prCheck "the gate waits a moment once nothing presses", b3kY(tGate) < -1.5, b3kPosition(tGate)
+   prSteps 120
+   prCheck "then shuts again", prNear(b3kY(tGate), 1.6, 0.05) and not oiPlateIsDown(), b3kPosition(tGate)
+   -- the player alone presses it too
+   b3kPlayerRespawn 22, 1.2, -17
+   prSteps 40
+   prCheck "the player on the plate presses it", oiPlateIsDown(), b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 200
+   prCheck "and it rises when the player leaves", not oiPlateIsDown(), b3kPosition(tGate)
+   -- the turning platform turns
+   put b3kThingNamed("turning platform") into tTurn
+   put b3kYaw(tTurn) into tA
+   prSteps 30
+   prCheck "the turning platform turns", tTurn is not empty and abs(b3kYaw(tTurn) - tA) > 5, tA && b3kYaw(tTurn)
+   -- a crumbling platform: stood on, it shakes, falls, and comes back
+   put b3kThingNamed("crumble 1") into tCrumble
+   prCheck "three crumbling platforms out east", tCrumble is not empty and b3kThingNamed("crumble 3") is not empty, tCrumble
+   b3kPlayerRespawn 32, 1.2, 0
+   prSteps 20
+   prCheck "a crumbling platform holds the player at first", b3kY(b3kPlayer()) > 0.5 and b3kType(tCrumble) is "static", \
+         b3kPosition(b3kPlayer()) && b3kType(tCrumble)
+   prSteps 60
+   prCheck "then lets go and falls", b3kIsThing(tCrumble) is false or b3kType(tCrumble) is "dynamic", b3kType(tCrumble)
+   prCheck "and the player falls with it", b3kY(b3kPlayer()) < 0, b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 330
+   put b3kThingNamed("crumble 1") into tSpot
+   prCheck "a fallen platform comes back", tSpot is not empty and b3kType(tSpot) is "static" and prNear(b3kY(tSpot), -0.25, 0.01), \
+         tSpot && b3kPosition(tSpot)
+   -- a flag is a checkpoint: a fall then puts the player back by it
+   put b3kThingNamed("flag east islet") into tFlag
+   prCheck "three checkpoint flags", tFlag is not empty and b3kThingNamed("flag sky isle") is not empty and b3kThingNamed("flag west rock") is not empty, tFlag
+   prCheck "the run starts with the start as its checkpoint", oiCheckpoint() is "0,1,22", oiCheckpoint()
+   b3kPlayerRespawn 51.5, 1, -2.2
+   prSteps 20
+   prCheck "touching a flag makes it the checkpoint", oiCheckpoint() is "51.5,1,-2.2", oiCheckpoint()
+   b3kPlayerRespawn 60, 1, 0
+   prSteps 120
+   prCheck "a fall puts the player back at the checkpoint", prNear(b3kX(b3kPlayer()), 51.5, 0.3) and prNear(b3kZ(b3kPlayer()), -2.2, 0.3), \
+         b3kPosition(b3kPlayer())
+   prCheck "orb I waits on the east islet", b3kThingNamed("orb I") is not empty and prNear(b3kX(b3kThingNamed("orb I")), 50.5, 0.01), \
+         b3kPosition(b3kThingNamed("orb I"))
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prPlatformer
 
 -- a found orb bursts into eight sparks that are gone in a second and a half
 command prSparks

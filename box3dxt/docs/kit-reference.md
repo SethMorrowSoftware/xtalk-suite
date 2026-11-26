@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 174 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 175 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -66,7 +66,8 @@ SCENERY b3kAddGround [size,y,colorA,colorB] / b3kAddWalls [height] /
 SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
-        b3kSetGlow thing,color / b3kGlow(thing)
+        b3kSetGlow thing,color / b3kGlow(thing) /
+        b3kSetLook thing,objTextOrPath[,mtlText,scale]
 LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
         b3kRemoveLamp lamp / b3kLamps()
 MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -1744,6 +1745,25 @@ b3kSetTexture tCrate, specialFolderPath("resources") & "/crate.png"
 ```
 
 See also: [`b3kSetChecker`](#b3ksetchecker)
+
+### `b3kSetLook`
+
+`b3kSetLook pThing, pSource, pMaterials, pScale`
+
+Draw a 3D model (Wavefront OBJ) in place of a thing's own shape (render3dxt only).
+
+- `pThing`: The thing.
+- `pSource`: The OBJ text itself, or the full path of a .obj file; empty puts the thing's own shape back.
+- `pMaterials`: The text of the model's material (.mtl) file, for OBJ text; empty leaves the model white. A path reads the materials and pictures its file names.
+- `pScale`: A size multiplier; empty means 1.
+
+Only the picture changes: the thing still collides, falls and is picked as its own shape, so a box can look like a carved platform and a capsule like a character. The model's origin sits at the thing's centre and turns with it. Things wearing the same model share one copy of it. The model keeps its own colours: a colour, checker, picture or glow set on the thing shows again when the look is taken off, and box3dxt's renderer keeps drawing the shape in the thing's colour.
+
+```
+b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
+```
+
+See also: [`b3kSpawnModel`](#b3kspawnmodel), [`b3kAddStaticModel`](#b3kaddstaticmodel), [`b3kSetColor`](#b3ksetcolor)
 
 ### `b3kSetVisible`
 

@@ -68,6 +68,9 @@ licenses, reproduced with their sources:
                   and relays you choose; published test vectors are
                   transcribed into tools/ with source URLs)
   box3dxt         Box3D (pinned commit)         MIT
+                  Kenney's Starter Kit 3D       CC0 1.0 (public domain)
+                  Platformer models, in the
+                  Orb Island example
   audioxt         miniaudio 0.11.26             public domain (Unlicense)
                   (with dr_wav, dr_flac and     or MIT No Attribution, at
                   dr_mp3 inside it)             your choice

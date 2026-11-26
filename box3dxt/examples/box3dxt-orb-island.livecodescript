@@ -10,8 +10,14 @@
 -- grass, a circle of standing stones round a violet altar, a garden of
 -- glowing crystals, a row of dominoes, stepping stones out over the sea
 -- to a rock, and a sky lift that carries you to a floating isle with a
--- beacon. Crates and balls are there to be kicked, blasted and knocked
--- into the sea. It is late afternoon: a low warm sun, lanterns, clouds.
+-- beacon. In the north-east a vault holds an orb behind a gate that a
+-- pressure plate opens (push the heavy crate onto it); out east,
+-- crumbling and turning platforms cross the sea to an islet; checkpoint
+-- flags catch a fall. Crates and balls are there to be kicked, blasted
+-- and knocked into the sea. It is late afternoon: a low warm sun,
+-- lanterns, clouds. The player, flags, platforms, gate and clouds are
+-- Kenney's CC0 models (box3dxt/examples/models/), carried in this file
+-- between the GAME MODELS markers by box3dxt/tools/build-game-models.py.
 --
 -- Version 1.2 (2026-11-26) is four times the island of 1.1, which was
 -- 30 metres square with eight orbs; 1.1's eight are A to H, moved out
@@ -31,10 +37,14 @@
 --     with b3kGlideTo (the lift and the sky lift), b3kAddStaticModel (the
 --     hill, made here as OBJ text), b3kSpawn... with b3kSetType "static"
 --     and b3kSetRotation (trees, stones, crystals)
---   * kinematic things: b3kSetSpin (the windmill's sails, the beacon)
+--   * kinematic things: b3kSetSpin (the windmill's sails, the beacon, the
+--     turning platform), b3kGlideTo (the plate and the gate)
+--   * models: b3kSetLook draws a model in place of a thing's shape (the
+--     player, the flags, the platforms, the gate, the clouds)
 --   * joints: a motor-driven hinge (the sweeper), a rope (the wrecking
 --     ball), b3kNoCollide (the arm passes through its hub)
---   * sensors: the orbs, the jump pad and the sea (on b3kSensorEnter)
+--   * sensors: the orbs, the jump pad, the sea, the flags, the plate and
+--     the crumbling platforms (b3kSensorEnter and b3kSensorExit)
 --   * the player controller: b3kPlayerMake, b3kPlayerJump, b3kPlayerSteer
 --     (the gamepad's stick), b3kPlayerRespawn (on b3kFell)
 --   * picking: a click kicks what b3kThingAt finds, unless the press was a
@@ -77,7 +87,10 @@
 --      the tower; the jump pad throws you onto the floating platform; the
 --      wrecking ball swings and knocks you; the windmill's sails sweep
 --      you off the hill; the sky lift carries you to the floating isle;
---      the dominoes fall; the stepping stones can be jumped.
+--      the dominoes fall; the stepping stones can be jumped; the heavy
+--      crate pushed onto the plate opens the vault; the crumbling
+--      platforms shake and fall and come back; a flag touched is where a
+--      fall puts you back.
 --   5. Falling into the sea puts you back at the start and counts a fall;
 --      a crate knocked off the edge is gone.
 --   6. Mouse: dragging the view turns the camera and does NOT kick; a click
@@ -97,7 +110,8 @@
 -- (a virtual pad) and audioxt (its silent device) as well. In a web Stack
 -- Player (web-2026.11.22, headless Chromium, 2026-11-26) version 1.2
 -- built at its size, walked to an orb, found gamepadxt and audioxt, and
--- drew 33 pictures a second where 1.1 drew 37 to 40 on the same machine.
+-- drew 32 pictures a second with the models where 1.1 drew 37 to 40 on
+-- the same machine.
 -- A real gamepad, the sound heard, a desktop IDE and the feel: verified
 -- statically; needs an OXT pass.
 -- =====================================================================
@@ -635,6 +649,21 @@ local sOiSeaAt        -- the clock time the sea's swell turns next
 local sOiSeaUp        -- true while the swell rises
 local sOiVoices       -- one line a sound to free: "handle,clock ms"
 local sOiPlayed       -- the sounds played this run, by name (for the test)
+local sOiModels       -- [name.obj / name.mtl] -> the model text, unpacked once
+local sOiCheck        -- "x,y,z": where a fall puts the player back
+local sOiFlag         -- [flag sensor] -> "x,y,z" of the checkpoint it sets
+local sOiFlagGot      -- [flag sensor] -> true once the player has touched it
+local sOiCrumble      -- [spot] -> "x,y,z" of a crumbling platform's home
+local sOiCrumbleThing -- [spot] -> the platform now there, empty while gone
+local sOiCrumbleOf    -- [sensor above a spot] -> the spot
+local sOiCrumbleAt    -- [spot] -> the clock time it falls, while it shakes
+local sOiCrumbleBack  -- [spot] -> the clock time it comes back, once fallen
+local sOiPlate        -- the pressure plate (a kinematic platform)
+local sOiPlateSensor  -- the sensor just above it
+local sOiPlateOn      -- [thing] -> true while it presses the plate
+local sOiPlateDown    -- true while the plate is pressed down
+local sOiGate         -- the vault's gate (a kinematic platform)
+local sOiGateShutAt   -- the clock time the gate shuts, once nothing presses
 
 -- =====================================================================
 -- Lifecycle
@@ -680,6 +709,20 @@ command oiNewGame
    put true into sOiWasGround
    put false into sOiPadSteer
    put empty into sOiPlayed
+   put kOiStartX & comma & kOiStartY & comma & kOiStartZ into sOiCheck
+   put empty into sOiFlag
+   put empty into sOiFlagGot
+   put empty into sOiCrumble
+   put empty into sOiCrumbleThing
+   put empty into sOiCrumbleOf
+   put empty into sOiCrumbleAt
+   put empty into sOiCrumbleBack
+   put empty into sOiPlate
+   put empty into sOiPlateSensor
+   put empty into sOiPlateOn
+   put false into sOiPlateDown
+   put empty into sOiGate
+   put 0 into sOiGateShutAt
    if there is a field "oiBanner" then hide field "oiBanner"
    b3kSetup
    if b3kWorld() is empty then
@@ -704,6 +747,10 @@ command oiNewGame
    oiBuildIsland
    put b3kThingCount() into sOiBaseThings
    b3kPlayerMake kOiStartX, kOiStartY, kOiStartZ, "capsule", "61,110,200"
+   -- the player collides as the Kit's capsule and looks like Kenney's
+   -- character, fitted to the capsule's 1.6 m (render3dxt; box3dxt's
+   -- renderer draws the capsule)
+   oiLook b3kPlayer(), "character"
    -- a little quicker than the Kit's 5 m/s: the island is four times as big
    b3kPlayerSet "moveSpeed", 6.5
    -- the orbit's target given too: the camera starts ON the player, where
@@ -823,6 +870,10 @@ command oiBuildIsland
    oiBuildCorners
    oiBuildSkyIsle
    oiBuildTrees
+   oiBuildVault
+   oiBuildEastIslet
+   oiFlag "west rock", -46.1, 2.4, 3.4
+   oiFlag "sky isle", -3.5, 4.5, -39
 
    -- sixteen orbs, from the easy one on the lantern path to the floating
    -- isle: A to H are version 1.1's eight, moved out with the island
@@ -834,13 +885,14 @@ command oiBuildIsland
    oiOrb "F", -12, 0.8, -14
    oiOrb "G", -18, 3.8, -4.5
    oiOrb "H", 0, 4.4, -19
-   oiOrb "I", 25.5, 0.8, 22.5
+   oiOrb "I", 50.5, 0.8, 1.5
    oiOrb "J", -16, 2.6, 19.5
    oiOrb "K", 8, 0.8, -24.5
    oiOrb "L", 3, 5.3, -40
    oiOrb "M", 4, 5.3, -46.5
    oiOrb "N", -45, 3.2, 4.5
    oiOrb "O", -20, 1.6, -22
+   -- P waits in the vault, behind the gate the pressure plate opens
    oiOrb "P", 26, 0.8, -26
 
    -- LAST, the grass and the sea: render3dxt draws in the order things were
@@ -855,8 +907,8 @@ command oiBuildIsland
 end oiBuildIsland
 
 -- The sea all round and the clouds. The sea is four sensors (a fall
--- passes through it to the kill floor below) that meet round the island
--- and never under it: every pixel of sea hidden under the grass would be
+-- passes through it to the kill floor below) round the island, made
+-- after the grass: drawn first, every pixel of sea under the grass was
 -- drawn and then drawn over, and in a web page, where render3dxt draws on
 -- one thread, that was about a tenth of every frame (measured on the
 -- server engine with one thread, 2026-11-26). Rock under the island was
@@ -895,16 +947,16 @@ command oiRock pX, pY, pZ, pHeight, pDiameter
    oiFix the result, 180, 0, 0
 end oiRock
 
+-- A cloud: a sensor (nothing stands on it) that looks like Kenney's
+-- cloud; box3dxt's renderer shows its box in white.
 command oiCloud pX, pY, pZ
-   local tBall, tPart
-   repeat for each line tPart in "0,0,0,4.2" & return & "2.6,-0.5,0.6,3" & return & "-2.4,-0.6,-0.4,3.2"
-      b3kAddSensorBall pX + item 1 of tPart, pY + item 2 of tPart, pZ + item 3 of tPart, item 4 of tPart
-      put the result into tBall
-      if tBall is empty then next repeat
-      b3kSetVisible tBall, true
-      b3kSetColor tBall, "250,246,242"
-      b3kSetGlow tBall, "70,66,64"
-   end repeat
+   local tCloud
+   b3kAddSensorBox pX, pY, pZ, 7, 3.2, 5
+   put the result into tCloud
+   if tCloud is empty then exit oiCloud
+   b3kSetVisible tCloud, true
+   b3kSetColor tCloud, "250,246,242"
+   oiLook tCloud, "cloud"
 end oiCloud
 
 -- The four corners and the far west: dominoes, a windmill hill, a stone
@@ -1122,6 +1174,183 @@ function oiGlowStep pStep
 end oiGlowStep
 
 -- =====================================================================
+-- Kenney's models (CC0, see box3dxt/examples/models/README.md), carried
+-- in this script by tools/build-game-models.py: each thing still
+-- collides as its own simple shape and only LOOKS like the model
+-- =====================================================================
+function oiModel pName
+   if sOiModels[pName] is empty then
+      put oiModelData(pName) into sOiModels[pName]
+      if sOiModels[pName] is not empty then
+         put decompress(base64Decode(sOiModels[pName])) into sOiModels[pName]
+      end if
+   end if
+   return sOiModels[pName]
+end oiModel
+
+command oiLook pThing, pName
+   if pThing is empty then exit oiLook
+   b3kSetLook pThing, oiModel(pName & ".obj"), oiModel(pName & ".mtl")
+end oiLook
+
+-- =====================================================================
+-- Platformer pieces: a pressure plate and the vault it opens, crumbling
+-- and turning platforms out to an islet, and checkpoint flags
+-- =====================================================================
+
+-- The north-east vault: three walls 3.2 m high round orb P and a gate on
+-- the south. The gate sinks into the ground while something presses the
+-- plate, 7 m away, and rises again under a second after nothing does:
+-- too soon for the player to run from the plate, so the heavy crate must
+-- be pushed (or kicked, or blasted) onto it.
+command oiBuildVault
+   local tCrate
+   oiStatic "box", 23.5, 1.6, -26, 0.6, 3.2, 5.6, "150,128,112"
+   oiStatic "box", 28.5, 1.6, -26, 0.6, 3.2, 5.6, "150,128,112"
+   oiStatic "box", 26, 1.6, -28.5, 5.6, 3.2, 0.6, "150,128,112"
+   b3kAddPlatform 26, 1.6, -23.5, 5, 3.2, 0.6, "170,96,70"
+   put the result into sOiGate
+   b3kName sOiGate, "gate"
+   oiLook sOiGate, "gate"
+   b3kAddPlatform 22, 0.12, -17, 2.2, 0.24, 2.2, "220,200,90"
+   put the result into sOiPlate
+   b3kName sOiPlate, "plate"
+   oiLook sOiPlate, "plate"
+   b3kAddSensorBox 22, 0.6, -17, 1.8, 0.8, 1.8
+   put the result into sOiPlateSensor
+   b3kSpawnBox 19.5, 0.6, -19.5, 1.2, 1.2, 1.2, "150,104,60"
+   put the result into tCrate
+   b3kName tCrate, "heavy crate"
+   b3kSetDensity tCrate, 0.6
+end oiBuildVault
+
+-- Out east, over the sea: three crumbling platforms and one that turns,
+-- 1.2 m apart, to a small islet with orb I and a checkpoint. A crumbling
+-- platform shakes for 0.6 s once stood on, falls, and is back 4.5 s later.
+command oiBuildEastIslet
+   local tTurn, tIsle
+   oiCrumbleSpot 1, 32, -0.25, 0
+   b3kAddPlatform 36, -0.3, 0, 3, 0.6, 3, "200,170,110"
+   put the result into tTurn
+   b3kName tTurn, "turning platform"
+   b3kSetSpin tTurn, 0, 32, 0
+   oiLook tTurn, "platform"
+   oiCrumbleSpot 2, 40, -0.25, 0
+   oiCrumbleSpot 3, 43.6, -0.25, 0
+   b3kAddStaticBox 49.5, -0.5, 0, 7, 1, 7, "132,190,98"
+   put the result into tIsle
+   b3kName tIsle, "east islet"
+   b3kSetChecker tIsle, "132,190,98", "110,166,84", 7
+   oiRock 49.5, -2.6, 0, 4.2, 6
+   oiFlag "east islet", 51.5, 0, -2.2
+end oiBuildEastIslet
+
+command oiCrumbleSpot pSpot, pX, pY, pZ
+   local tSensor
+   put pX & comma & pY & comma & pZ into sOiCrumble[pSpot]
+   oiCrumbleMake pSpot
+   -- the sensor stays when the platform falls: it only arms the platform
+   b3kAddSensorBox pX, pY + 0.5, pZ, 2.2, 0.5, 2.2
+   put the result into tSensor
+   if tSensor is not empty then put pSpot into sOiCrumbleOf[tSensor]
+end oiCrumbleSpot
+
+command oiCrumbleMake pSpot
+   local tHome, tThing
+   put sOiCrumble[pSpot] into tHome
+   set the itemDelimiter to comma
+   b3kAddStaticBox item 1 of tHome, item 2 of tHome, item 3 of tHome, 2.4, 0.5, 2.4, "196,150,96"
+   put the result into tThing
+   put tThing into sOiCrumbleThing[pSpot]
+   b3kName tThing, "crumble " & pSpot
+   oiLook tThing, "crumble"
+   put empty into sOiCrumbleAt[pSpot]
+   put empty into sOiCrumbleBack[pSpot]
+end oiCrumbleMake
+
+command oiTickCrumble
+   local tSpot, tThing, tHome
+   repeat for each key tSpot in sOiCrumble
+      put sOiCrumbleThing[tSpot] into tThing
+      if sOiCrumbleAt[tSpot] is not empty then
+         if not b3kIsThing(tThing) then
+            put empty into sOiCrumbleAt[tSpot]
+         else if sOiClockMS >= sOiCrumbleAt[tSpot] then
+            -- it lets go: a falling body the sea's kill floor removes
+            b3kSetRotation tThing, 0, 0, 0
+            b3kSetType tThing, "dynamic"
+            -- scenery is made weightless; a weightless moving body never moves
+            b3kSetDensity tThing, 1
+            b3kPush tThing, 0, -1, 0
+            put empty into sOiCrumbleAt[tSpot]
+            put sOiClockMS + 4500 into sOiCrumbleBack[tSpot]
+         else
+            -- the shake: a few degrees this way and that
+            b3kSetRotation tThing, random(7) - 4, 0, random(7) - 4
+         end if
+      else if sOiCrumbleBack[tSpot] is not empty and sOiClockMS >= sOiCrumbleBack[tSpot] then
+         if b3kIsThing(tThing) then b3kRemove tThing
+         oiCrumbleMake tSpot
+      end if
+   end repeat
+end oiTickCrumble
+
+-- The plate: down while anything presses it, the gate sinking with it.
+command oiTickPlate
+   local tPressed, tThing
+   if sOiPlate is empty or not b3kIsThing(sOiPlate) then exit oiTickPlate
+   put false into tPressed
+   repeat for each key tThing in sOiPlateOn
+      if b3kIsThing(tThing) then
+         put true into tPressed
+      else
+         delete variable sOiPlateOn[tThing]
+      end if
+   end repeat
+   if tPressed then
+      put 0 into sOiGateShutAt
+      if sOiPlateDown is not true then
+         put true into sOiPlateDown
+         b3kGlideTo sOiPlate, 22, 0.02, -17, 0.15
+         b3kGlideTo sOiGate, 26, -1.75, -23.5, 0.9
+         oiSound "plate"
+         uiStatus "Click! Something in the north-east rumbles open.", "ok"
+      end if
+   else if sOiPlateDown is true then
+      if sOiGateShutAt is 0 then put sOiClockMS + 800 into sOiGateShutAt
+      if sOiClockMS >= sOiGateShutAt then
+         put false into sOiPlateDown
+         put 0 into sOiGateShutAt
+         b3kGlideTo sOiPlate, 22, 0.12, -17, 0.15
+         b3kGlideTo sOiGate, 26, 1.6, -23.5, 0.9
+         oiSound "gate"
+      end if
+   end if
+end oiTickPlate
+
+function oiPlateIsDown
+   return (sOiPlateDown is true)
+end oiPlateIsDown
+
+-- A checkpoint: Kenney's flag on a sensor. Touched, it is where a fall
+-- puts the player back, until another is touched or the run restarts.
+command oiFlag pName, pX, pTop, pZ
+   local tFlag
+   b3kAddSensorBox pX, pTop + 1.2, pZ, 1.4, 2.4, 1.4
+   put the result into tFlag
+   if tFlag is empty then exit oiFlag
+   b3kSetVisible tFlag, true
+   b3kSetColor tFlag, "230,70,60"
+   b3kName tFlag, "flag " & pName
+   oiLook tFlag, "flag"
+   put pX & comma & (pTop + 1) & comma & pZ into sOiFlag[tFlag]
+end oiFlag
+
+function oiCheckpoint
+   return sOiCheck
+end oiCheckpoint
+
+-- =====================================================================
 -- The Kit's messages
 -- =====================================================================
 on b3kFrame
@@ -1137,6 +1366,8 @@ on b3kFrame
    oiTickLift
    oiTickSkyLift
    oiTickBall
+   oiTickCrumble
+   oiTickPlate
    oiTickGlow
    oiTickSparks
    oiTickJump
@@ -1147,7 +1378,27 @@ on b3kFrame
 end b3kFrame
 
 on b3kSensorEnter pSensor, pVisitor
-   if pVisitor is empty or pVisitor is not b3kPlayer() then
+   if pVisitor is empty then exit b3kSensorEnter
+   -- the plate counts anything that moves: the player, a crate, a ball
+   if pSensor is sOiPlateSensor then
+      if b3kType(pVisitor) is "dynamic" then put true into sOiPlateOn[pVisitor]
+      exit b3kSensorEnter
+   end if
+   if pVisitor is not b3kPlayer() then
+      exit b3kSensorEnter
+   end if
+   if sOiCrumbleOf[pSensor] is not empty then
+      oiCrumbleArm sOiCrumbleOf[pSensor]
+      exit b3kSensorEnter
+   end if
+   if sOiFlag[pSensor] is not empty then
+      if sOiCheck is not sOiFlag[pSensor] then
+         put sOiFlag[pSensor] into sOiCheck
+         put true into sOiFlagGot[pSensor]
+         oiSparks b3kX(pSensor), b3kY(pSensor) + 1, b3kZ(pSensor)
+         oiSound "check"
+         uiStatus "Checkpoint: a fall now brings you back here.", "ok"
+      end if
       exit b3kSensorEnter
    end if
    if pSensor is sOiPad then
@@ -1172,6 +1423,19 @@ on b3kSensorEnter pSensor, pVisitor
    end if
 end b3kSensorEnter
 
+on b3kSensorExit pSensor, pVisitor
+   if pSensor is not empty and pSensor is sOiPlateSensor then
+      delete variable sOiPlateOn[pVisitor]
+   end if
+end b3kSensorExit
+
+command oiCrumbleArm pSpot
+   if sOiCrumbleAt[pSpot] is not empty or sOiCrumbleBack[pSpot] is not empty then exit oiCrumbleArm
+   if not b3kIsThing(sOiCrumbleThing[pSpot]) then exit oiCrumbleArm
+   put sOiClockMS + 600 into sOiCrumbleAt[pSpot]
+   oiSound "creak"
+end oiCrumbleArm
+
 -- The Kit reports the player below the kill floor and leaves it to us; a
 -- crate or a ball that falls is removed by the Kit itself.
 on b3kFell pThing
@@ -1179,11 +1443,16 @@ on b3kFell pThing
       add 1 to sOiFalls
       oiSound "splash"
       oiRumble 0.6, 0.2, 260
-      b3kPlayerRespawn kOiStartX, kOiStartY, kOiStartZ
-      b3kCamOrbit b3kCamYaw(), b3kCamPitch(), b3kCamDistance(), kOiStartX, kOiStartY + 0.8, kOiStartZ
+      set the itemDelimiter to comma
+      b3kPlayerRespawn item 1 of sOiCheck, item 2 of sOiCheck, item 3 of sOiCheck
+      b3kCamOrbit b3kCamYaw(), b3kCamPitch(), b3kCamDistance(), item 1 of sOiCheck, item 2 of sOiCheck + 0.8, item 3 of sOiCheck
       put true into sOiWasGround
       oiHud
-      uiStatus "Into the sea! Back to the start (falls: " & sOiFalls & ").", "warn"
+      if sOiCheck is (kOiStartX & comma & kOiStartY & comma & kOiStartZ) then
+         uiStatus "Into the sea! Back to the start (falls: " & sOiFalls & ").", "warn"
+      else
+         uiStatus "Into the sea! Back to the checkpoint (falls: " & sOiFalls & ").", "warn"
+      end if
    end if
 end b3kFell
 
@@ -1774,6 +2043,23 @@ command oiSound pName
          oiVoice "pink", 0, 0.5, 0, 0.9
          oiVoice "white", 0, 0.12, 0, 0.35
          break
+      case "creak"
+         oiVoice "triangle", 98, 0.16, 0, 0.25
+         oiVoice "white", 0, 0.06, 0.05, 0.3
+         break
+      case "check"
+         oiVoice "triangle", 659.25, 0.16, 0, 0.18
+         oiVoice "triangle", 987.77, 0.16, 0.1, 0.35
+         break
+      case "plate"
+         oiVoice "sine", 220, 0.25, 0, 0.08
+         oiVoice "pink", 0, 0.2, 0.05, 1
+         oiVoice "sine", 55, 0.3, 0.05, 1
+         break
+      case "gate"
+         oiVoice "pink", 0, 0.16, 0, 0.9
+         oiVoice "sine", 70, 0.22, 0, 0.9
+         break
       case "win"
          set the itemDelimiter to comma
          put 0 into tI
@@ -1915,6 +2201,84 @@ command oiButton pName, pLabel, pRect, pPrimary
    end if
 end oiButton
 
+-- BEGIN GAME MODELS: generated by box3dxt/tools/build-game-models.py from
+-- box3dxt/examples/models/ (Kenney, kenney.nl, CC0); rerun the tool, never edit here.
+-- oiModelData(name) is a model's OBJ text ("<name>.obj") or its materials
+-- ("<name>.mtl"), gzipped and base64ed: oiModel unpacks them.
+private function oiModelData pName
+   local tData
+   put empty into tData
+   switch pName
+      case "character.obj"
+         put "H4sIAAAAAAAC/4VcW7blqA39zyjOBOhrwMb2dJJ0r5W1qpKPdDL+oMeWhK1b+alrth5IIBCI0/3zzx8//vHXz89//f33H7/9/PPHX/772X5rx/Ep22/H1WZju3YB70rgOPfZqMdYwK0S535G8TH/TM67M1i3+61zOzuBfexBXMFVp4or52rSKq69r5xBfP6p/YisV8SU80r4ntLe+/yz3VdEr4jBo2XotKN1lMKAvOWvtJ8wGXDnNerXuwsXLOncljQMSjrlJZ3zks5aSUOhpPNW0qEraYiUdERLPnklm+eSBUTJY6fkU1WyuSp5qJQsVkq6Jkoa6iWZ3vLN/D4jo6QB1BuHDP271xrDrPVOoC6xyUfYfj4Yad7OwNcOdq33GsB6ynzcPUpfPDL9GAGsw102lRe1Wq1R+GAnruPRy9PEOlj0MraS8ZWcMbGwpMNTsvEp6WCUdDRK5nnJRrhk41GSeSzZIHlA7oOc6n0Ny2MG12yMY0GVdyhvv00Dtep4KabWdb80L9x3MCPrkP7UOwbkA836y7vLTU6dTscnHYjvXFBUl6QY+9oO9tEWbsAPbihh7lz1/NtHUPHweFFsvNhvlDegPg5BrYP/34sQJ4nakupdR+2tYXGt5F6sg/Zerrqw1i1uBRMbUtfSnvI5c8lWn8vNwLGCrwF/z62pfAS+gbZG7sgZV+pDvqRdlVRtiXofc/joLPM0G5Lc+bQXmnzZqZ8hgf07RvD32MtGBeNic3AZT1EZg8FS" after tData
+         put "R4y6X4DPxfPoqOQ9zfMCnwQ4aNXMtp0cdeN4gE9GEn4wloyzfMf67r18033tVY5Nsf+6C3iuIC+WerQINgGvEUHZ0KtkXfg0uhgRxbeDd4cqqdisf7OW73iTvkpqVkl9Lamz5Rtvz/uUk0M4lCnW9yPcZyLjAxNGk973Nzj01BKlFXt0I9KLPcim+xEvQwF18Us35ZU1oC/WlkHvbup6E7skB9TlyhfAXIGz4lwuHT5YZWMHawADa1Dw0iq7zENes9ajq5U1yL+7qsuEwqsFxO49stlbwMApy/jJ+karzCnQYFVAsbVKaNUVrTqE2KaUF7O2oFX/vPXysn2yvkGemIrk7F0BLOnyKdlCK+mSLNniLdkKKtn6K+kCLOn6LelqK/lyK/mCLekyLPkCK+kKK+liKvnCK9lyLsmyL/kSK+kaK/nSLenaLemKLPmSLPnyK+lSLfkKKvkSKvlqKfnSKumSLemSL+nuUNKdoOTrsOSLtuTrs+QLtKQrtKRLtKRrtHy3SLdj5z1Iz/y3JnmA87tdD8wYyzecezivDxSYfgnOz3qswgFiP+QeGauXE+uP0ieg+w7Qed4BE0nFFtEr6uetRLkWTDqI9aLFjpLZWxLryjcKXx2XzOaSGW198DFoHaeQ8Ny+WCXzjp+1s2c9za1Zinpw5s169Fed79F/0lHaT5zS4GTW9Wswyq+Ec79j5NgmoFVWmxsGz3aujhvrGyXeV2SognrWOEciL2BJ0W/k3z2lNqXmZ47G" after tData
+         put "bmjMnvYolkAlF9U5ky7WBaFWY72+GDO+RTjMuEu/wiXBgvA/6RLB9xbq+LwE4VIWX6VvBcQngpsgXaqJFMyMlLeeCd2zRczWfujh0gGz3Kp3kXhQwV2cXcr5/O9pPE/sLca9lGjY6nF5O7h9Jjm6ZeLzU0mzQ86fJDV0dE/JezVCcqB6cD2Y5AmFSNKunIpZP1gqpxkWdamn0FtmESlvppJyrfaUxLGSeFYSw0tieXkPQXl4U5LRpVkBr0z74N1Qscaxfx8x3sSccX1CxJxNMaY/FZZMYwkqTTxIWzchCjPs3UvWSWZi4l4yConDucFnlZg+MaD19n/voeAI4MBS0dVw65pdNZFwVCfYWw/Ji1wLTW9Biev4tYHBvqipJKrgfXD+bXN5GKh+w+04YDAnhZaeEntXtY/BLXqOWsNcVsQS0Y322CUygJQlWJ6hB1VlCZZsbWRL47UyXuqK64ux9+zi7dPb8czJRPc9Pu+JVMxj6XukLAG3xhtP3zOMATlSDbEw/QX0iObXanvq53hCCj44di7wXhJsx22xp7HuaZBzo2dJxrC3lqpfhIZ8Z5Ka/tL2wq+qjZ60PT1/1naJHvbdkvM1FozfN/uxYvzUdq6yB9cIHUvUpVyvDr7VX5IOysvgN5gLX1I0enZcXj2/GcvK+QiQR3yUZ4CUR0iUd8Q8nUtMTjxLnHiP8Xtu3lPznoZklpOgyeYqm5YktvJxfU9AHoJ6/+BPXZPfIuHcsyJ0//HTtEMLUhKu" after tData
+         put "8mYLXCVhK5m68u5VoP/8+/eff/74/G37yx+f+vVVP+3rq33611efAH8zun997cRxzsb4HF9fx2d+nhPib8XrNf8Q2KZQmwe9qWBeHeqgFolLW6mtPeAmQrPzSr3LB+DWwa1wF3hTWD4M3hUmK7k11MiJkTPMeLHyyuLcZIp5wa4JNBEIisPmKQ2RaGG/bsK0SSQdOFGvw8Tm+GgqDRpptOrBU+Aa6a9CUyshh8gOsqbpXGhLSVDYN5rBLhOrM6stocBGluaWUIhPxkr0mkLx7GAv9yEmalMVq8p9E1/YcuMc7AxjXd3ZT54NsXy/ZHzQFJr1ziYJKJ2avFprc8OTz9pUl/Y+A6QPjrkd4YO2UEnvAh8idGpoygdg6ly4FT4FRnzLh8EXIvaYX/e097jn3zm+g0ZrXDwV8hloFAEyx1PN3NPbmNIX/b3JXVZ4zjG9Z4icO0GTdk4DLw6gk7locKbmi6JjKrxklJgpSF3z466rFPFckGYztPtrjtDVVzOgyLxQPYtnzvV2QCFjYkHDwMQDEcXuqfu+IwXDd3OgbHEcb9K3Hc4j08Ek6nWzkYiDBcRHxsfRIPCY8X3jLWH4nMuwLX6BFMLAIPC4mPUmHmGKWKMizhICS2k3hepWg1jf2Os7TClPMQ+IcSN6rLOb9sbt9DDy6NFIdcWmsFeyaOsYvhhYpod8vzC5lqhI8zRlrmzKLzfzzGmcbZq6e5o+5vbcq8w3GT54r6X9hub0nn/HzEmUdC5SJiyT" after tData
+         put "gUNk7vXbVHpeLDMkRObMTWj+rWQtRSq09CYDI/2yDIfV9bknZdTPNZuHKDslBKbbU1mDUiaha9EfTRDPXK3rg5ouQa9jwuoumRL1UU0hCk1bnReRevG+Nnu6TkaYaJhxXYww8VSM53te48BFRMeMi1N6YyINfOtRf1ALzLh47TXO/yeprZti9HGyfpZ0DFysq7rahXi2hNgg6WoNo73kSdTPQLxd7c2u7OaB+cTEhhGieWzVxoyJpLbN8LovfDDXwceaLljbKj52EFXJAPHUWWm8Mg1zLpaUyaYe+maYcbFaJu7qUz/UlT7M2n0zTOdzrzbZhDmX6FoMUoForWHBbFHBByqNq9YkdObHjRgKGLj49FLvhcg7QuuLpGPG1TBlrR463k1npdVus1L7k8h9PoiKzY8jIUJ/9cnmlTvDBB6YT0wE5lwHYqjx/kCHzn3DR0Votr0DO/AxVuJx68AMqOANI2DGxYfWtkiyQcdYiIYZF/d5sJ/ag87Acam1x2mzwhi41ArLAbxqKG7nNsv/8lxRGGlTaJxkZK9c4PqAuf25FL0iyHMTUNE/FOyCsofz9AletIXaAMsH4H484EP+wDj5ALw/4F3/7ApTktzbh04ce/9QCt1pyZ3T0n1e1ea07ONzzp53GmI6GOyXcbMswcJGqXi/nZtS9LF9rrk0jpnQJvdB3PJh8NR10LqhJX3sH9pkj+NDO+YxAjyVHqdSA8zSSiVY20pFl7CbLVPzCda2UtlngnkUTMnD" after tData
+         put "EqU+lcBZ81LaoPLQEDffL5mN/uC6oG2lnjjp10G5eobPQNIah+UNx8A0kPwHL/65T9LBqfJNmpc5x79j4Dp56VdIUlodu/61K7gh4LhBOetD5k255e9pN/eTd5buQsIaOzIWPg7LzX7ochpd/2IxOKIcp61hGRbz0vxmMwxTJhnLxcKTh3xf7JDjAZUGBj6YXW7nFCFVHKG/HCoVrjECjsMox4NyGeVSSlPKrZTGR7y5m28DCf70bEEGzjXa6ERYd6qdNP5gQWDQEGhV6yC8580453QmWc8h8NQ3SUs02/kiCTSBwQDTWuSOCg0Bh1vReRwabcL8t2I8Dr6qzzvBIXtIO7B0nTQa7yPKwpcN2QEbL6dBlw1sgo2CYm4MgYQdr1HgHHSnrLyLNT7+nXL3lb2z6a7YTi4ryN1LuFyMN0EhKTftBPu9SFn3Jq7uLCqdK0iqAwoZEwsaBibsf4bQWY84jNI5YG6M7DKMMrDOYRTryMYsjBUg8Ij7nN1oJ72dxSk2mTJ66Jtv2YoYS+hL5jWGSRIeyuPj1Pl6FEguhc7o9O2xFWOKcgfPDQ8oayPeLUwzTzsPhYYE3wh7CI2+zRE4R4hUC1C+oF0hCnms2DZMHYJQphAHoY4qJXWGiizdiaVqq8U+uWxr4VLqeryvVCvQWslV2weX7aQSycf6+XFb5ZXU8QxKWVWIhqK9B5O0pnmjioljz4aiI8qNvEej6ublNm3frEWKinTOqtwTqm4NZrHKnftHZVQL" after tData
+         put "kXQyu60Iqi0pggLjaqFqNpVoX1GnXMU/dBecAU7Xp8GlAWmDiru3VgzocjjDgupRgwsW2lYqyghalADVYG0rlQOWJ3j2OW6vi1C56VwqJcbBVQOm7BxasBPmaxtkL61YEcRU0TiMpXtweCe35GNaLydVJGgNcJQAAYeVVqxqwUP0ofsjl660bWQesdCHLl+r+GjbO7CurcrCDsAUVqWIcaBEo9UcMUanmGBtC9VrSjoBXr6R0YwFHeNA2abxc8DcBfglYMfFkK8IDikPrzbZ5fm1gfYGxeYHHxp4N3IMXKqKk/PQ1HvL39aQguXLKRXHGDGAXhdaxceGE5OV7LBfSj027nBWLdQSK9NQm8WWqdXGuGeiWItCKtM6R53VVlFnZJ1SFHOeF8mKxmL0YohWhDufyLZ9KSSbIU7TFNf53La5l7FebCVlpzk/dvlgihZcO0XvjHoUTFlMIFMZaCgYe71Z7Q0ZEJZHmhd4rT4sY8Fyxq8J0mkoFVuJN8yP1YrNl2AniryIB4zFUofGS4eHkVaLvXwcwsjqxaLaNCJX0lRxmuQ8SJVoPHlKwtz0KUnSpKRMcGla1KTJJ2GCNU0q1WBJk0iaLIS+FVwyteRGUeaPeJIe6bp/hQyo+fHSrjQjgmqwZkTNj4daoClRMq4qlhyId7pbbZCcKDSxxMRVKZIgsp1em3E/1jZyo+3hEkF6vZds5td9UFEF0As9UpEdXw0A3bOdJBXc/HHE07bnHGQuLZtgMxaFYf82" after tData
+         put "Oic4coDTpJVIcOrTtlKf6QElkqqnOm0jeeAooGc8eGcZ2dzVKo4Pg2Qr1H6s6AOjkd5gvKZAFGHs+KBtI+PIr6cNmAs70VYqCj8mLncKL/FIG+SQbf1Gbnd0vobLLw1OLQBwmYN+YsClD3bcMWW6rEqgXFF50GmYcV2u1EoAVhQ4vRYwVgwqmHht8bKPy3+koBxwWjnAygAqI5zIylIGQF3g0tOUkC69+F9yd5YDAhDjuBYKFw5QSmAprnl5F1ZJsL70em+nCasA8PnAMONqduawG32Ph4iFoscKOYDEAwfF7EoBYkcSl8EJhLfOCgvlKGKYc51+TtHziZ1Xbj2dhfMJDixd17KfTuy4gvUTDgVyXNFUGx9+/SSy6d5jWd+u6aduY+C1o4pRcGHH9Tx2pBd2VEbMunAswTnl0p0FJhiLk/yUgZOB+B+fx52n6f5ut3zc+o1ipwg/hhx6HseV3Ck2RJoRgrAJ4TBit3czz27rsg/qaDJFbut2e39Prt7A1bNQA/CpNW1205dQCTJWBMLwyqjiJMLbjT1d6wWt45Djb9d4y244Dturs75l177jRGVvyPacXXFIs2uZPWfrUzSL4QEbqk0jLjV4ecaz8vL2jDdtPkBsy+3KHrW12/g4brcgGQUm4RlbVUeNcuPzd231n3fY/nwjvo/3G7FxhQfka3s+5oY3Yn/DtVddfmvb7e2U33DxqssqmryA2hvuiX3cXwb1MxLrixheepsT24vor5H2huuvunwG" after tData
+         put "retLL6nobSH6A689+ZL9/TSD+hW5nOgPnzs+3FrD/O00vICeT8lIvJ/Po20YsY0nsTtRn27nR5cpw/MuEw0zrh3z2TiKW7X3VHthZaJhxjUw2f7Y6s+vzR9WtxWzd9j1SdaIe0Lc14dbJsozqhp0NHtqNVcIMy6WPHwQ9tMeW+2pldUaBi72aZ7msW3xfkFJ/aKr0M4Xv0pTd/GqoMR80W9kTr72VaoZ8A+jnHLzj8iUgzfBje9qlX/fSL/nafrboUo/irxb6M/6ocLivLe7zKa/cav0G7+bNpXBd/VKd5Rb+uGvQLn0V2CshU6QTU+SFW+7hoDD3pjVyrgN+85oGJh8GGC4uAIHeICAwLWuv19TQ32b1jGMO7fz+I5vCjEiPhKKgEPmMVJsT4/7NjATdzH4iUl+TTs4gr+gqOXulCHgMMORH2yMLHMAMQ4fPQ0vTxw3qgyOWQxa7IkLlguXfGMYmDyYEfg2MTE72/xhdbjLehAwY91GMw0s7ClTNJA9pR8oRzlm0X7oDxtdTI8YYSE4BB7XqLnYV6UfVoAYiyxYHg/dIowUjh3Ojn3ExC4+sNOvhHhnvJC92UrHjIu3yGslWoL2vGyYcwVJaNMsb3mfcyQw79MNOs/nEUPPFcsRw4ktIT5+cmbpvjfP3mJt70teVkwt6/LDLsWMC7piug8qTLI18Wp+yMDMjwN+Bsy4BobPMU+zIbsCc0lX60cAHAqaH2tafxLDT6WceCcHBVirudqyN/cJzH1y" after tData
+         put "VzxH8oX28jT4R8TAxa7IUx3n6qPGHBxSr2Hg4s4PuU2LkkDUjha1xgVJ5GWOw71KHWHXusLeUWkwBBz2M4ZdqxL70L+nUYCAw+oWu1zdpyH6F8/2hhhHM0p7UPqTIsj8a7Yd+4NyvChq2zGMMh6U80U59e/1omgd5riNcq+UsT0pA3UfG4NRHxR7Udn14WbXH4Xt9rZjiHIcVtRhhG6lNMj0/9hpNF5VbrmGGRerlAso6xz00wkK1EEv/PwSzovDMOfiH9qNVdL0u1rHjCuobbB2g/7TrQXmXN36PPR3KIf+6OTY7b+QAAIO+eERIp8L2PSbpPqhDuYpnQX4VZwkjg+rGh+KCN4Z0FYq/SqK/0sflT4ENiXaVmpXJVQSmDss/bhg3pioetEZ1rZSB/0hJdzJhx4z+lADiFvbSp0DyvcqEQPVYW0rtQfdM86G/kFUa1upttxGbH8G1pr+mknhY3vAEsr2cyX6mIlDvFafbUJuH0vMC80YBQ8tvXZpW6kESxtU+sUczSotsXmhlbZSCda2UGmVdYoTWna9alupBEsb1NkTZ0H1gEpV/f5QFYd/ZKxtUIn7Vm4fBtvUAMsGZvsJYNkzTnCfke1jO4nCulvYZqEGiwluN9pK3WCgzoTaLe78D9LOUVPsXQAA" after tData
+         break
+      case "character.mtl"
+         put "H4sIAAAAAAAC/03OvRHCMAyG4d5TZALO1ifrZwbGADpIxR3rE0WgpHmbx5K8Pj6v93O59Xa9L/0ipFuZo+Zt/elI1alVYy2mZBhvJUY8AoqRPNn3RzGMYzenssQYRsyalc5Um7PqXYol2YGjMoo1mahyOmyB+z2KtTit9T9Zj+9C0b7aRdMeKQEAAA==" after tData
+         break
+      case "flag.obj"
+         put "H4sIAAAAAAAC/41WS5IlJwzczym4AN3FH65jexzhiG574bHPb6RMFdSrmg5vHkUqSSQhwfv88fHxxy/u86/fvn+8ff74+Pav88fbUZMLb1E+S8oTu0D56K8QWP6nNP+g5i88/z/AtUvrMvQQZKixQXS0k1prJfUG/mx5GHntVOF7KGVjljwe0DTyg2oK9cnXE37S8D/dcHMttXyPLLZ7CoD5p8D8k6TkutjZzOWHgvM0j5aVlYsCJ4OALjtZWCbuZROb4J13pHHfEyAXg4rFL3oplDsP4HGSckhbAOd8btIWZyzs5I07r/R6453YMeS3i3s1L2zySlyY1k1wZxXOr9Hrmr+FWFd69kaZ5RBRDmNvPGMSlOWLaZ1yQc+metjKf6Vwci9teXJRCP7FsVUeOLK6g9iLx243BUAy9+vjVnIX5jVXZO65WsxLroz5lOrrRq/5ezgV/xiTf3TVP3rgv0jALalfncolV/4xL/6xiPxjuvzTEf4pjeUO+QhSy0B8sK9plQ+/GcWs2JToEoJmb0S1PkEjnlDqV2ghts6W+UfoJuXvWgJ17ctofg51/y2bQzL127xjvvgX4EGP9jAudkz9wwYv+0eY99hXwhiSewnxEnPChnvS3TXh7pUN/X/+/j7/Hbhfj2+/u1jf32cpxDKH4mKXQWD56IA7SG3C6Zgfw8WhQ4oyCDw/4qHwHIQUD8JCS6qdMrX1owPuXGvwpBV1KKlfAsPB1GA1BxVuYDdKCgy/ld1JsnDm" after tData
+         put "6gCHDvP7gMMB7vddZLIlnOCykMKE9SMCjtzJ4EkTkeSyhJMEjpgnDHmHM9iZkgJnzBMGJQk8A5iXQ55RxuJyl0FgcaG5Iqu7K6IlnhRZPVyJagVpwnXCSRcnV+c+6gZmsFRidWEitTCduVqA6UhMNlmYztQfxWSv4Nr0Mh3QlXOGu66JNWKhZIA0xnCyEbNrQbUgKWysZn4oYnUtBCtolndjNelHY0GzvAUeW2GwTKQQwlbQLG+BWdBxawaKCBvNgPIWNgua5Z32Aq6ntRnMrmCPFGu8ts1XXbOgWd6I2YLv1sSIQtgoaCvvc0tqkz2sJFnQKG+s3eo6bOVt2tF6BOUt7HQpd6vrUnDYVU+1NJ5qGXrY9cCpyiI5NNhdjWoFSeqraSHVquVez3KXnOiaoNxAhWCWQqwsrF2wht8KTEdisuXCKlS5BxxwLWoBCyNKVTCYVlDuFpPNO2JobGGuZn4oYnUtpzI3mf9ap2Z3YWpJwJjBMJeLjI4uzOQPmAXDDJZZXoO84ILGJpjEwRkszIGOxMYODcWZFR0JdUJ9QbZQ9nZRWu2AU1KxnKpNPThsj+CinFF0UbbX3sacVt1VUhOldRITwdzohAZ1QGo1SqSZC+FiNvejWbHJxtbV1BI257SeInSZ8VgkNqcVkdi5ilzTm1OvWdye+q1oByCLkiYsqVzimSazGHYsLIYLFpRnWFhYzBcs668+Aeajdi3blc3beUWzwq15o7Un2xXNi7UCs13ZvN3eLjxI" after tData
+         put "6nVhCjiDhdHpSEyaZWE6c40Pl47Eat2ximeOWWXDsXnh3NaebN7ER4rtSusJW7uyeZEYy5w+2HzA+Zw3u9jwgNtzHrk5H3B7zjNvEntI+ayG61PIZxWS68+APasmkrVHm956mbceZ7AcxI4NyzumMxXUGzNv2LFjOtNYbI/pNZ9z5GP9wbHnHImxzFW0wWxJ+RGmtMH7e5a+yAJkdE5xQX6mtmjO7yrrqgBLrWFxhGSCmgqpZIaaCqlkhpoKqWTa1Tq4wemdmBAk7kxNnAD/AcFLPeWQEwAA" after tData
+         break
+      case "flag.mtl"
+         put "H4sIAAAAAAAC/0XOsQ3DMAxE0V5TeIJAFo8iNYPHiN0lrgJkfUuiQDa/eTiQ9/X//j7bO6fj3PKL0XpJe5Raupfupqg0dO8RVddiWiasMjuTsbB4FeIMY1KMHcYFIXJm41rGDpjreKya6tTVUDFtuUQpLutioagiPVkum1UTAQAA" after tData
+         break
+      case "platform.obj"
+         put "H4sIAAAAAAAC/3VXS5LdNgzczyl4Ab3HP6nrJHGqUjVjL+L4/EYTAAlKymZENBp/Sg/z9fPz858/3NePv759vr5+fn78ckd4peIO/0o4+s7QQHyPLrziBTkmpHbLLMfi/CvmIgKj0ZiWRVygYU7romEnEneEgZvNs+97Eo/J3uI91h1nBvdqnsreeGqqAX2fzU9Cu0K3cdxH9jSM2NMk0Zm7oNiC/if5O/FejyY687wBTxXfBviU57XFCwgl3C7LxELvi9ilEaS9hLwim+XxaHrcbRd0i/ro7yHle2H+dSqJjhvA8nFjHA+U2soi5dAZbRnhRruLPy0mzImyfdqsi68Ta0mws5o4vlmmojs3bcx85plRicKrYVnXnCyaNoytNXe1b2m67BKmGl4t2fDUeGOmjZdKtDVK7Fj7ZIZoMY2jKNunzdr3WU3Q/sRuBhtLtUxBL9y0mESss71xvH5Et5cg54Uli7ChxuWvEPHizLo2IfZmOnZanta8MZPyvo92n4MxbBTq3KiR1hU7LCi2xpSM+ClAqAycGu88GQjVAipfDa4eH+yHgQkwDGwGZWXeugSZNTc1u0LPhrfW3Bv41KunVpXx5a6dz8yamELHA2Yy08RW/ib9HTgezC7Nus3iIUX6SDpvJjUH5QTnjKHoc8JtyDGzXWc7LSZmdtMkhcbzVfZwdhhvXS7IbNBwcKiHgyvytxvJ7jzEqduK115AEqPpZZgdSpw38r9/v9G+5v70H3+7+n5XV97v" after tData
+         put "4jqdCBjn9H43d9IfAvBw8f3uLnj6S0ggKVA+4f0+XcgQgCaI8MIaQOQshMmfTCIF+mFv9IguekiA/QjCyokmchtPF+mRvEsZD8Dj4ELlCCMQYDJLSY1ShQTX5wjFsgQmGEFSRoX0NwxhoWXp4KEZMCo1WZQpQLtBU9s9pPMRzt5oDRyMdrk2AQBWy51p5Gi4bAg0GZQpQLNF08VxMf4XOYRlA7RalDmA2wZXhfsGt0vEbgKjG8HCIe9slkUrV2bBqV7gsjsRWbSJYX1FwqpAuzDrLSZ1U1gxsulZ2OB8gaUCnT4fJpwubNYWf2FzBUVDsl5v1sykhI09b4A3Tu9wvGTirZN8YcvNm5dZ7rzCfYflTssboZ2PqzAJPuvVZM5LvUimuIKm0TcNcxgfNJFFiwEUwAjXXEHw7gp84WunMmsrQuKTVxHkdJUiZ+9qwgOwyKJFJHz3KsXOwVWKRQtxbZAAiyzaDgkw1195LlVbrLK86/qG8GEaaU/4MOFygflSlrzDLHNPJtxnq7oUL7JqZwdHh2c5s0qWRcvdXx3kRq9WqSzaJmPg5sz+Vm2VyKKdYyAnOblGCebsWsCDYJFVC1v8GDSYFdcohVxdQ7ooR2XRIiTybqiruYaQ3TX4Qk9UZm1HJOTdEZt+BSlW8a7DF6pUWbQZEmDuf+ORNn1dRFatXoiWLNzDBebr0nSWfJiwvqEtbrA3bCpeW5WleJVZuzo4OjzLmVWyLFruvungaPRqlciqTTIGbo72" after tData
+         put "lxu3+q1aHoN+K8ZPPP2mY02JWF4AjPNAUQ2vOoF+uwEVF7GToESRWYkdJiA5rBuhu4iV5RxbRkQWIquWKoi48lQC/ePCLl0EeWwXLLNy+DeOgablQWXRdkiAqU5aFEcpUsU4C45dKWZZeyKtbVRLrC6BgypUZi2WoDj2t1GOS3hDeTtLY3cSmbVcKgKOekZXuRZQIYgC/ZP1LzR1wl01Tlk7Y3GFkqlUD7bIoh15S3dSHCnhAZdRpgGZtUlhPkw47jDLI0F2EiycrjA/ojqJcYOrwnWDzx1m2alrS3JZwTEcHSwPbl0A0cq89dpnXdfHEk/lFh5NY1SAsbqPJT7xQi97uyzliVd13tvHCl/5HwElyA5fZcOWrV13+FNWaZXHDh/5/wTd2WWDR/KnXD/yKBs8k9aiLxv8ZOvOLhv80H78BtWt+LF8FgAA" after tData
+         break
+      case "platform.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEwVDDQszA0ApLG5mZceVApQ5CUgZ4RWAJKGpnDpY2g0uaGcNLYEC5rDDPXzMgErBEuYwKTMTcyBekxMOMCAAWUj+6NAAAA" after tData
+         break
+      case "crumble.obj"
+         put "H4sIAAAAAAAC/3VXSZIlJwzd+xRcgKpkhuvYbkc4otpeuO3zG+lJJFNvKtHTgIbHh/r+4+vrz1/N979///b18f3H1y//Gft8tOrp4xP9LTUR6j6e5kh+knk+agk7aAc6B5j9QzYIymtYdhf152Cv6YvOtiPAMO0JaKpLVrI9sJvzdZtrRrfcbzv/rB1j72uJ125sluotOfaevgPqzYb3Bb1N7Trf68w6GMIUMoj7ABX7STmn4bXEOXNN/IZdWnEd9TXpcwYT1peh7CSbwRyHYY6ChXJwbIdmV3vztRfnGdv3vcW75Xyp7fnIKQ2zvl4xhezNzl4M+4Q4FZew5Gn4wbUiuZHRipHV4SZAbSw7H4DwEvU0Rfy6OYB56ymIMm2KopDf0nvjcFh7K8GelW52q+8cbS/NnrXZozi7V2cv5dlLffYsUCB7yd0eidpzS3v2xh6529uOZ172rNHeGmhvDbPXkdhrS+wxc3vjpD2ZYE822xup7EE9ezDcHny1l+Njd5bby0mw22n5i924D4l/6Z1TkOtJ7J93zM6gek/OpUv4CuAygKZ7tgZghGFA5d1hj3jxZ4dpA3ZYMxi51yibuLdwurNgeIB356NBt0beenZvWSr8t2ENu4EpZC/YlJ0mN1cxFbFD9uK6Ne6YyyXNTirzTFMbQzOKsw2tOLRCqBzQv/986+9H89vzyx8mhc/PkEyK+CT6EFw/P30zmbTBZE9Sh7Pr8jO0CrN3NqmwFkYEN3iTtkgsCkJy" after tData
+         put "xc4VW1aCE8wyPhSrdLh4zqx0bTMlS35sVaGsgClG6TF75zlURoxMcN/R9cQaa2FEsOOYUPIGBBaE7CUWU7oHJVG7ZTYVqdTuT1FZ7Cg2q7pZRR0cpwDmED1H8TW1B6cqOLxqBGuUXTDueT4/q2k9OSqMv6Zxr0zzUm57eOuW8XGSQUMLK5XrAVMGrULGBtASzDNHrITYaVDE6XTTYMoYAbghXMCsJ+YIU4pyAdxQpmRJVbihTHkkVeGGMIXhqlMvgylVKQJuCFGczBHUEKKw7WBZHkRpQgWlhnDhoc9LHCHKQMENEKVqcsoOUCVKl5QdwpWojBR2oJKqdQs9QAgnNGMJVOGdO6bswCgbJR90lEIasVE65EGWwVOhB3oKcrz8U7KM0EIPIUtZWEJ+ibLMlH4BkXnNaEUhgSpgQCx4zagcM89FERAA8NqjGhTjeBTO81xcwKxVhC7KmGhbmHAuZMcCcKGJSzx4jaC+Kos2C01c4a64ijOqR0hlaP0jPVOYZ+UlfxZEMyxD4EPjAx+SEOXQqCzaKj+30EtWkiOFhixa+L6xw8NH7A0CWbVZji8WUpoYUWyRRVukcCogRBpT/+tYeNH06qR1A/RqGmYUJoTWCQ1ljRDaFY7PpJ1gN2nf0NMGWvSwHWlEP9nCkdAwoTAhNM5o2AKnKf5r7NzrQ2ieUdgQXBY4K1wXuGw71mljOTYv7OJqDVm0QpkXDnmD0xpEZNEGwPrTEN4KtAuj3jSlPhWWJnnqmVvg" after tData
+         put "uMFSgU4fiwGHzRra9GzWqCDpltArs0YmyS3WgwHPFPSE/ZbJMweJm7Uwb5BZOK9wXWHh9DgRWp5fq9QU2lylzinq687jReZxVfMvO2TR0qNvgT0+YYMDPhqE72HP9y7BRWCVRavWWAw4KZwWOAvMbyzPlyd9NEGVoS1lhYs4VYXrDNN1C5gXuP7kLeX1OvRDq1tiMeCwwpD5eu6wdj7peyfikRTxOor6aIpDq2NPdYGVJKnNcNaxZ8AZTll/EVSGtjwrDJkfPgsM6hela5VfMBzZqodSZdFqbCwGnDcYJ7tolU3uD8BNya2yaId1XWDtCRYK85NoIj2/CfpVRpezpzdHwCPEA+3lRDxkXL+yCErG08OA/ESGkh4WrsiN7fplT++Ixjey54scsmp7Np7/AelfLyGNJ2O+VCFDyfGnwISGN4LKoqXLnWvoZfuIUqQKXgtOzw8f5RHg+xus1+KzCWRDVagMLd39vsoDw/fnCDUTT6ZAOagMLUqlDbke7ipqwRMwqIL6J28yVzQIujoFhXbshQolU6merEUWLect3ekHzuPXxOvPiMrQBoWxGLBfYcicIIK4GQ47jI/XIN4vsP5yYTHgtsKQjYaejYz+UmI4OlgM7iWAaGXe/wOBd0EfQhoAAA==" after tData
+         break
+      case "crumble.mtl"
+         put "H4sIAAAAAAAC/03Ouw2AMAxF0T5TMAGKf7EzA2MAHVAhsT4xRoEitznyU4712s9tmHOaliGPotRa2lOwdLwIgUWq12OoXTG0WgtjC4p0pEAE/Pq75WD2TQFfB+wogcoOqv6rStS5BNtzRyw+XS3di4UFt9IAAAA=" after tData
+         break
+      case "cloud.obj"
+         put "H4sIAAAAAAAC/4VXSRLkNBC88wp/QI0t798BhggiZuDA8n5qyaySZQ2c2rVnrXZ/++vr199+mr798cuXr59vf3394Z+pfpZp+RxTWT67kdsu9L5syrnXNVSMVYUs9XPORyqduzMffsrY0ZUsj/ZdTxFOyfJAqDblaaSeS+da4pdBJuWZSmpRqUTESCWsmvzDiqivZPWcLMoAe3ln+Ij/8jyKP0rkjXtQkjKoSTYlIUY3H4YtSnatPsfoOUVHW513Ul1OT5XyjFEG47RM8+c+5CEL2zB6uvQG62eHwpIMo8vSa5RexekB+dDvPb5CBqbSgy6vtBqVl8byqZc+rcfRdtWZ1UMvOzhs0vpZl0pfQVOn7VPjZxBt4Lr0vq1/hB12fTzzVEYoSw+zvHGWDuiVhfOImP4W/ADWQKtBGoPwH6j6AyAsgCpNhs1uvZCWd8SE1Sm1MbMVo/LVZ4lzWV84E1IfrHEUHa7dzGWyvco19U57vDFf2aHe79vNy6gMhqSMpquMRqe8039V/3eBMAt21ZtPp5dVcW3KUuemYqzVWGYlD3VTnl2C5Qbv6aoMfdUDo6rqYI1c9SHNe3kgrea4NTT3pfe/mJtXSuWVUyhSrzBqk1NYPovhSJoMAgmBlBG6MkqjDJJ94hi4H6AYZDTG/65Q+U6J2KsGKpv8LFqLlc3MXvY2nUnJOXmPyaPZfYX7UGU4cfOt1sq+aHebarDenDIy867VU0GdyTNWefLKiPmw/Q6nMxwEGOMA" after tData
+         put "2vJOqQwSf6q9tNTzYTU8Y271gB12Yw5Y7lr40yZmQ19PA2vwjsVZh2k5frAGvkYhX/7LIICOq9pW/+YAaxB0N0cvuGWAtwwAlx7xahpNWEuiPLMYghupETBjlv8B1+gFOGIrTbJN6V6AyzBsoGs68QqbzRkUM+G+YAzQNsAS18AXO980nnPUJD7QYgfS+xs7xy8b0vse+emtymh6ymj0ymimyrsUfTv+/vOL/C2efp5/+HVa5h9/XOZpWeRHviWq/NSGvcrPCqmyN3nYgm1Kyt7lQY7xIT/yyXLKz6nsSx6uYJuSsm95uINtSsKu4q3OU5VYAr0KkqpIqsSq61QlslzzKk7q3rDFiRzrKiGrhqziTb9VJES9307MGkbKRiwYUZvIvAZu29TEpaG9C3ufp0OcSB8OiXzcwgYN6Sk/p5bK5dMpkc9lOsXJqU5AQ+q2yjYzdifYoCmNpoENX+HEabbYeqdseZBpYi+ts+rEaUjdVrMU+b4FbpOmb0qZDurtyNA79Q0aUo7PKW2RlcNwee9y2CCNkLvQ+x4ATZrpQOqAVFtC7pWl8m5kYSmVUp1WKol93jG4MbFOQ3qJ7TU32jbv0yUALpsTpymlEx+YWKHYHWTt0kzeQ14ivTasjLBJQxpILAHWN4aNtEujDZdM8HWQ7TVIJ5BeksWlK+UPXMAoFWhKuZe0FrXrapyAhlTSuSwdS2DaxHrbkZywSbv0lp97znVdZqudDP6sIz3bYSKPK23HJANj8wMP" after tData
+         put "aUh5EC6xvpYYyFnrN9ccUch9yCysbot8QAKq9zwTC3nkQMzTJlA2mRL5ORUR6JAzI7NxHFAGCkXldMgfBdG5mjdeSM9UM3c65XE6WV0486vYhg+NJgpFOLi0AZ3Iuabe+gwfuJLjGptUbtN12sTFVmP5uGWgIWWhc/148iM9HB2X+hFXPOYPagFC9Z0DebzTHFawUx8cyB1Wvuy4/AxLGtKYVl/vmIUYAXAot/1oXqUx/XSUO+IaWC2++bV3m3RxW1jAvtyUit3WrOQmCWwH4CgbNKTSzE2buUnU7ebLbxdf+5KvSkp5eHaJLV83eInEcpGGVCLtWrpDnBwz3jXTKUqnAgQNabyGPXa8WE2ar2FI47WAMh8C4dhzN0FD6jnn+h1Cy6dVbCVoSs1WkVgCxBkvKNKQMh04wessfIOm1EqjuK1NeW5y/ILjGrf83OrfH3CX2vUBh3Lh3w3bO5wDCJpGoS1474Wr7Fc/lx/SW2xvnRZ/iNXiywE0pTaQ6Ruvbp+lfNEzsofkvFspJMNJ124Sv1Y0sZy0npNWkxratUmPkjZB+K4hUW5qqNAcCWOVxNd5WkWwLtMq3NXYGmKdVgmxbtMqLlat1ioO1yOMQtvk0yqh5dN9Ff+rRqdTib3eqb2J9TY7LE2hcYBw5kdLoiqQKfLUdAk9eppitZ/TLtF3jQ7aZMh+l989liZ2iUvk0kOow9ZA3B/Vq+UynQClIGEJBQVZhxDHmsYmg54j866hYd5B5x9CHFsu" after tData
+         put "K9m2KWkOaWiDjSOT2jg6kFot8ty5da42aEpF+zgjWatHVgC0yXTWlGVZY/fz0IGG1CuSpeEZjIOBw+fSCKeto4tIA7TJsAz2bOMNhj0bV4dF4Qiu84jus82gIc11xDj5WYtDRRrDxXZ7YBt8FgWUS2KBnIkasnxO0dyAaPWlElflukRTQEPqG5mHzNXyxJN2qRspDl9VJB0bS9qll6C+7JvHHvjaC4CgIfXDpZ2QIHfFLW0ONmhIxei2ivjO3+L0lkWVyLdmCZoXwc5RIsFJzZBOUxpOtP03XwXxKcBXA6QGKE8hAPrxynQoJW4W1raZy+gUJNanrLWjyqKC5tG0RJVtAXhps2FOU2pgsqgcFX6+gGbJo9Z+idkCy7/JEHc6EneA+JCKlx1pl3qf8o3BopINmu8TC6HadrqDHesBGlJqYxjwCRAvUn4SYHSYDhYETrD8oCjzrfkX2Rlm32khAAA=" after tData
+         break
+      case "cloud.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DM3M4STFibmXHlQaUOItIWJMZy0NDCCSxtBpC2NzRGkmSEXAGsAAYtdAAAA" after tData
+         break
+      case "plate.obj"
+         put "H4sIAAAAAAAC/3VXSZLkNgy8zyv4AXVxJ/WdsccRjugeHzz2+40kABJU0ZeSkEjslIT6+vX5+ed39/XX7z8+P75+fX77113+477xGyJ+2x0Bho8Ayafk/EfvD+hSzNgaU58Lif7uIjCz92lOrhZzgZY67YPGFsSmw5Ag72Zn/4dMjim/xzx3YEY9VXWsfyOqrSZHXVzTuG+2fQffB3Sa42k+hOVgvOXAxAkq9n+FvDMPxdmcJeUDdGrBYbDHhJ99Nwjd5vw8ShZsJkRT65zfDtQT2myvo/F1sDbYW+Sjx1Peh/r8R62LVusOCXIdWNeRlu+yeMk3Rssog3ufWrKgUhVlB0JV+zTKEzALmFNb9vHulqpedy47WNQaJ5i9nMwcjH3W2TAqVAXZXqnqoKRVQE5qX29D7Zap4E4Ve2HG0m2pEincdTGVyqA63R1o/WLvy4oUonQqBlNU0BPLVEV3rjiQ0+nzihQav0BsS1MsC5OJCsSmGqTJm8Z304+bj6yv2XYuWaaiG1XHQcyfo/X8UPD7rytYBzhqCk/ssqBaG2McO74KECoDeEn9lM+cZ4UFVH4aPD0e7IeBCTAMbAZh5V4kiDeFF839HTwbvzXo1MhTz84tS8yrfM+8iSl0HTCTnSZnq1hFvEHXwfTRuLe5HNKkD6/zZmpzaE5wNC0ORZ/TbkOOme0625XIYszspkkKjWet7OHsMt66HBa2v8TBpR4ursiH5+mUvkCcuq147QUkMZpehtmlxHk6" after tData
+         put "//n7B+2B7jf/7Q9XX6/qyutVXKc7AsZ9er2au+mHAFxcfL3oo+vpl5BAUqB8wut1u5AhAE0Q4YU1gMgZjU/5k0mkQFtDo0t00UMC7EcQVk40kdt4u0iX5F3KuAAeNy5UjjACASYzWkjEKFVIcH2PUCxLYIIRJGVUSL9hCAstSwcPzYBRqcmiTAHaDZra7iHdRzh7ozVwMNrl2gQAWC13ppGj4bIh0GRQpgDNFk0Px8X4X+QQlg3QalHmAG4bXBXuG9weEbsJjG4EC4e8s1kWrRyZBaf6gMvuRGTRJob1EQmrAu3CrLeY1E1hxcimZ2GD8wOWCnT6fDPh9GCztvgHmysoGpL1erJmJiVs7HkCvHH6DsdHJt46yQ+2nLx5mOXMK9x3WM60PBHa+bgKk+CzXk3mftSLZIoraBq90zCH8UITWbQYQAGMcM0VBO+uwBfediqztiIkXnkVQW5XKXL2riZcAIssWkTCe69SbPr7UilWjq42SIBFFm2HBJjrrzyXqi1WWZ51fUL4ZhppT/hmwuUB86EseYdZ5p5MuM9WdSleZNXODo4Oz3JmlSyLlru/OsiNXq1SWbRNxsDNmf2t2iqRRTvHQE5yco0SpP8oLeBCsMiqhS0+Bg1mxTVKIVfXkC7KUVm0CIm8G+pqriFkdw2+0BOVWdsRCXl3xKavIMUq3nX4QpUqizZDAsz9bzzSpo+LyKrVA9GShXt4wHxcms6SbyasT2iLG+wNm4rXVmUpXmXWrg6ODs9y" after tData
+         put "ZpUsi5a7bzo4Gr1aJbJqk4yBm6P95catfquWx6DvivGJp2861pSI5QXAuB8oquFVJ9C3G1BxETsJShSZldhhApLDuhG6i1hZ7rFlRGQhsmqpgogjTyXEKC5dBHlsFyyzcvg3joGm5UFl0XZIgKlOWhRHKVLFuBccu1LMsvZEWtuollhdAgdVqMxaLEFx7G+jHJfwhPJ2lsbuJDJruVQEHPWMrnItoEIQBfon619o6oS7apyydsbiCiVTqR5skUU78pbupDhSwgUuo0wDMmuTwnwz4bjDLI8E2UmwcHrCfInqJMYNrgrXDb53mGWnri3JZQXHcHSwPLh1AEQr89Zjn3VdH0s8lVt4NI1RAcbqPpb4xAu97O2ylCde1XlvHyt85T8CSpAdvsqGLVu77vC3rNIqjx0+8v8E3dllg0fytxw/8igbPJPWoi8b/GTrzi4b/NB++w8P2LLc1BYAAA==" after tData
+         break
+      case "plate.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEwVDDQszA0ApLG5mZceVApQ5CUgZ4RWAJKGpnDpY2g0uaGcNLYEC5rDDPXzMgErBEuYwKTMTcyBekxMOMCAAWUj+6NAAAA" after tData
+         break
+      case "gate.obj"
+         put "H4sIAAAAAAAC/4VXSZLkNgy8zyv0AVZx0/Yd2zMRjui2Dx77/caSAMWl7UtL2BMEmKr+/Pnx8fsv2+efv33/eH3+/Pj2zxbyK+9bfMWL/uTzocmV/hRVuCweo8OUYhmQXpUVMe1Nc7Ci7ggxjzp4TDlKHzDD1iJdb5r12Ytr+kJhnbkrPVaasi4rj4cQpqbDdC6BSp47P9o84ivlplKM7vYYJHTP3hDatedutZt4n1+AhX4r8hcFRReGkhIaJk9VlhFH6Fs13dRXeA5tqPEAGBZthGev87xDvxJ5dUI9rIdT6M5oAGqbEfqpG6jHbrjquVMN+tPleTGnhgdMTdH5DKdpPtP6hv5+IbC7tfWBccj9RflhJIs+pl7/83weNNMf9v9gbve573+xTPPKzdu1uKrzhV7c3cU9nW/zfHFXd211KRfXb7rgEwfMF37e+PlazFdgul7TDZyu24oGFnSxJob8dfawKri6zYvLNH2VBkVYfT5Y84fQmmDmk7wzVLHIX/KFQo878TndB+tGnznNV0ESEzxIYkIXJDGhBcGp+ViW1IdYxLOBkIYuw6NNBxgeoUO18FX+J4Kh3CrzGkF/HmHRflgdUhQqOa28wE0nA7RzzfSncvLbFaHXaMYuKuqlOn3sY+IwlA7rSqIIz0qSJXSVJEsYK4c0oAtdU6FLHRa5w4wgjPXCovswn1FYn0iYCg7owwJqJNsW9c1fIgISv5tKU6jq77++02/j7df47ceW3u+05fc7b+X9" after tData
+         put "LqSo73fd9vd73473+2APMqSyJTKkuiUy0ReE1De93FuOFBu3THlyYrW6SQLOTSp9V33zkzxaHpXl3fTibkrBxCANn2g5LymAQKp4epXU0vehLq2AyehSumL1RepryyTneyuUqfBxlZNezq2QlWZWyFrYu1I0jaUyuLpVql4ZWqXS9dgqBdVzqxRUL1arm0ajEudW2ZKYN5CgpAJib8iwjkgkGrlYDRlWwdXU1pUlgWxBAp+9pS8vaWcCGdZW8pYh8Qy2PemI9yxLsxcdWcW0jiqHf+yyI8eBFTuo8LEdjGI7bp22+bCoJVgpEkyeVQFouMBgT5FgsZRaXeOQhbFChjVjMRSddYe+kFBNUwZtw6qJBJMeBGnPWwZzRZn9lbBA1yWDuG6Z9R0xnzvJid9ZlvMuGMRdZd3uXdbtPrBASKrRiGVvlc1q3shtJTPWzWRUdiQSZjhdbbJaFRCrpS9P4rhRUq0KqJ2JlTA1ZLNKz05pPHcy3HLpQQB86CyJPvEceRMSQUwX6IT5JDm5qAV8A2KgqZ2NHVQCobCjeJKWKBwMZqQGPlNb5nmXVp2drJC8Q6/u7CdwFRd4TDGq3oFrYmcxJ2lAVKsjFfhgx8Z4KouNj4pVVDIfznaUtewP6lGrM5KRCw8qPjgGsloL3xg5agJTs1ONcYzJsFKSwkky1aYfMeAYpx5jJLUWCir5gVvcHpQJGbgliNVSxLsUAK1Ls3rzUsSbdapHe2ptXaJ5fAH8TCDDKs0yYVyy" after tData
+         put "JeARIxcT1bgfWKGjyJ4rnRiPgGvEdNqq77cslXLfaSsDYlSb8yOYOPEWNM4T0ZhwxxbBCVxuvpARUnSRrAp35LUgwXRh47U/B+LfAhRXq2PQHu0bceoNQaNq8n4vXRLjICMfYx21nidW6NIlAe2dFdOHDGtjxyrrarTnfAf6Vuu5Y5mN7LNMHwz2w2RYzwMrZG5gdfOGDKuW4NxSxHFeWGbrQ62tHfQhh9HagWxnYBdFD8fh20fKAMOquI2QnW4IyWW8kmgDUgR7PSiZh304jwoV8m0W2nIS4y8nfwckoYVIwpZCbIOnroMhUEktQ7BxqXGwybBaVmsCjG1rZjKsEuSUK7FSlfOqpBajZlCZcRQZs5CREIrTC8+HOaDwICvIqbGl8QpPKDV6gaxJEcslVYZ1zG1cavxnMqwGECU1Grk4CWRYjRahtmYtifG4Wp3O7WOAZq1LyLB6SeUGZ4oT4zL6BBdGzAU8lXkRjK1OnZ0yR6NROEkkfFirshq9GrhRRLUxBIhqcwrTagDmdGWyWhtepXYgNGjmpZ8ElAMyO4iRYGE1xGeR01RqeHCVXGe/3BeWw2inyM44+xjHgjhsruami6aVWK0yrJ5bXzyXJwFDq9WJGrhRcmQ2s3oSUDGa9S7hBhovWCVjZAAytcmw9oQnv+4iTXFP233JI8XITyZWVtDPtpjlefP/BMJ8oqBfs6c+WM+JRK7IV5Goeq1qKZOXTLGglhexmgXFUMRqplhRzcp41dpV2xFb" after tData
+         put "b8nJD2b+GyBYVqvAJL0FHp47omoEnOg448OjiuVfLPgwncwbAAA=" after tData
+         break
+      case "gate.mtl"
+         put "H4sIAAAAAAAC/z3OOxKAIAwE0J5TeAInJOTDGTyG2imVM15fIkyabR7spp3v/VzLDmk7FlgVsWeB0hPVUpucBxvVngz+iJiCcXDNrsJeEUbD2HoI2D9SQ8tQEfL0dkMN5fn3H2T0YqEcLPPo4ruq4icQpQ+WlnR81AAAAA==" after tData
+         break
+   end switch
+   return tData
+end oiModelData
+-- END GAME MODELS
+
 -- =====================================================================
 -- THE b3k KIT, carried verbatim from src/box3dxt-kit.livecodescript by
 -- tools/sync-embedded-kit.py. Never edit between the two lines below:
@@ -1986,7 +2350,8 @@ end oiButton
 -- SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
---         b3kSetGlow thing,color / b3kGlow(thing)
+--         b3kSetGlow thing,color / b3kGlow(thing) /
+--         b3kSetLook thing,objTextOrPath[,mtlText,scale]
 -- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
 --         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -2068,6 +2433,9 @@ local sBg, sAmbient, sLight, sFog, sSmooth, sMode
 -- the sun's colour, each thing's glow, and the lamps: sLamp[n] is
 -- "x,y,z;r,g,b;intensity;range" and sLampR3[n] its render3dxt light
 local sSunColor, sGlow, sLamp, sLampR3, sLampCount
+-- a model drawn in place of a thing's own shape (b3kSetLook): its OBJ text
+-- or file, its material text, its scale, and the key of its shared mesh
+local sLook, sLookMtl, sLookScale, sLookKey
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -2727,6 +3095,10 @@ private command b3kTablesReset
    put empty into sTexPath
    put empty into sModel
    put empty into sModelPath
+   put empty into sLook
+   put empty into sLookMtl
+   put empty into sLookScale
+   put empty into sLookKey
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -4438,41 +4810,61 @@ private command b3kVisualMake pThing
    set the itemDelimiter to comma
    put sDims[pThing] into tD
    put empty into tMesh
-   switch sGeo[pThing]
-      case "box"
-         put "box:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "ball"
-         put "ball:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "capsule"
-         put "capsule:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "cylinder"
-         put "cylinder:" & tD into tKey
-         if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
-         put sMeshes[tKey] into tMesh
-         break
-      case "model"
-         if sModelPath[pThing] is not empty then
-            put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+   -- a look (b3kSetLook) is drawn instead of the shape: one mesh for every
+   -- thing that wears the same model, kept with the shapes' meshes
+   if sLookKey[pThing] is not empty then
+      put sLookKey[pThing] into tKey
+      if sMeshes[tKey] is empty then
+         if sLook[pThing] contains return then
+            put r3MeshParseObj(sLook[pThing], sLookMtl[pThing]) into tMesh
          else
-            put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            put r3MeshLoadObj(sLook[pThing]) into tMesh
          end if
-         if tMesh is a number and tMesh > 0 then
-            put tMesh into sOwnMesh[pThing]
-            put b3kNum(sScale[pThing], 1) into tScale
-         else
-            put empty into tMesh
-         end if
-         break
-   end switch
+         if tMesh is a number and tMesh > 0 then put tMesh into sMeshes[tKey]
+      end if
+      put sMeshes[tKey] into tMesh
+      if tMesh is a number and tMesh > 0 then
+         put b3kNum(sLookScale[pThing], 1) into tScale
+         put "look" into tD
+      end if
+   end if
+   if tD is not "look" then
+      switch sGeo[pThing]
+         case "box"
+            put "box:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshBox(item 1 of tD, item 2 of tD, item 3 of tD) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "ball"
+            put "ball:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "capsule"
+            put "capsule:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "cylinder"
+            put "cylinder:" & tD into tKey
+            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
+            put sMeshes[tKey] into tMesh
+            break
+         case "model"
+            if sModelPath[pThing] is not empty then
+               put r3MeshLoadObj(sModelPath[pThing]) into tMesh
+            else
+               put r3MeshParseObj(sModel[pThing], empty) into tMesh
+            end if
+            if tMesh is a number and tMesh > 0 then
+               put tMesh into sOwnMesh[pThing]
+               put b3kNum(sScale[pThing], 1) into tScale
+            else
+               put empty into tMesh
+            end if
+            break
+      end switch
+   end if
    -- a hull, a cone, a mesh, or a model that would not load: exactly the
    -- triangles box3dxt collides with
    if tMesh is not a number or tMesh <= 0 then
@@ -4505,6 +4897,11 @@ private command b3kVisualLook pThing
    put empty into sOwnMat[pThing]
    put empty into sOwnTex[pThing]
    put empty into tMat
+   -- a look (b3kSetLook) wears the model's own materials
+   if sLookKey[pThing] is not empty then
+      put true into sStale
+      exit b3kVisualLook
+   end if
    if sChecker[pThing] is not empty then
       set the itemDelimiter to ";"
       put item 1 of sChecker[pThing] into tA
@@ -5464,6 +5861,60 @@ command b3kSetTexture pThing, pPath
 end b3kSetTexture
 
 /**
+Summary: Draw a 3D model (Wavefront OBJ) in place of a thing's own shape (render3dxt only).
+
+pThing: The thing.
+
+pSource: The OBJ text itself, or the full path of a .obj file; empty puts the thing's own shape back.
+
+pMaterials: The text of the model's material (.mtl) file, for OBJ text; empty leaves the model white. A path reads the materials and pictures its file names.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
+
+Description:
+Only the picture changes: the thing still collides, falls and is
+picked as its own shape, so a box can look like a carved platform and
+a capsule like a character. The model's origin sits at the thing's
+centre and turns with it. Things wearing the same model share one copy
+of it. The model keeps its own colours: a colour, checker, picture or
+glow set on the thing shows again when the look is taken off, and
+box3dxt's renderer keeps drawing the shape in the thing's colour.
+
+References: b3kSpawnModel (handler), b3kAddStaticModel (handler), b3kSetColor (handler)
+*/
+command b3kSetLook pThing, pSource, pMaterials, pScale
+   local tHandle
+   if sKind[pThing] is empty then exit b3kSetLook
+   if pSource is empty then
+      delete variable sLook[pThing]
+      delete variable sLookMtl[pThing]
+      delete variable sLookScale[pThing]
+      delete variable sLookKey[pThing]
+   else
+      put pSource into sLook[pThing]
+      put pMaterials into sLookMtl[pThing]
+      put max(0.0001, b3kNum(pScale, 1)) into sLookScale[pThing]
+      put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sLookKey[pThing]
+   end if
+   -- a new picture: the old node and any mesh it alone owned go first
+   if sScene is not empty then
+      repeat for each item tHandle in sNode[pThing]
+         r3NodeDestroy tHandle
+      end repeat
+      repeat for each item tHandle in sOwnMesh[pThing]
+         r3MeshDestroy tHandle
+      end repeat
+   end if
+   put empty into sNode[pThing]
+   put empty into sOwnMesh[pThing]
+   b3kVisualMake pThing
+   put true into sStale
+end b3kSetLook
+
+/**
 Summary: Show or hide a thing's picture.
 
 pThing: The thing.
@@ -6063,6 +6514,10 @@ command b3kRemove pThing
    delete variable sTexPath[pThing]
    delete variable sModel[pThing]
    delete variable sModelPath[pThing]
+   delete variable sLook[pThing]
+   delete variable sLookMtl[pThing]
+   delete variable sLookScale[pThing]
+   delete variable sLookKey[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]
