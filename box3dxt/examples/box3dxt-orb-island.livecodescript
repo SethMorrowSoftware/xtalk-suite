@@ -652,6 +652,7 @@ local sOiWasGround    -- the player stood on something last frame
 local sOiPadOn        -- true once gpStart worked
 local sOiPadNow       -- the pad in use, 0 for none
 local sOiPadSteer     -- true while the stick steers the player
+local sOiPauseGen     -- counts pauses: the paused pad poll of an old one stops
 -- the sound (audioxt, when it is loaded)
 local sOiAudio        -- the audio engine, 0 for none
 local sOiAudioDevice  -- the device oiSoundStart opens: 0 the default
@@ -818,7 +819,11 @@ command oiNewGame
    if there is a button "oiPause" then set the label of button "oiPause" to "Pause (P)"
    -- one audio engine for the session, made at the first run: in a web
    -- page the browser unlocks sound once, and a new engine is not unlocked
-   if not oiSoundOn() then oiSoundStart
+   if not oiSoundOn() then
+      oiSoundStart
+   else
+      oiSoundRebase
+   end if
    oiSoundLabel
    oiHud
    uiStatus "Find the " & sOiOrbCount & " golden orbs. " & oiRendererWords(), "ok"
@@ -2091,6 +2096,8 @@ command oiTogglePause
    else
       b3kPause
       set the label of button "oiPause" to "Resume (P)"
+      add 1 to sOiPauseGen
+      if sOiPadOn is true then send ("oiPadPausedPoll " & sOiPauseGen) to me in 50 milliseconds
       uiStatus "Paused. P or Resume plays on; dragging the view still turns the camera.", "warn"
    end if
 end oiTogglePause
@@ -2219,21 +2226,9 @@ end oiPadPick
 -- held. A pad steers only while its stick is pushed, and gives the keys
 -- back when let go.
 command oiPadTick
-   local tEvent, tStick, tX, tY, tLook
+   local tStick, tX, tY, tLook
    if sOiPadOn is not true then exit oiPadTick
-   get gpPoll()
-   repeat for each line tEvent in gpEvents()
-      switch item 1 of tEvent
-         case "connected"
-         case "disconnected"
-            oiPadPick
-            oiHud
-            break
-         case "button"
-            if item 2 of tEvent is sOiPadNow and item 4 of tEvent is "down" then oiPadButton item 3 of tEvent
-            break
-      end switch
-   end repeat
+   oiPadEvents
    -- a pad let go of (unplugged, asleep, its batteries flat) while its
    -- stick was pushed must let go of the player too: until 2026-11-26 the
    -- last push stayed, and the player ran on by itself
@@ -2284,6 +2279,40 @@ command oiPadButton pButton
    end switch
 end oiPadButton
 
+-- the pad's queued events: plugged in, unplugged, a button pressed
+command oiPadEvents
+   local tEvent
+   get gpPoll()
+   repeat for each line tEvent in gpEvents()
+      switch item 1 of tEvent
+         case "connected"
+         case "disconnected"
+            oiPadPick
+            oiHud
+            break
+         case "button"
+            if item 2 of tEvent is sOiPadNow and item 4 of tEvent is "down" then oiPadButton item 3 of tEvent
+            break
+      end switch
+   end repeat
+end oiPadEvents
+
+-- While the Kit is paused it sends no b3kFrame, so oiPadTick stops; this
+-- reads the pad on its own timer instead, so Start resumes and Back starts
+-- again (before 2026-11-26 a pad that paused could not resume). One poll
+-- runs at a time: pGen is the pause it belongs to, and it ends when that
+-- pause does.
+command oiPadPausedPoll pGen
+   set the defaultStack to the short name of this stack
+   if pGen is not sOiPauseGen then exit oiPadPausedPoll
+   if sOiPadOn is not true or b3kWorld() is empty then exit oiPadPausedPoll
+   if not b3kIsPaused() then exit oiPadPausedPoll
+   oiPadEvents
+   if pGen is sOiPauseGen and b3kIsPaused() then
+      send ("oiPadPausedPoll " & pGen) to me in 50 milliseconds
+   end if
+end oiPadPausedPoll
+
 -- shake the pad, where it can: pLow and pHigh 0 to 1, for pMs
 command oiRumble pLow, pHigh, pMs
    if sOiPadOn is not true or sOiPadNow is 0 then exit oiRumble
@@ -2332,6 +2361,18 @@ command oiSoundStart pDevice
    put true into sOiSeaUp
    oiSoundLabel
 end oiSoundStart
+
+-- a new run sets the game clock back to 0: the last run's one-shot sounds
+-- are freed now (their deadlines are on the old clock, which the new one
+-- would take minutes to reach) and the sea swells again from 0
+command oiSoundRebase
+   local tLine
+   repeat for each line tLine in sOiVoices
+      if item 1 of tLine is an integer then auSoundFree item 1 of tLine
+   end repeat
+   put empty into sOiVoices
+   put 0 into sOiSeaAt
+end oiSoundRebase
 
 command oiSoundStop
    if sOiAudio is an integer and sOiAudio > 0 then auEngineFree sOiAudio

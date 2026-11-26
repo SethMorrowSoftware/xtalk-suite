@@ -665,6 +665,11 @@ command prSoundsHeard pAu
    prCheck "a sound is a voice waiting to be freed", oiSoundVoices() > 0, oiSoundVoices()
    prSteps 150
    prCheck "and every voice is freed once it is done", oiSoundVoices() is 0, oiSoundVoices()
+   -- a new run sets the clock back to 0, so the last run's voices are
+   -- freed then: their deadlines are on the old clock
+   oiSound "blast"
+   oiSoundRebase
+   prCheck "a new run's clock frees the last run's voices", oiSoundVoices() is 0, oiSoundVoices()
    dispatch "keyDown" to stack "OrbIsland" with "m"
    prCheck "M turns the sound off", the label of button "oiSound" of card 1 of stack "OrbIsland" is "Sound: off (M)", \
          the label of button "oiSound" of card 1 of stack "OrbIsland"
@@ -725,6 +730,16 @@ command prGamepad pGp
    get gpVirtualSetButton(tPad, "start", false)
    prSteps 1
    prCheck "and Start again plays on", b3kIsPaused() is false, b3kIsPaused()
+   -- the same with the game's own loop, which sends no frame while
+   -- paused (prSteps' b3kStepOnce does): before 2026-11-26 a pad that
+   -- paused could not resume
+   oiTogglePause
+   prCheck "paused from the game", b3kIsPaused() is true, b3kIsPaused()
+   get gpVirtualSetButton(tPad, "start", true)
+   wait 200 milliseconds with messages
+   get gpVirtualSetButton(tPad, "start", false)
+   wait 200 milliseconds with messages
+   prCheck "Start resumes a paused game with no frame sent", b3kIsPaused() is false, b3kIsPaused()
    prCheck "the game widens the stick's dead zone", prNear(gpDeadZone(), 0.24, 0.001), gpDeadZone()
    b3kPause
    -- a pad that leaves while its stick is pushed lets go of the player:

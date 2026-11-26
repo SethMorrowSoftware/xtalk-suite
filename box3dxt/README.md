@@ -159,8 +159,8 @@ Joined the suite on 2026-11-20. What has run, and where:
   and audioxt when they are loaded. On OXT-Beyond 0.2.8-dp.2.1's Linux server engine
   (9.7.1-BeyondEngine) with the committed `x86_64-linux` libraries of all four:
   `tests/engine-kit.lc` passed 250 checks with render3dxt and 222 without, and
-  `tests/engine-demo.lc` 204 with render3dxt, gamepadxt (a virtual pad) and audioxt (its
-  silent device), 199 with gamepadxt and audioxt but no render3dxt, 186 with render3dxt
+  `tests/engine-demo.lc` 207 with render3dxt, gamepadxt (a virtual pad) and audioxt (its
+  silent device), 202 with gamepadxt and audioxt but no render3dxt, 187 with render3dxt
   alone beside box3dxt, 182 with box3dxt alone and 6 with no extension. In the gallery's web
   Stack Player (web-2026.11.22, headless Chromium) it built, walked to an orb, found both
   extensions and drew 30 pictures a second where 1.1 drew 36 on the same machine. A real gamepad, the sound heard and an IDE
