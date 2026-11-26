@@ -944,6 +944,51 @@ command testLook
    check "b3kClear after looks is clean", b3kThingCount() is 0, b3kThingCount()
 end testLook
 
+-- The step mode: fixed by default; smooth spends a running frame's whole
+-- time in equal steps; b3kStepOnce is one sixtieth in either mode, so a
+-- hand-stepped world lands where it always did
+command testStepMode
+   local tBall, tFixed, tSmooth, tLift, tT, tY0
+   freshWorld
+   check "the step mode starts fixed", b3kStepMode() is "fixed", b3kStepMode()
+   b3kSpawnBall 0, 5, 0, 0.5
+   put the result into tBall
+   repeat 30 times
+      b3kStepOnce
+   end repeat
+   put b3kPosition(tBall) into tFixed
+   freshWorld
+   b3kSetStepMode "smooth"
+   check "b3kSetStepMode smooth", b3kStepMode() is "smooth", b3kStepMode()
+   b3kSpawnBall 0, 5, 0, 0.5
+   put the result into tBall
+   repeat 30 times
+      b3kStepOnce
+   end repeat
+   put b3kPosition(tBall) into tSmooth
+   check "b3kStepOnce takes the same step in either mode", tSmooth is tFixed, tFixed && tSmooth
+   -- the running loop, smooth: things move and a glide arrives on time
+   b3kSpawnBall 2, 5, 0, 0.5
+   put the result into tBall
+   put b3kY(tBall) into tY0
+   b3kAddPlatform -2, 1, 0, 1, 0.2, 1
+   put the result into tLift
+   b3kGlideTo tLift, -2, 2, 0, 0.3
+   b3kStart
+   put the milliseconds into tT
+   repeat until the milliseconds - tT > 900
+      wait 20 milliseconds with messages
+   end repeat
+   b3kPause
+   check "the smooth loop runs: a ball falls", b3kY(tBall) < tY0 - 0.5, tY0 && b3kY(tBall)
+   check "and a glide arrives", not b3kIsGliding(tLift) and prNearK(b3kY(tLift), 2, 0.01), b3kPosition(tLift)
+   check "and no frame threw", b3kFrameError() is empty, b3kFrameError()
+   b3kStop
+   b3kSetStepMode "anything else"
+   check "any other mode is fixed", b3kStepMode() is "fixed", b3kStepMode()
+   b3kClear
+end testStepMode
+
 function prNearK pA, pB, pTolerance
    if pA is not a number then return false
    return abs(pA - pB) <= pTolerance
@@ -1170,6 +1215,7 @@ try
       testLampsAndGlow
       testLook
       testLookParts
+      testStepMode
       testTeardown
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && oneLine(b3AssertText()) && b3UnstableCount()

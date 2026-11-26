@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 178 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 180 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -41,7 +41,8 @@ handlers below and to the messages the Kit sends (`b3kContact`, `b3kEndContact`,
 WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
-        b3kSetSubsteps n / b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
+        b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+        b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 TARGETS b3kFrameTarget obj / b3kContactTarget obj
 VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
@@ -444,6 +445,36 @@ b3kSetSubsteps 8   -- tall stacks stand steadier
 ```
 
 See also: [`b3kSetup`](#b3ksetup)
+
+### `b3kSetStepMode`
+
+`b3kSetStepMode pMode`
+
+Choose how the running loop divides a frame's time into physics steps.
+
+- `pMode`: "fixed" (the default) or "smooth".
+
+"fixed" steps a sixtieth of a second at a time and carries what is left of a frame over to the next one, so a frame runs a whole number of steps: at 26 pictures a second some frames run two and some three, and what moves seems to speed up and slow down. "smooth" uses up each frame's time in equal steps no longer than a sixtieth (38 ms as three of 12.7 ms), so things move as far as the time that passed. [`b3kStepOnce`](#b3ksteponce) always takes one sixtieth, in either mode. The mode is kept until it is set again.
+
+```
+b3kSetStepMode "smooth"
+```
+
+See also: [`b3kStepMode`](#b3kstepmode), [`b3kStart`](#b3kstart), [`b3kStepOnce`](#b3ksteponce)
+
+### `b3kStepMode`
+
+`b3kStepMode()`
+
+The step mode set by [`b3kSetStepMode`](#b3ksetstepmode).
+
+Returns: "fixed" or "smooth".
+
+```
+put b3kStepMode() into field "Mode"
+```
+
+See also: [`b3kSetStepMode`](#b3ksetstepmode)
 
 ### `b3kFrameTarget`
 

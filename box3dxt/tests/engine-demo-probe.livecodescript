@@ -160,6 +160,7 @@ command prBuild pR3
    -- smooth edges are dropped only in a web page, where render3dxt draws
    -- on one thread inside the frame
    prCheck "this engine is not a web page", oiOnWeb() is false, the platform
+   prCheck "the game spends each frame's time in equal steps", b3kStepMode() is "smooth", b3kStepMode()
    -- the dark-appearance rule: a control that leaves its colours to the
    -- appearance draws light words in the dark one, white on the light page
    put empty into tBad
@@ -724,10 +725,21 @@ command prGamepad pGp
    get gpVirtualSetButton(tPad, "start", false)
    prSteps 1
    prCheck "and Start again plays on", b3kIsPaused() is false, b3kIsPaused()
+   prCheck "the game widens the stick's dead zone", prNear(gpDeadZone(), 0.24, 0.001), gpDeadZone()
    b3kPause
+   -- a pad that leaves while its stick is pushed lets go of the player:
+   -- before 2026-11-26 the last push stayed and the player ran on
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 20
+   get gpVirtualSetAxis(tPad, "lefty", -1)
+   prSteps 20
    gpVirtualDetach tPad
    prSteps 2
    prCheck "a pad that leaves is let go", oiPadWords() is "none connected", oiPadWords()
+   prSteps 60
+   prCheck "and so is the player, mid-run", b3kSpeed(b3kPlayer()) < 0.5, b3kSpeed(b3kPlayer())
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
 end prGamepad
 
 command prTiming pR3

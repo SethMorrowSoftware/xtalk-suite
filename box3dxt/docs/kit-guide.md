@@ -171,6 +171,14 @@ carries on. `b3kStop` stops the loop altogether; `b3kStart` starts it again.
 `b3kStepOnce` runs exactly one frame of one step, paused or not, for a Step
 button or a test.
 
+**Smooth steps.** Whole sixtieths fit a frame rate that is a sixtieth's
+multiple. At 26 pictures a second (a web page) some frames run two steps and
+some three, and what moves seems to lurch. `b3kSetStepMode "smooth"` spends
+each frame's whole time instead, in equal steps no longer than a sixtieth
+(38 ms as three steps of 12.7 ms), so things move exactly as far as the time
+that passed. `b3kStepOnce` still takes one sixtieth, so a game stepped by
+hand, and its tests, land where they always did. Orb Island runs smooth.
+
 A frame runs inside one `try`, so an error in your `b3kFrame` handler can
 never leave the screen locked. The error is kept for you in `b3kFrameError()`
 instead of being lost.
@@ -715,6 +723,10 @@ draws. The loop does both by itself.
   sky behind everything costs almost nothing, so a view with sky in it is
   cheaper than one full of ground. Orb Island 1.2 measured these
   (2026-11-26).
+- **In a web page, writing a field costs a frame.** Orb Island's side panel
+  took 12 ms to redraw each time its words changed (headless Chromium,
+  2026-11-26), and four writes a second were its hitches. Write a score or a
+  clock once a second there, and only when the words change.
 - `b3kStats()` is one line: pictures drawn in the last second, things, bodies
   awake, the renderer, and whether a frame has caught an error. Put it in a
   field while you build a game.

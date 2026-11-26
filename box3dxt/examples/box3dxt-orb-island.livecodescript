@@ -28,7 +28,8 @@
 --
 -- WHY THIS EXAMPLE EXISTS: it is the Kit's showcase, the 3D sibling of
 -- box2dxt's games. Every system the Kit has carries part of the game:
---   * the world and the loop: b3kSetup, b3kStart, b3kPause, b3kKillFloor
+--   * the world and the loop: b3kSetup, b3kSetStepMode, b3kStart, b3kPause,
+--     b3kKillFloor
 --   * the view and both renderers: b3kViewMake, b3kUseRenderer (V swaps
 --     render3dxt and box3dxt's own renderer when both are loaded)
 --   * the look: b3kSetLight with a coloured sun, b3kSetFog, b3kSetGlow
@@ -117,8 +118,8 @@
 -- (a virtual pad) and audioxt (its silent device) as well. In a web Stack
 -- Player (web-2026.11.22, headless Chromium, 2026-11-26) version 1.2
 -- built at its size, walked to an orb, found gamepadxt and audioxt, and
--- drew 28 pictures a second with the models, the animated character and
--- the trees where 1.1 drew 36, measured back to back on the same machine.
+-- drew 30 pictures a second with the models, the animated character and
+-- the trees where 1.1 drew 36 on the same machine.
 -- A real gamepad, the sound heard, a desktop IDE and the feel: verified
 -- statically; needs an OXT pass.
 -- =====================================================================
@@ -639,6 +640,8 @@ local sOiSkyLift      -- the sky lift out to the floating isle
 local sOiSkyWait      -- the clock time at which the sky lift moves again
 local sOiBall         -- the wrecking ball
 local sOiHudAt        -- the clock time of the last HUD write
+local sOiHudEvery     -- milliseconds between HUD writes: 250, or 1000 on the web
+local sOiBobHalf      -- which half of the orbs bobs this frame, 0 or 1
 local sOiHudText      -- what the HUD fields hold, to write only on change
 local sOiBaseThings   -- how many things the island was built with
 local sOiGlowStep     -- which step of kOiOrbGlow the orbs show
@@ -727,6 +730,9 @@ command oiNewGame
    put 0 into sOiSkyWait
    put empty into sOiBall
    put 0 into sOiHudAt
+   put 250 into sOiHudEvery
+   put 0 into sOiBobHalf
+   if oiOnWeb() then put 1000 into sOiHudEvery
    put empty into sOiHudText
    put 1 into sOiGlowStep
    put 0 into sOiGlowAt
@@ -764,6 +770,10 @@ command oiNewGame
    put empty into sOiOrbPhase
    if there is a field "oiBanner" then hide field "oiBanner"
    b3kSetup
+   -- each frame's time spent in equal steps: at a frame rate that is not a
+   -- sixtieth's multiple (a web page's 26, a 144 Hz screen) whole steps
+   -- made the island lurch, two steps one frame and three the next
+   b3kSetStepMode "smooth"
    if b3kWorld() is empty then
       uiStatus "Nothing can run: " & b3kLastError() & ". Load the box3dxt extension, then press Restart.", "bad"
       oiHud
@@ -1558,11 +1568,19 @@ command oiTickDust pMs
 end oiTickDust
 
 -- the orbs bob, each a little after the last
+-- Half the orbs a frame, in turn: a bob moves an orb about a hundredth of
+-- a metre a frame, so each is posed every other frame and no step shows,
+-- and the posing (script, in a web page) costs half
 command oiTickOrbBob
-   local tOrb, tT
+   local tOrb, tT, tI
    put sOiClockMS / 1000 into tT
+   put 1 - sOiBobHalf into sOiBobHalf
+   put 0 into tI
    repeat for each key tOrb in sOiOrb
-      b3kSetLookPose tOrb, 0, 0.12 * sin(tT * 2.6 + sOiOrbPhase[tOrb]), 0
+      add 1 to tI
+      if tI mod 2 is sOiBobHalf then
+         b3kSetLookPose tOrb, 0, 0.12 * sin(tT * 2.6 + sOiOrbPhase[tOrb]), 0
+      end if
    end repeat
 end oiTickOrbBob
 
@@ -1760,7 +1778,10 @@ on b3kFrame
    oiTickSparks
    oiTickJump
    oiSoundTick
-   if sOiClockMS - sOiHudAt >= 250 then
+   -- in a web page a write to the side panel costs a frame's worth of
+   -- drawing (12 ms in headless Chromium, 2026-11-26), and four of those a
+   -- second were the hitches, and the gaps in the sound: there, once a second
+   if sOiClockMS - sOiHudAt >= sOiHudEvery then
       oiHud
    end if
 end b3kFrame
@@ -2161,6 +2182,9 @@ command oiPadStart
    end try
    if tOk is not true then exit oiPadStart
    put true into sOiPadOn
+   -- a worn stick rests a little off centre: past gamepadxt's 0.15 that
+   -- walked the player away on its own
+   gpSetDeadZone 0.24
    oiPadPick
 end oiPadStart
 
@@ -2210,7 +2234,16 @@ command oiPadTick
             break
       end switch
    end repeat
-   if sOiPadNow is 0 or b3kPlayer() is empty then exit oiPadTick
+   -- a pad let go of (unplugged, asleep, its batteries flat) while its
+   -- stick was pushed must let go of the player too: until 2026-11-26 the
+   -- last push stayed, and the player ran on by itself
+   if sOiPadNow is 0 or b3kPlayer() is empty then
+      if sOiPadSteer is true then
+         b3kPlayerSteer empty, empty
+         put false into sOiPadSteer
+      end if
+      exit oiPadTick
+   end if
    put gpPadStick(sOiPadNow, "left") into tStick
    put item 1 of tStick into tX
    put item 2 of tStick into tY
@@ -2475,7 +2508,13 @@ command oiHud
    put sOiClockMS into sOiHudAt
    if there is no field "oiScore" then exit oiHud
    put "Orbs  " & sOiFound & " / " & sOiOrbCount into tScore
-   put "Time  " & format("%.1f", sOiPlayMS / 1000) & " s      Falls  " & sOiFalls into tTime
+   -- tenths where the panel is written four times a second, whole seconds
+   -- where it is written once
+   if sOiHudEvery >= 1000 then
+      put "Time  " & trunc(sOiPlayMS / 1000) & " s      Falls  " & sOiFalls into tTime
+   else
+      put "Time  " & format("%.1f", sOiPlayMS / 1000) & " s      Falls  " & sOiFalls into tTime
+   end if
    put "none (audioxt not loaded)" into tSound
    if oiSoundOn() then
       put "on" into tSound
@@ -2836,7 +2875,8 @@ end oiModelData
 -- WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
 --         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
 --         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
---         b3kSetSubsteps n / b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
+--         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+--         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
 --         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
@@ -2933,6 +2973,9 @@ constant kB3kPalette = "231,96,76;240,172,64;94,170,92;72,140,214;160,106,200;23
 -- the world and the loop
 local sWorld, sAnchor, sRunning, sPaused, sGen
 local sSub, sAccum, sLast, sFrameMS, sFrames, sFpsCount, sFpsStart, sFps
+-- the step mode (empty or "fixed", or "smooth") and how far the smooth
+-- steps have taken the simulation clock from sFrames whole sixtieths
+local sStepMode, sSimDrift
 local sFrameObj, sFrameAuto, sContactObj, sKillY, sKillTick
 local sLastError, sFrameError, sSpawnCount, sEvents
 -- the things: every table is keyed by the thing (its body handle)
@@ -3276,6 +3319,7 @@ command b3kSetup pGx, pGy, pGz
    put empty into sKillY
    put 0 into sKillTick
    put 0 into sFrames
+   put 0 into sSimDrift
    -- the messages' default home is the card current now: its script and
    -- its stack's script (where a pasted Kit sits) both hear them. "me" would
    -- be wrong for a Kit used as a library: the library itself, which holds
@@ -3470,6 +3514,48 @@ References: b3kSetup (handler)
 command b3kSetSubsteps pN
    put max(1, min(8, round(b3kNum(pN, 4)))) into sSub
 end b3kSetSubsteps
+
+/**
+Summary: Choose how the running loop divides a frame's time into physics steps.
+
+pMode: "fixed" (the default) or "smooth".
+
+Example:
+b3kSetStepMode "smooth"
+
+Description:
+"fixed" steps a sixtieth of a second at a time and carries what is left of
+a frame over to the next one, so a frame runs a whole number of steps: at 26
+pictures a second some frames run two and some three, and what moves seems
+to speed up and slow down. "smooth" uses up each frame's time in equal
+steps no longer than a sixtieth (38 ms as three of 12.7 ms), so things move
+as far as the time that passed. <b3kStepOnce> always takes one sixtieth, in
+either mode. The mode is kept until it is set again.
+
+References: b3kStepMode (handler), b3kStart (handler), b3kStepOnce (handler)
+*/
+command b3kSetStepMode pMode
+   if pMode is "smooth" then
+      put "smooth" into sStepMode
+   else
+      put "fixed" into sStepMode
+   end if
+end b3kSetStepMode
+
+/**
+Summary: The step mode set by <b3kSetStepMode>.
+
+Returns: "fixed" or "smooth".
+
+Example:
+put b3kStepMode() into field "Mode"
+
+References: b3kSetStepMode (handler)
+*/
+function b3kStepMode
+   if sStepMode is "smooth" then return "smooth"
+   return "fixed"
+end b3kStepMode
 
 /**
 Summary: Choose the object that receives b3kFrame and b3kFell.
@@ -3690,14 +3776,30 @@ end b3kStep
 
 -- the body of a frame; the caller holds the lock and the try
 private command b3kFrameWork
+   local tN, tDt
    b3kInputTick
    b3kPlayerTick
    b3kGlideTick
    put empty into sEvents
-   repeat while sAccum >= kB3kStepMs
-      b3kWorldStep
-      subtract kB3kStepMs from sAccum
-   end repeat
+   if sStepMode is "smooth" then
+      -- the frame's whole time, in as few equal steps as keep each no
+      -- longer than a sixtieth (the accumulator is capped above, so no
+      -- more than kB3kMaxSteps)
+      if sAccum >= 1 then
+         put trunc(sAccum / kB3kStepMs) into tN
+         if tN * kB3kStepMs < sAccum then add 1 to tN
+         put sAccum / tN into tDt
+         repeat tN times
+            b3kWorldStep tDt
+         end repeat
+         put 0 into sAccum
+      end if
+   else
+      repeat while sAccum >= kB3kStepMs
+         b3kWorldStep
+         subtract kB3kStepMs from sAccum
+      end repeat
+   end if
    b3kKillTick
    b3kCamTick
    b3kDispatchEvents
@@ -3734,12 +3836,25 @@ command b3kStepOnce
    put 0 into sAccum
 end b3kStepOnce
 
+-- the simulation clock in milliseconds: whole sixtieths, and what smooth
+-- steps added or took away (0 in the fixed mode, so the same number as ever)
+private function b3kSimMs
+   return sFrames * kB3kStepMs + b3kNum(sSimDrift, 0)
+end b3kSimMs
+
 -- one physics step, its events harvested and its moves carried to the
 -- picture. Box3D keeps only the LAST step's events and moves, so they are
 -- read after every step, not once a frame.
-private command b3kWorldStep
+private command b3kWorldStep pDtMs
    local tCount, i, tA, tB
-   b3WorldStep sWorld, kB3kStepS, sSub
+   if pDtMs is empty then
+      b3WorldStep sWorld, kB3kStepS, sSub
+   else
+      -- a smooth step (b3kSetStepMode): its own length, and the clock
+      -- told how far it differs from a sixtieth
+      b3WorldStep sWorld, pDtMs / 1000, sSub
+      add pDtMs - kB3kStepMs to sSimDrift
+   end if
    -- the simulation clock: the player's coyote and buffer windows run on it
    add 1 to sFrames
    -- touches
@@ -6148,7 +6263,7 @@ References: b3kIsGliding (handler), b3kAddPlatform (handler)
 command b3kGlideTo pThing, pX, pY, pZ, pSeconds
    if sKind[pThing] is empty then exit b3kGlideTo
    put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
-         (sFrames * kB3kStepMs + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
+         (b3kSimMs() + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
 end b3kGlideTo
 
 /**
@@ -6177,7 +6292,7 @@ private command b3kGlideTick
       put sGlide[tThing] into tG
       -- the simulation clock, so a pause or a stalled frame does not
       -- shorten the trip
-      put (item 4 of tG - sFrames * kB3kStepMs) / 1000 into tLeft
+      put (item 4 of tG - b3kSimMs()) / 1000 into tLeft
       if tLeft <= kB3kStepS or not b3BodyIsValid(tThing) then
          if b3BodyIsValid(tThing) then
             b3BodySetPosition tThing, item 1 of tG, item 2 of tG, item 3 of tG
@@ -8969,7 +9084,7 @@ private command b3kPlayerLaunch pSpeed
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    b3BodySetVelocity sPlayer, item 1 of tV, pSpeed, item 3 of tV
-   put sFrames * kB3kStepMs into sPlayJumpAt
+   put b3kSimMs() into sPlayJumpAt
    put empty into sPlayGroundAt
    put empty into sPlayWantAt
    put false into sPlayGround
@@ -9067,7 +9182,7 @@ private command b3kPlayerTick
       b3kPlayerForget false
       exit b3kPlayerTick
    end if
-   put sFrames * kB3kStepMs into tNow
+   put b3kSimMs() into tNow
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    put item 1 of tV into tVx

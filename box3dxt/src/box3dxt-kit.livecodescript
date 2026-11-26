@@ -38,7 +38,8 @@
 -- WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
 --         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
 --         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
---         b3kSetSubsteps n / b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
+--         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+--         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
 --         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
@@ -135,6 +136,9 @@ constant kB3kPalette = "231,96,76;240,172,64;94,170,92;72,140,214;160,106,200;23
 -- the world and the loop
 local sWorld, sAnchor, sRunning, sPaused, sGen
 local sSub, sAccum, sLast, sFrameMS, sFrames, sFpsCount, sFpsStart, sFps
+-- the step mode (empty or "fixed", or "smooth") and how far the smooth
+-- steps have taken the simulation clock from sFrames whole sixtieths
+local sStepMode, sSimDrift
 local sFrameObj, sFrameAuto, sContactObj, sKillY, sKillTick
 local sLastError, sFrameError, sSpawnCount, sEvents
 -- the things: every table is keyed by the thing (its body handle)
@@ -478,6 +482,7 @@ command b3kSetup pGx, pGy, pGz
    put empty into sKillY
    put 0 into sKillTick
    put 0 into sFrames
+   put 0 into sSimDrift
    -- the messages' default home is the card current now: its script and
    -- its stack's script (where a pasted Kit sits) both hear them. "me" would
    -- be wrong for a Kit used as a library: the library itself, which holds
@@ -672,6 +677,48 @@ References: b3kSetup (handler)
 command b3kSetSubsteps pN
    put max(1, min(8, round(b3kNum(pN, 4)))) into sSub
 end b3kSetSubsteps
+
+/**
+Summary: Choose how the running loop divides a frame's time into physics steps.
+
+pMode: "fixed" (the default) or "smooth".
+
+Example:
+b3kSetStepMode "smooth"
+
+Description:
+"fixed" steps a sixtieth of a second at a time and carries what is left of
+a frame over to the next one, so a frame runs a whole number of steps: at 26
+pictures a second some frames run two and some three, and what moves seems
+to speed up and slow down. "smooth" uses up each frame's time in equal
+steps no longer than a sixtieth (38 ms as three of 12.7 ms), so things move
+as far as the time that passed. <b3kStepOnce> always takes one sixtieth, in
+either mode. The mode is kept until it is set again.
+
+References: b3kStepMode (handler), b3kStart (handler), b3kStepOnce (handler)
+*/
+command b3kSetStepMode pMode
+   if pMode is "smooth" then
+      put "smooth" into sStepMode
+   else
+      put "fixed" into sStepMode
+   end if
+end b3kSetStepMode
+
+/**
+Summary: The step mode set by <b3kSetStepMode>.
+
+Returns: "fixed" or "smooth".
+
+Example:
+put b3kStepMode() into field "Mode"
+
+References: b3kSetStepMode (handler)
+*/
+function b3kStepMode
+   if sStepMode is "smooth" then return "smooth"
+   return "fixed"
+end b3kStepMode
 
 /**
 Summary: Choose the object that receives b3kFrame and b3kFell.
@@ -892,14 +939,30 @@ end b3kStep
 
 -- the body of a frame; the caller holds the lock and the try
 private command b3kFrameWork
+   local tN, tDt
    b3kInputTick
    b3kPlayerTick
    b3kGlideTick
    put empty into sEvents
-   repeat while sAccum >= kB3kStepMs
-      b3kWorldStep
-      subtract kB3kStepMs from sAccum
-   end repeat
+   if sStepMode is "smooth" then
+      -- the frame's whole time, in as few equal steps as keep each no
+      -- longer than a sixtieth (the accumulator is capped above, so no
+      -- more than kB3kMaxSteps)
+      if sAccum >= 1 then
+         put trunc(sAccum / kB3kStepMs) into tN
+         if tN * kB3kStepMs < sAccum then add 1 to tN
+         put sAccum / tN into tDt
+         repeat tN times
+            b3kWorldStep tDt
+         end repeat
+         put 0 into sAccum
+      end if
+   else
+      repeat while sAccum >= kB3kStepMs
+         b3kWorldStep
+         subtract kB3kStepMs from sAccum
+      end repeat
+   end if
    b3kKillTick
    b3kCamTick
    b3kDispatchEvents
@@ -936,12 +999,25 @@ command b3kStepOnce
    put 0 into sAccum
 end b3kStepOnce
 
+-- the simulation clock in milliseconds: whole sixtieths, and what smooth
+-- steps added or took away (0 in the fixed mode, so the same number as ever)
+private function b3kSimMs
+   return sFrames * kB3kStepMs + b3kNum(sSimDrift, 0)
+end b3kSimMs
+
 -- one physics step, its events harvested and its moves carried to the
 -- picture. Box3D keeps only the LAST step's events and moves, so they are
 -- read after every step, not once a frame.
-private command b3kWorldStep
+private command b3kWorldStep pDtMs
    local tCount, i, tA, tB
-   b3WorldStep sWorld, kB3kStepS, sSub
+   if pDtMs is empty then
+      b3WorldStep sWorld, kB3kStepS, sSub
+   else
+      -- a smooth step (b3kSetStepMode): its own length, and the clock
+      -- told how far it differs from a sixtieth
+      b3WorldStep sWorld, pDtMs / 1000, sSub
+      add pDtMs - kB3kStepMs to sSimDrift
+   end if
    -- the simulation clock: the player's coyote and buffer windows run on it
    add 1 to sFrames
    -- touches
@@ -3350,7 +3426,7 @@ References: b3kIsGliding (handler), b3kAddPlatform (handler)
 command b3kGlideTo pThing, pX, pY, pZ, pSeconds
    if sKind[pThing] is empty then exit b3kGlideTo
    put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
-         (sFrames * kB3kStepMs + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
+         (b3kSimMs() + 1000 * max(0.02, b3kNum(pSeconds, 1))) into sGlide[pThing]
 end b3kGlideTo
 
 /**
@@ -3379,7 +3455,7 @@ private command b3kGlideTick
       put sGlide[tThing] into tG
       -- the simulation clock, so a pause or a stalled frame does not
       -- shorten the trip
-      put (item 4 of tG - sFrames * kB3kStepMs) / 1000 into tLeft
+      put (item 4 of tG - b3kSimMs()) / 1000 into tLeft
       if tLeft <= kB3kStepS or not b3BodyIsValid(tThing) then
          if b3BodyIsValid(tThing) then
             b3BodySetPosition tThing, item 1 of tG, item 2 of tG, item 3 of tG
@@ -6171,7 +6247,7 @@ private command b3kPlayerLaunch pSpeed
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    b3BodySetVelocity sPlayer, item 1 of tV, pSpeed, item 3 of tV
-   put sFrames * kB3kStepMs into sPlayJumpAt
+   put b3kSimMs() into sPlayJumpAt
    put empty into sPlayGroundAt
    put empty into sPlayWantAt
    put false into sPlayGround
@@ -6269,7 +6345,7 @@ private command b3kPlayerTick
       b3kPlayerForget false
       exit b3kPlayerTick
    end if
-   put sFrames * kB3kStepMs into tNow
+   put b3kSimMs() into tNow
    set the itemDelimiter to comma
    put b3BodyVelocity(sPlayer) into tV
    put item 1 of tV into tVx
