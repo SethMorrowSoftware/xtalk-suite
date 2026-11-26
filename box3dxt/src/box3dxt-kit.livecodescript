@@ -3770,8 +3770,8 @@ b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
 Description:
 Parts are drawn with the thing, and turn and move with it; place and
 turn each one inside the thing with <b3kPoseLookPart>. A thing with parts
-and no <b3kSetLook> draws its parts instead of its shape. Only the
-picture: the thing collides as its shape. Things that share a part's
+and no <b3kSetLook> draws its parts instead of its shape. Parts change
+only the picture: the thing collides as its shape. Things that share a part's
 model share one copy of it. box3dxt's renderer draws the shape.
 
 References: b3kPoseLookPart (handler), b3kSetLookPose (handler), b3kSetLook (handler)

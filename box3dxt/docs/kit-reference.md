@@ -1811,7 +1811,7 @@ Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
 - `pMaterials`: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
 - `pScale`: A size multiplier; empty means 1.
 
-Parts are drawn with the thing, and turn and move with it; place and turn each one inside the thing with [`b3kPoseLookPart`](#b3kposelookpart). A thing with parts and no [`b3kSetLook`](#b3ksetlook) draws its parts instead of its shape. Only the picture: the thing collides as its shape. Things that share a part's model share one copy of it. box3dxt's renderer draws the shape.
+Parts are drawn with the thing, and turn and move with it; place and turn each one inside the thing with [`b3kPoseLookPart`](#b3kposelookpart). A thing with parts and no [`b3kSetLook`](#b3ksetlook) draws its parts instead of its shape. Parts change only the picture: the thing collides as its shape. Things that share a part's model share one copy of it. box3dxt's renderer draws the shape.
 
 ```
 b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
