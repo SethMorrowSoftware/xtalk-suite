@@ -350,7 +350,7 @@ FAMILY = (
 # what a page's own rules for nav, ul, li and a could give it, so it looks
 # the same on every page of every site, light or dark.
 FAMILY_CSS = (
-    '.oxt-family{position:relative;z-index:60;display:flex;align-items:center;gap:0 10px;margin:0;'
+    '.oxt-family{position:relative;display:flex;align-items:center;gap:0 10px;margin:0;'
     'padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));'
     'min-height:40px;background:#0a0f1a;border-bottom:1px solid rgba(255,255,255,.09);color:#c3cddc;'
     'font:500 13.5px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;letter-spacing:0;'
