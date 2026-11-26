@@ -320,6 +320,98 @@ def collect(release, fetch):
     return packages, sums_asset[0]['browser_download_url']
 
 
+# --- the OpenXTalk family bar ---------------------------------------------
+#
+# The same slim strip of links across the top of the three sites of the
+# OpenXTalk family (2026-11-26): OXT-Beyond's (its tools/pages/family.py,
+# the master copy), this page, and the OXT Community Stacks gallery (its
+# tools/build_site.py). FAMILY, FAMILY_CSS, MARK and family_bar are copies of the
+# master's: change the three together. It is inline and draws its mark in
+# SVG, so the page still loads nothing.
+
+BEYOND = 'https://sethmorrowsoftware.github.io/OpenXTalk-Beyond/'
+GALLERY = 'https://oxt-stacks.github.io/oxt-community-stacks/'
+FORUM = 'https://openxtalk.org/forum/'
+OPENXTALK = 'https://openxtalk.org/'
+
+# (key, words, address): the bar's links, in their order, the same on
+# every site. A site gives its own pages by key (relative, so a preview
+# or a fork links itself) and leaves out a key it maps to None.
+FAMILY = (
+    ('beyond', 'OXT-Beyond', BEYOND),
+    ('ide', 'Web IDE', BEYOND + 'ide/'),
+    ('lessons', 'Lessons', BEYOND + 'lessons/'),
+    ('extensions', 'Extensions', BEYOND + 'extensions/'),
+    ('stacks', 'Community stacks', GALLERY),
+    ('forum', 'Forum', FORUM),
+)
+
+# The bar's look, whole: every rule is under .oxt-family, and it resets
+# what a page's own rules for nav, ul, li and a could give it, so it looks
+# the same on every page of every site, light or dark.
+FAMILY_CSS = (
+    '.oxt-family{position:relative;z-index:60;display:flex;align-items:center;gap:0 10px;margin:0;'
+    'padding:0 max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));'
+    'min-height:40px;background:#0a0f1a;border-bottom:1px solid rgba(255,255,255,.09);color:#c3cddc;'
+    'font:500 13.5px/1.2 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;letter-spacing:0;'
+    'text-align:left;white-space:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-font-smoothing:antialiased;'
+    # a row longer than a phone scrolls sideways; its right edge fades to
+    # say so (on a wide window the edge is empty, and the fade unseen)
+    '-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);'
+    'mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}'
+    '.oxt-family::-webkit-scrollbar{display:none}'
+    '.oxt-family a{color:inherit;font:inherit;letter-spacing:inherit;text-transform:none;text-decoration:none;'
+    'background:none;box-shadow:none;border:0;border-radius:0;margin:0;min-height:0}'
+    '.oxt-family .oxt-family-home{display:inline-flex;flex:none;align-items:center;gap:8px;padding:8px 6px 8px 0;'
+    'color:#eef3ff;font-weight:700}'
+    '.oxt-family .oxt-family-home svg{display:block;width:22px;height:22px;flex:none}'
+    '.oxt-family ul{display:flex;flex:none;gap:0;margin:0;padding:0;list-style:none;background:none}'
+    '.oxt-family li{margin:0;padding:0;list-style:none}'
+    '.oxt-family li::before{content:none}'
+    '.oxt-family li a{display:block;padding:12px 9px 10px;border-bottom:2px solid transparent}'
+    '.oxt-family li:last-child a{margin-right:20px}'
+    '.oxt-family li a:hover{color:#fff;border-bottom-color:rgba(255,179,71,.55)}'
+    '.oxt-family li a[aria-current="page"]{color:#fff;border-bottom-color:#ff7a00}'
+    '.oxt-family a:focus-visible{outline:2px solid #ffb347;outline-offset:-3px;border-radius:4px}'
+    '@media (max-width:640px){.oxt-family .oxt-family-home span{display:none}}'
+    '@media print{.oxt-family{display:none}}'
+)
+
+# The family's mark: a small tile in OXT-Beyond's fire, with its bolt
+MARK = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+        '<defs><linearGradient id="oxt-family-fire" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#ffc24d"/><stop offset=".55" stop-color="#ff7700"/>'
+        '<stop offset="1" stop-color="#ff3d00"/></linearGradient></defs>'
+        '<rect x="1" y="1" width="22" height="22" rx="6" fill="url(#oxt-family-fire)"/>'
+        '<path d="M13.6 4.5 7.5 13.2h4.1l-1.3 6.3 6.2-8.8h-4.1z" fill="#1a1206"/></svg>')
+
+
+SHOW_CURRENT = ('<script>(function (n) {'
+                'var c = n && n.querySelector(\'[aria-current="page"]\');'
+                'if (c && n.scrollWidth > n.clientWidth) n.scrollLeft = c.offsetLeft - 48;'
+                '})(document.currentScript && document.currentScript.previousElementSibling);</script>')
+
+
+def family_bar(current=None, links=None):
+    """The bar, as HTML: its <style> and its <nav>. `current` is the key
+    of the part the page is in, which the bar marks for the eye and for
+    screen readers; `links` maps a key to this site's own address for it,
+    or to None to leave it out."""
+    links = links or {}
+    items = []
+    for key, words, href in FAMILY:
+        href = links.get(key, href)
+        if href is None:
+            continue
+        items.append('<li><a href="%s"%s>%s</a></li>' % (
+            html.escape(href, quote=True), ' aria-current="page"' if key == current else '', html.escape(words)))
+    # On a phone the row scrolls sideways: the one line of script after it
+    # scrolls it so that the part the page is in shows, not only the first
+    return ('<style>%s</style>\n<nav class="oxt-family" aria-label="OpenXTalk sites">'
+            '<a class="oxt-family-home" href="%s">%s<span>OpenXTalk</span></a><ul>%s</ul></nav>\n%s\n'
+            % (FAMILY_CSS, OPENXTALK, MARK, ''.join(items), SHOW_CURRENT))
+
+
 # --- writing the page --------------------------------------------------------
 
 def esc(s):
@@ -421,38 +513,57 @@ def tree_facts():
 # --- writing the page --------------------------------------------------------
 
 CSS = '''
-/* A catalogue, not a landing page: warm paper and ink, a serif for the
-   names, a numbered contents column, and rows that read like entries in a
-   printed software catalogue. System fonts only: the page loads nothing. */
+/* A catalogue in the OpenXTalk family's look (2026-11-26): OXT-Beyond's
+   night-sky masthead, its orange and amber, its teal kicker and its
+   system sans, so this page reads as one of the family's sites with
+   OXT-Beyond's own and the community stacks gallery. Light and dark follow
+   the system; the masthead is the night sky in both, as Beyond's are.
+   System fonts only: the page loads nothing. */
 :root {
-  --paper: #f5f1e8; --panel: #fffdf8; --ink: #1d1a16; --muted: #6b6358; --rule: #d8d0bf;
-  --accent: #0e5a52; --accent-ink: #ffffff; --chip: #ebe4d4; --mark: #f6e3a1;
-  --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --paper: #fbf7f1; --panel: #ffffff; --ink: #18212e; --muted: #556275; --rule: #e7dfd3;
+  --accent: #b44d00; --accent-ink: #1a1206; --chip: #f3ece2; --mark: #ffe2b8;
+  --night: #0a0f1a; --night-2: #111a2b; --star: #eef3ff; --ember: #ff7a00; --amber: #ffb347; --teal: #4fd1c5;
+  --fire: linear-gradient(135deg, #ffc24d, #ff7700 55%, #ff3d00);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", sans-serif;
+  --serif: var(--sans);
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace;
+  --shadow: 0 1px 2px rgba(24,33,46,.06), 0 12px 32px rgba(24,33,46,.08);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --paper: #131210; --panel: #1b1a17; --ink: #ebe5d8; --muted: #a29988; --rule: #35312a;
-          --accent: #6cc7b9; --accent-ink: #0f1311; --chip: #28251f; --mark: #463a14; }
+  :root { --paper: #0d1420; --panel: #141d2c; --ink: #e8edf4; --muted: #9aa8ba; --rule: #223047;
+          --accent: #ffb347; --chip: #1b2638; --mark: #4a3413;
+          --shadow: 0 1px 2px rgba(0,0,0,.3), 0 16px 40px rgba(0,0,0,.35); }
 }
 * { box-sizing: border-box; }
 html { scroll-padding-top: 16px; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 var(--sans); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; border-radius: 4px; }
 code { font: 0.88em var(--mono); overflow-wrap: anywhere; }
 .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
 
-.mast { border-bottom: 1px solid var(--rule); padding: 40px 0 28px; }
-.kicker { font: 600 0.78rem var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
-.mast h1 { font: 600 clamp(1.9rem, 4.6vw, 3rem)/1.1 var(--serif); margin: 0 0 14px; letter-spacing: -0.01em; max-width: 22ch; }
-.lede { font-size: 1.08rem; max-width: 62ch; margin: 0 0 18px; }
-.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 0.92rem; }
-.meta b { color: var(--ink); font-weight: 600; }
-.pre { display: inline-block; font: 600 0.72rem var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
-       border: 1px solid currentColor; border-radius: 3px; padding: 0 6px; color: #9a5b00; }
-@media (prefers-color-scheme: dark) { .pre { color: #e8b04a; } }
+.mast { position: relative; overflow: hidden; padding: 44px 0 34px; color: var(--star);
+        background: radial-gradient(ellipse 90% 140% at 85% -10%, rgba(255,122,0,.20), transparent 60%),
+                    radial-gradient(ellipse 60% 90% at 0% 0%, rgba(79,209,197,.10), transparent 60%),
+                    linear-gradient(180deg, var(--night-2), var(--night)); }
+.mast a { color: var(--amber); }
+.kicker { display: flex; align-items: center; gap: 10px; font: 600 0.78rem/1 var(--mono); letter-spacing: 0.14em;
+          text-transform: uppercase; color: var(--teal); margin: 0 0 16px; }
+.kicker::before { content: ""; width: 26px; height: 1px; background: currentColor; }
+.mast h1 { font: 850 clamp(2rem, 5vw, 3.4rem)/1.04 var(--sans); margin: 0 0 16px; letter-spacing: -0.03em; max-width: 20ch; }
+.lede { font-size: 1.1rem; max-width: 62ch; margin: 0 0 20px; color: rgba(222,230,244,.84); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; color: rgba(200,212,230,.72); font-size: 0.92rem; }
+.meta b { color: var(--star); font-weight: 650; }
+.pre { display: inline-block; font: 600 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+       border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; color: #b45a00; }
+@media (prefers-color-scheme: dark) { .pre { color: #ffc46b; } }
+.mast .pre { color: #ffc46b; background: rgba(255,179,71,.1); }
 .navlinks { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 16px 0 0; padding: 0; list-style: none; font-weight: 500; }
+.mast .navlinks { gap: 10px; margin-top: 22px; }
+.mast .navlinks a { display: inline-block; padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--star);
+                    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); font-size: .92rem; }
+.mast .navlinks a:hover { border-color: var(--amber); color: #fff; }
 
 .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-top: 32px; }
 .toc { position: sticky; top: 16px; align-self: start; font-size: 0.93rem; }
@@ -460,42 +571,47 @@ code { font: 0.88em var(--mono); overflow-wrap: anywhere; }
 .toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--rule); }
 .toc li a { display: flex; gap: 10px; padding: 3px 0 3px 12px; text-decoration: none; color: var(--ink); }
 .toc li a:hover { color: var(--accent); }
+.toc li a:hover .num { color: var(--ember); }
 .num { font: 0.8rem var(--mono); color: var(--muted); min-width: 2ch; }
+.fam-head .num { color: var(--ember); }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; gap: 8px; }
   .toc { position: static; }
   .toc ol { columns: 2; column-gap: 16px; }
 }
 
-.install { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 20px 22px; margin-bottom: 8px; }
-.install h2, .family h2 { font: 600 1.6rem/1.2 var(--serif); margin: 0; }
+.install { background: var(--panel); border: 1px solid var(--rule); border-radius: 16px; padding: 22px 24px; margin-bottom: 8px; box-shadow: var(--shadow); }
+.install h2, .family h2 { font: 800 1.6rem/1.2 var(--sans); letter-spacing: -0.02em; margin: 0; }
 .steps { counter-reset: step; list-style: none; margin: 16px 0; padding: 0;
          display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-.steps li { counter-increment: step; border-top: 2px solid var(--accent); padding-top: 8px; }
-.steps li::before { content: counter(step); font: 600 1.4rem var(--serif); color: var(--accent); display: block; }
+.steps li { counter-increment: step; border-top: 2px solid var(--ember); padding-top: 8px; }
+.steps li::before { content: counter(step); display: grid; place-items: center; width: 30px; height: 30px; margin: 6px 0 6px;
+                   border-radius: 50%; border: 1.5px solid var(--ember); color: var(--accent); font: 700 0.95rem var(--mono); }
 .install p { margin: 8px 0; font-size: 0.95rem; }
 
 .family { padding-top: 36px; }
 .fam-head { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; align-items: baseline;
-            border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+            border-bottom: 2px solid var(--rule); padding-bottom: 10px; }
 .fam-head .num { font-size: 1rem; }
 .fam-head p { grid-column: 2; margin: 6px 0 0; color: var(--muted); }
 .fam-head .navlinks { grid-column: 2; margin-top: 6px; font-size: 0.92rem; }
 
 .pkg { border-bottom: 1px solid var(--rule); padding: 20px 0; }
 .pkg-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; align-items: start; }
-.pkg h3 { font: 600 1.25rem/1.3 var(--serif); margin: 0; }
+.pkg h3 { font: 750 1.22rem/1.3 var(--sans); letter-spacing: -0.01em; margin: 0; }
 .ver { font: 0.85rem var(--mono); color: var(--muted); margin-left: 6px; }
 .kind { font: 600 0.7rem var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
 .get { text-align: right; }
-.dl { display: inline-block; background: var(--accent); color: var(--accent-ink); text-decoration: none;
-      font-weight: 600; padding: 8px 16px; border-radius: 4px; white-space: nowrap; }
-.dl:hover { filter: brightness(1.1); }
+.dl { display: inline-block; background: var(--fire); color: var(--accent-ink); text-decoration: none;
+      font-weight: 700; padding: 9px 20px; border-radius: 999px; white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(255,122,0,.28); transition: transform .15s ease, box-shadow .15s ease; }
+.dl:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(255,122,0,.36); }
+@media (prefers-reduced-motion: reduce) { .dl { transition: none; } .dl:hover { transform: none; } }
 .get small { display: block; color: var(--muted); font: 0.78rem var(--mono); margin-top: 4px; }
 @media (max-width: 560px) { .pkg-top { grid-template-columns: 1fr; } .get { text-align: left; } }
 .pkg p { margin: 10px 0; max-width: 70ch; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
-.chips li { background: var(--chip); border-radius: 3px; padding: 1px 8px; font: 0.8rem var(--mono); }
+.chips li { background: var(--chip); border-radius: 999px; padding: 1px 10px; font: 0.8rem var(--mono); }
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 16px; margin: 14px 0 0; font-size: 0.9rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -573,6 +689,9 @@ def render(release, packages, sums_url, repo=REPO, members=None, sources=None):
       '<meta property="og:url" content="%s">\n'
       '<meta name="twitter:card" content="summary">\n' % (esc(home), esc(desc), esc(home)))
     w('<style>%s</style>\n</head>\n<body>\n' % CSS)
+    # this page is the family's Extensions for the IDEs built on LiveCode
+    # Community 9: the bar marks it, and links it here
+    w(family_bar('extensions', {'extensions': home}))
 
     w('<header class="mast">\n<div class="wrap">\n<p class="kicker">xTalk Suite &middot; extension catalogue</p>\n'
       '<h1>Extensions for HyperXTalk and LiveCode Community</h1>\n'
