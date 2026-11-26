@@ -30,6 +30,7 @@ runs wherever python3 does.
 """
 import base64
 import gzip
+import hashlib
 import json
 import os
 import struct
@@ -487,6 +488,34 @@ def block():
     return '\n'.join(lines) + '\n'
 
 
+def unpacked(text):
+    # The block with every model's chunks put back together and unzipped:
+    # what the game reads. Deflate's BYTES are not a contract (zlib, zlib-ng
+    # and their versions pack the same text differently, and a CI runner's
+    # Python failed this gate on 2026-11-26 for that alone), so --check
+    # compares this, and a model whose TEXT moved still fails.
+    out, case, data = [], None, []
+
+    def flush():
+        if case is not None:
+            raw = gzip.decompress(base64.b64decode(''.join(data)))
+            out.append('%s %s' % (case, hashlib.sha256(raw).hexdigest()))
+    for line in text.split('\n'):
+        t = line.strip()
+        if t.startswith('case "'):
+            flush()
+            case, data = t, []
+        elif case is not None and t.startswith('put "') and t.endswith('" after tData'):
+            data.append(t[len('put "'):-len('" after tData')])
+        else:
+            if t == 'break' or t == 'end switch':
+                flush()
+                case, data = None, []
+            out.append(line)
+    flush()
+    return '\n'.join(out)
+
+
 def main():
     check = '--check' in sys.argv[1:]
     game = open(GAME, encoding='ascii').read()
@@ -494,11 +523,26 @@ def main():
     if a < 0 or b < a:
         raise SystemExit('build-game-models: no "%s" ... "%s" block in %s' % (BEGIN, END, GAME))
     b = game.index('\n', b) + 1
-    want = game[:a] + block() + game[b:]
-    if want == game:
+    made = block()
+    want = game[:a] + made + game[b:]
+    same = want == game
+    if not same and check:
+        same = (game[:a] == want[:a] and game[b:] == want[a + len(made):]
+                and unpacked(game[a:b]) == unpacked(made))
+    if same:
         print('build-game-models: OK (%d model(s) and %d in parts carried, each matching examples/models/)' % (len(MODELS), len(PARTED)))
         return 0
     if check:
+        # name the first line that differs, so a runner that disagrees says where
+        have = unpacked(game[a:b]).split('\n')
+        made_lines = unpacked(made).split('\n')
+        for n, (x, y) in enumerate(zip(have, made_lines)):
+            if x != y:
+                print('build-game-models: block line %d differs:\n  carried: %s\n  made:    %s' % (n + 1, x[:120], y[:120]))
+                break
+        else:
+            if len(have) != len(made_lines):
+                print('build-game-models: the block has %d lines, the models make %d' % (len(have), len(made_lines)))
         print('build-game-models: STALE: the GAME MODELS block in %s is not what examples/models/ makes;'
               ' run python3 tools/build-game-models.py' % os.path.relpath(GAME, ROOT))
         return 1

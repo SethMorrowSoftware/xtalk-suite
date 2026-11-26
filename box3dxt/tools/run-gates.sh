@@ -58,6 +58,8 @@ python3 tools/sync-embedded-kit.py --check
 
 # Orb Island carries Kenney's models (examples/models/) as text between its
 # GAME MODELS markers: the carried text is what the source models make
+echo "== box3dxt: tools/test-build-game-models.py =="
+python3 tools/test-build-game-models.py
 echo "== box3dxt: tools/build-game-models.py --check =="
 python3 tools/build-game-models.py --check
 echo "== box3dxt: tools/test-kit-reference.py =="
