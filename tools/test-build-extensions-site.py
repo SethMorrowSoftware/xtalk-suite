@@ -18,6 +18,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -326,6 +327,42 @@ def test_links(tmp):
     expect('apps are not extension families', 'riptide' not in members)
 
 
+def test_family(tmp):
+    """The OpenXTalk family bar (2026-11-26): the strip of links that
+    OXT-Beyond's site and the community stacks gallery carry too, at the
+    top of the body, this page marked as the family's Extensions, the
+    other sites at their addresses, and nothing loaded from anywhere."""
+    rel = release()
+    _, lce_dir = write_release(tmp, rel)
+
+    def fetch(a):
+        with open(os.path.join(lce_dir, a['name']), 'rb') as f:
+            return f.read()
+
+    packages, sums_url = site.collect(rel, fetch)
+    page = site.render(rel, packages, sums_url, 'example/suite', {}, {})
+    expect('one family bar', page.count('<nav class="oxt-family"') == 1)
+    expect('the bar comes first in the body, before the masthead',
+           page.index('<body>') < page.index('class="oxt-family"') < page.index('<header class="mast">'))
+    bar = page[page.index('<nav class="oxt-family"'):]
+    bar = bar[:bar.index('</nav>')]
+    hrefs = re.findall(r'href="([^"]*)"', bar)
+    expect('the family links in their order', hrefs == [
+        'https://openxtalk.org/', 'https://sethmorrowsoftware.github.io/OpenXTalk-Beyond/',
+        'https://sethmorrowsoftware.github.io/OpenXTalk-Beyond/ide/',
+        'https://sethmorrowsoftware.github.io/OpenXTalk-Beyond/lessons/',
+        'https://example.github.io/suite/', 'https://oxt-stacks.github.io/oxt-community-stacks/',
+        'https://openxtalk.org/forum/'], repr(hrefs))
+    expect('this page is marked as the Extensions',
+           '<a href="https://example.github.io/suite/" aria-current="page">Extensions</a>' in bar)
+    expect('the bar loads nothing', 'src=' not in bar and 'url(' not in site.FAMILY_CSS)
+    expect('every rule of the bar is its own', all(
+        sel.strip().startswith('.oxt-family') for rule in re.findall(r'([^{}]+)\{', re.sub(r'@media[^{]*\{', '', site.FAMILY_CSS))
+        for sel in rule.split(',')))
+    expect('the page loads nothing', not re.search(r'<(script|img|iframe)\b[^>]*\bsrc=', page)
+           and 'rel="stylesheet"' not in page)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix='test-extensions-site-')
     try:
@@ -333,6 +370,7 @@ def main():
         test_pure_lcb(tmp)
         test_refusals(tmp)
         test_links(tmp)
+        test_family(tmp)
         test_pick_release()
         test_description()
     finally:
