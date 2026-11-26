@@ -949,6 +949,75 @@ function prNearK pA, pB, pTolerance
    return abs(pA - pB) <= pTolerance
 end prNearK
 
+-- A look in parts (b3kAddLookPart), each part posed (b3kPoseLookPart),
+-- and the whole look posed (b3kSetLookPose): what the Orb Island's
+-- character is made of. Pixels are read with render3dxt; box3dxt's own
+-- renderer draws the shape and must take every call harmlessly.
+command testLookParts
+   local tBox, tRed, tBlue, tSq, tNodes
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kAddStaticBox 0, 0.5, 0, 0.4, 0.4, 0.4, "40,40,40"
+   put the result into tBox
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "40,40,40"
+   b3kSetLight 0, 0, -1
+   -- a square 0.4 m across facing the camera, in front of the box
+   put "v -0.2 -0.2 0.6" & return & "v 0.2 -0.2 0.6" & return & "v 0.2 0.2 0.6" & return & "v -0.2 0.2 0.6" & return & \
+         "vn 0 0 1" & return & "usemtl c" & return & "f 1//1 2//1 3//1" & return & "f 1//1 3//1 4//1" & return into tSq
+   put "newmtl c" & return & "Kd 0.9 0.1 0.1" & return into tRed
+   put "newmtl c" & return & "Kd 0.1 0.1 0.9" & return into tBlue
+   if sR3 then put item 2 of r3LiveCounts() into tNodes
+   b3kAddLookPart tBox, "a", "mtllib model.mtl" & return & tSq, tRed
+   b3kAddLookPart tBox, "b", "mtllib model.mtl" & return & tSq, tBlue
+   b3kPoseLookPart tBox, "a", 1, 0, 0
+   b3kDraw
+   if sR3 then
+      -- about 48 pixels a metre at the box, 3.4 m off with a 40 degree view
+      check "a look in two parts draws both", prIsBlue(viewPixel(80, 60)) and prIsRed(viewPixel(128, 60)), \
+            viewPixel(80, 60) && viewPixel(128, 60)
+      -- two nodes, one a part, in place of the shape's one
+      check "each part is a node of its own, in the shape's place", item 2 of r3LiveCounts() is tNodes + 1, tNodes && r3LiveCounts()
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 90
+      b3kDraw
+      check "the whole look turns, its parts with it", prIsRed(viewPixel(80, 12)) and not prIsRed(viewPixel(128, 60)), \
+            viewPixel(80, 12) && viewPixel(128, 60)
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 0, 0.5, 0.5, 0.5
+      b3kDraw
+      check "and scales, the parts drawn in", prIsRed(viewPixel(104, 60)) and prIsBlue(viewPixel(80, 60)), \
+            viewPixel(104, 60) && viewPixel(80, 60)
+      b3kPoseLookPart tBox, "a", 0, 1, 0
+      b3kDraw
+      check "a part posed again moves", prIsRed(viewPixel(80, 36)) and not prIsRed(viewPixel(104, 60)), \
+            viewPixel(80, 36) && viewPixel(104, 60)
+      b3kAddLookPart tBox, "a", empty
+      b3kDraw
+      check "an empty part is taken away", not prIsRed(viewPixel(80, 36)) and prIsBlue(viewPixel(80, 60)), \
+            viewPixel(80, 36) && viewPixel(80, 60)
+   else
+      b3kSetLookPose tBox, 0, 0, 0, 0, 0, 90
+      b3kAddLookPart tBox, "a", empty
+      b3kDraw
+      check "box3dxt's renderer takes parts and poses harmlessly", b3kFrameError() is empty and brightness(viewPixel(80, 60)) > 0, \
+            b3kFrameError() && viewPixel(80, 60)
+   end if
+   b3kPoseLookPart 987654, "a", 1, 0, 0
+   b3kSetLookPose 987654, 0, 1, 0
+   b3kAddLookPart 987654, "a", tSq, tRed
+   check "parts and poses on no thing are harmless", b3kFrameError() is empty, b3kFrameError()
+   b3kClear
+   check "b3kClear after parts is clean", b3kThingCount() is 0, b3kThingCount()
+end testLookParts
+
+function prIsRed pRgb
+   return item 1 of pRgb > item 2 of pRgb + 80 and item 1 of pRgb > item 3 of pRgb + 80
+end prIsRed
+
+function prIsBlue pRgb
+   return item 3 of pRgb > item 1 of pRgb + 80 and item 3 of pRgb > item 2 of pRgb + 80
+end prIsBlue
+
 command testLampsAndGlow
    local tBall, tLamp, tDark, tLit, tGlow, tCounts, tI, tLamps
    freshWorld
@@ -1100,6 +1169,7 @@ try
       testRenderers
       testLampsAndGlow
       testLook
+      testLookParts
       testTeardown
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && oneLine(b3AssertText()) && b3UnstableCount()

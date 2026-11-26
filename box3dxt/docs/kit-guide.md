@@ -312,6 +312,24 @@ keeps its own colours, and a colour, checker or glow set on the thing shows
 again when the look comes off. Things wearing the same model share one copy
 of it. box3dxt's renderer keeps drawing the shape.
 
+**A look in parts, and poses.** A character whose arms and legs move is
+several models, one a part: `b3kAddLookPart` adds one by name (an empty
+model takes it away), and `b3kPoseLookPart` sets where it sits and how it
+turns and scales, in the thing's own space, so the parts go wherever the
+thing goes. `b3kSetLookPose` poses the whole look on top, which is how a
+character squashes as it lands or leans into a run, and how a thing can bob
+without moving its body:
+
+```
+b3kAddLookPart b3kPlayer(), "arm-left", tArmObj, tArmMtl
+b3kPoseLookPart b3kPlayer(), "arm-left", -0.3, 0.9, 0, 40, 0, 0  -- x,y,z, then degrees about x,y,z
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.1, 0.85, 1.1  -- squashed
+```
+
+Turns are taken about x, then y, then z, and a pose may end with three
+scales. Play an animation by posing the parts each frame from its frames
+(Orb Island's `oiAnimPose` reads Kenney's idle, walk and jump that way).
+
 Materials decide how things feel:
 
 | Call | Range | Starts at |
@@ -668,7 +686,7 @@ while things exist; their pictures are remade.
 | colour, light direction (`b3kSetLight`), background | yes | yes |
 | ambient light (`b3kSetAmbient`), fog (`b3kSetFog`) | yes | no |
 | the sun's colour, glow (`b3kSetGlow`) and lamps (`b3kAddLamp`) | yes | no: white light, the plain colour |
-| a model's look (`b3kSetLook`) | yes | no: the shape |
+| a model's look (`b3kSetLook`), its parts and poses | yes | no: the shape |
 | smooth edges (`b3kSetSmooth`, 1 to 4) | yes | no |
 | checkers and textures | yes | the thing's colour |
 | a model's own materials | yes | its hull, in one colour |
@@ -738,13 +756,15 @@ Each part of the Kit carries part of the game:
 | the camera | `b3kCamFollow` (from `b3kPlayerMake`), `b3kCamMouseOrbit`, `b3kCamShake` |
 | the island, the ramp, the stairs, the lift and the sky lift | `b3kAddGround`, `b3kAddStaticBox`, `b3kAddRamp`, `b3kAddPlatform` with `b3kGlideTo` |
 | the hill | `b3kAddStaticModel` with OBJ text the game writes |
-| trees, standing stones, crystals | `b3kSpawnCone`, `b3kSpawnCylinder` and `b3kSpawnBox`, then `b3kSetType "static"` and `b3kSetRotation` |
+| stands of trees, standing stones, crystals | `b3kSpawnCone`, `b3kSpawnCylinder` and `b3kSpawnBox`, then `b3kSetType "static"` and `b3kSetRotation` |
 | the windmill's sails and the beacon's beam | kinematic things turned by `b3kSetSpin` |
 | the sweeper and the wrecking ball | a motor-driven `b3kHinge`, a `b3kRope`, `b3kNoCollide` |
 | the orbs, the jump pad, the sea, the flags, the plate and the crumbling platforms | sensors, on `b3kSensorEnter` and `b3kSensorExit` |
 | the vault's gate and its pressure plate, the turning platform | `b3kAddPlatform` with `b3kGlideTo`, and `b3kSetSpin` |
 | crumbling platforms that fall and come back | `b3kAddStaticBox`, then `b3kSetType "dynamic"` and `b3kSetDensity` |
-| the player, the flags, the platforms, the gate and the clouds as Kenney's models | `b3kSetLook` |
+| the flags, platforms, gate, clouds, trees, grass, round isles, lifts and vault walls as Kenney's models | `b3kSetLook` |
+| the player's idle, walk and jump, his squash, lean and the orbs' bob | `b3kAddLookPart`, `b3kPoseLookPart`, `b3kSetLookPose` |
+| the player's shadow | `b3kRayHit` down from the player |
 | the player, and a gamepad's stick | `b3kPlayerMake`, `b3kPlayerJump`, `b3kPlayerSteer`, `b3kPlayerRespawn` on `b3kFell` |
 | kicking a crate with the mouse | `b3kThingAt`, unless `b3kCamDragged()` |
 
@@ -754,8 +774,9 @@ blasts, and rumbles when an orb is found) and **audioxt** (a sea that swells,
 a chime a note higher for each orb, jumps, blasts, a splash and a fanfare,
 all tones and noise made on the spot).
 
-The models are Kenney's (kenney.nl), from his Starter Kit 3D Platformer,
-CC0 (public domain): `examples/models/` holds them and says which is which.
+The models are Kenney's (kenney.nl), from his Platformer, City Builder and
+FPS starter kits, CC0 (public domain): `examples/models/` holds them and says
+which is which.
 A web page has no folder of files beside a stack, so
 `tools/build-game-models.py` turns each into OBJ text with flat colours,
 fitted to the shape it is drawn on, and writes it into the game between its
@@ -769,7 +790,10 @@ change the Kit in `src/` and run `python3 tools/sync-embedded-kit.py`.
 it builds the window, walks to an orb, collects them all, falls into the sea,
 rides the pad, the lift and the sky lift, topples the dominoes, kicks, blasts
 and drops crates, presses the plate with the heavy crate and with the player,
-crumbles a platform, touches a flag and falls back to it, swaps the renderer,
+crumbles a platform, touches a flag and falls back to it, bumps a stand of
+trees, falls off the round isle where a square one's corner was, watches the
+character idle, walk and jump with its shadow under it and dust where it
+lands, swaps the renderer,
 and presses every button and key, with
 box3dxt alone and with no extension at all; given render3dxt, gamepadxt (a
 virtual pad) and audioxt (its silent device) too, it checks the lamps, the

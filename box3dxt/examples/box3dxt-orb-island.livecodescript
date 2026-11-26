@@ -15,8 +15,11 @@
 -- crumbling and turning platforms cross the sea to an islet; checkpoint
 -- flags catch a fall. Crates and balls are there to be kicked, blasted
 -- and knocked into the sea. It is late afternoon: a low warm sun,
--- lanterns, clouds. The player, flags, platforms, gate and clouds are
--- Kenney's CC0 models (box3dxt/examples/models/), carried in this file
+-- lanterns, clouds. The player (who idles, walks and jumps with his own
+-- animations, squashes as he lands, leans into a run and kicks up dust),
+-- the flags, platforms, gate, clouds, stands of trees, grass tufts, round
+-- isles, lift pads and vault walls are Kenney's CC0 models, from his
+-- Platformer, City Builder and FPS kits (box3dxt/examples/models/), carried in this file
 -- between the GAME MODELS markers by box3dxt/tools/build-game-models.py.
 --
 -- Version 1.2 (2026-11-26) is four times the island of 1.1, which was
@@ -36,11 +39,15 @@
 --   * scenery: b3kAddGround, b3kAddStaticBox, b3kAddRamp, b3kAddPlatform
 --     with b3kGlideTo (the lift and the sky lift), b3kAddStaticModel (the
 --     hill, made here as OBJ text), b3kSpawn... with b3kSetType "static"
---     and b3kSetRotation (trees, stones, crystals)
+--     and b3kSetRotation (stands of trees, stones, crystals)
 --   * kinematic things: b3kSetSpin (the windmill's sails, the beacon, the
 --     turning platform), b3kGlideTo (the plate and the gate)
 --   * models: b3kSetLook draws a model in place of a thing's shape (the
---     player, the flags, the platforms, the gate, the clouds)
+--     flags, platforms, gate, clouds, trees, grass, isles, lifts, walls);
+--     b3kAddLookPart and b3kPoseLookPart draw the player in six parts and
+--     play his animations on them; b3kSetLookPose squashes and leans him,
+--     bobs the orbs and spreads the shadow
+--   * rays: b3kRayHit finds the ground under the player for his shadow
 --   * joints: a motor-driven hinge (the sweeper), a rope (the wrecking
 --     ball), b3kNoCollide (the arm passes through its hub)
 --   * sensors: the orbs, the jump pad, the sea, the flags, the plate and
@@ -110,8 +117,8 @@
 -- (a virtual pad) and audioxt (its silent device) as well. In a web Stack
 -- Player (web-2026.11.22, headless Chromium, 2026-11-26) version 1.2
 -- built at its size, walked to an orb, found gamepadxt and audioxt, and
--- drew 32 pictures a second with the models where 1.1 drew 37 to 40 on
--- the same machine.
+-- drew 28 pictures a second with the models, the animated character and
+-- the trees where 1.1 drew 36, measured back to back on the same machine.
 -- A real gamepad, the sound heard, a desktop IDE and the feel: verified
 -- statically; needs an OXT pass.
 -- =====================================================================
@@ -596,6 +603,8 @@ constant kOiStartY = 1
 constant kOiStartZ = 22
 -- the island is 60 metres square (four times the 30 of version 1.1)
 constant kOiIsland = 60
+-- the four stretches of sea, which a shadow falls on (oiSea names them)
+constant kOiSeaNames = "sea north,sea south,sea west,sea east"
 -- the camera's starting orbit round the player: behind it, looking north
 constant kOiCamPitch = 17
 constant kOiCamDist = 10
@@ -664,6 +673,22 @@ local sOiPlateOn      -- [thing] -> true while it presses the plate
 local sOiPlateDown    -- true while the plate is pressed down
 local sOiGate         -- the vault's gate (a kinematic platform)
 local sOiGateShutAt   -- the clock time the gate shuts, once nothing presses
+local sOiAnim         -- [anim] -> frames, length; [anim,frame,part] -> pose
+local sOiParts        -- the character's parts, one a line
+local sOiAct          -- the animation playing: idle, walk or jump
+local sOiActT         -- seconds into it
+local sOiBlendFrom    -- [part] -> the pose the last animation left
+local sOiBlend        -- 0 to 1: how far the new animation has taken over
+local sOiSquash       -- the look's squash (below 0) or stretch (above)
+local sOiSquashV      -- how fast it springs back
+local sOiLean         -- degrees the character leans into its run
+local sOiAir          -- true while the player is off the ground
+local sOiFallV        -- the player's last upward speed (m/s)
+local sOiStepAt       -- the walk's time at the last footstep
+local sOiShadow       -- the blob shadow under the player
+local sOiDust         -- [puff] -> "vx,vz,born ms"
+local sOiDustAt       -- the clock time of the last running puff
+local sOiOrbPhase     -- [orb] -> its bob's phase
 
 -- =====================================================================
 -- Lifecycle
@@ -723,6 +748,20 @@ command oiNewGame
    put false into sOiPlateDown
    put empty into sOiGate
    put 0 into sOiGateShutAt
+   put "idle" into sOiAct
+   put 0 into sOiActT
+   put empty into sOiBlendFrom
+   put 1 into sOiBlend
+   put 0 into sOiSquash
+   put 0 into sOiSquashV
+   put 0 into sOiLean
+   put false into sOiAir
+   put 0 into sOiFallV
+   put 0 into sOiStepAt
+   put empty into sOiShadow
+   put empty into sOiDust
+   put 0 into sOiDustAt
+   put empty into sOiOrbPhase
    if there is a field "oiBanner" then hide field "oiBanner"
    b3kSetup
    if b3kWorld() is empty then
@@ -748,9 +787,10 @@ command oiNewGame
    put b3kThingCount() into sOiBaseThings
    b3kPlayerMake kOiStartX, kOiStartY, kOiStartZ, "capsule", "61,110,200"
    -- the player collides as the Kit's capsule and looks like Kenney's
-   -- character, fitted to the capsule's 1.6 m (render3dxt; box3dxt's
-   -- renderer draws the capsule)
-   oiLook b3kPlayer(), "character"
+   -- character, fitted to the capsule's 1.6 m, in six parts that his own
+   -- idle, walk and jump animations move (render3dxt; box3dxt's renderer
+   -- draws the capsule)
+   oiHeroMake
    -- a little quicker than the Kit's 5 m/s: the island is four times as big
    b3kPlayerSet "moveSpeed", 6.5
    -- the orbit's target given too: the camera starts ON the player, where
@@ -834,6 +874,7 @@ command oiBuildIsland
    b3kAddPlatform 14.9, 0.2, -14, 2.6, 0.4, 2.6, "70,180,190"
    put the result into sOiLift
    b3kName sOiLift, "lift"
+   oiLook sOiLift, "lift"
 
    -- the west: five steps of half a metre up to a ledge 3 m high
    put 1 into tI
@@ -865,7 +906,8 @@ command oiBuildIsland
    b3kSetVisible sOiPad, true
    b3kSetColor sOiPad, "90,200,110"
    b3kSetGlow sOiPad, "20,90,30"
-   b3kAddStaticBox 0, 3.5, -19, 3, 0.4, 3, "206,180,132"
+   oiStatic "cylinder", 0, 3.5, -19, 0.4, 3.4, "132,190,98"
+   oiLook the result, "roundtop"
 
    oiBuildCorners
    oiBuildSkyIsle
@@ -942,6 +984,10 @@ command oiSea pName, pX, pZ, pW, pD
    b3kName tSea, "sea " & pName
 end oiSea
 
+-- A rock hanging under something: the Kit's cone has its BASE at pY and
+-- its point pHeight above, so turned over it hangs from pY down. (Version
+-- 1.2's first trees and rocks were placed as if pY were the middle, and
+-- floated apart; 2026-11-26.)
 command oiRock pX, pY, pZ, pHeight, pDiameter
    b3kSpawnCone pX, pY, pZ, pHeight, pDiameter, "112,96,84"
    oiFix the result, 180, 0, 0
@@ -983,7 +1029,7 @@ command oiBuildCorners
    b3kAddStaticModel -16, 0, 16, oiHillObj(8, 3, 7, 20), 1, "118,176,90"
    b3kName the result, "hill"
    oiStatic "cylinder", -16, 4.9, 16, 4.2, 1.1, "236,226,206"
-   oiStatic "cone", -16, 7.5, 16, 1.2, 1.6, "170,70,60"
+   oiStatic "cone", -16, 6.95, 16, 1.2, 1.6, "170,70,60"
    repeat for each item tA in "0,90"
       b3kSpawnBox -16, 6.4, 16.8, 6, 0.45, 0.12, "246,240,228"
       put the result into tThing
@@ -1008,7 +1054,7 @@ command oiBuildCorners
    repeat for each line tCrystal in "6,-24,3.2,0,10" & return & "9.6,-25.5,2.4,14,-8" & return & "7,-27.4,2,-12,20" & return & \
          "10.4,-23,1.6,0,-22" & return & "5,-22.6,1.8,16,0" & return & "11,-27,2.8,-6,0" & return & "4.4,-26.6,1.4,0,24"
       put item 3 of tCrystal into tH
-      b3kSpawnCone item 1 of tCrystal, tH / 2, item 2 of tCrystal, tH, 0.5 * tH, "150,226,240"
+      b3kSpawnCone item 1 of tCrystal, -0.15, item 2 of tCrystal, tH, 0.5 * tH, "150,226,240"
       put the result into tThing
       oiFix tThing, item 4 of tCrystal, 0, item 5 of tCrystal
       b3kSetGlow tThing, "30,110,140"
@@ -1025,10 +1071,10 @@ command oiBuildCorners
       put -32.5 - 3 * tI into tX
       put 0.6 * tI - 0.25 into tY
       oiStatic "box", tX, tY, 6 - 0.6 * tI, 1.6, 0.5, 1.6, "150,150,156"
-      oiRock tX, tY - 1.4, 6 - 0.6 * tI, 2.2, 1.4
+      oiRock tX, tY - 0.24, 6 - 0.6 * tI, 2.2, 1.4
    end repeat
    oiStatic "box", -45, 1.2, 4.5, 3, 2.4, 3, "136,128,120"
-   oiRock -45, -1.5, 4.5, 4, 3
+   oiRock -45, 0.01, 4.5, 4, 3
 end oiBuildCorners
 
 -- The floating isle in the north, over the sea, and the sky lift that
@@ -1036,13 +1082,16 @@ end oiBuildCorners
 -- (its top at y 0.4) up to the isle's south edge (its top at y 4.5).
 command oiBuildSkyIsle
    local tBeam, tIsle
-   b3kAddStaticBox 0, 4, -43, 12, 1, 12, "132,190,98"
+   -- round, like the rock it sits on: Kenney's large grass platform
+   oiStatic "cylinder", 0, 4, -43, 1, 12, "132,190,98"
    put the result into tIsle
-   b3kSetChecker tIsle, "132,190,98", "110,166,84", 12
-   oiRock 0, -1.5, -43, 10, 12
+   b3kName tIsle, "sky isle"
+   oiLook tIsle, "isle"
+   oiRock 0, 3.51, -43, 6, 12
    b3kAddPlatform 0, 0.2, -27.5, 2.6, 0.4, 2.6, "230,150,60"
    put the result into sOiSkyLift
    b3kName sOiSkyLift, "sky lift"
+   oiLook sOiSkyLift, "lift"
    -- the beacon: a white tower, a glowing lamp and a beam that sweeps
    oiStatic "cylinder", -3, 7, -46, 5, 1.4, "240,236,226"
    oiStatic "cylinder", -3, 8.2, -46, 0.5, 1.5, "200,60,52"
@@ -1057,18 +1106,78 @@ command oiBuildSkyIsle
    b3kAddLamp -3, 9.9, -46, "255,210,140", 14, 2
 end oiBuildSkyIsle
 
--- Trees round the island: a trunk and two cones of leaves.
+-- Stands of trees round the island, Kenney's City Builder clumps: each is
+-- one static cylinder (what the player bumps into) wearing a clump of four
+-- or five trees, turned so no two stands look alike. Version 1.2's first
+-- trees were a trunk and two cones, three things a tree and stiff to look
+-- at (2026-11-26). Then grass tufts, which only show: a sensor is passed
+-- through.
 command oiBuildTrees
-   local tTree, tS
-   repeat for each line tTree in "-9,25,1" & return & "-12,9,1.2" & return & "9,10,0.9" & return & "12,23,1.1" & return & \
-         "-24,25,1.3" & return & "-26,-6,1" & return & "25,7,1.2" & return & "26,-7,0.9" & return & \
-         "-6,-26,1.1" & return & "15,-26,1" & return & "-26,11,0.9" & return & "-25,-15,1"
+   local tTree, tS, tH, tKind, tThing, tTuft
+   repeat for each line tTree in "-9,25,1,trees,20" & return & "-12,9,1.1,grove,75" & return & "9,10,0.9,grove,140" & return & \
+         "12,23,1,trees,200" & return & "-24,25,1.2,trees,260" & return & "-26,-6,1,grove,310" & return & \
+         "25,7,1.1,trees,35" & return & "26,-7,0.9,grove,100" & return & "-6,-26,1,trees,165" & return & \
+         "15,-26,1,grove,230" & return & "-26,11,0.9,trees,290" & return & "-25,-15,1,trees,345" & return & \
+         "28,18,1,grove,50" & return & "-28,0,1.1,trees,120" & return & "28,-16,0.9,grove,185" & return & \
+         "-14,-28,0.9,trees,250" & return & "20,15,0.9,grove,320"
       put item 3 of tTree into tS
-      oiStatic "cylinder", item 1 of tTree, 0.8 * tS, item 2 of tTree, 1.6 * tS, 0.42 * tS, "120,84,56"
-      oiStatic "cone", item 1 of tTree, 2.5 * tS, item 2 of tTree, 2.4 * tS, 2.6 * tS, "64,128,70"
-      oiStatic "cone", item 1 of tTree, 3.6 * tS, item 2 of tTree, 1.8 * tS, 1.8 * tS, "78,148,80"
+      put item 4 of tTree into tKind
+      if tKind is "trees" then put 4.2 * tS into tH
+      else put 3.4 * tS into tH
+      oiStatic "cylinder", item 1 of tTree, tH / 2, item 2 of tTree, tH, 2.2 * tS, "64,128,70"
+      put the result into tThing
+      oiFix tThing, 0, item 5 of tTree, 0
+      oiLook tThing, tKind, tS
+   end repeat
+   repeat for each line tTuft in oiTufts()
+      oiTuft item 1 of tTuft, item 2 of tTuft, item 3 of tTuft
    end repeat
 end oiBuildTrees
+
+-- where the tufts grow: x, z, turn; in twos and threes by the trees
+function oiTufts
+   local tList
+   put empty into tList
+   put "-7.5,23.4,0" & return after tList
+   put "-10.6,26.8,47" & return after tList
+   put "-13.8,10.5,94" & return after tList
+   put "-10.2,7.6,141" & return after tList
+   put "7.4,11.6,188" & return after tList
+   put "10.5,8.6,235" & return after tList
+   put "13.7,21.4,282" & return after tList
+   put "10.4,24.6,329" & return after tList
+   put "-22.4,23.3,16" & return after tList
+   put "-25.6,27.1,63" & return after tList
+   put "-27.6,-4.4,110" & return after tList
+   put "-24.4,-7.8,157" & return after tList
+   put "23.5,8.8,204" & return after tList
+   put "26.8,5.4,251" & return after tList
+   put "24.4,-8.4,298" & return after tList
+   put "-4.4,-24.6,345" & return after tList
+   put "-7.6,-27.6,32" & return after tList
+   put "13.5,-24.4,79" & return after tList
+   put "-27.4,12.6,126" & return after tList
+   put "-23.4,-13.4,173" & return after tList
+   put "-26.6,-16.6,220" & return after tList
+   put "3.4,24.8,267" & return after tList
+   put "-3.6,8.2,314" & return after tList
+   put "6.2,-8.8,1" & return after tList
+   return tList
+end oiTufts
+
+-- A tuft of grass (Kenney's, CC0): a sensor that shows, at pX, pZ, turned
+-- pTurn degrees
+command oiTuft pX, pZ, pTurn
+   local tTuft
+   b3kAddSensorBox pX, 0.275, pZ, 0.9, 0.55, 0.9
+   put the result into tTuft
+   if tTuft is empty then exit oiTuft
+   b3kSetVisible tTuft, true
+   b3kSetColor tTuft, "96,170,92"
+   b3kSetRotation tTuft, 0, pTurn, 0
+   b3kName tTuft, "tuft"
+   oiLook tTuft, "tuft"
+end oiTuft
 
 -- A lantern post; pLamp hangs one of the Kit's lamps in it as well (a
 -- world holds seven, so not every post has one).
@@ -1162,6 +1271,7 @@ command oiOrb pLetter, pX, pY, pZ
    b3kSetGlow tOrb, oiGlowStep(1)
    b3kName tOrb, "orb " & pLetter
    put pLetter into sOiOrb[tOrb]
+   put sOiOrbCount * 0.9 into sOiOrbPhase[tOrb]
    add 1 to sOiOrbCount
 end oiOrb
 
@@ -1188,10 +1298,281 @@ function oiModel pName
    return sOiModels[pName]
 end oiModel
 
-command oiLook pThing, pName
+command oiLook pThing, pName, pScale
    if pThing is empty then exit oiLook
-   b3kSetLook pThing, oiModel(pName & ".obj"), oiModel(pName & ".mtl")
+   if pScale is empty then put 1 into pScale
+   b3kSetLook pThing, oiModel(pName & ".obj"), oiModel(pName & ".mtl"), pScale
 end oiLook
+
+-- =====================================================================
+-- The character: Kenney's in six parts, his animations played on them,
+-- and the squash, stretch and lean that make a jump and a run read; a
+-- blob shadow under it, and dust where it lands and runs
+-- =====================================================================
+command oiHeroMake
+   local tPlayer, tPart
+   put b3kPlayer() into tPlayer
+   if tPlayer is empty then exit oiHeroMake
+   put oiModel("character.parts") into sOiParts
+   repeat for each line tPart in sOiParts
+      b3kAddLookPart tPlayer, tPart, oiModel("character-" & tPart & ".obj"), oiModel("character-" & tPart & ".mtl")
+   end repeat
+   if sOiAnim is not an array then oiAnimLoad
+   oiHeroPose 0
+   oiShadowMake
+end oiHeroMake
+
+-- "anim NAME FRAMES LENGTH" then "FRAME PART x,y,z,rx,ry,rz,sx,sy,sz"
+command oiAnimLoad
+   local tLine, tName
+   put empty into sOiAnim
+   repeat for each line tLine in oiModel("character.anim")
+      if word 1 of tLine is "anim" then
+         put word 2 of tLine into tName
+         put word 3 of tLine into sOiAnim[tName & ",frames"]
+         put word 4 of tLine into sOiAnim[tName & ",length"]
+      else if tName is not empty and the number of words of tLine is 3 then
+         put word 3 of tLine into sOiAnim[tName & comma & word 1 of tLine & comma & word 2 of tLine]
+      end if
+   end repeat
+end oiAnimLoad
+
+-- one part's pose at pT seconds into an animation: the frames either side,
+-- mixed
+function oiAnimPose pAnim, pPart, pT
+   local tFrames, tLen, tF, tI, tA, tB, tOut, k
+   put sOiAnim[pAnim & ",frames"] into tFrames
+   put sOiAnim[pAnim & ",length"] into tLen
+   if tFrames is empty then return empty
+   put max(0, min(1, pT / max(0.001, tLen))) * (tFrames - 1) into tF
+   put trunc(tF) into tI
+   put tF - tI into tF
+   put sOiAnim[pAnim & comma & min(tFrames, tI + 1) & comma & pPart] into tA
+   put sOiAnim[pAnim & comma & min(tFrames, tI + 2) & comma & pPart] into tB
+   return oiMix(tA, tB, tF)
+end oiAnimPose
+
+-- two lists of numbers mixed: pF 0 is pA, 1 is pB
+function oiMix pA, pB, pF
+   local tOut, k
+   if pB is empty or pF <= 0 then return pA
+   if pA is empty then return pB
+   set the itemDelimiter to comma
+   put empty into tOut
+   repeat with k = 1 to the number of items of pA
+      put item k of pA + (item k of pB - item k of pA) * pF & comma after tOut
+   end repeat
+   delete the last char of tOut
+   return tOut
+end oiMix
+
+command oiTickHero pMs
+   local tPlayer, tVel, tSpeed, tDt, tWant, tGround, tRate, tLen, tHalf
+   put b3kPlayer() into tPlayer
+   if tPlayer is empty or not b3kIsThing(tPlayer) then exit oiTickHero
+   put pMs / 1000 into tDt
+   set the itemDelimiter to comma
+   put b3kVelocity(tPlayer) into tVel
+   put sqrt(item 1 of tVel ^ 2 + item 3 of tVel ^ 2) into tSpeed
+   put b3kPlayerOnGround() into tGround
+   -- which animation: in the air the jump, else a walk or standing still
+   if not tGround then
+      put "jump" into tWant
+   else if tSpeed > 0.8 then
+      put "walk" into tWant
+   else
+      put "idle" into tWant
+   end if
+   -- the landing: a squash as deep as the fall was fast, and dust
+   if tGround and sOiAir is true then
+      if sOiFallV < -2.5 then
+         subtract min(0.32, -sOiFallV * 0.035) from sOiSquash
+         oiDustBurst b3kX(tPlayer), b3kY(tPlayer) - 0.75, b3kZ(tPlayer), 6
+         oiSound "land"
+      end if
+   end if
+   -- the take-off: a stretch
+   if not tGround and sOiAir is not true and item 2 of tVel > 2 then
+      add 0.18 to sOiSquash
+   end if
+   put not tGround into sOiAir
+   put item 2 of tVel into sOiFallV
+   if tWant is not sOiAct then
+      oiHeroBlendFrom
+      put tWant into sOiAct
+      put 0 into sOiActT
+      put 0 into sOiBlend
+   end if
+   -- the walk keeps pace with the feet
+   put 1 into tRate
+   if sOiAct is "walk" then put max(0.7, tSpeed / 4) into tRate
+   add tDt * tRate to sOiActT
+   put b3kNum(sOiAnim[sOiAct & ",length"], 1) into tLen
+   if sOiAct is "jump" then
+      put min(sOiActT, tLen) into sOiActT
+   else if sOiActT > tLen then
+      put sOiActT mod tLen into sOiActT
+   end if
+   -- footsteps: twice a walk cycle
+   if sOiAct is "walk" then
+      put tLen / 2 into tHalf
+      if trunc(sOiActT / tHalf) is not trunc(sOiStepAt / tHalf) then
+         oiSound "step"
+         if tSpeed > 4 and sOiClockMS - sOiDustAt > 180 then
+            put sOiClockMS into sOiDustAt
+            oiDustBurst b3kX(tPlayer), b3kY(tPlayer) - 0.75, b3kZ(tPlayer), 1
+         end if
+      end if
+   end if
+   put sOiActT into sOiStepAt
+   put min(1, sOiBlend + tDt / 0.12) into sOiBlend
+   -- the squash springs back (a stiff, damped spring) and the air stretches
+   -- with the upward speed
+   add (-260 * sOiSquash - 16 * sOiSquashV) * tDt to sOiSquashV
+   add sOiSquashV * tDt to sOiSquash
+   put max(-0.4, min(0.4, sOiSquash)) into sOiSquash
+   -- the lean into a run, eased
+   if tGround then
+      add (min(14, tSpeed * 1.8) - sOiLean) * min(1, tDt * 10) to sOiLean
+   else
+      add (0 - sOiLean) * min(1, tDt * 6) to sOiLean
+   end if
+   oiHeroPose item 2 of tVel
+   oiShadowTick
+end oiTickHero
+
+-- the pose the last animation left, for the next to take over from
+command oiHeroBlendFrom
+   local tPart
+   repeat for each line tPart in sOiParts
+      put oiMix(sOiBlendFrom[tPart], oiAnimPose(sOiAct, tPart, sOiActT), sOiBlend) into sOiBlendFrom[tPart]
+   end repeat
+end oiHeroBlendFrom
+
+command oiHeroPose pVy
+   local tPlayer, tPart, tPose, tSy, tSx, tAir
+   put b3kPlayer() into tPlayer
+   if tPlayer is empty then exit oiHeroPose
+   repeat for each line tPart in sOiParts
+      put oiMix(sOiBlendFrom[tPart], oiAnimPose(sOiAct, tPart, sOiActT), sOiBlend) into tPose
+      if tPose is empty then next repeat
+      set the itemDelimiter to comma
+      b3kPoseLookPart tPlayer, tPart, item 1 of tPose, item 2 of tPose, item 3 of tPose, item 4 of tPose, item 5 of tPose, item 6 of tPose, \
+            item 7 of tPose, item 8 of tPose, item 9 of tPose
+   end repeat
+   -- the whole look: stretched in the air, squashed on landing, the volume
+   -- kept (wider when shorter), the feet kept on the ground, leaning in
+   put 0 into tAir
+   if sOiAir is true then put max(-0.1, min(0.14, b3kNum(pVy, 0) * 0.02)) into tAir
+   put 1 + sOiSquash + tAir into tSy
+   put 1 / sqrt(max(0.3, tSy)) into tSx
+   b3kSetLookPose tPlayer, 0, 0.8 * (tSy - 1), 0, sOiLean, 0, 0, tSx, tSy, tSx
+end oiHeroPose
+
+-- The blob shadow: a dark disc on whatever is under the player, smaller
+-- the higher it jumps. A sensor (nothing stands on it) the ray passes.
+command oiShadowMake
+   local tObj, tI, tA
+   b3kAddSensorBox 0, -20, 0, 0.9, 0.02, 0.9
+   put the result into sOiShadow
+   if sOiShadow is empty then exit oiShadowMake
+   b3kSetVisible sOiShadow, true
+   b3kSetColor sOiShadow, "70,92,58"
+   b3kName sOiShadow, "shadow"
+   put "mtllib model.mtl" & return & "v 0 0 0" & return & "vn 0 1 0" & return into tObj
+   repeat with tI = 0 to 15
+      put tI * 2 * pi / 16 into tA
+      put "v " & format("%.3f", 0.5 * cos(tA)) && "0" && format("%.3f", 0.5 * sin(tA)) & return after tObj
+   end repeat
+   put "usemtl shade" & return after tObj
+   repeat with tI = 0 to 15
+      -- counter-clockwise seen from above: the centre, then two rim points
+      put "f 1//1 " & ((tI + 1) mod 16) + 2 & "//1 " & tI + 2 & "//1" & return after tObj
+   end repeat
+   b3kSetLook sOiShadow, tObj, "newmtl shade" & return & "Kd 0.2 0.26 0.17" & return
+end oiShadowMake
+
+command oiShadowTick
+   local tPlayer, tHit, tY, tH, tS, tTries
+   if sOiShadow is empty or not b3kIsThing(sOiShadow) then exit oiShadowTick
+   put b3kPlayer() into tPlayer
+   -- from inside the player's own shape, which a ray starting in it never
+   -- meets: a ray from its feet started just under the grass when it
+   -- stood on it, and met the sea (2026-11-26)
+   put b3kRayHit(b3kX(tPlayer), b3kY(tPlayer) - 0.5, b3kZ(tPlayer), 0, -12, 0) into tHit
+   -- a ray meets sensors too: the shadow itself (which then climbed its
+   -- own top, frame by frame), dust and tufts; look on past them, to the
+   -- first solid thing or the sea
+   set the itemDelimiter to comma
+   put 0 into tTries
+   repeat while tHit is not empty and tTries < 4 and b3kKind(tHit) is "sensor" and b3kNameOf(tHit) is not among the items of kOiSeaNames
+      add 1 to tTries
+      put item 2 of b3kHitPoint() - 0.01 into tY
+      put b3kRayHit(b3kX(tPlayer), tY, b3kZ(tPlayer), 0, -12, 0) into tHit
+   end repeat
+   if tHit is empty or tHit is tPlayer or b3kKind(tHit) is "sensor" and b3kNameOf(tHit) is not among the items of kOiSeaNames then
+      b3kSetVisible sOiShadow, false
+      exit oiShadowTick
+   end if
+   set the itemDelimiter to comma
+   put item 2 of b3kHitPoint() into tY
+   put b3kY(tPlayer) - 0.8 - tY into tH
+   put max(0.35, 1 - tH * 0.12) into tS
+   if not b3kIsVisible(sOiShadow) then b3kSetVisible sOiShadow, true
+   b3kMoveTo sOiShadow, b3kX(tPlayer), tY + 0.03, b3kZ(tPlayer)
+   b3kSetLookPose sOiShadow, 0, 0, 0, 0, 0, 0, tS, 1, tS
+end oiShadowTick
+
+-- Dust: small pale balls that drift out, shrink and are gone in 0.45 s.
+-- Sensors, so nothing trips on them; at most fourteen at once.
+command oiDustBurst pX, pY, pZ, pCount
+   local tI, tA, tPuff
+   repeat with tI = 1 to pCount
+      if the number of lines of the keys of sOiDust >= 14 then exit repeat
+      b3kAddSensorBall pX, pY + 0.1, pZ, 0.32
+      put the result into tPuff
+      if tPuff is empty then exit repeat
+      b3kSetVisible tPuff, true
+      b3kSetColor tPuff, "238,230,214"
+      b3kSetGlow tPuff, "60,56,50"
+      put random(360) * pi / 180 into tA
+      put 1.6 * cos(tA) & comma & 1.6 * sin(tA) & comma & sOiClockMS into sOiDust[tPuff]
+   end repeat
+end oiDustBurst
+
+command oiTickDust pMs
+   local tPuff, tAge, tS, tD
+   set the itemDelimiter to comma
+   repeat for each key tPuff in sOiDust
+      put sOiDust[tPuff] into tD
+      put sOiClockMS - item 3 of tD into tAge
+      if tAge > 450 or not b3kIsThing(tPuff) then
+         if b3kIsThing(tPuff) then b3kRemove tPuff
+         delete variable sOiDust[tPuff]
+         next repeat
+      end if
+      b3kMoveTo tPuff, b3kX(tPuff) + item 1 of tD * pMs / 1000, b3kY(tPuff) + 0.6 * pMs / 1000, b3kZ(tPuff) + item 2 of tD * pMs / 1000
+      put 1.3 - tAge / 450 into tS
+      b3kSetLookPose tPuff, 0, 0, 0, 0, 0, 0, tS, tS, tS
+   end repeat
+end oiTickDust
+
+-- the orbs bob, each a little after the last
+command oiTickOrbBob
+   local tOrb, tT
+   put sOiClockMS / 1000 into tT
+   repeat for each key tOrb in sOiOrb
+      b3kSetLookPose tOrb, 0, 0.12 * sin(tT * 2.6 + sOiOrbPhase[tOrb]), 0
+   end repeat
+end oiTickOrbBob
+
+function oiHeroAct
+   return sOiAct
+end oiHeroAct
+
+function oiDustCount
+   return the number of lines of the keys of sOiDust
+end oiDustCount
 
 -- =====================================================================
 -- Platformer pieces: a pressure plate and the vault it opens, crumbling
@@ -1205,9 +1586,13 @@ end oiLook
 -- be pushed (or kicked, or blasted) onto it.
 command oiBuildVault
    local tCrate
+   -- the walls wear Kenney's FPS kit wall (CC0)
    oiStatic "box", 23.5, 1.6, -26, 0.6, 3.2, 5.6, "150,128,112"
+   oiLook the result, "wall-z"
    oiStatic "box", 28.5, 1.6, -26, 0.6, 3.2, 5.6, "150,128,112"
+   oiLook the result, "wall-z"
    oiStatic "box", 26, 1.6, -28.5, 5.6, 3.2, 0.6, "150,128,112"
+   oiLook the result, "wall-x"
    b3kAddPlatform 26, 1.6, -23.5, 5, 3.2, 0.6, "170,96,70"
    put the result into sOiGate
    b3kName sOiGate, "gate"
@@ -1237,11 +1622,11 @@ command oiBuildEastIslet
    oiLook tTurn, "platform"
    oiCrumbleSpot 2, 40, -0.25, 0
    oiCrumbleSpot 3, 43.6, -0.25, 0
-   b3kAddStaticBox 49.5, -0.5, 0, 7, 1, 7, "132,190,98"
+   oiStatic "cylinder", 49.5, -0.5, 0, 1, 7, "132,190,98"
    put the result into tIsle
    b3kName tIsle, "east islet"
-   b3kSetChecker tIsle, "132,190,98", "110,166,84", 7
-   oiRock 49.5, -2.6, 0, 4.2, 6
+   oiLook tIsle, "isle", 7 / 12
+   oiRock 49.5, -0.99, 0, 3, 6
    oiFlag "east islet", 51.5, 0, -2.2
 end oiBuildEastIslet
 
@@ -1365,6 +1750,9 @@ on b3kFrame
    oiPadTick
    oiTickLift
    oiTickSkyLift
+   oiTickHero tMs
+   oiTickDust tMs
+   oiTickOrbBob
    oiTickBall
    oiTickCrumble
    oiTickPlate
@@ -2043,6 +2431,13 @@ command oiSound pName
          oiVoice "pink", 0, 0.5, 0, 0.9
          oiVoice "white", 0, 0.12, 0, 0.35
          break
+      case "step"
+         oiVoice "white", 0, 0.035, 0, 0.04
+         break
+      case "land"
+         oiVoice "sine", 90, 0.22, 0, 0.1
+         oiVoice "white", 0, 0.08, 0, 0.08
+         break
       case "creak"
          oiVoice "triangle", 98, 0.16, 0, 0.25
          oiVoice "white", 0, 0.06, 0.05, 0.3
@@ -2209,21 +2604,6 @@ private function oiModelData pName
    local tData
    put empty into tData
    switch pName
-      case "character.obj"
-         put "H4sIAAAAAAAC/4VcW7blqA39zyjOBOhrwMb2dJJ0r5W1qpKPdDL+oMeWhK1b+alrth5IIBCI0/3zzx8//vHXz89//f33H7/9/PPHX/772X5rx/Ep22/H1WZju3YB70rgOPfZqMdYwK0S535G8TH/TM67M1i3+61zOzuBfexBXMFVp4or52rSKq69r5xBfP6p/YisV8SU80r4ntLe+/yz3VdEr4jBo2XotKN1lMKAvOWvtJ8wGXDnNerXuwsXLOncljQMSjrlJZ3zks5aSUOhpPNW0qEraYiUdERLPnklm+eSBUTJY6fkU1WyuSp5qJQsVkq6Jkoa6iWZ3vLN/D4jo6QB1BuHDP271xrDrPVOoC6xyUfYfj4Yad7OwNcOdq33GsB6ynzcPUpfPDL9GAGsw102lRe1Wq1R+GAnruPRy9PEOlj0MraS8ZWcMbGwpMNTsvEp6WCUdDRK5nnJRrhk41GSeSzZIHlA7oOc6n0Ny2MG12yMY0GVdyhvv00Dtep4KabWdb80L9x3MCPrkP7UOwbkA836y7vLTU6dTscnHYjvXFBUl6QY+9oO9tEWbsAPbihh7lz1/NtHUPHweFFsvNhvlDegPg5BrYP/34sQJ4nakupdR+2tYXGt5F6sg/Zerrqw1i1uBRMbUtfSnvI5c8lWn8vNwLGCrwF/z62pfAS+gbZG7sgZV+pDvqRdlVRtiXofc/joLPM0G5Lc+bQXmnzZqZ8hgf07RvD32MtGBeNic3AZT1EZg8FS" after tData
-         put "R4y6X4DPxfPoqOQ9zfMCnwQ4aNXMtp0cdeN4gE9GEn4wloyzfMf67r18033tVY5Nsf+6C3iuIC+WerQINgGvEUHZ0KtkXfg0uhgRxbeDd4cqqdisf7OW73iTvkpqVkl9Lamz5Rtvz/uUk0M4lCnW9yPcZyLjAxNGk973Nzj01BKlFXt0I9KLPcim+xEvQwF18Us35ZU1oC/WlkHvbup6E7skB9TlyhfAXIGz4lwuHT5YZWMHawADa1Dw0iq7zENes9ajq5U1yL+7qsuEwqsFxO49stlbwMApy/jJ+karzCnQYFVAsbVKaNUVrTqE2KaUF7O2oFX/vPXysn2yvkGemIrk7F0BLOnyKdlCK+mSLNniLdkKKtn6K+kCLOn6LelqK/lyK/mCLekyLPkCK+kKK+liKvnCK9lyLsmyL/kSK+kaK/nSLenaLemKLPmSLPnyK+lSLfkKKvkSKvlqKfnSKumSLemSL+nuUNKdoOTrsOSLtuTrs+QLtKQrtKRLtKRrtHy3SLdj5z1Iz/y3JnmA87tdD8wYyzecezivDxSYfgnOz3qswgFiP+QeGauXE+uP0ieg+w7Qed4BE0nFFtEr6uetRLkWTDqI9aLFjpLZWxLryjcKXx2XzOaSGW198DFoHaeQ8Ny+WCXzjp+1s2c9za1Zinpw5s169Fed79F/0lHaT5zS4GTW9Wswyq+Ec79j5NgmoFVWmxsGz3aujhvrGyXeV2SognrWOEciL2BJ0W/k3z2lNqXmZ47G" after tData
-         put "bmjMnvYolkAlF9U5ky7WBaFWY72+GDO+RTjMuEu/wiXBgvA/6RLB9xbq+LwE4VIWX6VvBcQngpsgXaqJFMyMlLeeCd2zRczWfujh0gGz3Kp3kXhQwV2cXcr5/O9pPE/sLca9lGjY6nF5O7h9Jjm6ZeLzU0mzQ86fJDV0dE/JezVCcqB6cD2Y5AmFSNKunIpZP1gqpxkWdamn0FtmESlvppJyrfaUxLGSeFYSw0tieXkPQXl4U5LRpVkBr0z74N1Qscaxfx8x3sSccX1CxJxNMaY/FZZMYwkqTTxIWzchCjPs3UvWSWZi4l4yConDucFnlZg+MaD19n/voeAI4MBS0dVw65pdNZFwVCfYWw/Ji1wLTW9Biev4tYHBvqipJKrgfXD+bXN5GKh+w+04YDAnhZaeEntXtY/BLXqOWsNcVsQS0Y322CUygJQlWJ6hB1VlCZZsbWRL47UyXuqK64ux9+zi7dPb8czJRPc9Pu+JVMxj6XukLAG3xhtP3zOMATlSDbEw/QX0iObXanvq53hCCj44di7wXhJsx22xp7HuaZBzo2dJxrC3lqpfhIZ8Z5Ka/tL2wq+qjZ60PT1/1naJHvbdkvM1FozfN/uxYvzUdq6yB9cIHUvUpVyvDr7VX5IOysvgN5gLX1I0enZcXj2/GcvK+QiQR3yUZ4CUR0iUd8Q8nUtMTjxLnHiP8Xtu3lPznoZklpOgyeYqm5YktvJxfU9AHoJ6/+BPXZPfIuHcsyJ0//HTtEMLUhKu" after tData
-         put "8mYLXCVhK5m68u5VoP/8+/eff/74/G37yx+f+vVVP+3rq33611efAH8zun997cRxzsb4HF9fx2d+nhPib8XrNf8Q2KZQmwe9qWBeHeqgFolLW6mtPeAmQrPzSr3LB+DWwa1wF3hTWD4M3hUmK7k11MiJkTPMeLHyyuLcZIp5wa4JNBEIisPmKQ2RaGG/bsK0SSQdOFGvw8Tm+GgqDRpptOrBU+Aa6a9CUyshh8gOsqbpXGhLSVDYN5rBLhOrM6stocBGluaWUIhPxkr0mkLx7GAv9yEmalMVq8p9E1/YcuMc7AxjXd3ZT54NsXy/ZHzQFJr1ziYJKJ2avFprc8OTz9pUl/Y+A6QPjrkd4YO2UEnvAh8idGpoygdg6ly4FT4FRnzLh8EXIvaYX/e097jn3zm+g0ZrXDwV8hloFAEyx1PN3NPbmNIX/b3JXVZ4zjG9Z4icO0GTdk4DLw6gk7locKbmi6JjKrxklJgpSF3z466rFPFckGYztPtrjtDVVzOgyLxQPYtnzvV2QCFjYkHDwMQDEcXuqfu+IwXDd3OgbHEcb9K3Hc4j08Ek6nWzkYiDBcRHxsfRIPCY8X3jLWH4nMuwLX6BFMLAIPC4mPUmHmGKWKMizhICS2k3hepWg1jf2Os7TClPMQ+IcSN6rLOb9sbt9DDy6NFIdcWmsFeyaOsYvhhYpod8vzC5lqhI8zRlrmzKLzfzzGmcbZq6e5o+5vbcq8w3GT54r6X9hub0nn/HzEmUdC5SJiyT" after tData
-         put "gUNk7vXbVHpeLDMkRObMTWj+rWQtRSq09CYDI/2yDIfV9bknZdTPNZuHKDslBKbbU1mDUiaha9EfTRDPXK3rg5ouQa9jwuoumRL1UU0hCk1bnReRevG+Nnu6TkaYaJhxXYww8VSM53te48BFRMeMi1N6YyINfOtRf1ALzLh47TXO/yeprZti9HGyfpZ0DFysq7rahXi2hNgg6WoNo73kSdTPQLxd7c2u7OaB+cTEhhGieWzVxoyJpLbN8LovfDDXwceaLljbKj52EFXJAPHUWWm8Mg1zLpaUyaYe+maYcbFaJu7qUz/UlT7M2n0zTOdzrzbZhDmX6FoMUoForWHBbFHBByqNq9YkdObHjRgKGLj49FLvhcg7QuuLpGPG1TBlrR463k1npdVus1L7k8h9PoiKzY8jIUJ/9cnmlTvDBB6YT0wE5lwHYqjx/kCHzn3DR0Votr0DO/AxVuJx68AMqOANI2DGxYfWtkiyQcdYiIYZF/d5sJ/ag87Acam1x2mzwhi41ArLAbxqKG7nNsv/8lxRGGlTaJxkZK9c4PqAuf25FL0iyHMTUNE/FOyCsofz9AletIXaAMsH4H484EP+wDj5ALw/4F3/7ApTktzbh04ce/9QCt1pyZ3T0n1e1ea07ONzzp53GmI6GOyXcbMswcJGqXi/nZtS9LF9rrk0jpnQJvdB3PJh8NR10LqhJX3sH9pkj+NDO+YxAjyVHqdSA8zSSiVY20pFl7CbLVPzCda2UtlngnkUTMnD" after tData
-         put "EqU+lcBZ81LaoPLQEDffL5mN/uC6oG2lnjjp10G5eobPQNIah+UNx8A0kPwHL/65T9LBqfJNmpc5x79j4Dp56VdIUlodu/61K7gh4LhBOetD5k255e9pN/eTd5buQsIaOzIWPg7LzX7ochpd/2IxOKIcp61hGRbz0vxmMwxTJhnLxcKTh3xf7JDjAZUGBj6YXW7nFCFVHKG/HCoVrjECjsMox4NyGeVSSlPKrZTGR7y5m28DCf70bEEGzjXa6ERYd6qdNP5gQWDQEGhV6yC8580453QmWc8h8NQ3SUs02/kiCTSBwQDTWuSOCg0Bh1vReRwabcL8t2I8Dr6qzzvBIXtIO7B0nTQa7yPKwpcN2QEbL6dBlw1sgo2CYm4MgYQdr1HgHHSnrLyLNT7+nXL3lb2z6a7YTi4ryN1LuFyMN0EhKTftBPu9SFn3Jq7uLCqdK0iqAwoZEwsaBibsf4bQWY84jNI5YG6M7DKMMrDOYRTryMYsjBUg8Ij7nN1oJ72dxSk2mTJ66Jtv2YoYS+hL5jWGSRIeyuPj1Pl6FEguhc7o9O2xFWOKcgfPDQ8oayPeLUwzTzsPhYYE3wh7CI2+zRE4R4hUC1C+oF0hCnms2DZMHYJQphAHoY4qJXWGiizdiaVqq8U+uWxr4VLqeryvVCvQWslV2weX7aQSycf6+XFb5ZXU8QxKWVWIhqK9B5O0pnmjioljz4aiI8qNvEej6ublNm3frEWKinTOqtwTqm4NZrHKnftHZVQL" after tData
-         put "kXQyu60Iqi0pggLjaqFqNpVoX1GnXMU/dBecAU7Xp8GlAWmDiru3VgzocjjDgupRgwsW2lYqyghalADVYG0rlQOWJ3j2OW6vi1C56VwqJcbBVQOm7BxasBPmaxtkL61YEcRU0TiMpXtweCe35GNaLydVJGgNcJQAAYeVVqxqwUP0ofsjl660bWQesdCHLl+r+GjbO7CurcrCDsAUVqWIcaBEo9UcMUanmGBtC9VrSjoBXr6R0YwFHeNA2abxc8DcBfglYMfFkK8IDikPrzbZ5fm1gfYGxeYHHxp4N3IMXKqKk/PQ1HvL39aQguXLKRXHGDGAXhdaxceGE5OV7LBfSj027nBWLdQSK9NQm8WWqdXGuGeiWItCKtM6R53VVlFnZJ1SFHOeF8mKxmL0YohWhDufyLZ9KSSbIU7TFNf53La5l7FebCVlpzk/dvlgihZcO0XvjHoUTFlMIFMZaCgYe71Z7Q0ZEJZHmhd4rT4sY8Fyxq8J0mkoFVuJN8yP1YrNl2AniryIB4zFUofGS4eHkVaLvXwcwsjqxaLaNCJX0lRxmuQ8SJVoPHlKwtz0KUnSpKRMcGla1KTJJ2GCNU0q1WBJk0iaLIS+FVwyteRGUeaPeJIe6bp/hQyo+fHSrjQjgmqwZkTNj4daoClRMq4qlhyId7pbbZCcKDSxxMRVKZIgsp1em3E/1jZyo+3hEkF6vZds5td9UFEF0As9UpEdXw0A3bOdJBXc/HHE07bnHGQuLZtgMxaFYf82" after tData
-         put "Oic4coDTpJVIcOrTtlKf6QElkqqnOm0jeeAooGc8eGcZ2dzVKo4Pg2Qr1H6s6AOjkd5gvKZAFGHs+KBtI+PIr6cNmAs70VYqCj8mLncKL/FIG+SQbf1Gbnd0vobLLw1OLQBwmYN+YsClD3bcMWW6rEqgXFF50GmYcV2u1EoAVhQ4vRYwVgwqmHht8bKPy3+koBxwWjnAygAqI5zIylIGQF3g0tOUkC69+F9yd5YDAhDjuBYKFw5QSmAprnl5F1ZJsL70em+nCasA8PnAMONqduawG32Ph4iFoscKOYDEAwfF7EoBYkcSl8EJhLfOCgvlKGKYc51+TtHziZ1Xbj2dhfMJDixd17KfTuy4gvUTDgVyXNFUGx9+/SSy6d5jWd+u6aduY+C1o4pRcGHH9Tx2pBd2VEbMunAswTnl0p0FJhiLk/yUgZOB+B+fx52n6f5ut3zc+o1ipwg/hhx6HseV3Ck2RJoRgrAJ4TBit3czz27rsg/qaDJFbut2e39Prt7A1bNQA/CpNW1205dQCTJWBMLwyqjiJMLbjT1d6wWt45Djb9d4y244Dturs75l177jRGVvyPacXXFIs2uZPWfrUzSL4QEbqk0jLjV4ecaz8vL2jDdtPkBsy+3KHrW12/g4brcgGQUm4RlbVUeNcuPzd231n3fY/nwjvo/3G7FxhQfka3s+5oY3Yn/DtVddfmvb7e2U33DxqssqmryA2hvuiX3cXwb1MxLrixheepsT24vor5H2huuvunwG" after tData
-         put "retLL6nobSH6A689+ZL9/TSD+hW5nOgPnzs+3FrD/O00vICeT8lIvJ/Po20YsY0nsTtRn27nR5cpw/MuEw0zrh3z2TiKW7X3VHthZaJhxjUw2f7Y6s+vzR9WtxWzd9j1SdaIe0Lc14dbJsozqhp0NHtqNVcIMy6WPHwQ9tMeW+2pldUaBi72aZ7msW3xfkFJ/aKr0M4Xv0pTd/GqoMR80W9kTr72VaoZ8A+jnHLzj8iUgzfBje9qlX/fSL/nafrboUo/irxb6M/6ocLivLe7zKa/cav0G7+bNpXBd/VKd5Rb+uGvQLn0V2CshU6QTU+SFW+7hoDD3pjVyrgN+85oGJh8GGC4uAIHeICAwLWuv19TQ32b1jGMO7fz+I5vCjEiPhKKgEPmMVJsT4/7NjATdzH4iUl+TTs4gr+gqOXulCHgMMORH2yMLHMAMQ4fPQ0vTxw3qgyOWQxa7IkLlguXfGMYmDyYEfg2MTE72/xhdbjLehAwY91GMw0s7ClTNJA9pR8oRzlm0X7oDxtdTI8YYSE4BB7XqLnYV6UfVoAYiyxYHg/dIowUjh3Ojn3ExC4+sNOvhHhnvJC92UrHjIu3yGslWoL2vGyYcwVJaNMsb3mfcyQw79MNOs/nEUPPFcsRw4ktIT5+cmbpvjfP3mJt70teVkwt6/LDLsWMC7piug8qTLI18Wp+yMDMjwN+Bsy4BobPMU+zIbsCc0lX60cAHAqaH2tafxLDT6WceCcHBVirudqyN/cJzH1y" after tData
-         put "VzxH8oX28jT4R8TAxa7IUx3n6qPGHBxSr2Hg4s4PuU2LkkDUjha1xgVJ5GWOw71KHWHXusLeUWkwBBz2M4ZdqxL70L+nUYCAw+oWu1zdpyH6F8/2hhhHM0p7UPqTIsj8a7Yd+4NyvChq2zGMMh6U80U59e/1omgd5riNcq+UsT0pA3UfG4NRHxR7Udn14WbXH4Xt9rZjiHIcVtRhhG6lNMj0/9hpNF5VbrmGGRerlAso6xz00wkK1EEv/PwSzovDMOfiH9qNVdL0u1rHjCuobbB2g/7TrQXmXN36PPR3KIf+6OTY7b+QAAIO+eERIp8L2PSbpPqhDuYpnQX4VZwkjg+rGh+KCN4Z0FYq/SqK/0sflT4ENiXaVmpXJVQSmDss/bhg3pioetEZ1rZSB/0hJdzJhx4z+lADiFvbSp0DyvcqEQPVYW0rtQfdM86G/kFUa1upttxGbH8G1pr+mknhY3vAEsr2cyX6mIlDvFafbUJuH0vMC80YBQ8tvXZpW6kESxtU+sUczSotsXmhlbZSCda2UGmVdYoTWna9alupBEsb1NkTZ0H1gEpV/f5QFYd/ZKxtUIn7Vm4fBtvUAMsGZvsJYNkzTnCfke1jO4nCulvYZqEGiwluN9pK3WCgzoTaLe78D9LOUVPsXQAA" after tData
-         break
-      case "character.mtl"
-         put "H4sIAAAAAAAC/03OvRHCMAyG4d5TZALO1ifrZwbGADpIxR3rE0WgpHmbx5K8Pj6v93O59Xa9L/0ipFuZo+Zt/elI1alVYy2mZBhvJUY8AoqRPNn3RzGMYzenssQYRsyalc5Um7PqXYol2YGjMoo1mahyOmyB+z2KtTit9T9Zj+9C0b7aRdMeKQEAAA==" after tData
-         break
       case "flag.obj"
          put "H4sIAAAAAAAC/41WS5IlJwzczym4AN3FH65jexzhiG574bHPb6RMFdSrmg5vHkUqSSQhwfv88fHxxy/u86/fvn+8ff74+Pav88fbUZMLb1E+S8oTu0D56K8QWP6nNP+g5i88/z/AtUvrMvQQZKixQXS0k1prJfUG/mx5GHntVOF7KGVjljwe0DTyg2oK9cnXE37S8D/dcHMttXyPLLZ7CoD5p8D8k6TkutjZzOWHgvM0j5aVlYsCJ4OALjtZWCbuZROb4J13pHHfEyAXg4rFL3oplDsP4HGSckhbAOd8btIWZyzs5I07r/R6453YMeS3i3s1L2zySlyY1k1wZxXOr9Hrmr+FWFd69kaZ5RBRDmNvPGMSlOWLaZ1yQc+metjKf6Vwci9teXJRCP7FsVUeOLK6g9iLx243BUAy9+vjVnIX5jVXZO65WsxLroz5lOrrRq/5ezgV/xiTf3TVP3rgv0jALalfncolV/4xL/6xiPxjuvzTEf4pjeUO+QhSy0B8sK9plQ+/GcWs2JToEoJmb0S1PkEjnlDqV2ghts6W+UfoJuXvWgJ17ctofg51/y2bQzL127xjvvgX4EGP9jAudkz9wwYv+0eY99hXwhiSewnxEnPChnvS3TXh7pUN/X/+/j7/Hbhfj2+/u1jf32cpxDKH4mKXQWD56IA7SG3C6Zgfw8WhQ4oyCDw/4qHwHIQUD8JCS6qdMrX1owPuXGvwpBV1KKlfAsPB1GA1BxVuYDdKCgy/ld1JsnDm" after tData
          put "6gCHDvP7gMMB7vddZLIlnOCykMKE9SMCjtzJ4EkTkeSyhJMEjpgnDHmHM9iZkgJnzBMGJQk8A5iXQ55RxuJyl0FgcaG5Iqu7K6IlnhRZPVyJagVpwnXCSRcnV+c+6gZmsFRidWEitTCduVqA6UhMNlmYztQfxWSv4Nr0Mh3QlXOGu66JNWKhZIA0xnCyEbNrQbUgKWysZn4oYnUtBCtolndjNelHY0GzvAUeW2GwTKQQwlbQLG+BWdBxawaKCBvNgPIWNgua5Z32Aq6ntRnMrmCPFGu8ts1XXbOgWd6I2YLv1sSIQtgoaCvvc0tqkz2sJFnQKG+s3eo6bOVt2tF6BOUt7HQpd6vrUnDYVU+1NJ5qGXrY9cCpyiI5NNhdjWoFSeqraSHVquVez3KXnOiaoNxAhWCWQqwsrF2wht8KTEdisuXCKlS5BxxwLWoBCyNKVTCYVlDuFpPNO2JobGGuZn4oYnUtpzI3mf9ap2Z3YWpJwJjBMJeLjI4uzOQPmAXDDJZZXoO84ILGJpjEwRkszIGOxMYODcWZFR0JdUJ9QbZQ9nZRWu2AU1KxnKpNPThsj+CinFF0UbbX3sacVt1VUhOldRITwdzohAZ1QGo1SqSZC+FiNvejWbHJxtbV1BI257SeInSZ8VgkNqcVkdi5ilzTm1OvWdye+q1oByCLkiYsqVzimSazGHYsLIYLFpRnWFhYzBcs668+Aeajdi3blc3beUWzwq15o7Un2xXNi7UCs13ZvN3eLjxI" after tData
@@ -2273,6 +2653,137 @@ private function oiModelData pName
          break
       case "gate.mtl"
          put "H4sIAAAAAAAC/z3OOxKAIAwE0J5TeAInJOTDGTyG2imVM15fIkyabR7spp3v/VzLDmk7FlgVsWeB0hPVUpucBxvVngz+iJiCcXDNrsJeEUbD2HoI2D9SQ8tQEfL0dkMN5fn3H2T0YqEcLPPo4ruq4icQpQ+WlnR81AAAAA==" after tData
+         break
+      case "trees.obj"
+         put "H4sIAAAAAAAC/2VaSZIkuQ28zyvyA1nNffmOpJGZzLpHB7X0fhGAO8DIulQEHSAIgAjSyaxfv3/+/NffXr/+/Y8/f379+v3zj/+90teu508er/w1RjtI/qplvN7pK1UB58oOQs8g7elq7FvGPn/7rPK+p2FpBDa3Yn1NM5e+ZjO12qqr5W3m5uaguRbTyjm0FDsWwrcyl0KrNjp3Gt3V3OFbEY6o2gllFVrrIzvkPQlKCD4EgzgOuyJdzjuH4qiOYVgiM8IveUIrYm3L58HVhg1Q2gy9bOb61GBHaaexmqUzjS7giSZ/7VtNkQ8t62pqda0r1mrerbaodyzAl9ZzgD0jf31E9z2bZn6M5UP3tg3LI3pvrR8HdVocGyt8tN7H14BatlhG5F4qbFiA7SqOOa06drsdH+MGdWjDjul5FcOoBuayLhARrqveGpKG/JjFbB/SKj0UT/bv7Koik7s9YRbf+6jbBKY9pSV5kCCmDlLkCz3p6fuhC/ipCwOuO5okp22Ndfdl6L5U6y4GrhouHPdahoW1aeEoV4yW5uVCSnBil3KZ6POBFltoiMIEvIAJ+Rz7Ba8KL9qc4cUo3dA6a0Q3C0y0mm8vUn7AdINw1pWDlmcx79bIgbaGsFdegaaZH4mDYU9cun2b/co80uaZR8yAEbMEJJ4N+WaPm2nRh2s+ess3Cl1HzQJ0YeG8rPYqX1leS4df+Sz4wPIahs1Vw2ahszVF7wnNPlZoDual1uWauaMWqvspKxAV" after tData
+         put "d6RqlHmrMoEPVfSHqnnv40/qGoroHbWogHpUFoFXgdf+CheYFgPhAsFyZpv5Y3WWMR1jeZdInie0RFdd2Y7Zavtq1k1928qWkq1N6n/NxUEqGobermndpXlWohOo7Z6ZhZ5tIwa6bSUrmjmxqkVUbSjbskzTpv7kRr9AaNaKqUvpUj1lYGi3zdJ0bajz0lalszqloRvoQ9lNDEtBPfscU5AQQLW9zzKQrqjCJsOSCAL1EDJYxsJHHaiP72BrV2I6E1vmlYOSMV37Uk1M163ZLbGlLy7rB5yYw2Pdqk5Xw5pvVQM/Vc0AVdO80zqrpaDbyogtZCSjVNm4F9DdbWuXDzAstI2CHW2HD2liP5jpNtxmfcCifMOwYR6bjeMb6gKOd/sW6mx3eRRYKI+5HKz8ChKFSFJ9wHDD4GOsX6WTB8th7UBLwsy3Pq/xEngsEke7HcnAMsLMpX7nHsrMPaIG6lEb/8rNNt/G8hlWus02trFuZaCfyrBB5aXrTWvXYn1WI6srqM5tjBQlpKhwMRwiWqcB+TAGv4ztPgintTBgEBboAlDoGhomoEwTsj2/rz52MLh96GCnqUVg/ApGr5fNMR4oHCDawoCUqtHWXEqAY2N9HDWGSqB6yBaMMlvlVq1j3enGhE1YRaRAEWnJygyqdmggucPIiTl1toALhCZB686Y0L2fmMopNas7rI19BYYVf24fW5hRQb2Goh0MTuhlhWLCOe18XKaX8blISZZwcXGh6leGCoshXWl/" after tData
+         put "amKYgmLavYfNwRrtV30QtHBYIK1crnMq4brREcM61nNjIzY2sRZ53JivVkuEnQyTI5vrAWtrhF4DjTinBqsd2SVSJTkr3QbVc1eaD9R0HYUF03UL9QJn7Tdo/R2UXUtPLHokK1hV16GRMRaJUE01dM+extPJpWtn4LCAGNZT11Doyvd4+ZA6jk1+7hW0TjCq0T0KYRKwcE7jtCvzuB+6hn7qmgXX7WVytFM4XNexSJsPuRDNlw9jzgdqowE9o9UadkdHdvYIcJHaTTtkyFYpR5dB1XxN0JoPXTj2oWsWoHtcsNAEldIkmnUJXVo2POOlGpo8AJRRQjNzbnoojv0cyMLygaCLDFC3thZWF4px1CsDrTTW7XTVzC9n2gWBqaY2HygqqXmoOwzwVFSt8M3A4OdUZg/V2R6qZtVVR633l9MeKUQdIYV5XyncqLiaI6xU7Hoky3HznCT1xm+vcd/s6KVCLnZd00amoqxiuJ8KPV5RnJp1DGOk3qOrEXh5xiVTbR3jhl7jwedsL28uYwGW+zLj7KBYW9oI5cR6yOtWro1JXvfNh11CvhEobdQoiVs5dRaVXDnFXkWmssxEs1NGA1u+vu/ayFNaaFby31xv3UaCmNe64IwvW74WN8Hbz5T3rVqakwpXTQ1bh9SaHhnlYyHdu0ng7iQa0zU3Lud6mg+eQfbTH/0nKFWO/p3984PU2fht0yf5lnjl0ua18fAORPaoohMv4XZe8CyiolqoWmO9XPwqJHzfIPxk" after tData
+         put "vUYYqJmq/TKbM83eG0+RleUv+85fSa8SpS0zrU0ZVZt6xtaPrrGDHs7Ky+4n/noF8g5oy2phhDOj38lVUhqJ9im+pKR1WRdtR1P9eodj2v3N/uf1qMNShqo5/fbRr8H1Js1OHb2bQUJE3hHtm+GmF0Y5SuqdrDyqWs3bDWNl6wHNNnjE07RC9dNgzJaCxlSe3S7ZEQ4xWg85x0KjzbALqFsf8yQ0QoG+0JV3+EJX4P+bAbx97DcHN2ff9BbOhq/CFi0GhIt2mxyz+pgeb45BWCjTrGLMQ0wSfs6w+COvk7Or1xEWn0PLZgO+UONNlfDmDih7uit9NjsNMTbPpA+u/r6vGVKP33Q5yrzHuHboRNXtKESmoLFaPU/Nvx5CfcU3BtPDcuWu5fn8dOfnV8EvyD99uO4W1NnwlWNyyDd+9bH1AN4TeRN6R5CMUc/i5pxXh1VTj2+fs8NvoXB2sgeAEiv8qju+n1WjejBfrNLilYC0FC4W9KR4p32tTKhcKtGbN91BBG+E8I7B7zXLysn8hbv0Vn8VsDY+yVKvFNEvTTWXj958QrDIEHkHpBSphqfv8OPOvZjLVyTR7Cgc+uVpZ8LqRwYx4jWg/vJjVd6YrsKaaPuReSsdM45FKa2rkHSDQTtJG27qdYL9LrkvMaZS7dkanbijWLpne7htF18MZTYa7YQG0jGxbKgPb3pEL950I+zSLMJ4M47w0wOPgd8cmVr3bvSlJByrx3pudo+0df/+rt0UlfPIVezs" after tData
+         put "167pdsZVXdfKmkYs/FgSQS1LudfoNK41mVpUImI3db6tCtSeGxPUqOVKl84shDgJmgJDuPIWt+0FQ6031TDfwDjlhALRFQ4d873q2ZD5j//+589fv3++/p7++Ocr//iRX+XHj/Kq588B9F3Rdv6IxmnMVz74OfQcpSmYtUxy9JZg/cePje7jvLotxWE9z2M0vfb5m195yeOgaJpM/4rq6XJO50X/ii/w7rQgyuWJ4jGA2ovD+wPe9liE1wOehJtGKmi1sAVEU2UlSSOikNgjNGtC1C0t6G7hZsaLpsncqOVYwtdJOYi9W+oxHeUYPqeVcsYq6VXEkqYfbUiXtA5cZS7qqx5DZ8OpXR4Cow2p9BUHrBthMxlGKKW2WXu14345bmd5iM/WhtRGCrgd+KwIoY02OmVpie1s8AnvrA2mJNrWhrQmaYm2wM2lhNmGdMlDopxWZniwKNCGtIwP2CpJPDG433CtT9jaGqXB+YYrjWC2zDP4KdrW5lxyitspl7OcdwlvvLrkoB8YbUqLtAQWa/vVj62WXn3LQ2C0TTqkr9i2bt4pfRgxaWirtdc4c3sOoqPL48BoQ2ojBTwEnpc22ugksBSEvbzmCe/QXlOSL8bakHbpJJ6MA/fkUsLsDWmRh9i2aZh4cElBG1IJ/gFrWz1R2F4I9/kBW7kMTrG9EO40gtkyz+CnDGltziWneJ666fk1T3iH3c0uD4HRhnTI48BL2vO1RLpeS7Qlg2xDKtqyvq3jWd+0tZa0" after tData
+         put "wjalHHIdz0Z6rePZOW3vJA+BrQ3p1IfAFvxs9uAnhTakq33AePC7tBfCOz9ha6snCtsL4cV8W7gKj4JUiDbakBZpXeFoMq4orU3pRKpgZCI1DB5tSMO25d9mC3Mn2tbm7HDSttTNa8vK+9rb9lW0VJJTws6dpu4SaekeljY2b7ZNmhM2NdlTNixl2eq2G6YMo2XdgM9mlbptbLIT2nbnCDUqt/NkH8PGPpt8dghg503rU4Cnb/eZW7pL+qfEEDhmkvYhqS5JRma6beqaHcUBUD64JXuMRbf6CB6AyzP2ezeNpORIChGOFYNg7pJO9uSMJpthCDmjJeu2kEvR7TiXiv0hEGo0bOC5bN3Bs2yNch0uG6juyo64RsHujt4hMeu3NWpEH7N7nkO38yxbmm7zgVAjuQeQNNvUrz6OQEN2QqUBeDsaVXd4aGofINSQDbqab1V31dBwCRHXaNiILbfFNPTpJUaEGqV8k6A8nQTgLSRlf5Pgu6hOSe3tkrg1zrJ5S+/VGhCvA68QoSdDcn1iH6fOhdwMyzURaixpK9UX4imE9lidQvG7PFVChBpDnmptmTVKzPptzTW8j9k9JPpUxjkPZdkUZ1daDYQaNu4tkV32HHvuPkTYVySaA3s7khP7ytTUPkCoIVv8Mt9EUi4NlzhCDVlRbE4xc4NPP30QoUYb3yQ4tziNwFtIev2UdNTd8AoZ+Snpbo2zbN7Se+0DxOvAK0QIzjpfyZTYT3UJPVpab0RcQ45O+mXJ" after tData
+         put "HrjkhHQ09lkpZOtcmmsiriHLqa4usgXuHFZls975Hsc13APZL7ec5I638nOYbOjbPCBCDX1qH2RnJjz9CyZCjZW+Sfj09QD0JCTzmwRzu3y21/iQ+PxYNkyyG7OlEiLUWNJ+RNosO5EDIq5RmVFam8jO8uw4wvFiHMyYzTJnXSVAfE59treMeJAtuUhy8u36ojLHqCSOW7dOkR6YTwjKE5L6HphrNRotSSZT/lnWNt1+XlSo57/AXCspokJ7DftUv8e8tNyhklQolwSKnZOb0py0VOgYtbKa2A+hkgU5VhrP0DOiY6EVPaF3h3LFScy1YOuaEvp4pf2CqDMZh2rp1QlqdvsX4IhpmJVbAgQJLT4Tt2R9kyw8/VbI3kLitK/Y9YrEuzDBesNiyQiMWiUmXY/aMil6npccFw/5wlwr+wTIfrxD/wCFaQyIOj1sbqvZUgcqqjYvJMdCa3plhzesi7q8VhwLre+uwpibVxkxV/IwqrEV86pAtbifJTTKNwkvU/zmDW8h8XuWkKCvX+LhLSTVrWEKr5Rhmp9pdK0rx4ufhBfNVSvEXAuJ9etUsSGXUnJR1+TCs9qtXn8Jr5E7wKGGTq+md4e56z1eFvuqoqeA0Cyqop5OdLAb2+ZW2F19GToorOhnYT2T+CCOCCY83a7JStFLs6J3a8XawrM7pAKL9oCaXciJ4Sbayy7/tt5JFalgYbmnLTmuCVIxYm1hKbXo5V8tuKA7Y9EWjZicI/uQwleqXfLUpVc+" after tData
+         put "VW+GhraF1bQMqdywHO1WoGbXSXrxcrRb06ur1vVGpUnyhGGdttDCNiAV2Nqyv7dlV1cL10tnLNhyIybnyD6k7K+92pm+2Z1JxUVAP4UhUzP09qBLlLK4jqp3D6PpwX+INtWEd/VLu6maXiMMdOLNUHNbNCJb4ultLsCWwOhd1CHzS0+acnzSg2fTc3/lcfUUrSy3w865Q8+3E9WYrKh1b1BiAE2t00ePhfIfVqLWE5cbLSyGJf0Uh7lCg4rDQhrmWrU6z1pQOOzJv5XI4lLsoLgM0SvsTg09WHUtOujikKmjyEd/qtSOt9uOUVquWQt124G3JmqoBIhUeC12vK2Fx04Z2a2GtQRdeBIeSKENHEBmsgPJsMNLASKXApUaKpH7gUZdHHw0m0P6DDtyzWnUfuo4UsCC6CFsUUOtAZHKX8mOXCvxKCQju1W3ZjrhSXggVbo6qOIAce+kmet4INdfaxlFXZoduUfbHUR3GKnc1ge6SmPn3Udu6kRXyepiXz+8jLAa1uR+Tq1k89GsqgewMhd8VF+1j24Vheyvkg+WIK3zYPoyjEadF12lgRmlyukh1Aut7OySrE7vm4p+BaeDsT/92chMBEdst4mrJzvo56Napq4OZYvA3WZMuinpmGdb0u3pfJHYB4dTmCxsSDfJadzhvOgWpXobW678MKUblP1UZb9/pMsEtILCnKGq7voZu7F+zjGUUin5p/lrzJaAhdumpWPSGvwIs9zSC/db3ddlxedWPW21wWJj" after tData
+         put "mzk2Zdu38Yvo8Vr1bYOOTZmbu/ScFy2QwTCObubY2LstwGJwme4StbzYdVFWn6i1bbhFUhFwI9xueD1RbWqwihqfYBwMAIyC/KKQQYBRgF/IgtfxW56o2S5vnfhj4yYnMD5xMQjjF3qVJXVBRgGpw9abI/uQ4DLGL6yvpBSMAvxikEGAUYBfCCfI+CVKGAX4RSUNMUYBTmB8IhgE+YUwBCkBMApKCbM3+AWH5FjGL6xv7PLkF/IzRAuqQH5RsJ2DUYATGHHADz3DaYgxhOAE5BfS92InHJlDglGQX0xSnKlls62kJmuKbUj7E7a2jmxwe8AseXshvNITtrYGrzC4DaPycIxqGNHJsjjelIVUZ+ATJ7dxrrP4lTu5AdfZn9SEZMc+mYsw0QMMTW6zYS+TddmnbL2W6duX6Ag19qfEEPiwnHpdkuLftb2FJLVPiSGWFawFRrsYaoTovIs8bDnLIu8iD2v4QoN3kYd152zgXWRMxrpulkUeJiu+LgPBu8jDXOJWyMPcA+dd4GFmQ9dy8C7nYcVZFnkXeZgwpsprZdUF+7G+vAwXlkXGZKzrwbLAw+QkMTXVzruoERJYcU/CAzJA8DCzcbMf8jD5pXWNm0s5D1vkOORdZEzGrfyC9uJsxqBuxkQeJl/hfrA59yQ8AO9yHladG9oyoX3lOb1EHYGG/tr7kGx8JNsLfqcPiX9Y9haSOT4lhlh2TEJO6BF7pKSEThJJsW76d5FEvaSYfn8oDM9JIjhfXEuW" after tData
+         put "YHi0/2R4ThL1Z8n6YJVBEofTv6CEbsJ7Xk5m0tzwNiihsy29ZexPnuYMT+0r0XBKGCSxB/3zDiSJd08ncSSJ8MLv8JT+cXAQQqec5Kp0Z7mrKzRq/SYhf/I+9haSur9JNsZz0uWsi5JgaUxgENgrk6SrHjuy5rxVJ9l+QDwz1Apf9ALVhI65Vguhpq1RKC96zdbCbLu1WgiVQHd2kBe9mFO/A3OtHkJ1aLDDoLc6j4G51gyhZuHMrf37jbyoi/afccRCq4RQR1gUyi2UhrLC7Lq0rKcK7WezzQ7yosHpWSYw16oh1P/sS+igL1lfVOiYa/UQTsxUX3zZPmWBUWskFw5OmQnPyyg+ZYFRy3qqcFTMlHWQl+ZTFphrZRd2Tpl1GPRWpyww14rJ1h8v66nqMfgy9UWFjrnWCqH+82ShUP5xT/NYwmy5tZYL9f+6amUHeSn6okLHqGUmajjU2KHRW/uvQsdcK4dQQq4na7qJ6Yu6qOkLzLVGCHWEkzXdfPRFHdL0BUYt5cMQqtlJ4WTPGWbnrTVcaEYWnVwcSD8Hx0KrmvD/peXX7RxNAAA=" after tData
+         break
+      case "trees.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DM0MQWSpqbmQNLE2JArDyptCJE2MgISZsaGIFkzc7isEVTW0gRImoNkTQ2M4LLGEFlzC5AuU5D5xoYWXAAfHp4QeQAAAA==" after tData
+         break
+      case "grove.obj"
+         put "H4sIAAAAAAAC/21aSZIkuQ28zyvyA9nFffnOSCMzmXWPDhrp/SIAdxCRpUtn0OEEQZBBB6P6118/f/7z99evf/39j58/fv3187f/vt75R29LflIar/Rjz2ZoXVV+8nodRs0PUKgBhYND9f7px9rd+68HZL2B9ZLlpy3BWq2G1pkvcxS6nP1yey+G5rwuN6f+8KDDuwNQFQTzzCm71xP+BlpSu2MdZ0DvDI6tY6zpY6UfZe4HVcFPpvV3am4hgtEGZtBDZtLCFMpdgSSJf6A6mINz5+u2l2loG+WiM9HBUG7NVQbbhdwaEp7mg4vAPrjmwblzOXootmEOOqS5q204UOsO1NGArtIvtRUuTqD2WR5j2cwaNye4yAK5292eKTh1hin4XtypOjUnRNBSvxHsNR8ottJiDma7DjL38ip3rMElWy1fap0PquUbVA/288XZNW4lRhDcJh9rl5vZIRtU3hTbn1syuKdieU4drwm97BZBJRJDZyNa7zN0Cb3b6hG0YYg1neWoGtVQrJ/gyNvdHK6ZL2/ojjidcwdRctFjZxuZvUEUkMzza6mEy44Jtov1XBVcN5qJhJ3W9dfmpWHcJ88CBK3vMMSeNpM1PJbjYxULZnjnUVeAbFxibfTQd2cQg8OWt41yjg/ZJlNc1pYVHCOkYfcH07p/MKU7mdlPcvPZOfoUfhYsdc4mEHuy1BZ9IUEsNp9ha4BhZo3DICAMM+YjlXQ54FJe4oFl7ddlKxsBbScuG7qHCXZk" after tData
+         put "sof0EEtr3jGGbbyVwxh9IRG5hGBaJMIjiTOAN8IwaaYs55Axm15pO4TD88OWMMkrezRwV+reMunQf3t7kA395MKFk2ubDmf54cmiW2A1O8BBbqao8NGrH4SBvDMUYowVPHdXdRuwrMd4IBvaqeup1OB4QWtPmoPjs+tAPut4yRVoPksYohjjAWM8oumouLuY1PZRd5j1WJCatEdIEc90kC35zkXINhwi9nQa17O5R5j0HBvoOf/v7LxCKcMWQB3PChGbyO7OtvI5wM52WJ04251cF7prHYSDAJYx7zxqB1r3DuS04bbXQJ6Zwj8it+TgwoOACyNflGR7E23mrWM52grrnNG/rxnyMAY2bF4xD7lEtsNPtjtx9sxhwJZQCK4aXsma4KL0GWbdvBLsM8zP4daC58QS84h02EM4+vKUKjItzd7IHVplh0dtVlNd6kUj1x0Y9YxR9gUzZFsK+rNp7AU13tBTDby+oPm5OS8bdM4g8qTk9TFuOBxEmESdupaPPDvPzuswDxO6PYfTrCQZswaall0G3iEMlbqyetRUtFJu7wFNSnWSt2p23nVIYokTYYiSsDtpZmwPD3zviiQuH6awrx35Ir1U54rrlK1XXhd0Zl7e24noPfckqMfSvqh1D2jbMfKMZZijOVeqGPN7KrCYkLaQkBy46/ZHBLe/Mh1dqAWjz4K6b0dsWurSivG3blsh9R5HSvtyPQMP7p0VuPZic2duyHqNL1XbC9VsDQ7mGBf1EIjWhweW" after tData
+         put "bDHZbVL32r0RJxynK9tZ/tL7KvVxGHYeM8+l3PzSuVy4wxU7dejPskypxPLG2Zc7HJW04n3LwM5L7VbTC4tUS2PnXAegxaDZMd8KOWeUa7UEMFkdnnLx+W68kmndAQq6jhgI8zJqPPZ5ZZtpWv+312FSryALOkfMefZwXG8WVrvUKKDFL6jL3U5evKG8mtOJWqTU6HYlFKY1x5cTlyys2MdZ0a7TNrGDWujNi00qYQNmnALFtuXjeJVTjrMvCbXu412Z8rb9eYBXUm1e2pJ7/QEkC2jLBeyVpXFALZLlgeykH1z0Wi5I1r7mSw5qbUrsfyJ3h4yKkMNl+pTIFdJub/ZDBO9Mq/HfDOK6pVfM4c1J3CjfCPMO++a4STMR6PZWb3hQHbJyqHPuu/qhcrMHHmkSA5GxY9Kqfr+De7oKntjvzY7p5QHKJ46YgZRjhmaBdf+fvHsa+81jZcdmS78eGyPfxWSHfIeNacXqw6phePBxlXJYaOwnQjoTjtjdXIM5bDe4sOz2yHlkVy+cSGUNoccl/ljPR4joygHo7noLy4fYRabxZUX7dMvNGujgI8l97U89LeiiwWnHAngfvBaFPsv0OSzumnXn0Jg0jeUdgmmTGfKtzMEtHL1VWqfGTtte5oJolk2woVmuS+zJFqLjuIOrNz3exV3hI5fhu2px8HV3cMOitkubGLK4f+aM7mOifR/Sk0zc1h+JxvvTYoyWU6a03e2ziG3b7+y1u3mp3F61eooQXfOd6k40" after tData
+         put "lhvK6nfoFaakawVO69YFwVvLR20IA2YG8Uhud48rbEZLW8WRap95daF4rNg3E003ctscyHE/2jzhiL3e7Pa+zt/Be7u0x8toVeFs4f3XOpmI3af6Pf7fFyOU2cR7nr1LigeRYPGo02rwvpzosuI7bm5XeEkM8deI0OPV8o4tnJUghXXkgPsuPMbbv/3n33/8+uvn62/pt3+88tdXfpWvr/Kq558D6LOi7fxzAMFf/eurvsb55wD6rGixLjl9fZ1Lzel0yrKDDcGspZZ1Hg8kP9ZZjfSkMFzng+RzqJ/mKXXzlJbAaMO6pHXhItG2VynyIzOwNjuRbXYGyzC1BZN1ZFJsdGYBLbN0xCU2ndL5V1xgTqdlFu10QWvq7BW1B4fHBzzsh47tgXAhXLrOYEgWy7RZoWUWZL9WnUBtmpXKKbBt1rKRrCoPYL1awk6wJmyVHqZshdZkLVuxdbQWLN12CUey1WkDuUYb1o8AtK/5Ea/WMgti0t+pA8pPR1bYNmv9gCuWjBm3B8IaSoStU+Fi2gPh5k50I9vMdQE8D7AwN8M2m60OV0xbMFXuw3ametSyn1mcS1TP8iO7ydq0yluomywbTV7N/epNfgRGG9ZEJyeoc7724+Qc9CNJS2Br0yrvpb7zw2D42oTRhpVDjgMfkRgy+/Nuy2suk2QbVuk0A3yctvSaSX4EtjatZJudAd64rQ2r9b0ZtBBuqtCmtSLAbq+YzCpb2u3tRdusoz9ha2tODN4RHu0Dtl0z" after tData
+         put "6NseCE/Cs9p0miZ2dsySbVi5OivrdFbRVC1Oh22zzokMrqmzNtprLeSEbVgznXTdN7voSu+EJUab1opdhSGnrd1uWAa0af2IxHrDl/hGG5F4gEtztG0ZdkWq0IZ1fcK2SJPLYA+EV/mArdPkEtsD4e1ObL8jB7YoNye0eqqabWwsmq+ltWnljt1n1qc62Gc6/Vi3tARG26w5JWmqgB1//dQe6Yzaj7AlYXS1ECEjS1sFRp42uaddpK19iJDR3duJ5Nwzs+iP/CkjN/lVb0CcIWdaeURwpjqO9IoWDxVYIs74Fpt5oVe1AHGGR01ppGS67l4EjPTNYojm1/bNeuAa4dNgHTffd3twXCdpQ9gieYJsCR8ZI+HmUjPkm8BXH8sOM9KnRQGSIfWAJKdUpssRMhrTZZzz2y2MMji8I2QUeqvJIhBtkpBrQWgXAaP4NO3pejXmYxwyPIKKzVqxMapvZ0fIWNwytLRs2RGltewQ8b7exzhhXnc+QMgwHzHXFS/JzagjZPhrU1AJFpSA5ZZzRMCo89NSsQWrF4w1f1jGNwt2YfVxanlamlukWpK/80jZIX9OaVPaaiFChlQwmjcRPfnvAaL169TDXRiaA0fAEHFdWr2L9J3LHbingk3SVgsQZ1T3dmKR/0Ajwih/AR5FfrXoB+KMLr+PCE4uztU3S82wllqAkPE9NvNCrzoOETI8amh2hmhnrwguAkb/ZulYWy8b8XQtvX2zoG/zHdLm0zKut2UrxyzZSsa8" after tData
+         put "OeNmdFh2fLXvPgBChuVR+yArUrFIlmZm3og4ozBvxjm/1SKZjRE4QkZyb8siEH2UqFdibESc4TOd2L3udbuFCBkewcKuXdghy/e1I2QM7h23bMuOKL5lh4gzvI9xbtRhPkDIMB8x1wtvy80oEWf4+zPx1s+KX1aWFwFj9U/L4nV1u2U/Lat9s2AnLh9npadlm4UfH+SsPfusydW/y0eAZt8a5PQ8k5Gbtk7eGjJuIVbEk344sOt81lxso4j6dnTgx4DBLpdtND17B0iisxKLBiFRSXfxul6iCXnbxWzzznvusodV7EJc9LYhd6yiN71i176i99aqbXQyK2+++yVvW7H7YNEcwKl06sH30jYDUqvA6K1jXSdymNSkN7Ka7X6WcEWs/TXkp+n1pwobbb0HrQDLnQq3O9y49HY3lSZnQsvoxPta8U7ONprsNrEqSSKZFpkFZHHKjpAtcS44srbNiuKGS0g7dxOplbteDJpMXl6RNrXSbkvr7qYVWdY2OpmVl5BTWwm8tfxuEiCdinSn63sPbSMgswqM3jrWdWIFrGwwqSNQofXGwrmfLZyk9pgoX60ElSorofxDUT/0lJDtqwj6GoOFs/iX7T66FobD6nO4l4pd/ovBHUb2/hghRGXoMOYEAwdn+llioi5bVqeNydpxnphlA45tFc+wGgiI1D4zR4t8hZmFXqzCmlZVbuNKXTYr+7Jym+32DX3AlW8rs5GpsW1EixgtevUm44heihfo2FxeZxz/sslX" after tData
+         put "htrbx0U5bRp0EjXQ0nFkywvCvsZgnSH+5RWR/z0n+rmsnqF/OV3SY5xliMeoDLXQy7JIrje5RO5s+rWL6dnO1Nh9uLJhdzVl2HbiARGN2P1hkQgGvZgSbd0g8jYIV/RrT/alwu0V+t4+4MpteC8yNbaJaBGjRe+KIKurYqCysO0AtvPfdEHo/EhcqAwbB72qAY75aWpCLTBlkF2R+5UPKkPD2Q8toDKQrUOrLnB8iAFPYpHRFc5tSIMcyPqB0sSA0lB5+EMMIA3OtuMc0mAj4eOtiIENYVJAYRkGD3MyGMmgVUeOcLYfsu3B4fkBT/Nd6KQ84AQYyYBIeU4gS5iV5UAOf8gSRGri8IcMUaTkY1Hn18TlIjWhN5Al6k2HxFGWTKRkq7V8tQwiZWokmgBZgkiRTVkykfJIKEvQBBGWGhQEIiW+tJgwWaJIZcgQZQki5WwIi4mUjYRPeyJLNoSJEiSumCAWG1KXAW1a9xO2tjpR2B4c7k/Y2jpLc5IiPLl9kAzIpecEAolZWQ5UpqiPFCO5Q9eHgFHz5B6u5wb10fWyuxqSC70MfSht0Esblx/MVA4xnskjVbfAIr+ZU78IGLl+s9jLpt7MYk/Xkvc3y8Z4zb21D0txC/LlYn7zlpAVzNiypONQvanmm3ro6k01Fy1N/P6iikw131Rkqrer+WRN4OoNNZeDZ9ao/K7mjVpN9XY19z6u3lDzGxvV25WyyO9DXanmophaLVC9Xc2razXVm2p++0B3qeY2" after tData
+         put "Lr9+qHpjPNNu1gSyYn3gl++HI2SM/M2S8et9xvqwzG+WiXF8h9hTsPhOZL5Yady8sbLgjC1LqtWsLFhpqHbHOsIrDdH5xju0VgusNCarBVYWXi101iteWaDSkKNrz1iVsNKwekJveqwsWGl4H68sUGkgNlYYdk+UKM9c5cO7/kosWlc4QsZwi/7196ROPwLrw9YHNToGVpFXkkapKlKmMbNnvm5zZA0a4aRYgPagA+kiEAusSmORs+IcfOeh8EGNVY2OOatdo7qVOmrwQUPUP6tfzFnrGtVtp7GzZ79ue2S1a1Qng0EODqRlxcWcla9RMzlPJZf4oEb9a6xjl1WuUd2u89D4oCFqzXIxZ41rVLebxs2e+7rdkVWuUf8/QkKQ+qB/805qdIwsDRtGyaT+R4fFBzXqNrkYWVrf4r88qNuzTfSzsz5UfVCjY85qbjS3lcbKnvW6rZGVrlGdNAbZOJD91wzHnDXN+D9K/W6qAj0AAA==" after tData
+         break
+      case "grove.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DM0MQWSpqbmQNLE2JArDyptCJE2MgISZsaGIFkzc7isEVTW0gRImoNkTQ2M4LLGEFlzC5AuU5D5xoYWXAAfHp4QeQAAAA==" after tData
+         break
+      case "tuft.obj"
+         put "H4sIAAAAAAAC/21WW3LbMAz87yl0AUci+JB0nbbpTGeS9qNpz98FsCAZyT+2sHgtlqDs94+3t59fl/ff31/fXt4/3r78Wx7bS9rTgk8p+JScAG4vmxzqkr2qq1ZGlnpFEVrLJd0ip/yc50Zba/gs+XCwSJt8wshWRvoWRfMhEyq7o5IsdjvbVMCJbptFkr14RDlnbE6WXJ80EjmekBIpT/j3CsnU8OlnJIvOTuFyumgUYs4S6Uz5lurQXH+eWJ6N7KAyj+PW+FwMzNJnUzQ5m1TSJ9RA0CLFKX+AyDquybos7dpHwfPCaCSLr8Nux5E8OVU/lpQNPUeoMqnVZZhDt/P0DCGlfZons32aR+fkpXbJU/W55RyaB9bDXPpLXAf1Yc837gq348ZI4SLX8YleJh2VP41qlS9T/dKHZptgWDsUw7cNaRrue4RdsSeZ6nPlqlUZHbQhoL1DNmOyXAfxbTLafK0wrjpli95ndnlk6oMWLxZbi0dBKODnDDFxyuvlR/VgMZHoZOdMsRw/osCUhUWx1FWLuxT3pGeFY7z7dIGYZv00eu2TBOaD9AHtIFv7zOqTpAwbUb3avBVsOvVUgQ9//8/VfXHbPk3tL7tjWqZiYpyUz/Ky5RVi9i60O9iXcO8ihhLZznif5Iqgx5OoGbtTfTzj8biP+bjP9LgP9bhM8PfPK35zl2/blx9LWte0yLrKktc1A6jrWh0lYM+GtnVtAPZ13ZdjXY/lXNcTgD0bmjYEW1nNSrTN" after tData
+         put "p6Bb4UNXTAEYjfA2SgVfZUlolarCtOlF86TdgQJE53Qab410yzyCHrKNqoIvmdLDphc5+P0EjK5YKEEYfkYFhEUZh00vBsVvMOBTmyxZe51LxjxZW9IOL9jhDwNgFRL6ohdOP6NW1pZh04tOWcf2hyWDQm4MUpg2vWCSlWBBNl7G9BaVYIoObxRxFeIA4lR4HO5zfUblArqlLAXeovTCphc1ShusC3jhp23Qo01vjzZpKDNlG7KG6F1t2pQ11PZhWZSEFKZNrxEYh0BvVztsem24sTy22H2n3eI6xpb6vvHW2B7GHaKHl8a3vadHTde1L0HsRsC+In22sOmNaL2GcX5xqG65xy5Sv/W6knbh7WKrTACU5ZKQjN8gxbWEW+7B7OkYoCAG/3ZE6ygx2lEgot0fSrAVrfBZps4GrvjvFqtx8hrTprcgN6vCBWll6xtzuZj0etK43ZEU0WHTi04ljQvh74bxmgqb3rgnHN1k6i8ftyhKqMFRvA+7Kgu3wxsTxuWgHtdo6mETDPXo7UVi3Xz5+tuO5+SvUj9tf+bpxrHGtfB94+34D3bITYe8DQAA" after tData
+         break
+      case "tuft.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMyNwSSZhZGQNLEkisPKmsIkTU2Acmam5oDSVMjUy4AKc8msj0AAAA=" after tData
+         break
+      case "isle.obj"
+         put "H4sIAAAAAAAC/3VWS5IlJwzczym4AK9BfKrqOrbHERPRbS889vktKSUeUDWbbpQpUkLSo/j6+fn547fw9fcf3z9fXz8/v/0XIr3o6iGmVw7t1WphLInZ2Kxu5NDhm3oHWV/XeTFWX1QLXHSpEFPw0g0MqTK8NB5D5XXmE166XDdG3znpRw8wqcUHueh68UkwPinGx+1PcRis8EtiWeWSZjUREz5XOHqJ51JGr2V8KFN8qObTXmtTBH8PaD2NaOpD0x96Gx96FB8abpjlQ35ACWEx29Q3nASng0N6n91aBTap2Ve1UcF30BHzUc7V7hJ3BUSMq3u8+2+juGTNUM4jkfZKV3aHnK4FcoSLex3Bh+86FsgRdfaEWGGBHEkj4/w23Yp3/3iPE+/5xYfY8SHp+HDauNTjL5kcyvL31LplwdLbbmq/yjWgcgFq712UNyi+sbEz+tb45Bh/5dk8ioVY7Dn56NnHx9zufmkC2uY0ad2OztaRsfsYTieAiyB0kfa6nGKKs6erRHSG8bBIuILHGCFuGkNi3bjtS7rTQ8U87YjblnGce5Ii8e8/3/kLFX5P3/4M9fz4KDWUhn9d/jFstrH1MhgLh1syuOVZZHiDHyLHqm2bat28D7DkIevs3Yp70+xd++ZdAO/eHayHBO/erbl3nb3rDlv6fROxCp5+ynOG27HBdsrd27rhFcTC4bbD1g1vAxYO99Gd+Ryh1BWGHXo2uOcF9jZg4XApG4wa9LJm0q2lQ6TM3sVr" after tData
+         put "At69e928jxV27/ooYt4Vx/FJz+zACH/7Pz4osC4xoGtFWUo8pECBq1IDi2gGslZUGsAAV7aFzHn2kHlnE1m1QLBiF4gDHCGz6hkybz8FgwWGdQ/BOMwFC4xgsMBw1EswVs8JEQMlMQRV07jLkpFogeRQfFaSf3JQ2CA1EQbliL77rQlbuY4aECeWyTIiqRSN1J2zPIkD5BKId+Ya6BBLYLONPcUSCamWeaGK4msmuOYKklbTJmg7GNK14UXSb97iIn+799QsMFIQiYKFncZcJIzZxhY7K+o4juH5u21stmIXnTDNyPITELZyhOnj3XRJ3/hv1n+YLzZBnQt2wpEMxMJQUZ9R2Fo+8r5M8IpiC3k0LAytK1hBDYHJSYcLObQJldLOKGwt9AyTaRSHywIfCvtvWYonN0g+UHSMdD580E9n5a7Kp31w8qVTTkm/cSTD7jZYGbzLfoD8djCNIe22sZJStnub9Bahou0ljKFYoOSupmKXtsBStQofG0WqTsq9SfrjkM3N4lhU8TYbrFxy1N4icgUSBpe6XYlsO+va8sGiA9nqiNJhc0uDO+0o8j2lE8WxSuHuYNM4aeH5doXgQM00EvJ2q3BqOIGdRzRgO0t+EPnRJ70cCn6IJdllwbax+rmWImGhV0ohc7KLmm1j9eFA/gAqg3XYbWPlc6Lt0uEx21i7i9k2FoMl3jqBlrBNp90cbBuL9Md4l/dTyF9I1/rMcpY2mLYXUlngusF1e/O0Be4b3NdXjD9f" after tData
+         put "+vqK8XdKX58UBtvLYjwpHKb1cePPF1qfFA6X9XHjj4YyPxL+B0tbbz2NEQAA" after tData
+         break
+      case "isle.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMzMgeSJiYg0sKSKw8qawiRNTE0A5JG5oZA0tzUHC5tBJE2NbIEksZmpiDNRghpY4i0sQVImyXICFMTUy4APHUw4noAAAA=" after tData
+         break
+      case "roundtop.obj"
+         put "H4sIAAAAAAAC/3VWS7LcNgzc+xS8AJ9F8Cddx4lTlarnZBEn5w8+DYqk5M0M0Q00QBDD4Y+fn59/fgs//v79++fHj5+fX/4L8fhoNcnXUUL6qD0xeIhNYma3lO0WUM/mDiUVxtIHHTS8eK0Yc+amEQqxPNw0rWLHSa7GyzUy3qF3hninuPXii2B0xfgmGV814y/iXzIJmrFDM7tvzoqbyJVbmh6963Nno7c2vjUtvjT3Lfi4U3R1ecl6jBg77LdxeJ54fDm3+DYGAJECmCXxtD2Ns7QN+UH2MPXW6dH+I1jyviqObt6Jp1peJYfiQ+SpcXjZfQmIz4htTJfaGWop3MNRCrlDvfoC3UjSCVBhXi6QI+rsTqywQAMZFbe5j2bFp3985onP+uJL7vhSdHzZbVz68ZeOlQ5cz9LjLNhx25faH+UcUDkNanlA1DYo3tiIjB4a3xzjrzwvz4IUiz0XH736+Frb0++YgGtzmrQeWxcrIToByKcBF5nQRXrWWQPE2ctVIjrDeFgkXMFzjBQPjSGxBm5xh0Z6qpimiLiFjO08ixSJf//5zv9i4bfjyx+hnF+/5hJyta8mXwzDBlsuwLZwuB6Aa5pFhrfxQ6Sv2ggqZfPuxpKnLLN3ze5Ns3dpm3c2ePduxnpK4927Vvcus3fZYZTfNhF08PRdnjNc+wZjl7s3TsM7aAuH6w7jNPwYbOFwG6cz7yPkssJmh5YAt7TAfgy2cDjnDbYetLxW0nCkQyTP3tl7Yrx7" after tData
+         put "t7J59xV27/IqAu9i2/FJT+zASArsRIF1iQFdK8pS4iENCtyVElhEK5C1onIADHBna0hcZwuJI6vIqmUEKzaBOEEPiVXPkDj8FMwsY1i3C8ZpLrOMEcwsYzjrJRirp8MyBjrEEFRNcBeKkWyBZFO8V5Iv2ajZRmohDMoWPfrWNFu5Zj0gLiwRKiLpFI3SnUOdxAlSDsSR/MyiLpbAsMGeYomEdAte1kXxhWlcdQUpq+oh6HEwpGvgWcqvfsRZPpufKSxjpCGSxRbYDVwkDWywGXu1Po5teP1ug01odtYJ04pQn4BmK0c2fRxNl5wbfyb9svli06hzwU5zJIC2ACrqM2q2to/8XCZ4RS2EPJstgJYVLEYNgclJh8tqqBMqrZ1Rs7XRM0zQyA7nBe4K+29Zmic3SOrWdBvp1H3QT2flrkon/nDSpVNOh/7HkQy728bK4F34AVJyjSHtNlgpKeHeJr1FKOvxko2hWEbJXU0Zl7bA0rViPhhFKk7KvUn645DgijzIKt6wjZVLjuotIlcg2eBSw5XItrOuLX9Y1K1aHVHqmFsa3ImtyP8pndYcdMruDjbByRGet6sJDhQmSJPHrcKl2Q6wH9Ew21nyjciP/tDLIdsPMR+4LNgGq3/X0iRb6JWSCU64qNkGqw8H8gdQHqzDboOVvxM9Lh0e2GBxF7MN1gZLvHUCUTCmEzcH22Ct/DHe+X4K+QvpWp9ZztIG0/ZCygtcNrhsb566wG2D2/qK8edLW18x/k5p" after tData
+         put "65MCMF4W40nhMK2PG3++0PqkcDivjxt/NOT5kfA/3ZSsDbERAAA=" after tData
+         break
+      case "roundtop.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMzMgeSJiYg0sKSKw8qawiRNTE0A5JG5oZA0tzUHC5tBJE2NbIEksZmpiDNRghpY4i0sQVImyXICFMTUy4APHUw4noAAAA=" after tData
+         break
+      case "lift.obj"
+         put "H4sIAAAAAAAC/3VXS7Iktw3czyl4Ab7H/+c6tuUIRcxIC8s+vwkgQYLVpVUVEgmASIJd7F9//fz5+z/crz//9dvPr19//fzxPxe/svPhK9S6XmPqDMVeCEzyylCKWaFQhZVqP6HJgOErtmKwvBEtECQ0SWKpmUy2A2kkIf6F5d9pzwb8S03/2oL/XK9/Ecm/tepfddJ0/vR/Qv2R6fTh3xQIcwIzyxM15/xQ+Er2EepfYr1p7WMp/q2K//vwRx3/uiD/2Yx/1ca/KeFflLVb783e7+3zj/078OcOet3Ce+725uyB8maiPsH34M8qb0t/X+RbP+Fr1i0HGw9QMf/K9H9D7aFucHQFaSto43qLBhHWwTg02cAaikI5CdTiCR2zWx7Am5ksrwxdSNEK5ay35WjBZCGOxII1thct0LrWzGchLXTLA3gzk+WV1javzviUoOb52e0GJTjZ0Ny03VqVlUyFYWkAL2K6aVGhCAHOMopuoi52AxKG7DtwqnJlKmQ2otRieQBvZrK8YYpk5Y2oPSQVfcTT/wF3Yzu0H9FTAyuZ9fVueWjuZibLa2m3iy3sZsHtApOFWjL9o2bSXU0ZFdcEnbZGsTyANzNt3qJlc7YbT9N6TumfIJ4mhZQHUIKTDR0H6SD1YSukQ1PsIqab1hXqsQlrmnS9DQMmC0mo8jQ4xM3L8jPY7Y9b79XwFLyYafP+oCqRd44PLiD6lcXOVWXx72/lCYoC0V7zQ0z6LHJFMWPcASMDqrvS" after tData
+         put "QFBsHERftz/I+WE/Q/zL6vxLNf9Yn38s0L807t/adCvLs7A3lXcW/5bGax7bizf9x0PcC/8EX4PXl3AvjXvzpjlu3pvuWVmv0n7an8299fbW2rP6S/GGrZiPrUBzXcymomQzBCY72E2za7YOQtu9ZtsbLTdxxqHq0I8yHYSCnmTqahIzFanfUb9LNmVzMm+yDUgp8R4JvGbw0nyIz62RdHRO3fZdR0onmCwE7Swc5pW49f7vf35b/3LcP8OPf7tUv7/XDSJleSR6EAwb3vaAmzyKwuWC+wNm25UJWF4UzgFwDSbpB1torsY7twYpW/ybvduZlv0Bp3sl6SqZ4wNGiQxYXjacHjBy13uBWMnustr2zgLrSpKrq6vZ3Fyt9CAYNryNHgQvRdfnoI71GK5OsgiGLd4WyFpwW7XydG3VKsG1TA+CYcNLlSbBq3aJrq1a69LUOlkEw4Z3kEXw4D6atNNUKrXFW3VO5GUH1QcsM9h0d+RF4aqjKS8bLoZNzUOqgeZhq3cryArvdnaXYsMr6h8FRegjldrwdmyDiLP1bSoVbHj3NqwkJbu+FliK65EeC4atXorNBFNYdX0toTTXabnUjtrwUklad6e+uutUcrhOuUgTtcU7qBKte1Dt6caqVYMblIu6VBveQhbBci677F3X+YatXh0Iedmw7qW8KDziA5Yp6uGGxWZNNryaV6kKmldbvEdBVni3s7sUG15R3yjIQh+pYKs3YxtEHNVXhDt6q1e3YawkNbqx" after tData
+         put "Fri+IqPTg2DY8A56ELzC1oVtriXU4mYka8Gw1Uslad1zLWl9lieVbG5SLtJEbXipEq17Uu3uJtUablIu6lJt8cZApWjh/LZ2YMqmTj3HsNU9dCbk5YT1Gxeb1y5pkoXHUPa44GbYJIDIJXIccdW7VWSVd8O7U7HhlR0wKkYRd8sFW7wivcpCekHkAblgb7duRgyRJzSGxEMXQ8bUHUQZBdMbg0xeDDLWMXTM3kGUMXAQYpg8pjEGnsMYIyZwI5uRMOAx8sFYTxnaGCsOykGU0TDm/Mb7jP2Oep4Pooy6PfXhGdszbk/MHx6dt/T0CCK6HQ+ro4q2rY4iyjhaZ9mF3enRAIgyZL+s1rIvVlFFNkN/vKGg2Z+yFVVEGbJzeq+jiaYsjgbSEYdG/Pt7CLoKyXH9/p5sOIrnBkj1FUbyrNbpSHHHsIllUFye5LOrX2ERGDe8cKEJd7V4o/Fx88QxP8nprBgOLqEHzY/LaLryaop0l9s32nbB/U5dMFFK7hd5z2S07H0XVfa4b5e4ViqsuXO84PTIPR+XznSxy83Wu2e92UIzcLXwOZbxglWS2K8k7QHjOO7cy07r2DSZKB4sus2v3GlwkiTLTzSLsPPgIIklNsETNJY98V2UxrrQVS7zqGUax0L3rAISz1oumNJFU6/AelDox5yadUuf5OhKSNtG74xSdcpMwIpv7KIPN70zutbQcZTiOockc3T8+8OpYcNLwkU5iR0kTkVMscTDdBNOEq4fCNpq5sKG" after tData
+         put "V7Nm2ofBEsbpMs0LKwtbvGXlTkH3YXVIHSVXVvnEIsKGl3okESUbaMhFbNjwchAEXPtT+UEU+vmBCV9TtBm032AXalLUkFgvi4otC6q6sg1nzZxtNCt4wVhc0CTBwqT/gYNug+h7tkW9uluiIfeUA/RFj2TDS9PJ20JDHbd3w7Dhpb8he3TFgg9CZwwwT7QOe5aIKh8B+prpZ4I/DQDke8CfhoHvBH798W1oOMn4GsAZ8AGR447DL8f5HG89/JMszCbRcPgVxnHH4Zcg1SbL4Y/yTcNhx+GWgPNToEef4378HyiHDjnlHQAA" after tData
+         break
+      case "lift.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMyNUWQFmZceVBpQ5C0IVDQwtAISBqbI6SMYFJmRiYgXUZwGWOYjLkRyDxjAzMuAP5Ttv1vAAAA" after tData
+         break
+      case "wall-x.obj"
+         put "H4sIAAAAAAAC/31YSbIluQ3b+xR5gXylebiO7XaEI6rthds+v0US0JD5qjelRwCCqIFS/vr9j58///nX6/d///23n5/f//j5l/9dt/uE0i//ya5c7hMH5D7epYEwnhIBQq4GlRQ3jft03ygJVRFxfCtSAuA/MfpN4D8hleseTUjTZYKxrX4lxqUz75b7CfmPz5bQvbxyL4R2zUjpplENu0Ka2Og8nRYsaS1tr3HTmmHo5YHd4aN9t+UEwkEOsLwhrBCx4uN7CIDlG/RE1rLpCO9ERPf2es/qme1SPUTHjL5OaOX5tvmuuE/JY42/LN1rRb4t5betCZ8U6o769EQJ3t+191fxe9feZ+C9YM81/bKFr715bemXHbUUnxku7DmZrxN/SP3H1SxhG6UywOTtamiaSBnXDJUThPLsDqV2H3Vd/C/BfaAx3/y2LPk59ljxaoWdN8uBSkdZnZJ2LdD81QFaOoTefo0+Rguuf/EF+sghRtvduhukoKArZZcCNemjP6RmINfqL8F9pHFt2mLvnhPch3efVGU2Nddt+6NAfaiXLG6qoydkPDhj875j+wjj2OT08CO2DzuSTZZzdbohc35xvAuyFW4/9hOm+mFCNU16qn8Cn0OO9GJ9e0/4mUm3U5FcPbyb5hdcPMSGUvuwoJh5xJ7/BD4HHIfLTv3pPeEjETmJQfYVB4p16wUsre9KA6k8ulPJ3Y/lV+Ax0FiFVJ+eBI/RwycnXAZyYJzr67KXOhQsHBiEANHb" after tData
+         put "hO6J3fK5FZ/DbOjmKWiIj9EneJvDmFLX7F0s6x6Wg6Rr7/jIGkotUXOglg4LHWAtz8E2cLkOsL8SAPivy4nK61ehhDKJE/kGlImwzxupB/IGLLr3gfPC0OeNfOn2hlJT/1b3+N6AUWED8HvkkRV+7ODpN9DLbZp79rx3+b30NzpIa7/mD8lfg0/nyoVuccGMd/o7ez/om/z9FNxPxUg2mKFf27QNp+z9oHe7U3D/SvEUKP/f//w2/vi5/ub+8o8rtR8/Qr6K0yZVaQbM2NjcAWfhy5WyNlnYIiaIwRbAahKMDeYdqA5k1STAe+QoQ0pTpEGCIwYrmShc/OhWrxJG064SpREYMdgkjcAyZJ+wJNg3E7BTLXwy09FI3klgxGA9YfQesuiu0qQRGDHYOWTXIavTPKtH3ojJBmRSo/UGnB4mxi510szUdDQZCTI2Vvum5S2ykWctyJsxWA5Zqw3ZLO/OvBEb2xwyad56Aw6nCdilDpagZna1yAQRg+U2sHfUPFtC3ozBcsiWbciiebaKvBmDbcykW2+Du3uYgKVa+WSm6eo8EIzBchvQW2Qjzx6QN2KyHLLLdPzVZXrh6rIpUiSMwcqmeYHlsMUJyxmMmwnYqW6WYLaGB4IxWG4Dew9ZTJd3TlrBDSDNMb3zOqh3QVMdzzhyXwgVCQl5l9VkMeXlRsXqY3Wo/trygCyECj8ZulRMpmEyC6FiZdAtA+8se+85HyJTEZibj3Ahk15uUGx9rD7VX1senIVA" after tData
+         put "4fpk6JIte184n4lQMTPwMtM8Wpl7Ga1kVJQhAkWQ+cm174PMuW6MZF13Nyq2PgFZWxmPb7SZNREq5s5NF8l6/MkeJOumDBEqZgZBZtpHO+aexkdCqNIqQ4QKmV9XZmQwvl0mE53EhxsVs090yNrK28d5qiZCxdw5uoh2vMc+BmnVDchUWAZ8mjWX8dRdskTXmLsAshiGAsjyWyZ51Q2Q39dIW3dhKMeqjZ5jToNtC8v6rzyzsliSh0+XpDG+/iQ7L/0Rkw3SCCwJlCsOXx+vKMPK2WIMVrzlYBmP3vAS2GKyCSZeH3p9/mX29tprZEwFZvYWGrVAUyaAJgFlyYlU4EaSKELjonx7tIVqeDWOZWGWwfqVJVc5KIjBmpPAwWRSBfHKUsoyW8ZgPU3kCDmFpRG1g4nExsoQCtsPwj6dsMUXxQcoZ2FHoxlxuB2Uo7KjGl4Eyw5qISzUQj3KetR2kOPHHeQE0qHkUPFwjeEBw34uWbIFFtbbEmmlIAYbsR3RSjnbC5JZ4ojJFsLlgHmN2Q/CkfdeblvvtxpD9tMbneZlYzzV+g2tteR39RO2eGUCGCYxP2D7DgjMBHcAVmxeDYyN1ddKbzb7uidcTtjWH315zj1ZPZRhXoL6wSOXmTy08mb++FEmNLa5GiHuVS+zpv8Kv0B5kHwwTg6f19sm4C6KuIsYg+VdZPwlF7rcggVTZwyWt6K8A+OGsd7wEhgx2Mb7p+sFkZxWfmLlIyYbcH0kKxCRSTMrBDHK" after tData
+         put "p7MW+g4n1rP9IBzcCVusy2Zw2UyXCWNUvAfs/Q7309o87U9AhesOe6oP59QeYmNDPuGQT3XfQj0lll3Y4UCx/ZhwPmFYh/CAzStwD3AaUtejPA8JY2M9/8y1HxPuJ6xb49GX2+5nJ8c/ofHmOL290nxMEBtrJ0nU9p2V7RZIvBwYG5tY7vaDcKgnjG+dwCvQfkzYP2C7Ueann2XKpbHJraUCa7PQj2V7dq0UPN94wFYaYDFLkRlr1bbUVnYLRgzW24cGL57I/7xwdjs7u1gdb2s3WZ7cYmei2IkpVDMGyxNTrXe1Oqx82BiD5bGrduyaFVijCWKyLOZm1dOsDjpNEJOd1WJPbEeJOboAIM0M9U84FaKuXZsMESrSvBhwr/A7Yn5ILISKWa6e9evRTjciU+EmgxspdHy2rOIHMhWW9f8BFufX/g8gAAA=" after tData
+         break
+      case "wall-x.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0LOwNAGSRpYgwsSYKw8qawiRNTUwA5FGpkDSzNAILm0EkTY2NwaRlkZA0sTCDC5tDJG2NAPpM7YA22BizgUAU80sinsAAAA=" after tData
+         break
+      case "wall-z.obj"
+         put "H4sIAAAAAAAC/3VYR7LlNgzc+xS6gN4wh+s4Vblqxl44nN9EaDBIf/MpdDdAMADS+z/++f79j5+vH3/9+tv3z49/vv/03+U+8fKf7Mp4CqUbUq7bfbxLDIRcGTol7lNSFEWocOq+7VFGcANSepH4T4zewgwzhMRDgiNJ2hNTXYnxwNynZUr0XjLzH5+bYDZv7mUiKb2J3KeGGUknGGw0mSZ3YqLrNR4YRerF9pXyv8JHPRUh3YlB9S6KEyl+nbIY8hVweMlhH8FXNwVe3WaSp+SpOCc655kx7h0qO3A/RLZj98uW3XO2e4t1vwW733wJ9GkBU6gyzQu6i1+1i/QlqffVHIvB5t7btXlk/VAd+3m/bjql+r6q1x14LOoJDix5rtPKK3Y1z00ZbaV07hOtrChrF1QisHaJsKG5+JfZDF3ijm14pjBB8c8D9J/a0qqMhVbXalxBURoo7qI09xUMvT0nMnCNGVx/zm6guHPPi3HbPVcKNbmwgSw0TJxFaN4TpK56zDIhizca5r694lqXkxgW3Wn3SXWuZRxskQ1ZMRXGvjirzpxXsC8HZt59OVoFx4XJ6Zwb4G1LrK4NMnHu9zwIx+3eXgyCinaiepKsnRFWtKf6MttEZ9yRWayPHFZUIiRHB9Bd37TBRTqpPV2Rtj1bUU7/iY4b0fNjrhWdYceVaumRwYry6aSWac9TWBIbhdekcv2GqnaiHEG1M8JExypiecy2ojPu2IZ1zy2CoOMGuy71x60uJ7k4" after tData
+         put "LnQpwLX/KahSQ90iFX/+vIpfo9tkBIf4CDzhNQkquUgll3q/lgguc3GO8KuSQVEe7qK01davsHWagfVyBAS2zPwnXTI+lPHnMD9+B+6JTKBsyBtQHz6M3MfE9+qTd+ReoSOb+yXjNraSr5QKdtuzQZX15/V4xsMNVL1vuLsLCW+y27zvp8eNzSVvPNzYzM45eJiFzdAX9j7oG/x9Cu6vFKdgmUHXkcIx43pMU3B/pTgFy9Gv9Mr++/dv48fP9Yv76fcrtW/fQr6K4yFVGgYMW9jcFc7ElytlHjKxhYKorWxRmIMEYYPEDlAHsBwkaGxfeUoaCg2a4LCVpUwYLn641auEMbSrRBoIVlvZRAPBNGU3mBLsSxBlTU18kqBjoLwTwWor6wGr95BFd5VGA8FqK2tTdp6yOs6zes1bbbBBM6lRvBVORxBhpzpxZhx0DFkThC0s+6YZm2Qjz1o0b9jKYspaZcomeXfkrbawzWkmzYu3wmEPouxUB0mQM7taRIJqK4tjgHfkPFvSvGEriylblikL59mq5g1b2YZMungL3N0RRFmomU8SNF0dFwK2sjgG9SbZyLMHzVttsJiy03L81Wl54ep0KFQksJWlQ/ME02WLBtMdjEsQZU3dJMEsAy4EbGVxDPAesjg+uZyjkXABQGNO7zxP6l3gVMfrXHOfCBRJE/Iuc5DJlEc0KKaP1CHH5xEXZCJQeGMQpepimi5mIlDMDLpk4J1k7z3WA8QUAbn5qFHApEc0VSw+" after tData
+         put "Up8cn0dcnImownVjECVL9r5gPYZAYRl4WmkeI619/NLxlFFhBogqAq2P2r4PtOa6MJR1XaNBsfgEzVrKeHyoWdZAoLCTsyiU9fjqD5R1YwYIFJZBoJWOH4ZhrD2NF32oNDIDBApaX2dmZDC+XIyJjuwtGhTmE51mLeXto90qQ6Cwk0MU0qZxU2KgkaMpYgrJAK9mzmW86i7aomusnQDaDEEVyPRMi7zqAtDzNdLmUxjKsWvDc6xpsG1imf/Sa5Y2i/IYn/6Uhs8XZefJX22wgQaCKYFyxRHXxyvStHS3YCtLseliCa/eGotgscEmDeL5Rc+vf1q9vO3ZEqYqJuHFFGqCokwKikQpSY6kBDeQQNUULtK3R5som1fDXGJmmqxfmXKli6K2shKJ4CAyqoJ4ZSplWi1sZT2C0BVyDNNAaqdByBaWpmBYHgD7tMNiXxBvIN2FFY0SCNOtIF2VFWXzAlhWkAthomLyVeartoKYP64gFpA2JaaKW9QYDljD25Yl2WBivWwRV4raykY9jiilnOUNklHiaoMtgMsGo43JA+CIvpfb4v1U65R9j61O1myEh5q/obmW/Ko+YbFnJgprkJgPWL4DAjLRHqA7Zq0BtrD8tuLOJl/3gMsOy/6rL+65B8uXMlgT5A8eamb0oqV35rdvxaBxzFUIil65mTX+S/wE6YXkg3B0+Tx3m6C9KGovgq0sepHwFzV06oJFlw5bWXRFeg+MDiPeGotgtZVt6D+dG0RyXPkJla82" after tData
+         put "2KDtI0mBkIwGqxC1tXw6aqGvcEI9ywPg4HZYbN42gcsSdAaBrRXvFfZ+hfseWmLKT0CG6wp7qLfIqR1iYUPe4ZB3dV9MviWSXVjhALE8GJx3WEOHcMASK+AM9DakzlfZLglsYT1+5sqDwX2H+Wi8+uLYvTk5/ITWd47j7pXsZaK2sHKTSC3fWVm6QEJzgC1sQrnLA+BQd1i/dQJaoDwY7A9YOop9+kmm2BpZ3NwqZWUV/LEsr10pBY93vMJSGsrqKkkmrFTbVEvZTVhtZb18aKDxRPzzwkl3dtJYHbq1MxY3t8idKHJjCtSwlcWNqeJdpQ4rXmywlcW1q3LtmhRYQxC1waKYm1RPkzroCKI2WKsWecV2LTGHKAqARob8E46FWteuGQMEimSNQfsKviPsQ2IiUFi5etSv19GiATGFM0Y7Uuj62TKLXxFTSNb/A+YMx2oPIAAA" after tData
+         break
+      case "wall-z.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0LOwNAGSRpYgwsSYKw8qawiRNTUwA5FGpkDSzNAILm0EkTY2NwaRlkZA0sTCDC5tDJG2NAPpM7YA22BizgUAU80sinsAAAA=" after tData
+         break
+      case "character-antenna.obj"
+         put "H4sIAAAAAAAC/31WSZLcOAy8+xX8AFqiRLJK35kZd8REdM8cvLzfWBIgJbH64hIysSRAkO3Pnx8f//6VPv//5/vH2+fPj2+/E61vay1pfctlh8HoCM6wcKQXnkWZh3m649cgsDmkRi7VvhXL6yH/tod9j36GbWNsyXXALBbYKbbsbayxlfA7Y1bDMJqJoZlqmkmkVzlvxWmmnObSex269u3geWgsk6bV6aZeKtFUFA2qelM0nRRNR0XXFk7FprXGMx6bndafzIW+TPBiBMM+kR/ylp+ns1Jwb+U8gHClqe+tFBKwx9Ar4g2kKfoi/l5pqmkqf9boWGYqaCb95niJttHD83xL4Hk6o9Fx5ncKphvqY7vlpFlSB/9La8pplQ+GbMsO/VTuCwQA3ZA1ETJyDeUOfScQX/XpbE0/4aV6mrT/2AK6IFUmfA6TtKfcj82jcgmEThBNFNBEKE1k0TzftSrdxdJMbeSnU5emjU59mjYaxHlRGqp6idHPldAgJZqg2VRoNhYaZF+rTIr0Axx6m5a9D4FeBc9ir+dzqIisz/PRMYXojNEMvMbCMhadHT3UMJqB09hrhZmQieBJXz39TMVE7dntCrXu1o6OnaCJ191piKMzRmfwJTZAv3585//hpb/Xb+/pWJZHyuuyPFPOy3IE1JaFF0EZxvKDzZryk39ayuzCS/qeNqb5LXRYnQQuy7Jtaav8s6eNU/Gj+J529t6eaec625H2bVl2kWC8e+9s7eoNN0661+6N" after tData
+         put "WggSrT0FuJ7Z5JkNVjKb7ayq6t5lX5aSOwzbWVa1y5Qql64PG1ofk1qgKjfE97a72kgrV6/aCWywSOHiMEKfHWywNhQRxx/8Z9dZh2GDLZykFD9ZGzCqS0GzlYtydsJYhdNeGBGztCYDhitMkJXV1E2ctXWvWLnj8uwKwIYw7JxNHPOXls0GW/mnSsuNo9sa66LLI7nNBmsDESVa23eu8RG3LHMzG2ysojUQl8C33yUYG0ps3LH9ehQ9N9goiTXHlpnOvnV+CWwZ/eLmPobCAWWFu8CwwXLxIsULFy9RPMbgNlg+1CKHWrjD8vAxVM5Vjj40Z32PK9euOcYQWw8bLFeqOkv9wLSG1YANlpXU1mHro18+2B7k3o35evja91nCBqvN9hEDDm93M9bmKUp0Cji31FhAE92wwcZK2yidjQvoNthIwmH1GddFH4R+t5zVQQ7edl3sNPrlctaS+MZIlcwOme8X58k5ZS6eFdaPgLlmluls3BH/xdg4aOPniNlNbwjPcuMHhzvY+BXmKpsU35nfeV05187vECfZNYny7r3zz94Gb2b3B4LE22oV7mB/DiUtGjottut2JVeBaoMVGDZYba4vEuA4bLfBujdmhAsQo3LbWDuA7o0LEDBsn7ceisxEh+Or0ZfUbLAxWLcxyIBhGxvN4+T9cvkiwQZrY++j8nWJPTEbbHijpA0DRyresMFGEoNxXcIbNthYaWyC3e/hCTHb90S3RpTY8vlF9cvltbCaXhKriafP" after tData
+         put "Ln1/KMHGxqIkLkU8q7CdDSV6HpDQn1XYYGPt8WSjZChxgWB1I+M+y2FL7SSHkmSVJEK+FS0GyB+PJNWS/F2XNuRbUTkXCylJXtEkIhnQb0XlZXYPjUOIfiuKEMmt3ppZGpJvRR+Wg3+axDUJaZajGdoE+ANL6U7IfRQAAA==" after tData
+         break
+      case "character-antenna.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DO2NAOSRqamQNLcxJArDyptCJE2sQBJGxtZAkkLuKQRRNLUAqTCAERamFrCZY0hskbGhgjS1JQLANxWs795AAAA" after tData
+         break
+      case "character-arm-left.obj"
+         put "H4sIAAAAAAAC/32UW3LeIAyF37sKNkACyBi8nbbJTGeS9qFp118dXWz8Q/NiOJ8uCAR+/3h7+/E1vP/6/vL29P7x9uVvSE+08yflyt/ci6PI7Mhg6ZjcLnS5eWhqMyy1TsFg8yIc/VhMauSO8fIc6AW3q6K4pHfIrNYle1hoThmmfGFZ4t0tOuS9zZ6AKxaX4Q8wruLjcqX4WYLFYul46MadDfGTZ/zMNS5942qt+JBhpiV30dbrEYs04815hdcpLPOUeAmTHu5iMaM/edL4VsgAKXNM2G+rYuiH6a6OVXQKMaunZIiaRy2n4cBC1F1iJkzdkMJnPoE5wnPQl4xLffO3NU77QscL3HUcd0+bfPEX6PuNdTCqd4bTp3aPxYvuA1ukW3pNC/w3f1wsEKeCZ7gO7k3TPiwcp5Vnxzh4/vn9wn/08C19eQ2Fnp/zFsrGQw2lQgGbNusOBVxVHzw0swKbVislKMaUedLPXGcS1WalgoEx5yiiSsicqCCBKDEgqFiwoZxGJEpKADPVRyajMbJYQi2HFWElASfdUONht+0BI0MKtOvQMDDesupDhq0YRljJioscViEkMa1W8ZYzRLZq2qzwBj6kTkpSIGWrhKppOVr+W7y6dqvEDkuK21WJabNq0Hk5sAqOI0gPyI5QThoU58YAMYHTbIHXwjZkLpTPmdSjIq4ipGqOqrQpOE6PEWAubQTJvOauPseQRXHm+a5LNxTXUG3T8pvSrgBFS11SIQOZC826n8yh" after tData
+         put "3fOyoZ+Lm8XWwo1I4oEBwcmis5wYf7MMWiqk2sggjXA3iO26DLkbNam2JtCbJD3J18MhGh+OWvwx5X5df386fu/tFaCaw+4i33t/BShEbpfde3sF3e65Tk58PGB7FckfS7rh7Njuvb0C4N3eJ6XzFeDClnP36CB2x11nwxEye6F8U2qx1ovNm+iNVaWW3WK1pdbf6o3dBi0RivvYL2+tUett3m8dwxvJyM6twPGSdClLI1W7Fa2hC/u/yJvh2qzubdHaSmsszlG15/Ylcx3uSb/dE2El3dj1Ux1+WIDt6phps6Ku0u02EJmWOkj+eqrNqrFD2xWf3qbdqrfhH9yCNbaqDAAA" after tData
+         break
+      case "character-arm-left.mtl"
+         put "H4sIAAAAAAAC/0XMsQ2AMAxE0T5TZALkxBc5noExIB2kQmJ9SIxM85t3ut7u8zriRmHdIy1SxFshoX+cjLnibQaPEbNzNq4TrErZmY2h44LnhuAKU034ixIerHuuGJoAAAA=" after tData
+         break
+      case "character-arm-right.obj"
+         put "H4sIAAAAAAAC/3VUW5LcIAz831NwAWYBGYyvk2SnKlWzyUce549aEg/b5GdwtxpJoGY+f79e37+4z5/fPl6Pz9+vt7/OhwcV/IbowiPW1DmmjgwuHHfdxHVd3xv2O5lyvmcEeU/J22/9hJ3uyq135Cd2SP1Se5Ey3NNZatxSuNBdyzCk/B/2ljMVGtKZXHF+uf2sFM3tlMb6pdavxTdtSFVi16HMdL+r4yZdkrZ/JV2kPFOXvXwbUZDdFJVOQpnVAJMU0I4/afG7r6RZvH4qBeWVizqSS3W9T5A/gHeGDotgAfgKLtrHY8uiqIfCqhuyQtkyUllCIwhdHKljfAqpW7lG+/DtCxrZOeEB/RL7E0FV6ZZggQf0JzxO/yC8KZLbr2WiqlCUZ5U8sbrPKpkw7eeN1327uySXZ3lNdMrj7yJ/z+QXTfnFcfy9Lb9o3i+O7Udvf3598D+4+xreni7R+3vcXNp4yS5lLKANW7RgmeidlzKpDVu0Apk6OQr4BZmYMySRGJWT1bhDqWMwKD6oIinjRAlwMSulxV3iED8wbQxlcZAqWv4vIDR6gJYPO5+dFkkUW1Q3QY0awVHRZccC+hC8RV2S0fJxSOVUJBfJhUMdZTdFaZCSJSGSK+VhoQTJzRq2KOeiMtSadKIVW1QbAC3ZrJZVtqkBW1QqdW9AgHO7JHesl8sbsmPd5viWcVHyLTIjuHJxkWe8y1TRlCIJ7DMDgMSDIdnMBXemagu3XfItrCXGiIMr8os5" after tData
+         put "h968mIqG+brR8jBMSmaYNDhqnLlHvYQcES0195iXEha7XvjB3FGbLcqEzSTDLUZv4WKiMHnJfMvuMS8JLZ2Ye8xLqEz99GSnJxfZD1VOLZwijXBz6D1yG4ciFzkp7GJII5vq9JaRiZckl/3UtZHQC6sfnd4ajVuLUgQLEsbeMqwTcek8F9w2Wx13LbNQ3KKoSZNaJ9VHZLhFWxKzgVgi2l+MrI3LJy6fDKIN6Lht+EipuLXb+mojwXhTm8yzYYuir4Qzy7hzn3Ifr2GNokRCSd3WN0nKkcSipm43m3VOSV8phqEE4e0S5kr6jknZrRObPndW5PZfIKzlkHeqntHnC06RRqq6SZ1zTJ4YHqGTnWjykSRRqRkm6hLEN8+OLSrmevsHYaVaoaUMAAA=" after tData
+         break
+      case "character-arm-right.mtl"
+         put "H4sIAAAAAAAC/0XNsQ2AMAxE0T5TZAKU5OzEmYExgA5SIbE+GCPT/ObZurFdx7nHJYV5jWlq3LxCLYyPszGEnhaCHgHOxVgqvD2TM4wZCqhdj5Cdybi//JX/bTYmZv1ORbcl3JC3n2q5AAAA" after tData
+         break
+      case "character-leg-left.obj"
+         put "H4sIAAAAAAAC/3VTSZIbMQy7zyv0AVmiepO+M4lTlSo7OYwn7w8JUksvvrREkIQA0n6+Ho/fn+759+f9cXu+Hh//XLzFbXJej3ijWADyKSCtiwQ5jWAsSdvGdpqlMlFm0F+SeiWopdrvL1l7J0pHUfv2q7pds+/dJikV6qi/ht8w9Pd9F2Dyrf/oahygfzesC15/TbxD+2IGD+cdHNAzwR++zJt8ZANbVqSgiT9TMUBKSEqSNU1omvmjNP7Mw5DsVYpbfODxkkNJMd5dxyFbq30vh8sV363VHLFzG17xo7C9Y382GB2nR1utna+S+v6689/K/YgfvxyFQC6FkNwUwsQA7kDnEGap2DhY3RLC4vi6MYS74ZT5EDBxU+K3mYDnRqtE0q6xZVM6wEmb+HGS1/VS4TTVaoMnhaPBemnwbLCoRLSaSMbEDAozyAntCJFpLmBNIUZqoxpuTmVEygJfRTALJWWDU3obE+T0aVquMsq0aMEKOqOcBjFr2xpVlasYtI0UqcXWbI0UoUeFqxOSk9qC2sgtXiBBlQjMlFTa5IUOqnSsmmxojedBknkq1UUzkDgJ7RDHI8j1d6guoq1HtauPWmVazQk/R/iJmnbLNli1Vydoqm8buBufClayphYjEsYsVfxFPmuThJqDzlwH32E6wIjFDtA8gpA0oMq/AvwPTU5bdhQHAAA=" after tData
+         break
+      case "character-leg-left.mtl"
+         put "H4sIAAAAAAAC/0XKsQ2AMAwF0T5TZAKU+JvYmYExgA5SIbE+toyguebd2O/zOvJa0rLlMjUSK7NXexqv1tCZuxXqiF8plBtcq0VUP0UolK3E/giQHo/GjgF5AAAA" after tData
+         break
+      case "character-leg-right.obj"
+         put "H4sIAAAAAAAC/3VTS5LdMAjcv1PoAh4J+SP5OpNMqlL1XrLIJOcPNCDLtmZji6ZpGmS/Pp/Pn+/h9fv7x/Pt9fl8/AtTeqO047WtgZ81K5rK7C9QTty054DciUuLKGSqjLZKYFr/leiIOTA17D5sftKcbu3zTgc6jeEvFMRBA92B2bL6tpUBdxqTe+5Q4DatlB+r7jTvN9hTpxH3l8Q7OPyYd0OWwtEimy7VSQKRQNnrZrAWfqgUIzUkfu0WDmQujEvre5t7FxeZDhXMuuFZGueK3cvkU1I5n/EEpMDG+kxLXMIwCfHvnw/+rcK39PgRKEYKOcYc5hhnBnAGusS4MLDFuIUaYw17jDsDOAOlxLzUihAhI8IaIWNKKMysvYbMOImYhsg0NWIJWtGuI+KgoNAFYsvFJuAWVNs8SFhXNwIM7Y5STRlRFmBCkLGmmbcrvTN8ZRjU2LKieYJJi1iPZKN6cFg6K9vgWdnV4drRYCcfNyaeVuxP1uqbFrPUTLa2Fq9Ypu5U4MKHzbtLN9r8BnPC8PYl2DXQ3hYvoEa4foN8ZSbsihZbFpo+RvaGmIV5pfNr00gZrs/8W7bB5t+aokhUdQKIu6469mlW24N+wJpb7aNI/SAnx9iH9C5aU1So6RfPOrr2IOx1KELxB7D0IF1QfcFZefwH81fwORoHAAA=" after tData
+         break
+      case "character-leg-right.mtl"
+         put "H4sIAAAAAAAC/0XKsQ2AMAwF0T5TZAKU+JvYmYExgA5SIbE+toyguebd2O/zOvJa0rLlMjUSK7NXexqv1tCZuxXqiF8plBtcq0VUP0UolK3E/giQHo/GjgF5AAAA" after tData
+         break
+      case "character-torso.obj"
+         put "H4sIAAAAAAAC/31Xa67eJhD9n1V4AyQGm4e30zaRKiXtj6Zdf+dxZgDDja508ZwzzBvs78fP79///O348fcfX79//vHz+6f/jvPzlehfiZH+31cRKD0spVoYq1dXSyUtavkZ1VJu9D/WNmCxZv4fy7i33Yzla8BEId55NCdqdfIqHsqTFw81l7e1mqqrhZ1e2Cuu4YVdWcKmLmFXhLCrQtikHHZlDZtChE3nwq46rFh483lzNvQ8uNEujn6h9UCLHgCGQbUbDIvFSe/pjjd+gjn6ANy4WbxsQ3xntyvBLuEPIlaQatyD8zy4eWFsiugCfenCgk3oxqyKvn9OcTJqmthumh18YzplU31+EfwQ+2oy7GxOdVq2TwmFbfBTmZZjh0MyXT0ztnrfJbRzsu2Pj3lbjw2wubutXkuBGQvvKWzrPBs2hd12h65tztzsJuxshsHo0rG2Hp0xw00h9jnvPGid+XoNW/Q9ph9hS4AA5+4DnOuoJuf2476fZ+xDcD0jk6Ow93Q+fBdnfYm0qt5PcXHfCzbr6d5RL+wUwweaq+uw9x0vzvGSd5Njt2DXjEnzcx2xJFia7J2P2CtjLkX0znHvKe/gS9+bHvWiGD7QXN2EXTxhl2DYZRg2Kf4l3wqSPL9TMxC5I+St61DW/bPWS0l05PNDZVIPsG8qpB+wte96b1r3TFvCqhS2WnM8YZNY2GQWNoGHTeRhLUF4ZRM21aW/aLpyKRU2ki9gKfF/+bhJaQqnNDl+ZjcB" after tData
+         put "E/5tMOwshsGkbx92u5tgfvbY6mXnZBfiJr1NFTYJ7wOu+EyqVtD49P9PAVgGsDxWFN35NFifLPHm0Zxiqx3ejw+1QeySGek2fh3gEN9oKWxMWfZD8mvM4RUg8ra0x4JZOFto8rSJdzb7Lu4RaHsf0PfA69mYZjvxRTjNiCFhGpv3EJqpMI3N7pTsDslyRhZzodsbp/DtYs1pTXyX5Ma2/EJ6txRYn6qPkTCN3jx50sj3QBvkyIHmdQPD5P4Ceg34cgAnR//+85V+qx+/n5++HSl/+UK1SYWW60iVlpvhRg/5SA8t5bhOWirBV6SH5tqyl7Whlmh5Bu3ry5frPK6blnhcpH2xtj44TLaui2Hyfd3HRZ7pNXqRSfpAcvgmo1cFS/BNvq7HXYjn7hJspnDvRnCm3XeFr+Om5RaXKoNVF0Mk0HZYZWM9Ha2JZo3SMKyyVUzq2bUzqdGQOgzZWCpNjlxY6Ye7fNUErLss5JI+NmyTaUMGmwnOZQgQFfR0IIO1wmJONDLEyXGrbCxp36x9k5Hb2oLxYNsqg9UmsRFpkw+EBMDaKoO9KYv77sOGiqmtXkGwvbCSro+5zzcCVtbjLvSQHxs2nQtOR2WwfQZljixOD9BksDbftlva0o1ABqtN4gBpG32hclt4qbzg7JTk7CmwnWeemJuqdTU7AF4dk8FShLdok7k7WaiegclgKdRb8qVQ7+Ksw5CV9aJpUY9MIeSzj7TJYMlFTr19FqDHrTLYTAFmDjCT75zd" after tData
+         put "iI20yWDNdiEjudkB0Er342IsuSzsslCkxdrZrxDIxkppum27QqQG/cIx2+5SnNjYebNNBivhs0tpkx+A13EBqwH1o6g1QsUYhgxWqu8Tk3pDGlmtTy+xyWDJeePqNJJbRPOPRlYbGzEZrJWhUZmaD5KHChlso1CbuCTfLdsgqa0+dmC1pKxNLlu1Znv7IINttLeJtkTqns2lyWBtpB9y8pxWYh3C3hCwD7WvcUPUCeattw8y2Icq+MSeJZrt6UAGq+H39llAFglksNqrwaV0y5r9zWVlPRJNwEfaLgXIYLVJPjFyk/EldB2FLyE6EXw3cb6FYqZvrkL5lnpUvptahyvFSF8hyhJcKYp6HpVipA/eSj4rD1Il2/VyF2a7kq96u7bsZZh4+slXyQX9OKxku4pteTC4USSVI+HdTdVo4bhagTbDyrJLhSUkG9LebJXBepYIUANGnJw8ZIQvybERCcnGTkvTh9RYOwBmBMl6liqD1W50GGPngwTZNrm25mFNejcNWXo6CiPAHrfKtskCxNgheR9Sk8FaTTAQGDsd8D6kNi4+JxIpDrIN6TeTwfqwYSatvn7hqGwT6+no1WcBWSSQjZUsGMaU4cKR89uvJxtNKfugrReljyZkY82IHlU7FH4JQwarZ4Wz1AMJ2K8+U8NxVW07z5zBQ84THfhbF/40kusBMthicFW56fIYDFnZeJ7A4xmBJKyXM4aYxu3M/WLywmSsxZnyYurCWGzNmfZinoV5dI3nm1GE" after tData
+         put "1mhMjC8mLQwyjl4DfRoYrYG1h4eA9tIXNsEHfxnzLU/X+MHdPPj658bzs6A8P/z1yNpM2hZ5FjTrlkhrvI5IW+nncyQ+CgwZbOOFx5PMHpFKEYs4Y02VhEmUcGS/usG4DqtsbO5WOWVdkhdYZf2fZxCt9Z6XAU0zqPVM1hx+iA2JIk2vcrGSSan5PcgDTcdHngXltz8/C8oNbtI9OlkqCSHjIQpKkM3I55WbHCNkJRmFCJLMx9QjTczSbyeeD/mhDhksaz/Q9mzvIVkTD5/cFAdZLCg8qh0+swZjLv1oarTqfwgaMtiE6FBuC1pz+R+6u0I+NSAAAA==" after tData
+         break
+      case "character-torso.mtl"
+         put "H4sIAAAAAAAC/0XOuQ2AMAxA0T5TZALk+EicGRgD6CAVEuuTC1P4N0+WXY7nuk+/gVt3DwvXQcm1icWViWGgBK0lSbWKpjhUgf8mNabBuS/PcjbmwYgW+lEahvYNSjsN0Sh+pNC/SuReXqdYJswAAAA=" after tData
+         break
+      case "character.parts"
+         put "H4sIAAAAAAAC/0vMK0nNy0vkSizK1c1JTSsBM4oy0zNKuHJS0yFCIAZEqCS/qDifCwC53+18NAAAAA==" after tData
+         break
+      case "character.anim"
+         put "H4sIAAAAAAAC/81a7Y7duA3936eYB7g2RIr6epxBN7tNm2SL7BR9/ZKUfceSLUu6+VMEGGcAnbF0TJGHH+8/vn5/++vj/ePr39/ozazwN3j79uWP5duX3z/k14iPxazOJHkYdA+j/0D+bUt/fv3jHx9vS3/xx58///rzzdyuef/5fX83WS9r0Ln20ue7t8XWthb/+Pjy48c7v50XebpahOMHx5mD48DBcfzgOHNwHDm4HT+4nTm4HTi4HT+4nTm4HTk4jR+cZg5OAwen8YPTzMFp5ODvcuu//vbtyxsCv9770L/24Gbu/VIsv6Zjcd2rrw9D8bHY1ZH+tPaxEK0xQccTbFjYsBlaIwuuBAAGy43hBDE4R0zLMyy8ST/oHSjI+ch7fcjf4CNSCB1vsZGzYzO0Rp7IMYn/vluBZrzH4cB2jh/b5odNYsyJkJMzqiXZ1QThx67WYcep5OPatIMztoYWBEFmiIQhXjThZg5HpjmGWp6Gd51w0NsQXyjk5V4ecgqC1SfbcT4bQWHHKrRGFvzoSUzkl3p+HDbnJvhxc/y4Nj9IxRZu+JEjUlKWjNy2tPrgCmCTHrdjFVojL+gJSk843n4/QY+fo8e36MHVFTtosyMWAGuKJA+H/D4b2ItQAW3FLvHlGZyxNbQgyCpEAloodhcm+Alz/IQWP1B+onBHkJ6RMk8GxA+5FX0ooE2CYAdnbA29IIhdzxJL644TDMU5hmKboeKOxzuG5GfKD5fEgvh2Wlcgm+on" after tData
+         put "7eCMraEXBJESVLjHNEFQmiMotQgyZZBId3owyoNI949BGOL74lIBbTIUdnDG1tALtSgmm8oQC2ZGH5pJgWjaJBVagxfesJT1G+Y4HET38RosoU2WnuCMraFXmjoKS4VQgykVPSujhzLogRSaeSlXd1KLYvl1crFAsYkZzQyTohlw1FjwdWPB140Fh41lRjnDpHQGO+h3wL7ueMC+7nnADrueGf0MkwIaaDCAAb0cwYBeD2FAozEMZmQ0TOpocINKCNzrUgjc61oI3KgYghk9DZOCGgYVNfyCpIZf0NQwKqphRlXDpKyGMJiWQXg1L4PwcmIGYTQzgxlhDZPKGuJgbg/x5eQe4svZPcTR9B5m1DVMymtIgzUiSK8XiSC9XiWCNFomwhmJjZMSG02bp0DlLm542qqMWlO1cgOJWAdhib2vNjI4Y0/QK5qi0IRFMXRGY+OkxsahWjW+XqzG16vVOFSu1tL+f9+//esNSDdn/987egu5mZ7ecfVrTT1i1bDJU3BrpG5jTwAaAli8ngAHDii4g8xOSW04WXdfyN9yENzUo81/iR+WtCp/W8g3GSy/sXempMrKp4dgwV2X8lN42hquMVK9y6u8xPLZ+Rf5FMS/YbcnaKPuDNgdntYfKTP+ENcML5Q9cZZwV9sHl08NGp8A5dBWfDjEFVgZNkr7+lXQ5kCVfb14eo5WTDIjXTxX9lfDF8zk/opYAEp6gjHU27zKUawRO0MkDSeYqNtPtHouZOouAAfWLMWj" after tData
+         put "/xbT4e/tbKveH54xR1hD9d6gfgpUVbOuQdcq+CsKNtMOGreibNexJTFjjA3+XPJn4rwkNJjpTttlk79WbtXdMCeBFXXHptMB2JnjGHwGNJkTG6XV+dRqBJyIYyEkWpOPIPaGnqnwrVZASVyWj1bjQoCHQP25FVDTxrsFNrjk64369iUVT8hcE5/OdDoD2y1FNoYLRPOeOhfyw7V6BCHf03wKUCZiVDOFGFWrA4ZWj6C4qJKiuOze+ZYzf4w1T9fmC+qsXlW3O+sFAhu2r7ca2jHBxyJ6hLtwAFAvboQCTpHVRSUD9x2DLRKAfkUxfk4a5cM7TX5v+wUGn0JWQNn3orZ00zP7CwVZcIgF8qGAPxH4eqOdFOdkNd0sZ7mA9HVE7OiIPZWN6t2SRpKh/sGOzdAa2ah2opJ63z8gyvef3f/JJV0nOcQBSGzQXXi9Is3ZTVz4F9tip+TxvpOwyQR5QQDO4ThDAfVfIYbbNgIm+VQcKIAeWb2L57Ln/sFmUWT0EPz/i61ddhFs/uIoereOeo1OgqRX4uguAmvZS7DB7kxlryWxC+77CQDZAp1UUAIfn32WEC6RDkKznZBrpA+tBjp2++kRWJ2DBMho6KKVsLl6SkoYyk8Xbb3DK/EO+dZappr4tkuw7HUV0DuNqBL2LiAHynBzCbxUAyQLo4TN/sKWF+arwX4RORKHh5gVKmMRYrPXsF8P4RqYLdFkkZ1PEM70ceo6rGpjLijPpIFYYn61xyvRj5A/EGs9" after tData
+         put "DPowvRYEBlUhzPJyBTmamYmfnLHCCGz10GxEuN28ttIbux4Sa1FJxm/6jG7nPkR27CLWNRvn+MbH93oh+F4m5y/aEGxoElGcz6yphPUx1bu8lP1bJOGbA5bzCzr3L053M4kzNZL8XEEKTfF09aglbyuOZRNLN90JOFRt5MMK0DtRFf7gvaGl/9Xg5FZjiPxix9/LijKNF52Jp6bQM+l0Fcv+q41OzBLC1DAhjEwTAk3l2TSXaI/PFP7zP9///Qae9+Auyw4kmim33ZAlYErd2gNZ3JtPVqKQGyhATA0WkkYzdnv8k8VStxjxWahR5JKhS419bbDwyE9Ud92tTRz4Ib5uYWDyWHJGFyYGDDn1kByZL49wZMenCzNwUeRSQ5v1PgihM2B45MnxYbrliCNNke88DswpS7KCdnTOUBM7dcDq/AA5v7NjU4Zxhy6wOc4KfMFUVKZ8tJ1BwyNTyG9O3SLEgSpWV8HBwGRz3bih+76NVa1gMl1m9YnGpg3dDl3MxlcFbvZtqDdweOAJWIT4fsnhyBOn6NisOZRtwOJO33ZLdXkmKrK8iSv4ztThBsQduGTkUkKvGoDa/7OdqcMjR25N0XXrCweOHJu4ca36QtlSlnrH4PihNoXBSFBPKPreubHZQ0w7csnQpcJetd2dcBmS74wfHomiyp2FLlG+dGhhcJIjdAc5LD9AFSBH0sEJxDzEIcglQ5cK2xji4JvZnUEsaZLiaq+OUNKUCjUQ2zypyh6rJUhKJhkg" after tData
+         put "m8amC8bqCDtuycClRF7JJ3FfsEbsFhKKWwexX0c4kCTB1LbqCHckpS5JRhWBlhzRhLFZxB24ZORSQVs0ce5uqDeNeORJUu/YryMcmcLTqOHgAJXp3zvySpXkX5jS4ERi2KFLxi41uHXz+Jv3ZhKPXCV2e7FfQTiGO5amRResOZp48uW384m7MxcvJd0YzEWYoVHFtEOXjF1qcMOdg693iF0VJaWqbvXgyJc4N9+sHtzog9sZxk0gOKtOPXBGm5wdm2DcJIKz2aurxC/B1yKBbcun3gzjkSzJkWy/aHCU56lSFu1RxnpayHZVJ2kARKkY6aW8H2MsVCflCCj+qAY3VCer+NKyevpcSmCpXyg4kuWrWnp7nrFOZm5LBls2Q2Jaeh9hdSH2ygdFOkP280bW6EY+k1YytjfSWKbI0uMwvbHGMkcOKZaQJmHOw+hoI2mDzsYsHLRahh57g42f80MZu2TwckJfpcpONDsa6M023tZc/HzRxQ9VXfyrZRf/K3UXP1J4+R8qR2En9D4AAA==" after tData
          break
    end switch
    return tData
@@ -2351,7 +2862,10 @@ end oiModelData
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
 --         b3kSetGlow thing,color / b3kGlow(thing) /
---         b3kSetLook thing,objTextOrPath[,mtlText,scale]
+--         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
+--         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
+--         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
+--         b3kSetLookPose thing,x,y,z[,rx,ry,rz,sx,sy,sz]
 -- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
 --         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -2436,6 +2950,11 @@ local sSunColor, sGlow, sLamp, sLampR3, sLampCount
 -- a model drawn in place of a thing's own shape (b3kSetLook): its OBJ text
 -- or file, its material text, its scale, and the key of its shared mesh
 local sLook, sLookMtl, sLookScale, sLookKey
+-- a look's moving parts (b3kAddLookPart) and poses (b3kPoseLookPart,
+-- b3kSetLookPose): [thing][part] -> source, materials, scale, mesh key,
+-- node, pose; [thing] -> the whole look's pose; [thing] -> true when posed
+local sPartSrc, sPartMtl, sPartScale, sPartKey, sPartNode, sPartPose
+local sPose, sPosed
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -3099,6 +3618,14 @@ private command b3kTablesReset
    put empty into sLookMtl
    put empty into sLookScale
    put empty into sLookKey
+   put empty into sPartSrc
+   put empty into sPartMtl
+   put empty into sPartScale
+   put empty into sPartKey
+   put empty into sPartNode
+   put empty into sPartPose
+   put empty into sPose
+   put empty into sPosed
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -3549,6 +4076,7 @@ private command b3kSceneFree
    put empty into sScene
    put empty into sSun
    put empty into sLampR3
+   put empty into sPartNode
    put empty into sMeshes
    put empty into sMats
    put empty into sNode
@@ -3854,6 +4382,7 @@ command b3kDraw
    put false into sStale
    put false into sBegun
    if sRenderer is "render3dxt" then
+      b3kPosedSyncAll
       b3kShow r3SceneRender(sScene, sViewW, sViewH)
    else if sRenderer is "box3dxt" then
       b3kOwnRender
@@ -3894,6 +4423,7 @@ private command b3kNodeSync pThing
    repeat for each item tNode in sNode[pThing]
       r3NodeSetTransformText tNode, tXf
    end repeat
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kNodeSync
 
 -- the frame's drawing: with render3dxt, show the picture begun last frame
@@ -3906,6 +4436,7 @@ private command b3kFrameDraw
          put false into sBegun
          b3kShow r3SceneFrame(sScene)
       end if
+      b3kPosedSyncAll
       if sStale is true then
          put false into sStale
          put (r3SceneRenderBegin(sScene, sViewW, sViewH) > 0) into sBegun
@@ -4810,6 +5341,11 @@ private command b3kVisualMake pThing
    set the itemDelimiter to comma
    put sDims[pThing] into tD
    put empty into tMesh
+   -- a thing with parts (b3kAddLookPart) and no look draws its parts alone
+   if sPartSrc[pThing] is an array and sLookKey[pThing] is empty then
+      b3kPartsMake pThing
+      exit b3kVisualMake
+   end if
    -- a look (b3kSetLook) is drawn instead of the shape: one mesh for every
    -- thing that wears the same model, kept with the shapes' meshes
    if sLookKey[pThing] is not empty then
@@ -4881,7 +5417,40 @@ private command b3kVisualMake pThing
    r3NodeSetTag tNode, pThing
    b3kVisualLook pThing
    if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   if sPartSrc[pThing] is an array then b3kPartsMake pThing
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kVisualMake
+
+-- a thing's parts as nodes of their own, untagged (the moves of a step
+-- leave them alone: b3kPoseSync places them), listed in sNode as well so
+-- visibility and removal reach them
+private command b3kPartsMake pThing
+   local tPart, tKey, tNode
+   repeat for each key tPart in sPartSrc[pThing]
+      if sPartNode[pThing][tPart] is not empty then next repeat
+      put sPartKey[pThing][tPart] into tKey
+      if sMeshes[tKey] is empty then
+         if sPartSrc[pThing][tPart] contains return then
+            get r3MeshParseObj(sPartSrc[pThing][tPart], sPartMtl[pThing][tPart])
+         else
+            get r3MeshLoadObj(sPartSrc[pThing][tPart])
+         end if
+         if it is a number and it > 0 then put it into sMeshes[tKey]
+      end if
+      if sMeshes[tKey] is empty then next repeat
+      put r3NodeCreate(sScene, sMeshes[tKey]) into tNode
+      if tNode is not a number or tNode <= 0 then next repeat
+      put tNode into sPartNode[pThing][tPart]
+      if sNode[pThing] is empty then
+         put tNode into sNode[pThing]
+      else
+         put comma & tNode after sNode[pThing]
+      end if
+      if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   end repeat
+   put true into sPosed[pThing]
+   b3kPoseSync pThing
+end b3kPartsMake
 
 -- the node's material: a checker, a picture file, the model's own, or a
 -- plain colour. A thing's old checker or texture material is freed first.
@@ -4897,8 +5466,9 @@ private command b3kVisualLook pThing
    put empty into sOwnMat[pThing]
    put empty into sOwnTex[pThing]
    put empty into tMat
-   -- a look (b3kSetLook) wears the model's own materials
-   if sLookKey[pThing] is not empty then
+   -- a look (b3kSetLook) and parts (b3kAddLookPart) wear their models' own
+   -- materials
+   if sLookKey[pThing] is not empty or sPartSrc[pThing] is an array then
       put true into sStale
       exit b3kVisualLook
    end if
@@ -5899,7 +6469,221 @@ command b3kSetLook pThing, pSource, pMaterials, pScale
       put max(0.0001, b3kNum(pScale, 1)) into sLookScale[pThing]
       put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sLookKey[pThing]
    end if
-   -- a new picture: the old node and any mesh it alone owned go first
+   -- a new picture: the old nodes and any mesh they alone owned go first
+   b3kVisualRemake pThing
+end b3kSetLook
+
+/**
+Summary: Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
+
+pThing: The thing.
+
+pPart: The part's name, any word.
+
+pSource: The part's model: OBJ text, or the full path of a .obj file. Its origin is the point it turns about (a hip, a shoulder); empty takes the part away.
+
+pMaterials: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
+
+Description:
+Parts are drawn with the thing, and turn and move with it; place and
+turn each one inside the thing with <b3kPoseLookPart>. A thing with parts
+and no <b3kSetLook> draws its parts instead of its shape. Only the
+picture: the thing collides as its shape. Things that share a part's
+model share one copy of it. box3dxt's renderer draws the shape.
+
+References: b3kPoseLookPart (handler), b3kSetLookPose (handler), b3kSetLook (handler)
+*/
+command b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale
+   local tNode
+   if sKind[pThing] is empty or pPart is empty then exit b3kAddLookPart
+   -- the old node, if the part was there
+   put sPartNode[pThing][pPart] into tNode
+   if tNode is not empty then
+      if sScene is not empty then r3NodeDestroy tNode
+      delete variable sPartNode[pThing][pPart]
+      put b3kItemOut(sNode[pThing], tNode) into sNode[pThing]
+   end if
+   if pSource is empty then
+      delete variable sPartSrc[pThing][pPart]
+      delete variable sPartMtl[pThing][pPart]
+      delete variable sPartScale[pThing][pPart]
+      delete variable sPartKey[pThing][pPart]
+      delete variable sPartPose[pThing][pPart]
+      if sPartSrc[pThing] is not an array then
+         -- no parts left: the shape (or the look) is drawn as before
+         delete variable sPartSrc[pThing]
+         b3kVisualRemake pThing
+      end if
+      put true into sStale
+      exit b3kAddLookPart
+   end if
+   put pSource into sPartSrc[pThing][pPart]
+   put pMaterials into sPartMtl[pThing][pPart]
+   put max(0.0001, b3kNum(pScale, 1)) into sPartScale[pThing][pPart]
+   put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sPartKey[pThing][pPart]
+   put true into sPosed[pThing]
+   -- the first part takes the place of the shape's picture
+   if the number of lines of the keys of sPartSrc[pThing] is 1 and sLookKey[pThing] is empty then
+      b3kVisualRemake pThing
+   else if sScene is not empty and sNode[pThing] is not empty then
+      b3kPartsMake pThing
+   end if
+   put true into sStale
+end b3kAddLookPart
+
+/**
+Summary: Place and turn one part of a thing's look.
+
+pThing: The thing.
+
+pPart: The part's name, from <b3kAddLookPart>.
+
+pX: Where the part's origin sits, in metres across the thing (its own x); empty means 0.
+
+pY: Up the thing; empty means 0.
+
+pZ: Along the thing, forward being +z; empty means 0.
+
+pRx: Degrees about the thing's x (a leg swinging forward and back); empty means 0.
+
+pRy: Degrees about its y (turning); empty means 0.
+
+pRz: Degrees about its z (an arm raised sideways); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up; empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kPoseLookPart tHero, "leg left", 0.15, -0.5, 0, 30 * sin(tPhase)
+
+Description:
+The turn is made about x, then y, then z. Call it as often as the part
+moves, every frame for a walk: it only remembers the pose, and the parts
+are placed once when the picture is drawn.
+
+References: b3kAddLookPart (handler), b3kSetLookPose (handler)
+*/
+command b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sPartSrc[pThing][pPart] is empty then exit b3kPoseLookPart
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPartPose[pThing][pPart]
+   put true into sStale
+end b3kPoseLookPart
+
+/**
+Summary: Move, turn and stretch a thing's whole look within it (render3dxt only).
+
+pThing: The thing.
+
+pX: Metres across the thing; empty means 0.
+
+pY: Metres up it; empty means 0.
+
+pZ: Metres along it; empty means 0.
+
+pRx: Degrees about its x (a lean forward); empty means 0.
+
+pRy: Degrees about its y; empty means 0.
+
+pRz: Degrees about its z (a lean to the side); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up (below 1 squashes); empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
+
+Description:
+For bounce and character: a squash on landing, a stretch in a jump, a
+lean into a run, a bob when still. The look and its parts move together;
+the thing collides as before. With no pose given, or every value empty,
+the look sits as it was made.
+
+References: b3kSetLook (handler), b3kPoseLookPart (handler)
+*/
+command b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sKind[pThing] is empty then exit b3kSetLookPose
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPose[pThing]
+   put true into sPosed[pThing]
+   put true into sStale
+end b3kSetLookPose
+
+-- "x,y,z,qx,qy,qz,qw,sx,sy,sz" from a place, degrees and stretches
+private function b3kPoseText pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   return b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
+         b3kQuatEuler(b3kNum(pRx, 0), b3kNum(pRy, 0), b3kNum(pRz, 0)) & comma & \
+         b3kNum(pSx, 1) & comma & b3kNum(pSy, 1) & comma & b3kNum(pSz, 1)
+end b3kPoseText
+
+-- a turn about x, then y, then z (degrees) as a quaternion "x,y,z,w"
+private function b3kQuatEuler pRx, pRy, pRz
+   local tCr, tSr, tCp, tSp, tCy, tSy
+   put cos(pRx * pi / 360) into tCr
+   put sin(pRx * pi / 360) into tSr
+   put cos(pRy * pi / 360) into tCp
+   put sin(pRy * pi / 360) into tSp
+   put cos(pRz * pi / 360) into tCy
+   put sin(pRz * pi / 360) into tSy
+   return (tSr * tCp * tCy - tCr * tSp * tSy) & comma & (tCr * tSp * tCy + tSr * tCp * tSy) & comma & \
+         (tCr * tCp * tSy - tSr * tSp * tCy) & comma & (tCr * tCp * tCy + tSr * tSp * tSy)
+end b3kQuatEuler
+
+-- the product of two quaternions "x,y,z,w": pA turned by pB first
+private function b3kQuatMul pA, pB
+   local tAx, tAy, tAz, tAw, tBx, tBy, tBz, tBw
+   set the itemDelimiter to comma
+   put item 1 of pA into tAx
+   put item 2 of pA into tAy
+   put item 3 of pA into tAz
+   put item 4 of pA into tAw
+   put item 1 of pB into tBx
+   put item 2 of pB into tBy
+   put item 3 of pB into tBz
+   put item 4 of pB into tBw
+   return (tAw * tBx + tAx * tBw + tAy * tBz - tAz * tBy) & comma & (tAw * tBy - tAx * tBz + tAy * tBw + tAz * tBx) & comma & \
+         (tAw * tBz + tAx * tBy - tAy * tBx + tAz * tBw) & comma & (tAw * tBw - tAx * tBx - tAy * tBy - tAz * tBz)
+end b3kQuatMul
+
+-- the point "x,y,z" turned by the quaternion pQ
+private function b3kQuatTurn pQ, pX, pY, pZ
+   local tQX, tQY, tQZ, tQW, tTX, tTY, tTZ
+   set the itemDelimiter to comma
+   put item 1 of pQ into tQX
+   put item 2 of pQ into tQY
+   put item 3 of pQ into tQZ
+   put item 4 of pQ into tQW
+   -- t = 2 (q x v); v' = v + w t + q x t
+   put 2 * (tQY * pZ - tQZ * pY) into tTX
+   put 2 * (tQZ * pX - tQX * pZ) into tTY
+   put 2 * (tQX * pY - tQY * pX) into tTZ
+   return (pX + tQW * tTX + tQY * tTZ - tQZ * tTY) & comma & (pY + tQW * tTY + tQZ * tTX - tQX * tTZ) & comma & \
+         (pZ + tQW * tTZ + tQX * tTY - tQY * tTX)
+end b3kQuatTurn
+
+-- a list without one item
+private function b3kItemOut pList, pItem
+   local tItem, tOut
+   put empty into tOut
+   repeat for each item tItem in pList
+      if tItem is not pItem then put tItem & comma after tOut
+   end repeat
+   delete the last char of tOut
+   return tOut
+end b3kItemOut
+
+-- a thing's picture made again: its nodes go, then b3kVisualMake
+private command b3kVisualRemake pThing
+   local tHandle
    if sScene is not empty then
       repeat for each item tHandle in sNode[pThing]
          r3NodeDestroy tHandle
@@ -5910,9 +6694,65 @@ command b3kSetLook pThing, pSource, pMaterials, pScale
    end if
    put empty into sNode[pThing]
    put empty into sOwnMesh[pThing]
+   delete variable sPartNode[pThing]
    b3kVisualMake pThing
    put true into sStale
-end b3kSetLook
+end b3kVisualRemake
+
+-- every posed thing placed, once a picture: the moves of the steps put a
+-- tagged node at its body, and a part's node is untagged; a pose changed
+-- by the game a dozen times a frame is placed once, here
+private command b3kPosedSyncAll
+   local tThing
+   repeat for each key tThing in sPosed
+      b3kPoseSync tThing
+   end repeat
+end b3kPosedSyncAll
+
+-- a posed thing's nodes placed: the body, then the whole look's pose,
+-- then each part's own
+private command b3kPoseSync pThing
+   local tXf, tBq, tRoot, tRq, tRs, tP, tQ, tNode, tPart, tPose, tAt, tLook, tParts, tScale
+   if sRenderer is not "render3dxt" or sScene is empty or sNode[pThing] is empty then exit b3kPoseSync
+   put b3BodyTransform(pThing) into tXf
+   if tXf is empty then exit b3kPoseSync
+   set the itemDelimiter to comma
+   put item 4 to 7 of tXf into tBq
+   put sPose[pThing] into tRoot
+   if tRoot is empty then put "0,0,0,0,0,0,1,1,1,1" into tRoot
+   put item 4 to 7 of tRoot into tRq
+   put item 8 to 10 of tRoot into tRs
+   -- the look's own node (not a part): the root pose alone
+   put empty into tParts
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] & comma after tParts
+   end repeat
+   put b3kNum(sLookScale[pThing], b3kNum(sScale[pThing], 1)) into tScale
+   put b3kQuatTurn(tBq, item 1 of tRoot, item 2 of tRoot, item 3 of tRoot) into tP
+   put b3kQuatMul(tBq, tRq) into tQ
+   repeat for each item tNode in sNode[pThing]
+      if (comma & tParts) contains (comma & tNode & comma) then next repeat
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      if sLookKey[pThing] is not empty or sPose[pThing] is not empty then
+         r3NodeSetScale tNode, tScale * item 1 of tRs, tScale * item 2 of tRs, tScale * item 3 of tRs
+      end if
+   end repeat
+   -- each part: its place stretched and turned by the root pose, then the
+   -- body's turn; its turn the body's, the root's and its own
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] into tNode
+      put sPartPose[pThing][tPart] into tPose
+      if tPose is empty then put "0,0,0,0,0,0,1,1,1,1" into tPose
+      put b3kQuatTurn(tRq, item 1 of tPose * item 1 of tRs, item 2 of tPose * item 2 of tRs, item 3 of tPose * item 3 of tRs) into tAt
+      put b3kQuatTurn(tBq, item 1 of tRoot + item 1 of tAt, item 2 of tRoot + item 2 of tAt, item 3 of tRoot + item 3 of tAt) into tP
+      put b3kQuatMul(b3kQuatMul(tBq, tRq), item 4 to 7 of tPose) into tQ
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      put sPartScale[pThing][tPart] into tScale
+      r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
+   end repeat
+end b3kPoseSync
 
 /**
 Summary: Show or hide a thing's picture.
@@ -6518,6 +7358,14 @@ command b3kRemove pThing
    delete variable sLookMtl[pThing]
    delete variable sLookScale[pThing]
    delete variable sLookKey[pThing]
+   delete variable sPartSrc[pThing]
+   delete variable sPartMtl[pThing]
+   delete variable sPartScale[pThing]
+   delete variable sPartKey[pThing]
+   delete variable sPartNode[pThing]
+   delete variable sPartPose[pThing]
+   delete variable sPose[pThing]
+   delete variable sPosed[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]

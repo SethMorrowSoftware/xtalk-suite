@@ -153,15 +153,18 @@ Joined the suite on 2026-11-20. What has run, and where:
   pass (the game's header lists what to look at).
 - **Orb Island 1.2 and the Kit's glow, lamps and looks** (2026-11-26): the island four
   times the size, sixteen orbs, a pressure plate and vault, crumbling and turning platforms,
-  checkpoint flags, Kenney's CC0 models (`examples/models/`), `b3kSetGlow`, `b3kAddLamp`,
-  `b3kSetLook` and a coloured sun, and the game playing gamepadxt and audioxt when they are
-  loaded. On OXT-Beyond 0.2.8-dp.2.1's Linux server engine (9.7.1-BeyondEngine) with the
-  committed `x86_64-linux` libraries of all four: `tests/engine-kit.lc` passed 235 checks
-  with render3dxt and 212 without, and `tests/engine-demo.lc` 188 with render3dxt,
-  gamepadxt (a virtual pad) and audioxt (its silent device), 183 with gamepadxt and audioxt
-  but no render3dxt, 168 with box3dxt alone and 6 with no extension. In the gallery's web
+  checkpoint flags, Kenney's CC0 models from three of his kits (`examples/models/`), a
+  character animated in parts (`b3kAddLookPart`, `b3kPoseLookPart`, `b3kSetLookPose`),
+  `b3kSetGlow`, `b3kAddLamp`, `b3kSetLook` and a coloured sun, and the game playing gamepadxt
+  and audioxt when they are loaded. On OXT-Beyond 0.2.8-dp.2.1's Linux server engine
+  (9.7.1-BeyondEngine) with the committed `x86_64-linux` libraries of all four:
+  `tests/engine-kit.lc` passed 243 checks with render3dxt and 215 without, and
+  `tests/engine-demo.lc` 201 with render3dxt, gamepadxt (a virtual pad) and audioxt (its
+  silent device), 196 with gamepadxt and audioxt but no render3dxt, 186 with render3dxt
+  alone beside box3dxt, 181 with box3dxt alone and 6 with no extension. In the gallery's web
   Stack Player (web-2026.11.22, headless Chromium) it built, walked to an orb, found both
-  extensions and drew 32 pictures a second where 1.1 drew 37 to 40 on the same machine. A real gamepad, the sound heard and an IDE
+  extensions and drew 28 pictures a second where 1.1 drew 36, measured back to back on the
+  same machine. A real gamepad, the sound heard and an IDE
   window are verified statically; needs an OXT pass.
 - **On Windows, the release library** (2026-11-21): OXT-Beyond 0.2.8-dp.1's IDE on the
   maintainer's Windows PC (engine 9.7.1-BeyondEngine build 25923, x86_64), with box3dxt

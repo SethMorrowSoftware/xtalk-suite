@@ -44,15 +44,35 @@ END = '-- END GAME MODELS'
 
 # name: (source file, the box it fills as w,h,d metres, centred on the
 # origin, or None to keep its size; "uniform" keeps its proportions, fitting
-# the box's height)
+# the box's height), and optionally a dict of choices:
+#   palette  the palette picture its kit paints with (each Kenney kit has
+#            its own colormap.png; the default is the Platformer kit's)
+#   turn     degrees about y it is turned first (a wall long in x made to
+#            stand long in z)
+#   ground   a height: triangles wholly at or below it are left out (a
+#            City Builder tile's square of ground under its trees, which
+#            the island's own grass replaces)
 MODELS = [
-    ('character', 'character.glb', (None, 1.6, None), 'uniform'),
     ('flag', 'flag.glb', (None, 2.4, None), 'uniform'),
     ('platform', 'platform.glb', (3.0, 0.6, 3.0), 'box'),
     ('crumble', 'platform-falling.glb', (2.4, 0.5, 2.4), 'box'),
     ('cloud', 'cloud.glb', (7.0, 3.2, 5.0), 'box'),
     ('plate', 'platform.glb', (2.2, 0.24, 2.2), 'box'),
     ('gate', 'brick.glb', (5.0, 3.2, 0.6), 'box'),
+    ('trees', 'grass-trees-tall.glb', (3.8, 4.2, 3.8), 'box', {'ground': 0.065}),
+    ('grove', 'grass-trees.glb', (3.6, 3.4, 3.6), 'box', {'ground': 0.065}),
+    ('tuft', 'grass.glb', (0.9, 0.55, 0.9), 'box'),
+    ('isle', 'platform-grass-large-round.glb', (12.0, 1.0, 12.0), 'box'),
+    ('roundtop', 'platform-grass-large-round.glb', (3.4, 0.4, 3.4), 'box'),
+    ('lift', 'platform-medium.glb', (2.6, 0.4, 2.6), 'box'),
+    ('wall-x', 'wall-high.glb', (5.6, 3.2, 0.6), 'box', {'palette': 'colormap-fps.png'}),
+    ('wall-z', 'wall-high.glb', (0.6, 3.2, 5.6), 'box', {'palette': 'colormap-fps.png', 'turn': 90}),
+]
+# a model drawn as moving parts with its own animations (b3kAddLookPart and
+# b3kPoseLookPart): name, source, the height it fits (centred, like a
+# shape), frames a second the animations are sampled at
+PARTED = [
+    ('character', 'character.glb', 1.6, 30),
 ]
 MERGE = 26          # colours nearer than this (RGB distance) become one
 PLACES = 3          # decimals kept in the OBJ text
@@ -195,6 +215,22 @@ def triangles(path, palette):
     return out
 
 
+def chosen(tris, choice):
+    """The triangles with a MODELS entry's turn and ground applied."""
+    import math
+    out = tris
+    if 'ground' in choice:
+        out = [t for t in out if max(p[1] for p in t[0]) > choice['ground']]
+    if choice.get('turn'):
+        a = math.radians(choice['turn'])
+        c, s = math.cos(a), math.sin(a)
+
+        def turn(v):
+            return (v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c)
+        out = [([turn(p) for p in t[0]], [turn(n) for n in t[1]], t[2]) for t in out]
+    return out
+
+
 # ---------------------------------------------------------------- OBJ
 
 def num(value):
@@ -207,12 +243,16 @@ def build(fit, mode, tris):
     lo = [min(p[a] for t in tris for p in t[0]) for a in range(3)]
     hi = [max(p[a] for t in tris for p in t[0]) for a in range(3)]
     span = [max(1e-6, hi[a] - lo[a]) for a in range(3)]
-    if mode == 'uniform':
+    mid = [(lo[a] + hi[a]) / 2 for a in range(3)]
+    if isinstance(mode, tuple):
+        # a part: a set scale about its own origin, which it turns about
+        scale = [mode[1]] * 3
+        mid = [0.0, 0.0, 0.0]
+    elif mode == 'uniform':
         k = fit[1] / span[1]
         scale = [k, k, k]
     else:
         scale = [fit[a] / span[a] for a in range(3)]
-    mid = [(lo[a] + hi[a]) / 2 for a in range(3)]
     # colours, most used first, each merged into the first near one
     use = {}
     for t in tris:
@@ -254,14 +294,157 @@ def build(fit, mode, tris):
     return '\n'.join(obj) + '\n', '\n'.join(mtl) + '\n'
 
 
+# ------------------------------------------------------- parts and poses
+
+def mat_trs(t, r, s):
+    return node_matrix({'translation': t, 'rotation': r, 'scale': s})
+
+
+def quat_of(m):
+    """A rotation matrix (3 x 3, no scale) as a quaternion (x, y, z, w)."""
+    tr = m[0][0] + m[1][1] + m[2][2]
+    if tr > 0:
+        k = (tr + 1.0) ** 0.5 * 2
+        return ((m[2][1] - m[1][2]) / k, (m[0][2] - m[2][0]) / k, (m[1][0] - m[0][1]) / k, 0.25 * k)
+    if m[0][0] > m[1][1] and m[0][0] > m[2][2]:
+        k = (1.0 + m[0][0] - m[1][1] - m[2][2]) ** 0.5 * 2
+        return (0.25 * k, (m[0][1] + m[1][0]) / k, (m[0][2] + m[2][0]) / k, (m[2][1] - m[1][2]) / k)
+    if m[1][1] > m[2][2]:
+        k = (1.0 + m[1][1] - m[0][0] - m[2][2]) ** 0.5 * 2
+        return ((m[0][1] + m[1][0]) / k, 0.25 * k, (m[1][2] + m[2][1]) / k, (m[0][2] - m[2][0]) / k)
+    k = (1.0 + m[2][2] - m[0][0] - m[1][1]) ** 0.5 * 2
+    return ((m[0][2] + m[2][0]) / k, (m[1][2] + m[2][1]) / k, 0.25 * k, (m[1][0] - m[0][1]) / k)
+
+
+def euler_of(q):
+    """Degrees about x, then y, then z: the Kit's b3kQuatEuler, inverted."""
+    import math
+    x, y, z, w = q
+    rx = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
+    ry = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+    rz = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    return [math.degrees(a) for a in (rx, ry, rz)]
+
+
+def sample(times, values, at, path):
+    if at <= times[0]:
+        return list(values[0])
+    for i in range(1, len(times)):
+        if at <= times[i]:
+            f = (at - times[i - 1]) / ((times[i] - times[i - 1]) or 1)
+            a, b = values[i - 1], values[i]
+            if path == 'rotation':
+                dot = sum(a[k] * b[k] for k in range(4))
+                if dot < 0:
+                    b = [-v for v in b]
+                v = [a[k] + (b[k] - a[k]) * f for k in range(4)]
+                n = sum(c * c for c in v) ** 0.5 or 1.0
+                return [c / n for c in v]
+            return [a[k] + (b[k] - a[k]) * f for k in range(len(a))]
+    return list(values[-1])
+
+
+def parted(source, height, fps, palette):
+    """{part: (obj, mtl)} and the animation text."""
+    doc, blob = read_glb(os.path.join(SRC, source))
+    nodes = doc['nodes']
+    parent = {}
+    for i, node in enumerate(nodes):
+        for child in node.get('children', []):
+            parent[child] = i
+    rest = {i: (n.get('translation', [0, 0, 0]), n.get('rotation', [0, 0, 0, 1]), n.get('scale', [1, 1, 1]))
+            for i, n in enumerate(nodes)}
+
+    def worlds(local):
+        out = {}
+        for i in range(len(nodes)):
+            m, j = mat_trs(*local[i]), i
+            while j in parent:
+                j = parent[j]
+                m = matmul(mat_trs(*local[j]), m)
+            out[i] = m
+        return out
+
+    # each part's triangles in its own frame; the rest pose's bounds fit it
+    width, hgt, pixel = palette
+    parts, rest_world = {}, worlds(rest)
+    lo, hi = [1e9] * 3, [-1e9] * 3
+    for i, node in enumerate(nodes):
+        if 'mesh' not in node:
+            continue
+        tris = []
+        for prim in doc['meshes'][node['mesh']]['primitives']:
+            pts = accessor(doc, blob, prim['attributes']['POSITION'])
+            nrm = accessor(doc, blob, prim['attributes']['NORMAL'])
+            uvs = accessor(doc, blob, prim['attributes']['TEXCOORD_0'])
+            idx = [v[0] for v in accessor(doc, blob, prim['indices'])]
+            for t in range(0, len(idx), 3):
+                tri = idx[t:t + 3]
+                u = sum(uvs[k][0] for k in tri) / 3
+                v = sum(uvs[k][1] for k in tri) / 3
+                rgb = pixel(min(width - 1, max(0, int(u * width))), min(hgt - 1, max(0, int(v * hgt))))
+                tris.append(([tuple(pts[k]) for k in tri], [tuple(nrm[k]) for k in tri], rgb))
+                m = rest_world[i]
+                for k in tri:
+                    x, y, z = pts[k]
+                    for a in range(3):
+                        w = m[a][0] * x + m[a][1] * y + m[a][2] * z + m[a][3]
+                        lo[a], hi[a] = min(lo[a], w), max(hi[a], w)
+        parts[i] = tris
+    k = height / (hi[1] - lo[1])
+    mid = [(lo[a] + hi[a]) / 2 for a in range(3)]
+    models = {}
+    for i, tris in parts.items():
+        models[nodes[i]['name']] = build(None, ('scale', k), tris)
+    # the animations, sampled; each part's pose in the look's space
+    lines = []
+    for anim in doc.get('animations', []):
+        chans = []
+        for c in anim['channels']:
+            smp = anim['samplers'][c['sampler']]
+            times = [t[0] for t in accessor(doc, blob, smp['input'])]
+            values = accessor(doc, blob, smp['output'])
+            chans.append((c['target']['node'], c['target']['path'], times, values))
+        length = max(ch[2][-1] for ch in chans)
+        frames = max(2, int(round(length * fps)) + 1)
+        last = {}
+        lines.append('anim %s %d %s' % (anim['name'], frames, num(length)))
+        for f in range(frames):
+            at = length * f / (frames - 1)
+            local = {i: list(map(list, rest[i])) for i in rest}
+            for node, path, times, values in chans:
+                slot = {'translation': 0, 'rotation': 1, 'scale': 2}[path]
+                local[node][slot] = sample(times, values, at, path)
+            world = worlds(local)
+            for i in parts:
+                m = world[i]
+                sc = [sum(m[r][c] ** 2 for r in range(3)) ** 0.5 for c in range(3)]
+                rot = [[m[r][c] / (sc[c] or 1) for c in range(3)] for r in range(3)]
+                eu = euler_of(quat_of(rot))
+                # unwrap: each angle the nearest to the last frame's
+                prev = last.get(i)
+                if prev:
+                    eu = [e + 360 * round((p - e) / 360) for e, p in zip(eu, prev)]
+                last[i] = eu
+                pos = [(m[a][3] - mid[a]) * k for a in range(3)]
+                lines.append('%d %s %s' % (f + 1, nodes[i]['name'],
+                                           ','.join(num(v) for v in pos + eu + sc)))
+    return models, '\n'.join(lines) + '\n'
+
+
 def packed(text):
     # mtime 0: the same model always packs to the same bytes
     return base64.b64encode(gzip.compress(text.encode('ascii'), 9, mtime=0)).decode('ascii')
 
 
 def block():
-    palette = read_png(os.path.join(SRC, 'colormap.png'))
-    cache, lines = {}, []
+    palettes, cache, lines = {}, {}, []
+
+    def palette_of(name):
+        if name not in palettes:
+            palettes[name] = read_png(os.path.join(SRC, name))
+        return palettes[name]
+    palette = palette_of('colormap.png')
     lines.append(BEGIN + ': generated by box3dxt/tools/build-game-models.py from')
     lines.append('-- box3dxt/examples/models/ (Kenney, kenney.nl, CC0); rerun the tool, never edit here.')
     lines.append('-- oiModelData(name) is a model\'s OBJ text ("<name>.obj") or its materials')
@@ -270,13 +453,30 @@ def block():
     lines.append('   local tData')
     lines.append('   put empty into tData')
     lines.append('   switch pName')
-    for name, source, fit, mode in MODELS:
-        if source not in cache:
-            cache[source] = triangles(os.path.join(SRC, source), palette)
-        obj, mtl = build(fit, mode, cache[source])
+    for entry in MODELS:
+        name, source, fit, mode = entry[:4]
+        choice = entry[4] if len(entry) > 4 else {}
+        key = (source, choice.get('palette', 'colormap.png'))
+        if key not in cache:
+            cache[key] = triangles(os.path.join(SRC, source), palette_of(key[1]))
+        obj, mtl = build(fit, mode, chosen(cache[key], choice))
         for suffix, text in (('obj', obj), ('mtl', mtl)):
             data = packed(text)
             lines.append('      case "%s.%s"' % (name, suffix))
+            for at in range(0, len(data), CHUNK):
+                lines.append('         put "%s" after tData' % data[at:at + CHUNK])
+            lines.append('         break')
+    for name, source, height, fps in PARTED:
+        models, anim = parted(source, height, fps, palette)
+        texts = []
+        for part in sorted(models):
+            texts.append(('%s-%s.obj' % (name, part), models[part][0]))
+            texts.append(('%s-%s.mtl' % (name, part), models[part][1]))
+        texts.append(('%s.parts' % name, '\n'.join(sorted(models)) + '\n'))
+        texts.append(('%s.anim' % name, anim))
+        for key, text in texts:
+            data = packed(text)
+            lines.append('      case "%s"' % key)
             for at in range(0, len(data), CHUNK):
                 lines.append('         put "%s" after tData' % data[at:at + CHUNK])
             lines.append('         break')
@@ -296,7 +496,7 @@ def main():
     b = game.index('\n', b) + 1
     want = game[:a] + block() + game[b:]
     if want == game:
-        print('build-game-models: OK (%d model(s) carried, each matching examples/models/)' % len(MODELS))
+        print('build-game-models: OK (%d model(s) and %d in parts carried, each matching examples/models/)' % (len(MODELS), len(PARTED)))
         return 0
     if check:
         print('build-game-models: STALE: the GAME MODELS block in %s is not what examples/models/ makes;'

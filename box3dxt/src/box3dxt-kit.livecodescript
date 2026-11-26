@@ -64,7 +64,10 @@
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
 --         b3kSetGlow thing,color / b3kGlow(thing) /
---         b3kSetLook thing,objTextOrPath[,mtlText,scale]
+--         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
+--         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
+--         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
+--         b3kSetLookPose thing,x,y,z[,rx,ry,rz,sx,sy,sz]
 -- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
 --         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -149,6 +152,11 @@ local sSunColor, sGlow, sLamp, sLampR3, sLampCount
 -- a model drawn in place of a thing's own shape (b3kSetLook): its OBJ text
 -- or file, its material text, its scale, and the key of its shared mesh
 local sLook, sLookMtl, sLookScale, sLookKey
+-- a look's moving parts (b3kAddLookPart) and poses (b3kPoseLookPart,
+-- b3kSetLookPose): [thing][part] -> source, materials, scale, mesh key,
+-- node, pose; [thing] -> the whole look's pose; [thing] -> true when posed
+local sPartSrc, sPartMtl, sPartScale, sPartKey, sPartNode, sPartPose
+local sPose, sPosed
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -812,6 +820,14 @@ private command b3kTablesReset
    put empty into sLookMtl
    put empty into sLookScale
    put empty into sLookKey
+   put empty into sPartSrc
+   put empty into sPartMtl
+   put empty into sPartScale
+   put empty into sPartKey
+   put empty into sPartNode
+   put empty into sPartPose
+   put empty into sPose
+   put empty into sPosed
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -1262,6 +1278,7 @@ private command b3kSceneFree
    put empty into sScene
    put empty into sSun
    put empty into sLampR3
+   put empty into sPartNode
    put empty into sMeshes
    put empty into sMats
    put empty into sNode
@@ -1567,6 +1584,7 @@ command b3kDraw
    put false into sStale
    put false into sBegun
    if sRenderer is "render3dxt" then
+      b3kPosedSyncAll
       b3kShow r3SceneRender(sScene, sViewW, sViewH)
    else if sRenderer is "box3dxt" then
       b3kOwnRender
@@ -1607,6 +1625,7 @@ private command b3kNodeSync pThing
    repeat for each item tNode in sNode[pThing]
       r3NodeSetTransformText tNode, tXf
    end repeat
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kNodeSync
 
 -- the frame's drawing: with render3dxt, show the picture begun last frame
@@ -1619,6 +1638,7 @@ private command b3kFrameDraw
          put false into sBegun
          b3kShow r3SceneFrame(sScene)
       end if
+      b3kPosedSyncAll
       if sStale is true then
          put false into sStale
          put (r3SceneRenderBegin(sScene, sViewW, sViewH) > 0) into sBegun
@@ -2523,6 +2543,11 @@ private command b3kVisualMake pThing
    set the itemDelimiter to comma
    put sDims[pThing] into tD
    put empty into tMesh
+   -- a thing with parts (b3kAddLookPart) and no look draws its parts alone
+   if sPartSrc[pThing] is an array and sLookKey[pThing] is empty then
+      b3kPartsMake pThing
+      exit b3kVisualMake
+   end if
    -- a look (b3kSetLook) is drawn instead of the shape: one mesh for every
    -- thing that wears the same model, kept with the shapes' meshes
    if sLookKey[pThing] is not empty then
@@ -2594,7 +2619,40 @@ private command b3kVisualMake pThing
    r3NodeSetTag tNode, pThing
    b3kVisualLook pThing
    if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   if sPartSrc[pThing] is an array then b3kPartsMake pThing
+   if sPosed[pThing] is true then b3kPoseSync pThing
 end b3kVisualMake
+
+-- a thing's parts as nodes of their own, untagged (the moves of a step
+-- leave them alone: b3kPoseSync places them), listed in sNode as well so
+-- visibility and removal reach them
+private command b3kPartsMake pThing
+   local tPart, tKey, tNode
+   repeat for each key tPart in sPartSrc[pThing]
+      if sPartNode[pThing][tPart] is not empty then next repeat
+      put sPartKey[pThing][tPart] into tKey
+      if sMeshes[tKey] is empty then
+         if sPartSrc[pThing][tPart] contains return then
+            get r3MeshParseObj(sPartSrc[pThing][tPart], sPartMtl[pThing][tPart])
+         else
+            get r3MeshLoadObj(sPartSrc[pThing][tPart])
+         end if
+         if it is a number and it > 0 then put it into sMeshes[tKey]
+      end if
+      if sMeshes[tKey] is empty then next repeat
+      put r3NodeCreate(sScene, sMeshes[tKey]) into tNode
+      if tNode is not a number or tNode <= 0 then next repeat
+      put tNode into sPartNode[pThing][tPart]
+      if sNode[pThing] is empty then
+         put tNode into sNode[pThing]
+      else
+         put comma & tNode after sNode[pThing]
+      end if
+      if sVisible[pThing] is false or b3BodyIsEnabled(pThing) is false then r3NodeSetVisible tNode, false
+   end repeat
+   put true into sPosed[pThing]
+   b3kPoseSync pThing
+end b3kPartsMake
 
 -- the node's material: a checker, a picture file, the model's own, or a
 -- plain colour. A thing's old checker or texture material is freed first.
@@ -2610,8 +2668,9 @@ private command b3kVisualLook pThing
    put empty into sOwnMat[pThing]
    put empty into sOwnTex[pThing]
    put empty into tMat
-   -- a look (b3kSetLook) wears the model's own materials
-   if sLookKey[pThing] is not empty then
+   -- a look (b3kSetLook) and parts (b3kAddLookPart) wear their models' own
+   -- materials
+   if sLookKey[pThing] is not empty or sPartSrc[pThing] is an array then
       put true into sStale
       exit b3kVisualLook
    end if
@@ -3612,7 +3671,221 @@ command b3kSetLook pThing, pSource, pMaterials, pScale
       put max(0.0001, b3kNum(pScale, 1)) into sLookScale[pThing]
       put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sLookKey[pThing]
    end if
-   -- a new picture: the old node and any mesh it alone owned go first
+   -- a new picture: the old nodes and any mesh they alone owned go first
+   b3kVisualRemake pThing
+end b3kSetLook
+
+/**
+Summary: Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
+
+pThing: The thing.
+
+pPart: The part's name, any word.
+
+pSource: The part's model: OBJ text, or the full path of a .obj file. Its origin is the point it turns about (a hip, a shoulder); empty takes the part away.
+
+pMaterials: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
+
+pScale: A size multiplier; empty means 1.
+
+Example:
+b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
+
+Description:
+Parts are drawn with the thing, and turn and move with it; place and
+turn each one inside the thing with <b3kPoseLookPart>. A thing with parts
+and no <b3kSetLook> draws its parts instead of its shape. Only the
+picture: the thing collides as its shape. Things that share a part's
+model share one copy of it. box3dxt's renderer draws the shape.
+
+References: b3kPoseLookPart (handler), b3kSetLookPose (handler), b3kSetLook (handler)
+*/
+command b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale
+   local tNode
+   if sKind[pThing] is empty or pPart is empty then exit b3kAddLookPart
+   -- the old node, if the part was there
+   put sPartNode[pThing][pPart] into tNode
+   if tNode is not empty then
+      if sScene is not empty then r3NodeDestroy tNode
+      delete variable sPartNode[pThing][pPart]
+      put b3kItemOut(sNode[pThing], tNode) into sNode[pThing]
+   end if
+   if pSource is empty then
+      delete variable sPartSrc[pThing][pPart]
+      delete variable sPartMtl[pThing][pPart]
+      delete variable sPartScale[pThing][pPart]
+      delete variable sPartKey[pThing][pPart]
+      delete variable sPartPose[pThing][pPart]
+      if sPartSrc[pThing] is not an array then
+         -- no parts left: the shape (or the look) is drawn as before
+         delete variable sPartSrc[pThing]
+         b3kVisualRemake pThing
+      end if
+      put true into sStale
+      exit b3kAddLookPart
+   end if
+   put pSource into sPartSrc[pThing][pPart]
+   put pMaterials into sPartMtl[pThing][pPart]
+   put max(0.0001, b3kNum(pScale, 1)) into sPartScale[pThing][pPart]
+   put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sPartKey[pThing][pPart]
+   put true into sPosed[pThing]
+   -- the first part takes the place of the shape's picture
+   if the number of lines of the keys of sPartSrc[pThing] is 1 and sLookKey[pThing] is empty then
+      b3kVisualRemake pThing
+   else if sScene is not empty and sNode[pThing] is not empty then
+      b3kPartsMake pThing
+   end if
+   put true into sStale
+end b3kAddLookPart
+
+/**
+Summary: Place and turn one part of a thing's look.
+
+pThing: The thing.
+
+pPart: The part's name, from <b3kAddLookPart>.
+
+pX: Where the part's origin sits, in metres across the thing (its own x); empty means 0.
+
+pY: Up the thing; empty means 0.
+
+pZ: Along the thing, forward being +z; empty means 0.
+
+pRx: Degrees about the thing's x (a leg swinging forward and back); empty means 0.
+
+pRy: Degrees about its y (turning); empty means 0.
+
+pRz: Degrees about its z (an arm raised sideways); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up; empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kPoseLookPart tHero, "leg left", 0.15, -0.5, 0, 30 * sin(tPhase)
+
+Description:
+The turn is made about x, then y, then z. Call it as often as the part
+moves, every frame for a walk: it only remembers the pose, and the parts
+are placed once when the picture is drawn.
+
+References: b3kAddLookPart (handler), b3kSetLookPose (handler)
+*/
+command b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sPartSrc[pThing][pPart] is empty then exit b3kPoseLookPart
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPartPose[pThing][pPart]
+   put true into sStale
+end b3kPoseLookPart
+
+/**
+Summary: Move, turn and stretch a thing's whole look within it (render3dxt only).
+
+pThing: The thing.
+
+pX: Metres across the thing; empty means 0.
+
+pY: Metres up it; empty means 0.
+
+pZ: Metres along it; empty means 0.
+
+pRx: Degrees about its x (a lean forward); empty means 0.
+
+pRy: Degrees about its y; empty means 0.
+
+pRz: Degrees about its z (a lean to the side); empty means 0.
+
+pSx: A stretch across; empty means 1.
+
+pSy: A stretch up (below 1 squashes); empty means 1.
+
+pSz: A stretch along; empty means 1.
+
+Example:
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
+
+Description:
+For bounce and character: a squash on landing, a stretch in a jump, a
+lean into a run, a bob when still. The look and its parts move together;
+the thing collides as before. With no pose given, or every value empty,
+the look sits as it was made.
+
+References: b3kSetLook (handler), b3kPoseLookPart (handler)
+*/
+command b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   if sKind[pThing] is empty then exit b3kSetLookPose
+   put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPose[pThing]
+   put true into sPosed[pThing]
+   put true into sStale
+end b3kSetLookPose
+
+-- "x,y,z,qx,qy,qz,qw,sx,sy,sz" from a place, degrees and stretches
+private function b3kPoseText pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
+   return b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & comma & \
+         b3kQuatEuler(b3kNum(pRx, 0), b3kNum(pRy, 0), b3kNum(pRz, 0)) & comma & \
+         b3kNum(pSx, 1) & comma & b3kNum(pSy, 1) & comma & b3kNum(pSz, 1)
+end b3kPoseText
+
+-- a turn about x, then y, then z (degrees) as a quaternion "x,y,z,w"
+private function b3kQuatEuler pRx, pRy, pRz
+   local tCr, tSr, tCp, tSp, tCy, tSy
+   put cos(pRx * pi / 360) into tCr
+   put sin(pRx * pi / 360) into tSr
+   put cos(pRy * pi / 360) into tCp
+   put sin(pRy * pi / 360) into tSp
+   put cos(pRz * pi / 360) into tCy
+   put sin(pRz * pi / 360) into tSy
+   return (tSr * tCp * tCy - tCr * tSp * tSy) & comma & (tCr * tSp * tCy + tSr * tCp * tSy) & comma & \
+         (tCr * tCp * tSy - tSr * tSp * tCy) & comma & (tCr * tCp * tCy + tSr * tSp * tSy)
+end b3kQuatEuler
+
+-- the product of two quaternions "x,y,z,w": pA turned by pB first
+private function b3kQuatMul pA, pB
+   local tAx, tAy, tAz, tAw, tBx, tBy, tBz, tBw
+   set the itemDelimiter to comma
+   put item 1 of pA into tAx
+   put item 2 of pA into tAy
+   put item 3 of pA into tAz
+   put item 4 of pA into tAw
+   put item 1 of pB into tBx
+   put item 2 of pB into tBy
+   put item 3 of pB into tBz
+   put item 4 of pB into tBw
+   return (tAw * tBx + tAx * tBw + tAy * tBz - tAz * tBy) & comma & (tAw * tBy - tAx * tBz + tAy * tBw + tAz * tBx) & comma & \
+         (tAw * tBz + tAx * tBy - tAy * tBx + tAz * tBw) & comma & (tAw * tBw - tAx * tBx - tAy * tBy - tAz * tBz)
+end b3kQuatMul
+
+-- the point "x,y,z" turned by the quaternion pQ
+private function b3kQuatTurn pQ, pX, pY, pZ
+   local tQX, tQY, tQZ, tQW, tTX, tTY, tTZ
+   set the itemDelimiter to comma
+   put item 1 of pQ into tQX
+   put item 2 of pQ into tQY
+   put item 3 of pQ into tQZ
+   put item 4 of pQ into tQW
+   -- t = 2 (q x v); v' = v + w t + q x t
+   put 2 * (tQY * pZ - tQZ * pY) into tTX
+   put 2 * (tQZ * pX - tQX * pZ) into tTY
+   put 2 * (tQX * pY - tQY * pX) into tTZ
+   return (pX + tQW * tTX + tQY * tTZ - tQZ * tTY) & comma & (pY + tQW * tTY + tQZ * tTX - tQX * tTZ) & comma & \
+         (pZ + tQW * tTZ + tQX * tTY - tQY * tTX)
+end b3kQuatTurn
+
+-- a list without one item
+private function b3kItemOut pList, pItem
+   local tItem, tOut
+   put empty into tOut
+   repeat for each item tItem in pList
+      if tItem is not pItem then put tItem & comma after tOut
+   end repeat
+   delete the last char of tOut
+   return tOut
+end b3kItemOut
+
+-- a thing's picture made again: its nodes go, then b3kVisualMake
+private command b3kVisualRemake pThing
+   local tHandle
    if sScene is not empty then
       repeat for each item tHandle in sNode[pThing]
          r3NodeDestroy tHandle
@@ -3623,9 +3896,65 @@ command b3kSetLook pThing, pSource, pMaterials, pScale
    end if
    put empty into sNode[pThing]
    put empty into sOwnMesh[pThing]
+   delete variable sPartNode[pThing]
    b3kVisualMake pThing
    put true into sStale
-end b3kSetLook
+end b3kVisualRemake
+
+-- every posed thing placed, once a picture: the moves of the steps put a
+-- tagged node at its body, and a part's node is untagged; a pose changed
+-- by the game a dozen times a frame is placed once, here
+private command b3kPosedSyncAll
+   local tThing
+   repeat for each key tThing in sPosed
+      b3kPoseSync tThing
+   end repeat
+end b3kPosedSyncAll
+
+-- a posed thing's nodes placed: the body, then the whole look's pose,
+-- then each part's own
+private command b3kPoseSync pThing
+   local tXf, tBq, tRoot, tRq, tRs, tP, tQ, tNode, tPart, tPose, tAt, tLook, tParts, tScale
+   if sRenderer is not "render3dxt" or sScene is empty or sNode[pThing] is empty then exit b3kPoseSync
+   put b3BodyTransform(pThing) into tXf
+   if tXf is empty then exit b3kPoseSync
+   set the itemDelimiter to comma
+   put item 4 to 7 of tXf into tBq
+   put sPose[pThing] into tRoot
+   if tRoot is empty then put "0,0,0,0,0,0,1,1,1,1" into tRoot
+   put item 4 to 7 of tRoot into tRq
+   put item 8 to 10 of tRoot into tRs
+   -- the look's own node (not a part): the root pose alone
+   put empty into tParts
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] & comma after tParts
+   end repeat
+   put b3kNum(sLookScale[pThing], b3kNum(sScale[pThing], 1)) into tScale
+   put b3kQuatTurn(tBq, item 1 of tRoot, item 2 of tRoot, item 3 of tRoot) into tP
+   put b3kQuatMul(tBq, tRq) into tQ
+   repeat for each item tNode in sNode[pThing]
+      if (comma & tParts) contains (comma & tNode & comma) then next repeat
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      if sLookKey[pThing] is not empty or sPose[pThing] is not empty then
+         r3NodeSetScale tNode, tScale * item 1 of tRs, tScale * item 2 of tRs, tScale * item 3 of tRs
+      end if
+   end repeat
+   -- each part: its place stretched and turned by the root pose, then the
+   -- body's turn; its turn the body's, the root's and its own
+   repeat for each key tPart in sPartNode[pThing]
+      put sPartNode[pThing][tPart] into tNode
+      put sPartPose[pThing][tPart] into tPose
+      if tPose is empty then put "0,0,0,0,0,0,1,1,1,1" into tPose
+      put b3kQuatTurn(tRq, item 1 of tPose * item 1 of tRs, item 2 of tPose * item 2 of tRs, item 3 of tPose * item 3 of tRs) into tAt
+      put b3kQuatTurn(tBq, item 1 of tRoot + item 1 of tAt, item 2 of tRoot + item 2 of tAt, item 3 of tRoot + item 3 of tAt) into tP
+      put b3kQuatMul(b3kQuatMul(tBq, tRq), item 4 to 7 of tPose) into tQ
+      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
+            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      put sPartScale[pThing][tPart] into tScale
+      r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
+   end repeat
+end b3kPoseSync
 
 /**
 Summary: Show or hide a thing's picture.
@@ -4231,6 +4560,14 @@ command b3kRemove pThing
    delete variable sLookMtl[pThing]
    delete variable sLookScale[pThing]
    delete variable sLookKey[pThing]
+   delete variable sPartSrc[pThing]
+   delete variable sPartMtl[pThing]
+   delete variable sPartScale[pThing]
+   delete variable sPartKey[pThing]
+   delete variable sPartNode[pThing]
+   delete variable sPartPose[pThing]
+   delete variable sPose[pThing]
+   delete variable sPosed[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]

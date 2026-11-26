@@ -1,13 +1,18 @@
 # Orb Island's models
 
-The game's character, checkpoint flag, platforms, crumbling platforms,
-pressure plates, gate and clouds are built from these models by
-[Kenney](https://kenney.nl). They are from his
-[Starter Kit 3D Platformer](https://github.com/KenneyNL/Starter-Kit-3D-Platformer)
-(commit 3fa8a04b1c01ab23db43123d4ce814a34c3fc7f0). The kit's README says
-its 3D models are licensed
+The game's character, checkpoint flags, platforms, gate, clouds, trees,
+grass, round isles, lift pads and vault walls are built from these models
+by [Kenney](https://kenney.nl), from three of his starter kits:
+
+| Kit | Commit |
+|---|---|
+| [Starter Kit 3D Platformer](https://github.com/KenneyNL/Starter-Kit-3D-Platformer) | 3fa8a04b1c01ab23db43123d4ce814a34c3fc7f0 |
+| [Starter Kit City Builder](https://github.com/KenneyNL/Starter-Kit-City-Builder) | 4535092b740b378b700efd9df9e27a631815b84a |
+| [Starter Kit FPS](https://github.com/KenneyNL/Starter-Kit-FPS) | 185fd2326d74a5cf858cffc616f87cf9696f9cc0 |
+
+Each kit's README says its 3D models are licensed
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public
-domain). The kit's code is MIT; none of its code is used here.
+domain). The kits' code is MIT; none of their code is used here.
 
 | File | Used as |
 |---|---|
@@ -17,7 +22,13 @@ domain). The kit's code is MIT; none of its code is used here.
 | `platform-falling.glb` | the crumbling platforms |
 | `cloud.glb` | the clouds |
 | `brick.glb` | the gate the plates open |
-| `colormap.png` | the palette every model takes its colours from |
+| `grass-trees-tall.glb`, `grass-trees.glb` | the stands of trees (City Builder; their square of ground left out) |
+| `grass.glb` | the grass tufts |
+| `platform-grass-large-round.glb` | the sky isle, the east islet and the floating platform |
+| `platform-medium.glb` | the two lifts |
+| `wall-high.glb` | the vault's walls (FPS) |
+| `colormap.png` | the palette the Platformer and City Builder models take their colours from (the two kits share it) |
+| `colormap-fps.png` | the FPS kit's palette, renamed from its `colormap.png` |
 
 The game is one paste-and-run file that also plays in a web page, so it
 cannot load these files. `tools/build-game-models.py` turns them into OBJ

@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 175 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 178 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -67,7 +67,10 @@ SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
         b3kSetGlow thing,color / b3kGlow(thing) /
-        b3kSetLook thing,objTextOrPath[,mtlText,scale]
+        b3kSetLook thing,objTextOrPath[,mtlText,scale] /
+        b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
+        b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
+        b3kSetLookPose thing,x,y,z[,rx,ry,rz,sx,sy,sz]
 LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
         b3kRemoveLamp lamp / b3kLamps()
 MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
@@ -1764,6 +1767,77 @@ b3kSetLook tPlatform, tPlatformObj, tPlatformMtl
 ```
 
 See also: [`b3kSpawnModel`](#b3kspawnmodel), [`b3kAddStaticModel`](#b3kaddstaticmodel), [`b3kSetColor`](#b3ksetcolor)
+
+### `b3kAddLookPart`
+
+`b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale`
+
+Give a thing's look a moving part, such as a leg or an arm (render3dxt only).
+
+- `pThing`: The thing.
+- `pPart`: The part's name, any word.
+- `pSource`: The part's model: OBJ text, or the full path of a .obj file. Its origin is the point it turns about (a hip, a shoulder); empty takes the part away.
+- `pMaterials`: The text of the part's material (.mtl) file, for OBJ text; empty leaves it white.
+- `pScale`: A size multiplier; empty means 1.
+
+Parts are drawn with the thing, and turn and move with it; place and turn each one inside the thing with [`b3kPoseLookPart`](#b3kposelookpart). A thing with parts and no [`b3kSetLook`](#b3ksetlook) draws its parts instead of its shape. Only the picture: the thing collides as its shape. Things that share a part's model share one copy of it. box3dxt's renderer draws the shape.
+
+```
+b3kAddLookPart tHero, "leg left", tLegObj, tLegMtl
+```
+
+See also: [`b3kPoseLookPart`](#b3kposelookpart), [`b3kSetLookPose`](#b3ksetlookpose), [`b3kSetLook`](#b3ksetlook)
+
+### `b3kPoseLookPart`
+
+`b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz`
+
+Place and turn one part of a thing's look.
+
+- `pThing`: The thing.
+- `pPart`: The part's name, from [`b3kAddLookPart`](#b3kaddlookpart).
+- `pX`: Where the part's origin sits, in metres across the thing (its own x); empty means 0.
+- `pY`: Up the thing; empty means 0.
+- `pZ`: Along the thing, forward being +z; empty means 0.
+- `pRx`: Degrees about the thing's x (a leg swinging forward and back); empty means 0.
+- `pRy`: Degrees about its y (turning); empty means 0.
+- `pRz`: Degrees about its z (an arm raised sideways); empty means 0.
+- `pSx`: A stretch across; empty means 1.
+- `pSy`: A stretch up; empty means 1.
+- `pSz`: A stretch along; empty means 1.
+
+The turn is made about x, then y, then z. Call it as often as the part moves, every frame for a walk: it only remembers the pose, and the parts are placed once when the picture is drawn.
+
+```
+b3kPoseLookPart tHero, "leg left", 0.15, -0.5, 0, 30 * sin(tPhase)
+```
+
+See also: [`b3kAddLookPart`](#b3kaddlookpart), [`b3kSetLookPose`](#b3ksetlookpose)
+
+### `b3kSetLookPose`
+
+`b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz`
+
+Move, turn and stretch a thing's whole look within it (render3dxt only).
+
+- `pThing`: The thing.
+- `pX`: Metres across the thing; empty means 0.
+- `pY`: Metres up it; empty means 0.
+- `pZ`: Metres along it; empty means 0.
+- `pRx`: Degrees about its x (a lean forward); empty means 0.
+- `pRy`: Degrees about its y; empty means 0.
+- `pRz`: Degrees about its z (a lean to the side); empty means 0.
+- `pSx`: A stretch across; empty means 1.
+- `pSy`: A stretch up (below 1 squashes); empty means 1.
+- `pSz`: A stretch along; empty means 1.
+
+For bounce and character: a squash on landing, a stretch in a jump, a lean into a run, a bob when still. The look and its parts move together; the thing collides as before. With no pose given, or every value empty, the look sits as it was made.
+
+```
+b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
+```
+
+See also: [`b3kSetLook`](#b3ksetlook), [`b3kPoseLookPart`](#b3kposelookpart)
 
 ### `b3kSetVisible`
 

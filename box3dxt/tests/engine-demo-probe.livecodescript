@@ -121,6 +121,8 @@ command prRunAll pR3, pB3, pGp, pAu
    prButtonsAndKeys
    prGamepad pGp
    prPlatformer
+   prLand
+   prMotion
    prTiming pR3
    prCheck "no frame of the game threw", b3kFrameError() is empty, prLine(b3kFrameError())
    prClose
@@ -206,8 +208,8 @@ command prBuild pR3
       prCheck "the island has its orb " & tName, b3kThingNamed("orb " & tName) is not empty, tName
    end repeat
    put b3kThingCount() into tCount
-   prCheck "the island is 175 things with the player", tCount is 175, tCount
-   prCheck "C may drop sixty more", oiMaxThings() is 234, oiMaxThings()
+   prCheck "the island is 181 things with the player", tCount is 181, tCount
+   prCheck "C may drop sixty more", oiMaxThings() is 239, oiMaxThings()
    prCheck "the player stands at the start", b3kPlayer() is not empty and \
          prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 22, 0.01), b3kPosition(b3kPlayer())
    prCheck "the player walks faster than the Kit's default", b3kPlayerGet("moveSpeed") is 6.5, b3kPlayerGet("moveSpeed")
@@ -424,13 +426,13 @@ command prButtonsAndKeys
    prCheck "and ticks again", the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
    dispatch "keyDown" to stack "OrbIsland" with "r"
-   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 175 and b3kIsRunning() is true, \
+   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 181 and b3kIsRunning() is true, \
          prField("oiScore") && b3kThingCount() && b3kIsRunning()
    prCheck "with the clock and falls at zero", prField("oiTime") is "Time  0.0 s      Falls  0", prField("oiTime")
    b3kPause
    prSteps 30
    dispatch "mouseUp" to button "oiRestart" of card 1 of stack "OrbIsland" with 1
-   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 175, \
+   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 181, \
          prField("oiScore") && b3kThingCount()
    b3kPause
    dispatch "keyDown" to stack "OrbIsland" with "a"
@@ -577,6 +579,60 @@ command prPlatformer
    b3kPlayerRespawn 0, 1, 22
    prSteps 30
 end prPlatformer
+
+-- Kenney's land pieces: stands of trees the player bumps into, grass
+-- tufts walked through, and round isles that are round underfoot too
+command prLand
+   local tHit, tTuft, tIsle
+   put b3kRayHit(-14, 1.5, 25, 10, 0, 0) into tHit
+   prCheck "a stand of trees stops what meets it", tHit is not empty and item 1 of b3kHitPoint() > -11 \
+         and item 1 of b3kHitPoint() < -9, b3kHitPoint()
+   put b3kThingNamed("tuft") into tTuft
+   prCheck "twenty-four grass tufts, which only show", the number of lines of oiTufts() is 24 and b3kKind(tTuft) is "sensor" \
+         and b3kIsVisible(tTuft), b3kKind(tTuft)
+   put b3kThingNamed("sky isle") into tIsle
+   prCheck "the sky isle is there", tIsle is not empty, tIsle
+   b3kPlayerRespawn 0, 5.6, -37.4
+   prSteps 60
+   prCheck "its rim holds the player up", prNear(b3kY(b3kPlayer()), 5.3, 0.3), b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 5.3, 5.6, -48.3
+   prSteps 60
+   prCheck "it is round: where a square isle's corner was, the player falls", b3kY(b3kPlayer()) < 3, b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 49.5, 1, 3.2
+   prSteps 60
+   prCheck "the east islet is round and holds the player near its rim", b3kY(b3kPlayer()) > 0.5, b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prLand
+
+-- the character's animations, its shadow and its dust
+command prMotion
+   local tShadow, tPlayer, tDust
+   put b3kPlayer() into tPlayer
+   prCheck "standing still, the character idles", oiHeroAct() is "idle", oiHeroAct()
+   b3kInputInject "w"
+   prSteps 30
+   prCheck "walking, it walks", oiHeroAct() is "walk", oiHeroAct()
+   b3kInputInject empty
+   prSteps 40
+   prCheck "and idles again when stopped", oiHeroAct() is "idle", oiHeroAct()
+   put b3kThingNamed("shadow") into tShadow
+   prCheck "a shadow lies under the character", tShadow is not empty and prNear(b3kX(tShadow), b3kX(tPlayer), 0.2) \
+         and prNear(b3kZ(tShadow), b3kZ(tPlayer), 0.2) and b3kY(tShadow) < 0.2, b3kPosition(tShadow) && b3kPosition(tPlayer)
+   b3kPlayerRespawn 0, 4, 18
+   prSteps 6
+   prCheck "in the air, it jumps", oiHeroAct() is "jump", oiHeroAct()
+   put 0 into tDust
+   repeat 60 times
+      prSteps 1
+      put max(tDust, oiDustCount()) into tDust
+   end repeat
+   prCheck "and lands in a puff of dust", tDust > 0, tDust
+   prSteps 40
+   prCheck "the dust settles", oiDustCount() is 0, oiDustCount()
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prMotion
 
 -- a found orb bursts into eight sparks that are gone in a second and a half
 command prSparks
