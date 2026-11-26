@@ -42,7 +42,7 @@
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
 --         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
---         b3kSetBackground color / b3kSetLight dx,dy,dz / b3kSetAmbient color /
+--         b3kSetBackground color / b3kSetLight dx,dy,dz[,color] / b3kSetAmbient color /
 --         b3kSetFog color,near,far / b3kSetSmooth 1..4 / b3kSetRenderMode mode /
 --         b3kDraw / b3kSync
 -- CAMERA  b3kCamOrbit yaw,pitch,dist[,tx,ty,tz] / b3kCamOrbitBy dYaw,dPitch /
@@ -62,7 +62,10 @@
 --         b3kIsGliding(thing)
 -- SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
---         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing)
+--         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
+--         b3kSetGlow thing,color / b3kGlow(thing)
+-- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
+--         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
 -- BODY    b3kSetType thing,"static"|"kinematic"|"dynamic" / b3kType(thing) /
 --         b3kSetGravityScale thing,s / b3kSetDamping thing,lin[,ang] /
@@ -139,6 +142,9 @@ local sGround, sGroundSize, sGroundY
 local sView, sViewW, sViewH, sRenderer, sWant, sStale, sBegun
 local sScene, sSun, sMeshes, sMats
 local sBg, sAmbient, sLight, sFog, sSmooth, sMode
+-- the sun's colour, each thing's glow, and the lamps: sLamp[n] is
+-- "x,y,z;r,g,b;intensity;range" and sLampR3[n] its render3dxt light
+local sSunColor, sGlow, sLamp, sLampR3, sLampCount
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -745,6 +751,10 @@ command b3kClear
    repeat for each line tThing in tAll
       b3kRemove tThing
    end repeat
+   put the keys of sLamp into tAll
+   repeat for each line tThing in tAll
+      b3kRemoveLamp tThing
+   end repeat
    b3kTablesReset
    put true into sStale
 end b3kClear
@@ -790,6 +800,7 @@ private command b3kTablesReset
    put empty into sOwnMat
    put empty into sOwnTex
    put empty into sChecker
+   put empty into sGlow
    put empty into sTexPath
    put empty into sModel
    put empty into sModelPath
@@ -805,6 +816,11 @@ private command b3kTablesReset
    put empty into sPlayer
    put empty into sCamFollow
    put empty into sEvents
+   -- the lamps go with the things (b3kClear destroys their render3dxt
+   -- lights first; b3kTeardown's scene took them with it)
+   put empty into sLamp
+   put empty into sLampR3
+   put 0 into sLampCount
 end b3kTablesReset
 
 -- =====================================================================
@@ -1170,6 +1186,9 @@ private command b3kSceneMake
    repeat for each key tThing in sKind
       b3kVisualMake tThing
    end repeat
+   repeat for each key tThing in sLamp
+      b3kLampMake tThing
+   end repeat
 end b3kSceneMake
 
 -- the scene's background, ambient light, sun, fog and smoothing
@@ -1194,11 +1213,13 @@ private command b3kSceneLook
    if sSun is not empty then
       if not r3LightIsValid(sSun) then put empty into sSun
    end if
+   if sSunColor is empty then put "255,248,236" into sSunColor
    if sSun is empty then
-      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, 255, 248, 236, 1) into sSun
+      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, \
+            item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1) into sSun
    else
       r3LightSetDirection sSun, item 1 of sLight, item 2 of sLight, item 3 of sLight
-      r3LightSetColor sSun, 255, 248, 236, 1
+      r3LightSetColor sSun, item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1
    end if
    if sFog is not empty then
       r3SceneSetFog sScene, item 1 of sFog, item 2 of sFog, item 3 of sFog, item 4 of sFog, item 5 of sFog
@@ -1232,6 +1253,7 @@ private command b3kSceneFree
    end if
    put empty into sScene
    put empty into sSun
+   put empty into sLampR3
    put empty into sMeshes
    put empty into sMats
    put empty into sNode
@@ -1266,17 +1288,26 @@ pDy: The y of the direction; negative shines down.
 
 pDz: The z of the direction.
 
+pColor: The sunlight's colour (render3dxt only); empty keeps it as it
+is. It starts a warm white, "255,248,236".
+
 Example:
 b3kSetLight -0.4, -1, -0.3
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"   -- a low evening sun
 
 Description:
 Both renderers light from this direction; a surface facing away keeps a
-dim shade, so nothing goes black.
+dim shade, so nothing goes black. box3dxt's renderer lights in white.
 
 References: b3kSetAmbient (handler)
 */
-command b3kSetLight pDx, pDy, pDz
-   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then exit b3kSetLight
+command b3kSetLight pDx, pDy, pDz, pColor
+   if pColor is not empty then put b3kRGB(pColor, "255,248,236") into sSunColor
+   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then
+      b3kSceneLook
+      put true into sStale
+      exit b3kSetLight
+   end if
    put b3kNum(pDx, 0) & comma & b3kNum(pDy, -1) & comma & b3kNum(pDz, 0) into sLight
    b3kSceneLook
    put true into sStale
@@ -1369,6 +1400,143 @@ command b3kSetRenderMode pMode
    end switch
    put true into sStale
 end b3kSetRenderMode
+
+/**
+Summary: Hang a lamp in the world: a light that shines from a point (render3dxt only).
+
+pX: The x of the lamp.
+
+pY: The y of the lamp.
+
+pZ: The z of the lamp.
+
+pColor: Its colour; empty is a warm "255,214,150".
+
+pRange: How far its light reaches, in metres; empty means 8.
+
+pIntensity: How bright, 0 to 4; empty means 1.
+
+Returns: (through the result) the lamp, a whole number, or empty when there
+is no world or the world already has seven lamps.
+
+Example:
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6
+put the result into tLamp
+
+Description:
+Things within the range are lit from the lamp as well as the sun, more
+the nearer they are. Lighting is worked out at the corners of each shape,
+so a lamp shows best on rounded things and small boxes; a big flat box
+whose corners are all out of range is not lit by it. A world holds at most
+seven lamps beside the sun. Lamps go with <b3kClear> and <b3kTeardown>,
+and come back when the renderer changes. box3dxt's renderer has no lamps.
+
+References: b3kMoveLamp (handler), b3kRemoveLamp (handler), b3kSetGlow (handler)
+*/
+command b3kAddLamp pX, pY, pZ, pColor, pRange, pIntensity
+   local tId
+   if sWorld is empty then return empty
+   if the number of lines of the keys of sLamp >= 7 then
+      put "a world holds at most seven lamps" into sLastError
+      return empty
+   end if
+   add 1 to sLampCount
+   put sLampCount into tId
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & ";" & \
+         b3kRGB(pColor, "255,214,150") & ";" & max(0, min(4, b3kNum(pIntensity, 1))) & ";" & \
+         max(0.1, min(1000, b3kNum(pRange, 8))) into sLamp[tId]
+   b3kLampMake tId
+   put true into sStale
+   return tId
+end b3kAddLamp
+
+/**
+Summary: Move a lamp.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+pX: The new x.
+
+pY: The new y.
+
+pZ: The new z.
+
+Example:
+b3kMoveLamp tLamp, b3kX(tTorch), b3kY(tTorch) + 0.5, b3kZ(tTorch)
+
+Description:
+A lamp that is not there is ignored.
+
+References: b3kAddLamp (handler)
+*/
+command b3kMoveLamp pLamp, pX, pY, pZ
+   local tSpec
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kMoveLamp
+   put sLamp[pLamp] into tSpec
+   set the itemDelimiter to ";"
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) into item 1 of tSpec
+   put tSpec into sLamp[pLamp]
+   set the itemDelimiter to comma
+   if sLampR3[pLamp] is not empty then
+      r3LightSetPosition sLampR3[pLamp], b3kNum(pX, 0), b3kNum(pY, 0), b3kNum(pZ, 0)
+   end if
+   put true into sStale
+end b3kMoveLamp
+
+/**
+Summary: Take a lamp away.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+Example:
+b3kRemoveLamp tLamp
+
+Description:
+Removing a lamp that is not there is harmless.
+
+References: b3kAddLamp (handler), b3kLamps (handler)
+*/
+command b3kRemoveLamp pLamp
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kRemoveLamp
+   if sLampR3[pLamp] is not empty then r3LightDestroy sLampR3[pLamp]
+   delete variable sLampR3[pLamp]
+   delete variable sLamp[pLamp]
+   put true into sStale
+end b3kRemoveLamp
+
+/**
+Summary: The lamps there are.
+
+Returns: One lamp a line, oldest first; empty if there are none.
+
+Example:
+put the number of lines of b3kLamps() into tCount
+
+References: b3kAddLamp (handler)
+*/
+function b3kLamps
+   local tKeys
+   put the keys of sLamp into tKeys
+   sort lines of tKeys numeric
+   return tKeys
+end b3kLamps
+
+-- a lamp's render3dxt light, when render3dxt draws
+private command b3kLampMake pLamp
+   local tSpec, tPos, tRGB, tPower, tRange, tLight
+   if sRenderer is not "render3dxt" or sScene is empty then exit b3kLampMake
+   put sLamp[pLamp] into tSpec
+   if tSpec is empty then exit b3kLampMake
+   set the itemDelimiter to ";"
+   put item 1 of tSpec into tPos
+   put item 2 of tSpec into tRGB
+   put item 3 of tSpec into tPower
+   put item 4 of tSpec into tRange
+   set the itemDelimiter to comma
+   put r3LightCreatePoint(sScene, item 1 of tPos, item 2 of tPos, item 3 of tPos, \
+         item 1 of tRGB, item 2 of tRGB, item 3 of tRGB, tPower, tRange) into tLight
+   if tLight is a number and tLight > 0 then put tLight into sLampR3[pLamp]
+end b3kLampMake
 
 /**
 Summary: Draw the picture now.
@@ -2435,9 +2603,13 @@ private command b3kVisualLook pThing
       if tMat is a number and tMat > 0 then
          r3MaterialSetTexture tMat, tTex
          put tMat into sOwnMat[pThing]
+         if sGlow[pThing] is not empty then
+            set the itemDelimiter to comma
+            r3MaterialSetEmissive tMat, item 1 of sGlow[pThing], item 2 of sGlow[pThing], item 3 of sGlow[pThing]
+         end if
       end if
    else if sOwnLook[pThing] is not true then
-      put b3kColorMat(sColor[pThing]) into tMat
+      put b3kColorMat(sColor[pThing], sGlow[pThing]) into tMat
    end if
    if tMat is a number and tMat > 0 then
       repeat for each item tHandle in sNode[pThing]
@@ -2447,14 +2619,21 @@ private command b3kVisualLook pThing
    put true into sStale
 end b3kVisualLook
 
--- one shared render3dxt material for each plain colour
-private function b3kColorMat pRGB
-   if sMats[pRGB] is empty then
+-- one shared render3dxt material for each plain colour, and for each
+-- colour and glow together ("r,g,b/r,g,b")
+private function b3kColorMat pRGB, pGlow
+   local tKey
+   put pRGB into tKey
+   if pGlow is not empty then put pRGB & "/" & pGlow into tKey
+   if sMats[tKey] is empty then
       set the itemDelimiter to comma
-      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[pRGB]
-      r3MaterialSetSpecular sMats[pRGB], 0.25, 24
+      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[tKey]
+      r3MaterialSetSpecular sMats[tKey], 0.25, 24
+      if pGlow is not empty then
+         r3MaterialSetEmissive sMats[tKey], item 1 of pGlow, item 2 of pGlow, item 3 of pGlow
+      end if
    end if
-   return sMats[pRGB]
+   return sMats[tKey]
 end b3kColorMat
 
 /**
@@ -3260,6 +3439,52 @@ function b3kColor pThing
 end b3kColor
 
 /**
+Summary: Make a thing glow with a light of its own (render3dxt only).
+
+pThing: The thing.
+
+pColor: The glow's colour, added to the thing's whatever the lights do;
+empty or "0,0,0" turns it off.
+
+Example:
+b3kSetGlow tOrb, "160,110,0"      -- a gold that shines in the shade
+
+Description:
+A glow lights the thing itself, not what is near it: put a lamp beside it
+with <b3kAddLamp> for that. It works with a colour, a checker or a picture.
+box3dxt's renderer keeps the plain colour.
+
+References: b3kGlow (handler), b3kAddLamp (handler), b3kSetColor (handler)
+*/
+command b3kSetGlow pThing, pColor
+   if sKind[pThing] is empty then exit b3kSetGlow
+   if pColor is empty then
+      delete variable sGlow[pThing]
+   else
+      put b3kRGB(pColor, "0,0,0") into sGlow[pThing]
+      if sGlow[pThing] is "0,0,0" then delete variable sGlow[pThing]
+   end if
+   b3kVisualLook pThing
+   put true into sStale
+end b3kSetGlow
+
+/**
+Summary: A thing's glow.
+
+pThing: The thing.
+
+Returns: "r,g,b", or empty for a thing that does not glow.
+
+Example:
+if b3kGlow(tOrb) is empty then b3kSetGlow tOrb, "120,90,0"
+
+References: b3kSetGlow (handler)
+*/
+function b3kGlow pThing
+   return sGlow[pThing]
+end b3kGlow
+
+/**
 Summary: Give a thing a checkerboard look (render3dxt only).
 
 pThing: The thing.
@@ -3911,6 +4136,7 @@ command b3kRemove pThing
    delete variable sOwnMat[pThing]
    delete variable sOwnTex[pThing]
    delete variable sChecker[pThing]
+   delete variable sGlow[pThing]
    delete variable sTexPath[pThing]
    delete variable sModel[pThing]
    delete variable sModelPath[pThing]

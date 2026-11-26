@@ -880,6 +880,100 @@ command testRenderers
    noFrameError "renderers"
 end testRenderers
 
+-- the sun's colour, a thing's glow and the lamps (render3dxt draws them;
+-- box3dxt's renderer keeps them, unseen, for when render3dxt comes back)
+function brightness pRGB
+   set the itemDelimiter to comma
+   return item 1 of pRGB + item 2 of pRGB + item 3 of pRGB
+end brightness
+
+command testLampsAndGlow
+   local tBall, tLamp, tDark, tLit, tGlow, tCounts, tI, tLamps
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kSpawnBall 0, 0.5, 0, 1, "128,128,128"
+   put the result into tBall
+   b3kSetType tBall, "static"
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "10,10,10"
+   -- the sunlight travels away from the camera (+z) and lights the far
+   -- side of the ball: the face the camera sees is in the shade
+   b3kSetLight 0, 0, 1
+   b3kDraw
+   put viewPixel(80, 60) into tDark
+   b3kSetGlow tBall, "0,160,0"
+   check "b3kGlow reads the glow back", b3kGlow(tBall) is "0,160,0", b3kGlow(tBall)
+   b3kDraw
+   put viewPixel(80, 60) into tGlow
+   if sR3 then
+      check "a glow lights the shaded side green", item 2 of tGlow > item 2 of tDark + 60 and item 2 of tGlow > item 1 of tGlow + 60, tDark && tGlow
+   else
+      check "box3dxt's renderer keeps the plain colour under a glow", tGlow is tDark, tDark && tGlow
+   end if
+   b3kSetGlow tBall, empty
+   check "an empty glow is none", b3kGlow(tBall) is empty, b3kGlow(tBall)
+   b3kDraw
+   check "and the shade comes back", viewPixel(80, 60) is tDark, tDark && viewPixel(80, 60)
+   b3kAddLamp 0, 0.5, 2, "255,255,255", 6, 2
+   put the result into tLamp
+   check "b3kAddLamp gives a lamp", tLamp is a number and b3kLamps() is tLamp, tLamp && b3kLamps()
+   b3kDraw
+   put viewPixel(80, 60) into tLit
+   if sR3 then
+      check "a lamp in front lights the shaded side", brightness(tLit) > brightness(tDark) + 120, tDark && tLit
+      check "render3dxt holds the sun and the lamp", item 6 of r3LiveCounts() is 2, r3LiveCounts()
+      b3kMoveLamp tLamp, 0, 0.5, -3
+      b3kDraw
+      check "a lamp moved behind the ball leaves the front in the shade", brightness(viewPixel(80, 60)) < brightness(tDark) + 30, tDark && viewPixel(80, 60)
+      b3kMoveLamp tLamp, 0, 0.5, 2
+      b3kUseRenderer "box3dxt"
+      check "box3dxt's renderer: the lamp is kept", b3kLamps() is tLamp and item 1 of r3LiveCounts() is 0, b3kLamps() && r3LiveCounts()
+      b3kUseRenderer "render3dxt"
+      check "back to render3dxt: the lamp shines again", item 6 of r3LiveCounts() is 2, r3LiveCounts()
+      b3kDraw
+      check "where it was moved to", brightness(viewPixel(80, 60)) > brightness(tDark) + 120, tDark && viewPixel(80, 60)
+      -- a warm sun on the face the camera sees: the lamp first goes far
+      -- away, so the sun's colour alone shows
+      b3kMoveLamp tLamp, 0, 50, 0
+      b3kSetLight 0, 0, -1, "255,120,40"
+      b3kDraw
+      check "the sun takes a colour", item 1 of viewPixel(80, 60) > item 3 of viewPixel(80, 60) + 50, viewPixel(80, 60)
+      b3kSetLight 0, 0, 1, "255,248,236"
+   else
+      check "box3dxt's renderer draws no lamps", tLit is tDark, tDark && tLit
+   end if
+   b3kRemoveLamp tLamp
+   check "b3kRemoveLamp takes it away", b3kLamps() is empty, b3kLamps()
+   b3kRemoveLamp tLamp
+   if sR3 then check "and gives render3dxt its light back", item 6 of r3LiveCounts() is 1, r3LiveCounts()
+   repeat with tI = 1 to 7
+      b3kAddLamp tI, 2, 0
+   end repeat
+   b3kAddLamp 8, 2, 0
+   put the result into tLamp
+   put b3kLamps() into tLamps
+   check "a world holds seven lamps, no more", the number of lines of tLamps is 7 and tLamp is empty, oneLine(tLamps) && tLamp
+   check "and the eighth says why", b3kLastError() contains "seven lamps", b3kLastError()
+   b3kSetGlow tBall, "40,40,0"
+   b3kClear
+   check "b3kClear takes the lamps", b3kLamps() is empty, b3kLamps()
+   if sR3 then check "and their lights", item 6 of r3LiveCounts() is 1, r3LiveCounts()
+   b3kAddGround 20
+   b3kSpawnBall 0, 0.5, 0, 1
+   check "a new thing has no glow", b3kGlow(the result) is empty, empty
+   b3kAddLamp 1, 1, 1
+   b3kSetLight -0.45, -1, -0.35, "255,248,236"
+   b3kTeardown
+   check "b3kTeardown takes the lamps", b3kLamps() is empty, b3kLamps()
+   if sR3 then check "teardown gives render3dxt back every light", r3LiveCounts() is "0,0,0,0,0,0", r3LiveCounts()
+   b3kAddLamp 0, 0, 0
+   b3kMoveLamp 1, 0, 0, 0
+   b3kSetGlow 3, "red"
+   check "lamps and glow with no world are harmless", b3kLamps() is empty and b3kFrameError() is empty, b3kLamps()
+   noFrameError "lamps and glow"
+end testLampsAndGlow
+
 command testTeardown
    freshWorld
    b3kSpawnBall 0, 2, 0, 1
@@ -942,6 +1036,7 @@ try
       testPlayer
       testGlideAndMore
       testRenderers
+      testLampsAndGlow
       testTeardown
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
             b3AssertCount() && oneLine(b3AssertText()) && b3UnstableCount()

@@ -1,36 +1,56 @@
 -- =====================================================================
 -- box3dxt-orb-island.livecodescript  /  Orb Island
 --
--- A small 3D game on the b3k Kit: walk a floating island, find the eight
--- golden orbs, and do not fall off the edge. A sweeper arm turns in the
--- middle, a wrecking ball swings in the north-west, a lift rides up a
--- tower, a ramp climbs to a plateau, stairs climb to a ledge, and a green
--- jump pad throws you up to a floating platform. Crates and balls are
--- there to be kicked, blasted and knocked into the sea.
+-- A 3D game on the b3k Kit: walk a floating island 60 metres square, find
+-- the sixteen golden orbs, and do not fall into the sea. A sweeper arm
+-- turns in the middle, a wrecking ball swings under its gantry in the
+-- north-west, a lift rides up a tower, a ramp climbs to a plateau, stairs
+-- climb to a ledge, and a green jump pad throws you up to a floating
+-- platform. Further out: a windmill on a round hill whose sails sweep the
+-- grass, a circle of standing stones round a violet altar, a garden of
+-- glowing crystals, a row of dominoes, stepping stones out over the sea
+-- to a rock, and a sky lift that carries you to a floating isle with a
+-- beacon. Crates and balls are there to be kicked, blasted and knocked
+-- into the sea. It is late afternoon: a low warm sun, lanterns, clouds.
+--
+-- Version 1.2 (2026-11-26) is four times the island of 1.1, which was
+-- 30 metres square with eight orbs; 1.1's eight are A to H, moved out
+-- with the island.
 --
 -- WHY THIS EXAMPLE EXISTS: it is the Kit's showcase, the 3D sibling of
 -- box2dxt's games. Every system the Kit has carries part of the game:
 --   * the world and the loop: b3kSetup, b3kStart, b3kPause, b3kKillFloor
 --   * the view and both renderers: b3kViewMake, b3kUseRenderer (V swaps
 --     render3dxt and box3dxt's own renderer when both are loaded)
+--   * the look: b3kSetLight with a coloured sun, b3kSetFog, b3kSetGlow
+--     (the orbs pulse, the crystals and the beacon shine), b3kAddLamp
+--     (lanterns, the altar, the crystals, the beacon)
 --   * the camera: b3kCamFollow (from b3kPlayerMake), b3kCamMouseOrbit,
 --     b3kCamShake
 --   * scenery: b3kAddGround, b3kAddStaticBox, b3kAddRamp, b3kAddPlatform
---     with b3kGlideTo (the lift)
+--     with b3kGlideTo (the lift and the sky lift), b3kAddStaticModel (the
+--     hill, made here as OBJ text), b3kSpawn... with b3kSetType "static"
+--     and b3kSetRotation (trees, stones, crystals)
+--   * kinematic things: b3kSetSpin (the windmill's sails, the beacon)
 --   * joints: a motor-driven hinge (the sweeper), a rope (the wrecking
 --     ball), b3kNoCollide (the arm passes through its hub)
---   * sensors: the orbs and the jump pad (on b3kSensorEnter)
---   * the player controller: b3kPlayerMake, b3kPlayerJump, b3kPlayerRespawn
---     (on b3kFell)
+--   * sensors: the orbs, the jump pad and the sea (on b3kSensorEnter)
+--   * the player controller: b3kPlayerMake, b3kPlayerJump, b3kPlayerSteer
+--     (the gamepad's stick), b3kPlayerRespawn (on b3kFell)
 --   * picking: a click kicks what b3kThingAt finds, unless the press was a
 --     camera drag (b3kCamDragged)
+-- Two other suite extensions join in when they are loaded, and the game
+-- runs without them: gamepadxt (a game controller walks, looks, jumps,
+-- blasts; it rumbles when you find an orb) and audioxt (a sea that swells,
+-- a chime a note higher for each orb, jumps, blasts, a splash, a fanfare:
+-- tones and noise made on the spot, so there are no sound files).
 -- The game's own code is short: everything below the EMBEDDED KIT line is
 -- the Kit, carried verbatim from box3dxt/src/box3dxt-kit.livecodescript by
 -- box3dxt/tools/sync-embedded-kit.py. Never edit it here.
 --
 -- HOW TO RUN
 --   1. Load the box3dxt extension (and render3dxt too, if you have it, for
---      the textured, lit look).
+--      the lit, glowing look; gamepadxt and audioxt if you have them).
 --   2. Open this file from start-here, or make a new stack, put this whole
 --      file into its STACK script, then close and reopen the stack.
 --   3. Play. Restart (R) starts a new run at any time.
@@ -39,36 +59,47 @@
 --           / Space jumps / Q and E turn the camera / drag the view to
 --           look around / click a crate or ball to kick it / X blasts what
 --           is in front of you / C drops crates / V swaps the renderer /
---           P pauses / R restarts
+--           M turns the sound off and on / P pauses / R restarts
+-- GAMEPAD   left stick walks / right stick or the shoulders turn the
+--           camera / A (south) jumps / X (west) blasts / Y (north) drops
+--           crates / B (east) swaps the renderer / Start pauses / Back
+--           restarts
 --
 -- WHAT TO VERIFY (OXT pass)
 --   1. Paste and play: the window builds at 1104 x 640 with the island in
---      the view, the status line green, and the orbs gold.
+--      the view, the status line green, the sky peach and the orbs gold.
 --   2. Walking: WASD and the arrows move the player relative to the camera;
 --      Space jumps; Q and E turn the view; the camera follows smoothly.
---   3. The orbs: touching one removes it, shakes the camera a little and
---      counts it ("Orbs 1 / 8"); the eighth shows the banner with the time.
+--   3. The orbs: touching one removes it in a burst of sparks, shakes the
+--      camera a little and counts it ("Orbs 1 / 16"); the sixteenth shows
+--      the banner with the time.
 --   4. The toys: the sweeper turns and pushes you; the lift carries you up
 --      the tower; the jump pad throws you onto the floating platform; the
---      wrecking ball swings and knocks you.
---   5. Falling off the edge puts you back at the start and counts a fall;
+--      wrecking ball swings and knocks you; the windmill's sails sweep
+--      you off the hill; the sky lift carries you to the floating isle;
+--      the dominoes fall; the stepping stones can be jumped.
+--   5. Falling into the sea puts you back at the start and counts a fall;
 --      a crate knocked off the edge is gone.
 --   6. Mouse: dragging the view turns the camera and does NOT kick; a click
 --      on a crate or ball kicks it away from the camera. Untick "Drag the
 --      view to look around" and a drag does nothing.
---   7. X, C, V, P, R and the five buttons do what they say; V says
---      render3dxt is not loaded when it is not.
---   8. Every label is readable in the light and the dark appearance (each
+--   7. X, C, V, M, P, R and the six buttons do what they say; V says
+--      render3dxt is not loaded when it is not, M that audioxt is not.
+--   8. A real gamepad: the stick walks, A jumps, the pad rumbles on an orb.
+--   9. Sound: the sea, the chimes climbing, the blast, the splash, the
+--      fanfare; in a web page from the first click or key press.
+--  10. Every label is readable in the light and the dark appearance (each
 --      control sets its own colours).
 --
 -- STATUS: the game's build and its rules ran on the headless Linux server
--- engine (box3dxt/tests/engine-demo.lc, OXT-Beyond 9.7.1, with and without
--- render3dxt). In a web Stack Player (the web-2026.11.21 pre-release's, in
--- Chromium, 2026-11-21, box3dxt alone) the window built at its size, W
--- walked to an orb that was counted, C dropped crates, V said render3dxt is
--- not loaded, a click knocked crates over and a drag turned the camera.
--- The rest of the list above, render3dxt in a window, a desktop IDE and
--- the feel: verified statically; needs an OXT pass.
+-- engine (box3dxt/tests/engine-demo.lc, OXT-Beyond 9.7.1): with box3dxt
+-- alone, with no extension, and on 2026-11-26 with render3dxt, gamepadxt
+-- (a virtual pad) and audioxt (its silent device) as well. In a web Stack
+-- Player (web-2026.11.22, headless Chromium, 2026-11-26) version 1.2
+-- built at its size, walked to an orb, found gamepadxt and audioxt, and
+-- drew 33 pictures a second where 1.1 drew 37 to 40 on the same machine.
+-- A real gamepad, the sound heard, a desktop IDE and the feel: verified
+-- statically; needs an OXT pass.
 -- =====================================================================
 
 -- The suite's UI kit, carried verbatim (master tools/ui-kit.livecodescript,
@@ -538,23 +569,35 @@ end uiMenuSource
 -- the Kit (below) or the UI kit (above) uses.
 -- =====================================================================
 -- bump when the built chrome changes, so a newer paste rebuilds it once
-constant kOiUIVersion = "2"
+constant kOiUIVersion = "3"
 -- the view, in card pixels: 768 x 456, five by three
 constant kOiViewL = 16
 constant kOiViewT = 58
 constant kOiViewW = 768
 constant kOiViewH = 456
--- where the player starts, and starts again after a fall
+-- where the player starts, and starts again after a fall: the south of
+-- the island, looking north up the lantern path
 constant kOiStartX = 0
 constant kOiStartY = 1
-constant kOiStartZ = 11
+constant kOiStartZ = 22
+-- the island is 60 metres square (four times the 30 of version 1.1)
+constant kOiIsland = 60
 -- the camera's starting orbit round the player: behind it, looking north
-constant kOiCamPitch = 24
-constant kOiCamDist = 9.5
+constant kOiCamPitch = 17
+constant kOiCamDist = 10
+-- late afternoon: a warm sun low in the west, a peach sky, cool shade
+constant kOiSky = "238,196,160"
+constant kOiSea = "44,118,178"
+constant kOiSun = "255,222,170"
+constant kOiShade = "92,96,124"
 constant kOiOrbColor = "240,190,40"
-constant kOiSky = "150,192,232"
--- C drops no more things once the world holds this many
-constant kOiMaxThings = 90
+-- the orbs' glow pulses through these, one step every 250 ms
+constant kOiOrbGlow = "90,60,0;140,96,0;190,130,10;140,96,0"
+-- C drops no more things once the world holds this many more than the
+-- island was built with
+constant kOiMoreThings = 60
+-- the notes of the orb chime, one a found orb, climbing a pentatonic scale
+constant kOiChime = "523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.51,1567.98,1760,2093,2349.32,2637.02,3135.96,3520,4186.01"
 
 local sOiOrb          -- [orb sensor] -> its letter, while it waits to be found
 local sOiOrbCount     -- how many orbs the level has
@@ -567,23 +610,46 @@ local sOiClockMS      -- milliseconds since the run began, never stopped:
 local sOiDone         -- true once every orb is found
 local sOiBest         -- the best time this session, in seconds
 local sOiPad          -- the jump pad (a sensor)
-local sOiLift         -- the lift (a kinematic platform)
+local sOiLift         -- the tower's lift (a kinematic platform)
 local sOiLiftWait     -- the clock time at which the lift moves again
+local sOiSkyLift      -- the sky lift out to the floating isle
+local sOiSkyWait      -- the clock time at which the sky lift moves again
 local sOiBall         -- the wrecking ball
 local sOiHudAt        -- the clock time of the last HUD write
 local sOiHudText      -- what the HUD fields hold, to write only on change
+local sOiBaseThings   -- how many things the island was built with
+local sOiGlowStep     -- which step of kOiOrbGlow the orbs show
+local sOiGlowAt       -- the clock time of the last glow step
+local sOiSpark        -- [spark thing] -> the clock time it goes
+local sOiWasGround    -- the player stood on something last frame
+-- the gamepad (gamepadxt, when it is loaded)
+local sOiPadOn        -- true once gpStart worked
+local sOiPadNow       -- the pad in use, 0 for none
+local sOiPadSteer     -- true while the stick steers the player
+-- the sound (audioxt, when it is loaded)
+local sOiAudio        -- the audio engine, 0 for none
+local sOiAudioDevice  -- the device oiSoundStart opens: 0 the default
+local sOiMuted        -- true when M has turned the sound off
+local sOiSea          -- the sea's hiss, a looping noise
+local sOiSeaAt        -- the clock time the sea's swell turns next
+local sOiSeaUp        -- true while the swell rises
+local sOiVoices       -- one line a sound to free: "handle,clock ms"
+local sOiPlayed       -- the sounds played this run, by name (for the test)
 
 -- =====================================================================
 -- Lifecycle
 -- =====================================================================
 on openStack
    oiBuildUI
+   oiPadStart
    oiNewGame
    pass openStack
 end openStack
 
 on closeStack
    b3kTeardown
+   oiSoundStop
+   oiPadStop
    pass closeStack
 end closeStack
 
@@ -603,9 +669,17 @@ command oiNewGame
    put empty into sOiPad
    put empty into sOiLift
    put 0 into sOiLiftWait
+   put empty into sOiSkyLift
+   put 0 into sOiSkyWait
    put empty into sOiBall
    put 0 into sOiHudAt
    put empty into sOiHudText
+   put 1 into sOiGlowStep
+   put 0 into sOiGlowAt
+   put empty into sOiSpark
+   put true into sOiWasGround
+   put false into sOiPadSteer
+   put empty into sOiPlayed
    if there is a field "oiBanner" then hide field "oiBanner"
    b3kSetup
    if b3kWorld() is empty then
@@ -615,9 +689,11 @@ command oiNewGame
    end if
    b3kViewMake kOiViewL, kOiViewT, kOiViewW, kOiViewH
    b3kSetBackground kOiSky
-   b3kSetFog kOiSky, 32, 75
-   b3kSetLight -0.45, -1, -0.5
-   b3kSetAmbient "84,90,104"
+   -- the fog starts past the middle of the island and swallows the far
+   -- sea: it hides the sea's edge and keeps the far side soft
+   b3kSetFog kOiSky, 36, 84
+   b3kSetLight 0.62, -0.62, -0.48, kOiSun
+   b3kSetAmbient kOiShade
    -- In a web page render3dxt draws on ONE thread, inside the frame: with
    -- smooth edges (each pixel the average of 2 x 2 samples, the Kit's
    -- default) that was 57 ms of every frame and the game ran at 14
@@ -626,7 +702,10 @@ command oiNewGame
    -- and keeps the smooth edges.
    if oiOnWeb() then b3kSetSmooth 1
    oiBuildIsland
+   put b3kThingCount() into sOiBaseThings
    b3kPlayerMake kOiStartX, kOiStartY, kOiStartZ, "capsule", "61,110,200"
+   -- a little quicker than the Kit's 5 m/s: the island is four times as big
+   b3kPlayerSet "moveSpeed", 6.5
    -- the orbit's target given too: the camera starts ON the player, where
    -- following alone would swoop in from the middle of the island
    b3kCamOrbit 0, kOiCamPitch, kOiCamDist, kOiStartX, kOiStartY + 0.8, kOiStartZ
@@ -635,11 +714,15 @@ command oiNewGame
    put true into tLook
    if there is a button "oiLook" then put the hilite of button "oiLook" into tLook
    b3kCamMouseOrbit tLook
-   -- below the island's underside: a fall into the sky is a fall
+   -- below the sea: a fall into the sea is a fall
    b3kKillFloor -6
    b3kStart
    oiRendererLabel
    if there is a button "oiPause" then set the label of button "oiPause" to "Pause (P)"
+   -- one audio engine for the session, made at the first run: in a web
+   -- page the browser unlocks sound once, and a new engine is not unlocked
+   if not oiSoundOn() then oiSoundStart
+   oiSoundLabel
    oiHud
    uiStatus "Find the " & sOiOrbCount & " golden orbs. " & oiRendererWords(), "ok"
 end oiNewGame
@@ -647,32 +730,35 @@ end oiNewGame
 -- =====================================================================
 -- The island, in metres: y up, the start in the south (+z), the camera
 -- looking north (-z). Every piece is placed by hand; the comments give
--- the arithmetic where two pieces must meet.
+-- the arithmetic where two pieces must meet. Version 1.1's island, 30
+-- metres square, is the middle of this one, spread out; the corners,
+-- the sea, the sky and the floating isle are new.
 -- =====================================================================
 command oiBuildIsland
-   local tHub, tArm, tJoint, tHook, tThing, tI
-   -- 30 by 30 metres of grass, its top at y = 0; no walls: the sea is
-   -- the danger
-   b3kAddGround 30, 0, "128,184,100", "104,160,84"
-
-   -- by the start: a crate pyramid and two balls, to kick and blast
-   oiCrate 4.1, 0.425, 8
-   oiCrate 5, 0.425, 8
-   oiCrate 5.9, 0.425, 8
-   oiCrate 4.55, 1.275, 8
-   oiCrate 5.45, 1.275, 8
-   oiCrate 5, 2.125, 8
-   b3kSpawnBall -4, 0.5, 9, 1, "235,90,80"
+   local tHub, tArm, tJoint, tHook, tThing, tI, tA
+   -- the south: the start, a crate pyramid and two balls to kick and blast,
+   -- and a lantern path north to the plaza
+   oiCrate 4.1, 0.425, 18
+   oiCrate 5, 0.425, 18
+   oiCrate 5.9, 0.425, 18
+   oiCrate 4.55, 1.275, 18
+   oiCrate 5.45, 1.275, 18
+   oiCrate 5, 2.125, 18
+   b3kSpawnBall -4, 0.5, 19, 1, "235,90,80"
    put the result into tThing
    b3kSetBounce tThing, 0.6
-   b3kSpawnBall -5, 0.4, 7.5, 0.8, "90,150,235"
+   b3kSpawnBall -5, 0.4, 17.5, 0.8, "90,150,235"
    put the result into tThing
    b3kSetBounce tThing, 0.6
+   oiLantern -2.6, 12, true
+   oiLantern 2.6, 12, false
+   oiLantern -2.6, 5, false
+   oiLantern 2.6, 5, true
 
    -- the middle: a 9 metre arm turning round a hub, low enough to jump.
    -- The hub is a step to stand on (1 m), the arm passes through it
    -- (b3kNoCollide), and a strong motor keeps it turning at 45 degrees a
-   -- second whatever it pushes.
+   -- second whatever it pushes. Four stones mark the plaza's corners.
    b3kSpawnCylinder 0, 0.5, 0, 1, 1.8, "120,124,136"
    put the result into tHub
    b3kSetType tHub, "static"
@@ -684,34 +770,41 @@ command oiBuildIsland
    b3kHinge tArm, empty, 0, 0.45, 0, 0, 1, 0
    put the result into tJoint
    b3kMotor tJoint, 45, 800
+   repeat for each item tA in "45,135,225,315"
+      oiStatic "cylinder", 6.5 * sin(tA * pi / 180), 0.6, 6.5 * cos(tA * pi / 180), 1.2, 0.9, "176,170,160"
+   end repeat
 
    -- the east: a plateau 2 m high and a 20 degree ramp up to it from the
    -- south. The ramp's far top edge must meet the plateau's top (y 2) at
    -- its south face (z 1): with length 5.5 and thickness 0.3 that puts
    -- the ramp's centre at y 0.92, z 3.58.
-   b3kAddStaticBox 10.5, 1, -2, 6, 2, 6, "200,176,128"
-   b3kAddRamp 10.5, 0.92, 3.58, 3, 0.3, 5.5, 20
+   b3kAddStaticBox 18.5, 1, -2, 6, 2, 6, "206,180,132"
+   b3kAddRamp 18.5, 0.92, 3.58, 3, 0.3, 5.5, 20
 
    -- the north-east: a tower 5 m high and its lift, 0.3 m from its west
-   -- face; the lift rides from the ground to just above the tower's top
-   b3kAddStaticBox 10.5, 2.5, -10.5, 4, 5, 4, "176,154,134"
-   b3kAddPlatform 6.9, 0.2, -10.5, 2.6, 0.4, 2.6, "70,180,190"
+   -- face (x 16.5); the lift rides from the ground to just above the top
+   b3kAddStaticBox 18.5, 2.5, -14, 4, 5, 4, "180,156,134"
+   b3kAddPlatform 14.9, 0.2, -14, 2.6, 0.4, 2.6, "70,180,190"
    put the result into sOiLift
    b3kName sOiLift, "lift"
 
    -- the west: five steps of half a metre up to a ledge 3 m high
    put 1 into tI
    repeat while tI <= 5
-      b3kAddStaticBox -12, 0.25 * tI, 5 - 1.2 * tI, 2.4, 0.5 * tI, 1.2, "152,162,182"
+      b3kAddStaticBox -18, 0.25 * tI, 5 - 1.2 * tI, 2.4, 0.5 * tI, 1.2, "156,164,184"
       add 1 to tI
    end repeat
-   b3kAddStaticBox -12, 1.5, -3.6, 2.4, 3, 4, "152,162,182"
+   b3kAddStaticBox -18, 1.5, -3.6, 2.4, 3, 4, "156,164,184"
 
    -- the north-west: a wrecking ball on a 4.5 m rope from a hook 5.2 m
-   -- up, let go 60 degrees out, so it skims the grass at the bottom
-   b3kAddStaticBox -7, 5.2, -10, 0.4, 0.4, 0.4, "80,82,92"
+   -- up, let go 60 degrees out, so it skims the grass at the bottom; the
+   -- hook hangs from a gantry
+   b3kAddStaticBox -12, 5.2, -14, 0.4, 0.4, 0.4, "80,82,92"
    put the result into tHook
-   b3kSpawnBall -3.1, 2.95, -10, 1.2, "64,66,76"
+   oiStatic "box", -12, 5.55, -14, 0.4, 0.3, 7, "96,98,110"
+   oiStatic "box", -12, 2.7, -17.4, 0.4, 5.4, 0.4, "96,98,110"
+   oiStatic "box", -12, 2.7, -10.6, 0.4, 5.4, 0.4, "96,98,110"
+   b3kSpawnBall -8.1, 2.95, -14, 1.2, "64,66,76"
    put the result into sOiBall
    b3kName sOiBall, "wrecking ball"
    b3kSetDensity sOiBall, 4
@@ -719,31 +812,294 @@ command oiBuildIsland
 
    -- the north: a jump pad, and the floating platform it reaches. The pad
    -- is a sensor (the player passes into it); b3kSensorEnter throws.
-   b3kAddSensorBox 1.5, 0.1, -7.5, 1.6, 0.2, 1.6
+   b3kAddSensorBox 0, 0.1, -16, 1.6, 0.2, 1.6
    put the result into sOiPad
    b3kName sOiPad, "jump pad"
    b3kSetVisible sOiPad, true
    b3kSetColor sOiPad, "90,200,110"
-   b3kAddStaticBox 1.5, 3.5, -10.5, 3, 0.4, 3, "200,176,128"
+   b3kSetGlow sOiPad, "20,90,30"
+   b3kAddStaticBox 0, 3.5, -19, 3, 0.4, 3, "206,180,132"
 
-   -- the orbs: one easy, one beside the balls, one on the hub, then the
-   -- plateau, the tower, under the wrecking ball, the ledge and the
-   -- floating platform
-   oiOrb "A", 0, 0.8, 6.5
-   oiOrb "B", -6.5, 0.8, 9.5
+   oiBuildCorners
+   oiBuildSkyIsle
+   oiBuildTrees
+
+   -- sixteen orbs, from the easy one on the lantern path to the floating
+   -- isle: A to H are version 1.1's eight, moved out with the island
+   oiOrb "A", 0, 0.8, 16.5
+   oiOrb "B", -6.5, 0.8, 19.5
    oiOrb "C", 0, 1.75, 0
-   oiOrb "D", 11.5, 2.8, -3
-   oiOrb "E", 11, 5.8, -11
-   oiOrb "F", -7, 0.8, -10
-   oiOrb "G", -12, 3.8, -4.5
-   oiOrb "H", 1.5, 4.4, -10.5
+   oiOrb "D", 19.5, 2.8, -3
+   oiOrb "E", 19, 5.8, -14.5
+   oiOrb "F", -12, 0.8, -14
+   oiOrb "G", -18, 3.8, -4.5
+   oiOrb "H", 0, 4.4, -19
+   oiOrb "I", 25.5, 0.8, 22.5
+   oiOrb "J", -16, 2.6, 19.5
+   oiOrb "K", 8, 0.8, -24.5
+   oiOrb "L", 3, 5.3, -40
+   oiOrb "M", 4, 5.3, -46.5
+   oiOrb "N", -45, 3.2, 4.5
+   oiOrb "O", -20, 1.6, -22
+   oiOrb "P", 26, 0.8, -26
+
+   -- LAST, the grass and the sea: render3dxt draws in the order things were
+   -- made, and a pixel of grass already hidden by a tree or a stone is then
+   -- refused by its depth alone, never textured or fogged. Made first, the
+   -- grass under everything was drawn in full and drawn over (in a web
+   -- page, on one thread, the difference shows; 2026-11-26).
+   -- 60 by 60 metres of grass, its top at y = 0; no walls: the sea is
+   -- the danger
+   b3kAddGround kOiIsland, 0, "132,190,98", "110,166,84"
+   oiSeaAndSky
 end oiBuildIsland
+
+-- The sea all round and the clouds. The sea is four sensors (a fall
+-- passes through it to the kill floor below) that meet round the island
+-- and never under it: every pixel of sea hidden under the grass would be
+-- drawn and then drawn over, and in a web page, where render3dxt draws on
+-- one thread, that was about a tenth of every frame (measured on the
+-- server engine with one thread, 2026-11-26). Rock under the island was
+-- dropped for the same reason. The sea ends 40 m out, where the fog has
+-- all but swallowed it: beyond, the sky colour is cleared, not drawn.
+command oiSeaAndSky
+   local tCloud
+   -- each strip reaches 12 m in under the grass: a look past the shore
+   -- from above meets the sea under the island's edge, and strips that
+   -- stopped at the shore left the sky colour showing there (2026-11-26).
+   -- Made after the grass, the part under it costs a depth test only
+   oiSea "north", 0, -54, 140, 72
+   oiSea "south", 0, 54, 140, 72
+   oiSea "west", -44, 0, 52, 60
+   oiSea "east", 44, 0, 52, 60
+   -- clouds: white balls that glow a little, so their shade stays light
+   repeat for each line tCloud in "-22,17,-12" & return & "16,19,10" & return & "6,16,-36" & return & "-30,18,22"
+      oiCloud item 1 of tCloud, item 2 of tCloud, item 3 of tCloud
+   end repeat
+end oiSeaAndSky
+
+-- one stretch of sea, 4 m below the grass
+command oiSea pName, pX, pZ, pW, pD
+   local tSea
+   b3kAddSensorBox pX, -4, pZ, pW, 0.2, pD
+   put the result into tSea
+   if tSea is empty then exit oiSea
+   b3kSetVisible tSea, true
+   b3kSetColor tSea, kOiSea
+   b3kSetGlow tSea, "12,36,60"
+   b3kName tSea, "sea " & pName
+end oiSea
+
+command oiRock pX, pY, pZ, pHeight, pDiameter
+   b3kSpawnCone pX, pY, pZ, pHeight, pDiameter, "112,96,84"
+   oiFix the result, 180, 0, 0
+end oiRock
+
+command oiCloud pX, pY, pZ
+   local tBall, tPart
+   repeat for each line tPart in "0,0,0,4.2" & return & "2.6,-0.5,0.6,3" & return & "-2.4,-0.6,-0.4,3.2"
+      b3kAddSensorBall pX + item 1 of tPart, pY + item 2 of tPart, pZ + item 3 of tPart, item 4 of tPart
+      put the result into tBall
+      if tBall is empty then next repeat
+      b3kSetVisible tBall, true
+      b3kSetColor tBall, "250,246,242"
+      b3kSetGlow tBall, "70,66,64"
+   end repeat
+end oiCloud
+
+-- The four corners and the far west: dominoes, a windmill hill, a stone
+-- circle, a crystal garden and stepping stones out over the sea.
+command oiBuildCorners
+   local tI, tA, tThing, tX, tY, tH, tCrystal
+   -- the south-east: sixteen dominoes in a row; walk into the first
+   put 0 into tI
+   repeat while tI < 16
+      if tI mod 2 is 0 then
+         b3kSpawnBox 11 + 0.85 * tI, 0.7, 26, 0.2, 1.4, 0.7, "236,232,220"
+         put the result into tThing
+      else
+         b3kSpawnBox 11 + 0.85 * tI, 0.7, 26, 0.2, 1.4, 0.7, "40,44,56"
+         put the result into tThing
+      end if
+      if tI is 0 then b3kName tThing, "first domino"
+      add 1 to tI
+   end repeat
+
+   -- the south-west: a round hill, 3 m high, and a windmill on top whose
+   -- sails sweep down to just above the grass (kinematic: they turn at a
+   -- set speed and no push slows them)
+   b3kAddStaticModel -16, 0, 16, oiHillObj(8, 3, 7, 20), 1, "118,176,90"
+   b3kName the result, "hill"
+   oiStatic "cylinder", -16, 4.9, 16, 4.2, 1.1, "236,226,206"
+   oiStatic "cone", -16, 7.5, 16, 1.2, 1.6, "170,70,60"
+   repeat for each item tA in "0,90"
+      b3kSpawnBox -16, 6.4, 16.8, 6, 0.45, 0.12, "246,240,228"
+      put the result into tThing
+      b3kSetType tThing, "kinematic"
+      b3kSetRotation tThing, 0, 0, tA
+      b3kSetSpin tThing, 0, 0, 70
+      b3kName tThing, "sail " & tA
+   end repeat
+
+   -- the north-west corner: a circle of eight standing stones round a
+   -- glowing altar, lit violet
+   repeat with tI = 0 to 7
+      put tI * 45 into tA
+      oiStatic "box", -20 + 4.2 * sin(tA * pi / 180), 1.3, -22 + 4.2 * cos(tA * pi / 180), 1.2, 2.6, 0.7, "150,152,160"
+      oiFix the result, 0, tA, 0
+   end repeat
+   oiStatic "cylinder", -20, 0.3, -22, 0.6, 1.4, "120,96,170"
+   b3kSetGlow the result, "70,40,120"
+   b3kAddLamp -20, 2.4, -22, "190,140,255", 9, 1.6
+
+   -- the north, west of the tower: a garden of crystals that glow cyan
+   repeat for each line tCrystal in "6,-24,3.2,0,10" & return & "9.6,-25.5,2.4,14,-8" & return & "7,-27.4,2,-12,20" & return & \
+         "10.4,-23,1.6,0,-22" & return & "5,-22.6,1.8,16,0" & return & "11,-27,2.8,-6,0" & return & "4.4,-26.6,1.4,0,24"
+      put item 3 of tCrystal into tH
+      b3kSpawnCone item 1 of tCrystal, tH / 2, item 2 of tCrystal, tH, 0.5 * tH, "150,226,240"
+      put the result into tThing
+      oiFix tThing, item 4 of tCrystal, 0, item 5 of tCrystal
+      b3kSetGlow tThing, "30,110,140"
+   end repeat
+   b3kAddLamp 7.5, 1.6, -25, "120,230,255", 7, 1.8
+
+   -- the far north-east: a stack of crates to climb by the tower
+   oiStatic "box", 26, 0.5, -21, 1, 1, 1, "176,124,74"
+
+   -- the west, past the edge (x -30): stepping stones over the sea to a
+   -- rock. Each top is 0.6 m above the last and 1.4 m on: a run and a
+   -- jump each.
+   repeat with tI = 0 to 3
+      put -32.5 - 3 * tI into tX
+      put 0.6 * tI - 0.25 into tY
+      oiStatic "box", tX, tY, 6 - 0.6 * tI, 1.6, 0.5, 1.6, "150,150,156"
+      oiRock tX, tY - 1.4, 6 - 0.6 * tI, 2.2, 1.4
+   end repeat
+   oiStatic "box", -45, 1.2, 4.5, 3, 2.4, 3, "136,128,120"
+   oiRock -45, -1.5, 4.5, 4, 3
+end oiBuildCorners
+
+-- The floating isle in the north, over the sea, and the sky lift that
+-- carries the player out to it: from a dock at the island's north edge
+-- (its top at y 0.4) up to the isle's south edge (its top at y 4.5).
+command oiBuildSkyIsle
+   local tBeam, tIsle
+   b3kAddStaticBox 0, 4, -43, 12, 1, 12, "132,190,98"
+   put the result into tIsle
+   b3kSetChecker tIsle, "132,190,98", "110,166,84", 12
+   oiRock 0, -1.5, -43, 10, 12
+   b3kAddPlatform 0, 0.2, -27.5, 2.6, 0.4, 2.6, "230,150,60"
+   put the result into sOiSkyLift
+   b3kName sOiSkyLift, "sky lift"
+   -- the beacon: a white tower, a glowing lamp and a beam that sweeps
+   oiStatic "cylinder", -3, 7, -46, 5, 1.4, "240,236,226"
+   oiStatic "cylinder", -3, 8.2, -46, 0.5, 1.5, "200,60,52"
+   oiStatic "ball", -3, 9.9, -46, 1.4, "255,236,170"
+   b3kSetGlow the result, "255,200,90"
+   b3kSpawnBox -3, 9.9, -46, 10, 0.22, 0.22, "255,240,190"
+   put the result into tBeam
+   b3kSetType tBeam, "kinematic"
+   b3kSetGlow tBeam, "255,210,120"
+   b3kSetSpin tBeam, 0, 60, 0
+   b3kName tBeam, "beacon beam"
+   b3kAddLamp -3, 9.9, -46, "255,210,140", 14, 2
+end oiBuildSkyIsle
+
+-- Trees round the island: a trunk and two cones of leaves.
+command oiBuildTrees
+   local tTree, tS
+   repeat for each line tTree in "-9,25,1" & return & "-12,9,1.2" & return & "9,10,0.9" & return & "12,23,1.1" & return & \
+         "-24,25,1.3" & return & "-26,-6,1" & return & "25,7,1.2" & return & "26,-7,0.9" & return & \
+         "-6,-26,1.1" & return & "15,-26,1" & return & "-26,11,0.9" & return & "-25,-15,1"
+      put item 3 of tTree into tS
+      oiStatic "cylinder", item 1 of tTree, 0.8 * tS, item 2 of tTree, 1.6 * tS, 0.42 * tS, "120,84,56"
+      oiStatic "cone", item 1 of tTree, 2.5 * tS, item 2 of tTree, 2.4 * tS, 2.6 * tS, "64,128,70"
+      oiStatic "cone", item 1 of tTree, 3.6 * tS, item 2 of tTree, 1.8 * tS, 1.8 * tS, "78,148,80"
+   end repeat
+end oiBuildTrees
+
+-- A lantern post; pLamp hangs one of the Kit's lamps in it as well (a
+-- world holds seven, so not every post has one).
+command oiLantern pX, pZ, pLamp
+   oiStatic "cylinder", pX, 1.1, pZ, 2.2, 0.16, "60,58,66"
+   oiStatic "ball", pX, 2.35, pZ, 0.45, "255,226,150"
+   b3kSetGlow the result, "255,170,60"
+   if pLamp is true then b3kAddLamp pX, 2.35, pZ, "255,190,110", 7, 1.6
+end oiLantern
+
+-- Static scenery of any shape: a thing spawned, then fixed in place. The
+-- thing is left in the result.
+command oiStatic pKind, pX, pY, pZ, pA, pB, pC, pColor
+   local tThing
+   switch pKind
+      case "cylinder"
+         b3kSpawnCylinder pX, pY, pZ, pA, pB, pC
+         break
+      case "cone"
+         b3kSpawnCone pX, pY, pZ, pA, pB, pC
+         break
+      case "ball"
+         b3kSpawnBall pX, pY, pZ, pA, pB
+         break
+      default
+         b3kSpawnBox pX, pY, pZ, pA, pB, pC, pColor
+   end switch
+   put the result into tThing
+   if tThing is not empty then b3kSetType tThing, "static"
+   return tThing
+end oiStatic
+
+-- a thing made static and turned (degrees); the thing is left in the result
+command oiFix pThing, pRx, pRy, pRz
+   if pThing is empty then return empty
+   b3kSetType pThing, "static"
+   b3kSetRotation pThing, pRx, pRy, pRz
+   return pThing
+end oiFix
+
+-- A round hill as Wavefront OBJ text: pRings rings of pSegments points
+-- round a top, its height falling as a cosine from pHeight at the middle
+-- to 0 at radius pRadius. Each triangle's corners run counter-clockwise
+-- seen from above, so its front faces up and the player stands on it
+-- (a mesh is one-sided, box3dxt's CLAUDE.md).
+function oiHillObj pRadius, pHeight, pRings, pSegments
+   local tObj, tR, tS, tRad, tA, tY, tA0, tA1, tB0, tB1, tTop
+   put "v 0 " & pHeight & " 0" & return into tObj
+   repeat with tR = 1 to pRings
+      put pRadius * tR / pRings into tRad
+      put pHeight * (0.5 + 0.5 * cos(pi * tR / pRings)) into tY
+      repeat with tS = 0 to pSegments - 1
+         put 2 * pi * tS / pSegments into tA
+         put "v " & format("%.4f", tRad * cos(tA)) && format("%.4f", tY) && format("%.4f", tRad * sin(tA)) & return after tObj
+      end repeat
+   end repeat
+   -- the top: a fan from vertex 1 to ring 1 (vertices 2 .. pSegments + 1)
+   repeat with tS = 0 to pSegments - 1
+      put 2 + tS into tA0
+      put 2 + ((tS + 1) mod pSegments) into tA1
+      put "f 1 " & tA1 && tA0 & return after tObj
+   end repeat
+   -- each band between ring tR and ring tR + 1: two triangles a segment
+   repeat with tR = 1 to pRings - 1
+      put 2 + (tR - 1) * pSegments into tTop
+      repeat with tS = 0 to pSegments - 1
+         put tTop + tS into tA0
+         put tTop + ((tS + 1) mod pSegments) into tA1
+         put tA0 + pSegments into tB0
+         put tA1 + pSegments into tB1
+         put "f " & tA0 && tA1 && tB1 & return after tObj
+         put "f " & tA0 && tB1 && tB0 & return after tObj
+      end repeat
+   end repeat
+   return tObj
+end oiHillObj
 
 command oiCrate pX, pY, pZ
    b3kSpawnBox pX, pY, pZ, 0.85, 0.85, 0.85, "176,124,74"
 end oiCrate
 
--- An orb is a sensor ball the player passes into, made visible and gold.
+-- An orb is a sensor ball the player passes into, made visible, gold and
+-- glowing.
 command oiOrb pLetter, pX, pY, pZ
    local tOrb
    b3kAddSensorBall pX, pY, pZ, 0.7
@@ -751,10 +1107,19 @@ command oiOrb pLetter, pX, pY, pZ
    if tOrb is empty then exit oiOrb
    b3kSetVisible tOrb, true
    b3kSetColor tOrb, kOiOrbColor
+   b3kSetGlow tOrb, oiGlowStep(1)
    b3kName tOrb, "orb " & pLetter
    put pLetter into sOiOrb[tOrb]
    add 1 to sOiOrbCount
 end oiOrb
+
+-- step pStep of the orbs' pulse, as "r,g,b"
+function oiGlowStep pStep
+   set the itemDelimiter to ";"
+   get item pStep of kOiOrbGlow
+   set the itemDelimiter to comma
+   return it
+end oiGlowStep
 
 -- =====================================================================
 -- The Kit's messages
@@ -768,8 +1133,14 @@ on b3kFrame
    if sOiDone is not true then
       add tMs to sOiPlayMS
    end if
+   oiPadTick
    oiTickLift
+   oiTickSkyLift
    oiTickBall
+   oiTickGlow
+   oiTickSparks
+   oiTickJump
+   oiSoundTick
    if sOiClockMS - sOiHudAt >= 250 then
       oiHud
    end if
@@ -781,17 +1152,21 @@ on b3kSensorEnter pSensor, pVisitor
    end if
    if pSensor is sOiPad then
       b3kPlayerJump 10.5
+      oiSound "pad"
       exit b3kSensorEnter
    end if
    if sOiOrb[pSensor] is not empty then
+      oiSparks b3kX(pSensor), b3kY(pSensor), b3kZ(pSensor)
       delete variable sOiOrb[pSensor]
       b3kRemove pSensor
       add 1 to sOiFound
       b3kCamShake 0.06, 120
+      oiRumble 0.35, 0.5, 140
       oiHud
       if sOiFound >= sOiOrbCount then
          oiWin
       else
+         oiSound "orb"
          uiStatus "Orb found: " & sOiFound & " of " & sOiOrbCount & ".", "ok"
       end if
    end if
@@ -802,8 +1177,11 @@ end b3kSensorEnter
 on b3kFell pThing
    if pThing is not empty and pThing is b3kPlayer() then
       add 1 to sOiFalls
+      oiSound "splash"
+      oiRumble 0.6, 0.2, 260
       b3kPlayerRespawn kOiStartX, kOiStartY, kOiStartZ
       b3kCamOrbit b3kCamYaw(), b3kCamPitch(), b3kCamDistance(), kOiStartX, kOiStartY + 0.8, kOiStartZ
+      put true into sOiWasGround
       oiHud
       uiStatus "Into the sea! Back to the start (falls: " & sOiFalls & ").", "warn"
    end if
@@ -816,12 +1194,25 @@ command oiTickLift
    -- the last orb was found (the engine test caught it)
    if b3kIsGliding(sOiLift) or sOiClockMS < sOiLiftWait then exit oiTickLift
    if b3kY(sOiLift) < 2.5 then
-      b3kGlideTo sOiLift, 6.9, 4.95, -10.5, 3
+      b3kGlideTo sOiLift, 14.9, 4.95, -14, 3
    else
-      b3kGlideTo sOiLift, 6.9, 0.2, -10.5, 3
+      b3kGlideTo sOiLift, 14.9, 0.2, -14, 3
    end if
    put sOiClockMS + 4500 into sOiLiftWait
 end oiTickLift
+
+-- The sky lift waits two seconds at each end, then glides for five, out
+-- over the sea and up to the isle's edge, or back.
+command oiTickSkyLift
+   if sOiSkyLift is empty or not b3kIsThing(sOiSkyLift) then exit oiTickSkyLift
+   if b3kIsGliding(sOiSkyLift) or sOiClockMS < sOiSkyWait then exit oiTickSkyLift
+   if b3kZ(sOiSkyLift) > -31 then
+      b3kGlideTo sOiSkyLift, 0, 4.3, -35.7, 5
+   else
+      b3kGlideTo sOiSkyLift, 0, 0.2, -27.5, 5
+   end if
+   put sOiClockMS + 7000 into sOiSkyWait
+end oiTickSkyLift
 
 -- A rope loses a little energy each swing; when the ball has all but
 -- stopped near the bottom, give it a push to keep the hazard alive.
@@ -831,6 +1222,57 @@ command oiTickBall
       b3kPush sOiBall, 4, 0, 0
    end if
 end oiTickBall
+
+-- The orbs' glow pulses: one step of kOiOrbGlow every 250 ms. Each step
+-- is a material render3dxt keeps, so a step is a swap, not a new one.
+command oiTickGlow
+   local tOrb, tGlow
+   if sOiClockMS - sOiGlowAt < 250 then exit oiTickGlow
+   put sOiClockMS into sOiGlowAt
+   put (sOiGlowStep mod 4) + 1 into sOiGlowStep
+   put oiGlowStep(sOiGlowStep) into tGlow
+   repeat for each key tOrb in sOiOrb
+      b3kSetGlow tOrb, tGlow
+   end repeat
+end oiTickGlow
+
+-- A found orb bursts into eight glowing sparks that fly out and are gone
+-- in a second and a half. They are things like any other, so they bounce.
+command oiSparks pX, pY, pZ
+   local tI, tA, tSpark
+   repeat with tI = 0 to 7
+      put tI * 45 into tA
+      b3kSpawnBall pX + 0.3 * sin(tA * pi / 180), pY + 0.2, pZ + 0.3 * cos(tA * pi / 180), 0.16, kOiOrbColor
+      put the result into tSpark
+      if tSpark is empty then next repeat
+      b3kSetGlow tSpark, "255,180,40"
+      b3kSetBounce tSpark, 0.7
+      b3kPush tSpark, 3.2 * sin(tA * pi / 180), 4 + (tI mod 3), 3.2 * cos(tA * pi / 180)
+      put sOiClockMS + 1500 into sOiSpark[tSpark]
+   end repeat
+end oiSparks
+
+command oiTickSparks
+   local tSpark
+   repeat for each key tSpark in sOiSpark
+      if sOiClockMS >= sOiSpark[tSpark] then
+         b3kRemove tSpark
+         delete variable sOiSpark[tSpark]
+      end if
+   end repeat
+end oiTickSparks
+
+-- A jump, by key or pad, is heard: the player left the ground going up.
+command oiTickJump
+   local tGround, tVy
+   if b3kPlayer() is empty then exit oiTickJump
+   put b3kPlayerOnGround() into tGround
+   if sOiWasGround is true and tGround is false then
+      put item 2 of b3kVelocity(b3kPlayer()) into tVy
+      if tVy > 3 and tVy < 9 then oiSound "jump"
+   end if
+   put tGround into sOiWasGround
+end oiTickJump
 
 -- =====================================================================
 -- Things the player does
@@ -851,6 +1293,9 @@ on keyDown pKey
          break
       case "v"
          oiNextRenderer
+         break
+      case "m"
+         oiToggleSound
          break
       default
          pass keyDown
@@ -873,6 +1318,9 @@ on mouseUp pButton
          break
       case "oiRender"
          oiNextRenderer
+         break
+      case "oiSound"
+         oiToggleSound
          break
       case "oiLook"
          oiToggleLook
@@ -900,6 +1348,7 @@ command oiKick pH, pV
    put sqrt(tDx * tDx + tDz * tDz) into tLen
    if tLen < 0.001 then exit oiKick
    b3kPush tThing, 6 * tDx / tLen, 3, 6 * tDz / tLen
+   oiSound "kick"
 end oiKick
 
 -- X: a blast two and a half metres in front of the player.
@@ -908,15 +1357,17 @@ command oiBlast
    if b3kPlayer() is empty or not b3kIsRunning() then exit oiBlast
    put b3kPosition(b3kPlayer()) into tP
    put b3kPlayerFacing() * pi / 180 into tYaw
-   b3kExplode (item 1 of tP) + 2.5 * sin(tYaw), 0.3, (item 3 of tP) + 2.5 * cos(tYaw), 3.5, 9
+   b3kExplode (item 1 of tP) + 2.5 * sin(tYaw), (item 2 of tP) - 0.5, (item 3 of tP) + 2.5 * cos(tYaw), 3.5, 9
    b3kCamShake 0.25, 300
+   oiSound "blast"
+   oiRumble 1, 0.8, 320
 end oiBlast
 
 -- C: five things fall from the sky a little ahead of the player.
 command oiDropCrates
    local tP, tYaw, tCx, tCz, tI
    if b3kPlayer() is empty or not b3kIsRunning() then exit oiDropCrates
-   if b3kThingCount() >= kOiMaxThings then
+   if b3kThingCount() >= oiMaxThings() then
       uiStatus "That is plenty for one island: blast some into the sea first.", "warn"
       exit oiDropCrates
    end if
@@ -926,10 +1377,16 @@ command oiDropCrates
    put (item 3 of tP) + 3 * cos(tYaw) into tCz
    put 1 into tI
    repeat while tI <= 5
-      oiDropOne tCx + (random(41) - 21) / 10, 5 + tI, tCz + (random(41) - 21) / 10, tI
+      oiDropOne tCx + (random(41) - 21) / 10, (item 2 of tP) + 4 + tI, tCz + (random(41) - 21) / 10, tI
       add 1 to tI
    end repeat
+   oiSound "drop"
 end oiDropCrates
+
+-- the most things C lets the world hold
+function oiMaxThings
+   return sOiBaseThings + kOiMoreThings
+end oiMaxThings
 
 command oiDropOne pX, pY, pZ, pKind
    switch pKind
@@ -992,14 +1449,14 @@ end oiRendererLabel
 
 function oiRendererWords
    if b3kRenderer() is "render3dxt" then
-      if oiOnWeb() then return "render3dxt draws: textured and lit."
-      return "render3dxt draws: textured, lit, smooth edges."
+      if oiOnWeb() then return "render3dxt draws: textured, lit and glowing."
+      return "render3dxt draws: textured, lit and glowing, smooth edges."
    end if
    if b3kRenderer() is "box3dxt" then
       if b3kHasRender3d() then
          return "box3dxt's own renderer draws (V for render3dxt)."
       end if
-      return "box3dxt's own renderer draws; load render3dxt for the textured look."
+      return "box3dxt's own renderer draws; load render3dxt for the lit, glowing look."
    end if
    return "Nothing draws (" & b3kRenderer() & ")."
 end oiRendererWords
@@ -1016,6 +1473,8 @@ command oiWin
    if sOiBest is not a number or tSecs < sOiBest then
       put tSecs into sOiBest
    end if
+   oiSound "win"
+   oiRumble 0.8, 1, 600
    if there is a field "oiBanner" then
       put "All " & sOiOrbCount & " orbs in " & tSecs & " s!" & return & \
             "Best this session: " & sOiBest & " s.  R plays again." into field "oiBanner"
@@ -1025,17 +1484,327 @@ command oiWin
    uiStatus "Every orb found in " & tSecs & " seconds. Restart (R) for another run.", "ok"
 end oiWin
 
+-- =====================================================================
+-- The gamepad, through gamepadxt when it is loaded. Nothing here throws
+-- without it: oiPadStart asks once, inside a try, and every other
+-- handler does nothing unless that worked.
+--   left stick walks (forward is away from the camera), right stick and
+--   the shoulders turn the camera, A (south) jumps, X (west) blasts,
+--   Y (north) drops crates, B (east) swaps the renderer, Start pauses,
+--   Back restarts.
+-- =====================================================================
+command oiPadStart
+   local tOk, tErr
+   put false into sOiPadOn
+   put 0 into sOiPadNow
+   try
+      put gpStart() into tOk
+   catch tErr
+      put false into tOk
+   end try
+   if tOk is not true then exit oiPadStart
+   put true into sOiPadOn
+   oiPadPick
+end oiPadStart
+
+command oiPadStop
+   local tErr
+   if sOiPadOn is not true then exit oiPadStop
+   put false into sOiPadOn
+   put 0 into sOiPadNow
+   try
+      gpStop
+   catch tErr
+   end try
+end oiPadStop
+
+-- true once gamepadxt has started
+function oiPadOn
+   return sOiPadOn is true
+end oiPadOn
+
+-- the pad in use: the first one connected, coloured gold where it can be
+command oiPadPick
+   local tPad
+   put 0 into sOiPadNow
+   if sOiPadOn is not true then exit oiPadPick
+   put line 1 of gpPads() into tPad
+   if tPad is not an integer or tPad <= 0 then exit oiPadPick
+   put tPad into sOiPadNow
+   get gpPadSetLED(sOiPadNow, 240, 190, 40)
+end oiPadPick
+
+-- one frame of the pad: what happened since the last frame, then what is
+-- held. A pad steers only while its stick is pushed, and gives the keys
+-- back when let go.
+command oiPadTick
+   local tEvent, tStick, tX, tY, tLook
+   if sOiPadOn is not true then exit oiPadTick
+   get gpPoll()
+   repeat for each line tEvent in gpEvents()
+      switch item 1 of tEvent
+         case "connected"
+         case "disconnected"
+            oiPadPick
+            oiHud
+            break
+         case "button"
+            if item 2 of tEvent is sOiPadNow and item 4 of tEvent is "down" then oiPadButton item 3 of tEvent
+            break
+      end switch
+   end repeat
+   if sOiPadNow is 0 or b3kPlayer() is empty then exit oiPadTick
+   put gpPadStick(sOiPadNow, "left") into tStick
+   put item 1 of tStick into tX
+   put item 2 of tStick into tY
+   if tX is a number and tY is a number and abs(tX) + abs(tY) > 0 then
+      b3kPlayerSteer tX, 0 - tY
+      put true into sOiPadSteer
+   else if sOiPadSteer is true then
+      b3kPlayerSteer empty, empty
+      put false into sOiPadSteer
+   end if
+   put item 1 of gpPadStick(sOiPadNow, "right") into tLook
+   if tLook is not a number then put 0 into tLook
+   if gpPadButton(sOiPadNow, "leftshoulder") then subtract 1 from tLook
+   if gpPadButton(sOiPadNow, "rightshoulder") then add 1 to tLook
+   if tLook is not 0 then b3kCamOrbitBy 3 * tLook, 0
+end oiPadTick
+
+command oiPadButton pButton
+   switch pButton
+      case "south"
+         if b3kPlayer() is not empty and b3kPlayerOnGround() then b3kPlayerJump
+         break
+      case "west"
+         oiBlast
+         break
+      case "north"
+         oiDropCrates
+         break
+      case "east"
+         oiNextRenderer
+         break
+      case "start"
+         oiTogglePause
+         break
+      case "back"
+         oiNewGame
+         break
+   end switch
+end oiPadButton
+
+-- shake the pad, where it can: pLow and pHigh 0 to 1, for pMs
+command oiRumble pLow, pHigh, pMs
+   if sOiPadOn is not true or sOiPadNow is 0 then exit oiRumble
+   get gpPadRumble(sOiPadNow, pLow, pHigh, pMs)
+end oiRumble
+
+-- the pad's name for the HUD
+function oiPadWords
+   if sOiPadOn is not true then return "not loaded"
+   if sOiPadNow is 0 then return "none connected"
+   return gpPadName(sOiPadNow)
+end oiPadWords
+
+-- =====================================================================
+-- Sound, through audioxt when it is loaded: tones and noise made on the
+-- spot, so the game needs no sound files. A sea that swells, a chime a
+-- note higher for each orb, a jump, a spring, a kick, a blast, a splash
+-- and a fanfare. Nothing here throws without audioxt: oiSoundStart asks
+-- once, inside a try. In a web page the browser lets sound start at the
+-- first click or key press, which is its rule.
+-- =====================================================================
+command oiSoundStart pDevice
+   local tEngine, tErr
+   if pDevice is an integer then put pDevice into sOiAudioDevice
+   if sOiAudioDevice is not an integer then put 0 into sOiAudioDevice
+   oiSoundStop
+   try
+      put auEngineCreate(sOiAudioDevice, 0, 2) into tEngine
+   catch tErr
+      put 0 into tEngine
+   end try
+   if tEngine is not an integer or tEngine <= 0 then
+      put 0 into sOiAudio
+      exit oiSoundStart
+   end if
+   put tEngine into sOiAudio
+   put empty into sOiVoices
+   if sOiMuted is true then auEngineSetVolume sOiAudio, 0
+   -- the sea: soft pink noise that swells and falls every four seconds
+   put auSoundNoise(sOiAudio, "pink", 0.05) into sOiSea
+   if sOiSea > 0 then
+      auSoundSetLooping sOiSea, true
+      auSoundStart sOiSea
+   end if
+   put 0 into sOiSeaAt
+   put true into sOiSeaUp
+   oiSoundLabel
+end oiSoundStart
+
+command oiSoundStop
+   if sOiAudio is an integer and sOiAudio > 0 then auEngineFree sOiAudio
+   put 0 into sOiAudio
+   put 0 into sOiSea
+   put empty into sOiVoices
+   oiSoundLabel
+end oiSoundStop
+
+-- true while an audio engine plays
+function oiSoundOn
+   return sOiAudio is an integer and sOiAudio > 0
+end oiSoundOn
+
+-- the sounds played this run, one name a line (the test reads it)
+function oiSoundsPlayed
+   return sOiPlayed
+end oiSoundsPlayed
+
+-- how many voices wait to be freed (the test reads it)
+function oiSoundVoices
+   return the number of lines of sOiVoices
+end oiSoundVoices
+
+command oiToggleSound
+   if not oiSoundOn() then
+      uiStatus "No sound: load the audioxt extension for the sea, the chimes and the blasts.", "warn"
+      exit oiToggleSound
+   end if
+   put sOiMuted is not true into sOiMuted
+   if sOiMuted then
+      auEngineSetVolume sOiAudio, 0
+      uiStatus "Sound off. M turns it on.", "ok"
+   else
+      auEngineSetVolume sOiAudio, 1
+      uiStatus "Sound on.", "ok"
+   end if
+   oiSoundLabel
+end oiToggleSound
+
+command oiSoundLabel
+   if there is no button "oiSound" then exit oiSoundLabel
+   if not oiSoundOn() then
+      set the label of button "oiSound" to "Sound: none (M)"
+   else if sOiMuted is true then
+      set the label of button "oiSound" to "Sound: off (M)"
+   else
+      set the label of button "oiSound" to "Sound: on (M)"
+   end if
+end oiSoundLabel
+
+-- each frame: the sea's swell, and the finished sounds given back
+command oiSoundTick
+   local tLine, tKeep
+   if not oiSoundOn() then exit oiSoundTick
+   if sOiClockMS >= sOiSeaAt and sOiSea > 0 then
+      if sOiSeaUp then
+         auSoundFade sOiSea, 0.35, 1, 4
+      else
+         auSoundFade sOiSea, 1, 0.35, 4
+      end if
+      put not sOiSeaUp into sOiSeaUp
+      put sOiClockMS + 4000 into sOiSeaAt
+   end if
+   if sOiVoices is empty then exit oiSoundTick
+   repeat for each line tLine in sOiVoices
+      if sOiClockMS >= item 2 of tLine then
+         auSoundFree item 1 of tLine
+      else
+         put tLine & return after tKeep
+      end if
+   end repeat
+   put tKeep into sOiVoices
+end oiSoundTick
+
+-- one voice: a tone or a noise that starts pAt seconds from now, lasts
+-- pFor seconds and fades out over its last part; freed when it is done
+command oiVoice pKind, pHertz, pLevel, pAt, pFor
+   local tSound, tNow
+   if pKind is "white" or pKind is "pink" then
+      put auSoundNoise(sOiAudio, pKind, pLevel) into tSound
+   else
+      put auSoundTone(sOiAudio, pKind, pHertz, pLevel) into tSound
+   end if
+   if tSound is not an integer or tSound <= 0 then exit oiVoice
+   put auEngineTime(sOiAudio) into tNow
+   if pAt > 0 then
+      auSoundStartAt tSound, tNow + pAt
+   else
+      auSoundStart tSound
+      auSoundFade tSound, 1, 0, pFor
+   end if
+   auSoundStopAt tSound, tNow + pAt + pFor
+   put tSound & comma & round(sOiClockMS + 1000 * (pAt + pFor) + 500) & return after sOiVoices
+end oiVoice
+
+command oiSound pName
+   local tNote, tI
+   put pName & return after sOiPlayed
+   if not oiSoundOn() then exit oiSound
+   switch pName
+      case "orb"
+         set the itemDelimiter to comma
+         put item max(1, min(16, sOiFound)) of kOiChime into tNote
+         oiVoice "sine", tNote, 0.22, 0, 0.45
+         oiVoice "triangle", tNote * 1.5, 0.1, 0.07, 0.4
+         break
+      case "jump"
+         oiVoice "triangle", 330, 0.12, 0, 0.12
+         oiVoice "triangle", 495, 0.08, 0.05, 0.1
+         break
+      case "pad"
+         repeat with tI = 0 to 3
+            oiVoice "sine", 262 * (1.26 ^ tI), 0.16, 0.05 * tI, 0.12
+         end repeat
+         break
+      case "kick"
+         oiVoice "white", 0, 0.18, 0, 0.07
+         oiVoice "sine", 110, 0.25, 0, 0.12
+         break
+      case "drop"
+         oiVoice "sine", 880, 0.08, 0, 0.1
+         oiVoice "sine", 660, 0.08, 0.08, 0.12
+         break
+      case "blast"
+         oiVoice "white", 0, 0.45, 0, 0.6
+         oiVoice "sine", 55, 0.5, 0, 0.5
+         break
+      case "splash"
+         oiVoice "pink", 0, 0.5, 0, 0.9
+         oiVoice "white", 0, 0.12, 0, 0.35
+         break
+      case "win"
+         set the itemDelimiter to comma
+         put 0 into tI
+         repeat for each item tNote in "523.25,659.25,783.99,1046.5"
+            oiVoice "triangle", tNote, 0.2, tI * 0.13, 0.5
+            oiVoice "sine", tNote / 2, 0.12, tI * 0.13, 0.5
+            add 1 to tI
+         end repeat
+         oiVoice "sine", 1046.5, 0.18, 0.6, 1.2
+         break
+   end switch
+end oiSound
+
 -- The HUD: written four times a second at most, and a field only when its
 -- text changed (a field write is the costliest thing a frame can do).
 command oiHud
-   local tScore, tTime, tStats
+   local tScore, tTime, tStats, tSound
    put sOiClockMS into sOiHudAt
    if there is no field "oiScore" then exit oiHud
    put "Orbs  " & sOiFound & " / " & sOiOrbCount into tScore
    put "Time  " & format("%.1f", sOiPlayMS / 1000) & " s      Falls  " & sOiFalls into tTime
+   put "none (audioxt not loaded)" into tSound
+   if oiSoundOn() then
+      put "on" into tSound
+      if sOiMuted is true then put "off (M)" into tSound
+   end if
    put b3kStats() into tStats
-   put "renderer  " & item 4 of tStats & return & "pictures a second  " & item 1 of tStats & return & \
-         "things  " & item 2 of tStats & "   awake  " & item 3 of tStats into tStats
+   put "renderer  " & item 4 of tStats & "   lamps  " & the number of lines of b3kLamps() & return & \
+         "pictures a second  " & item 1 of tStats & return & \
+         "things  " & item 2 of tStats & "   awake  " & item 3 of tStats & return & \
+         "gamepad  " & oiPadWords() & return & "sound  " & tSound into tStats
    if tScore is not sOiHudText["score"] then
       put tScore into field "oiScore"
       put tScore into sOiHudText["score"]
@@ -1078,26 +1847,29 @@ command oiBuildUI
    set the textStyle of field "oiScore" to "bold"
    uiLabel "oiTime", "Time  0.0 s", tL & ",126," & tR & ",146", 13
    set the foregroundColor of field "oiTime" to kUiInkSoft
-   uiSection "oiSecPlay", "2  Play", tL & ",158," & tR & ",178"
-   oiButton "oiRestart", "Restart (R)", tL & ",188,940,212", true
-   oiButton "oiPause", "Pause (P)", "948,188," & tR & ",212", false
-   oiButton "oiBlast", "Blast (X)", tL & ",218,940,242", false
-   oiButton "oiCrates", "Drop crates (C)", "948,218," & tR & ",242", false
-   oiButton "oiRender", "Renderer (V)", tL & ",248," & tR & ",272", false
-   uiCheckbox "oiLook", "Drag the view to look around", tL & ",280," & tR & ",300"
+   uiSection "oiSecPlay", "2  Play", tL & ",154," & tR & ",174"
+   oiButton "oiRestart", "Restart (R)", tL & ",180,940,204", true
+   oiButton "oiPause", "Pause (P)", "948,180," & tR & ",204", false
+   oiButton "oiBlast", "Blast (X)", tL & ",210,940,234", false
+   oiButton "oiCrates", "Drop crates (C)", "948,210," & tR & ",234", false
+   oiButton "oiRender", "Renderer (V)", tL & ",240," & tR & ",264", false
+   oiButton "oiSound", "Sound (M)", tL & ",270," & tR & ",294", false
+   uiCheckbox "oiLook", "Drag the view to look around", tL & ",300," & tR & ",320"
    -- made as a push button first, so it would keep a push button's frame
    set the showBorder of button "oiLook" to false
    set the threeD of button "oiLook" to false
    set the foregroundColor of button "oiLook" to kUiInk
    set the textSize of button "oiLook" to 11
    set the hilite of button "oiLook" to true
-   uiSection "oiSecKeys", "3  Keys", tL & ",312," & tR & ",332"
-   uiWrap "oiKeys", "WASD or arrows: walk (forward is away from the camera)" & return & \
-         "Space: jump" & return & "Q and E: turn the camera" & return & \
-         "Drag the view: look around" & return & "Click a crate or ball: kick it" & return & \
-         "X blast, C crates, V renderer, P pause, R restart", tL & ",340," & tR & ",460", 11
+   uiSection "oiSecKeys", "3  Keys and gamepad", tL & ",326," & tR & ",346"
+   uiWrap "oiKeys", "WASD or arrows: walk; Space: jump" & return & \
+         "Q and E, or drag the view: turn the camera" & return & \
+         "Click a crate or ball: kick it" & return & \
+         "X blast, C crates, V renderer, M sound," & return & "P pause, R restart" & return & \
+         "Gamepad: left stick walks, right stick looks," & return & \
+         "A jumps, X blasts, Y crates, Start pauses", tL & ",352," & tR & ",466", 11
    uiSection "oiSecKit", "4  Under the hood", tL & ",470," & tR & ",490"
-   uiArea "oiStats", tL & ",498," & tR & ",588"
+   uiArea "oiStats", tL & ",494," & tR & ",590"
    set the foregroundColor of field "oiStats" to kUiInk
    set the vScrollbar of field "oiStats" to false
    -- the win banner, over the middle of the view, hidden until it is won
@@ -1111,7 +1883,7 @@ command oiBuildUI
    set the margins of field "oiBanner" to "8,24,8,8"
    hide field "oiBanner"
    uiFooter "Orb Island: a demo of the b3k Kit, carried below its game code from box3dxt/src/box3dxt-kit.livecodescript. " & \
-         "It has played in a web Stack Player, keys and mouse included; a desktop IDE and the feel still need an OXT pass.", \
+         "Sixteen orbs on an island 60 metres square; gamepadxt and audioxt are used when they are loaded.", \
          "16,524,784,600"
    set the uOiUIVersion of this stack to kOiUIVersion
    set the loc of this stack to the screenLoc
@@ -1193,7 +1965,7 @@ end oiButton
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
 --         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
---         b3kSetBackground color / b3kSetLight dx,dy,dz / b3kSetAmbient color /
+--         b3kSetBackground color / b3kSetLight dx,dy,dz[,color] / b3kSetAmbient color /
 --         b3kSetFog color,near,far / b3kSetSmooth 1..4 / b3kSetRenderMode mode /
 --         b3kDraw / b3kSync
 -- CAMERA  b3kCamOrbit yaw,pitch,dist[,tx,ty,tz] / b3kCamOrbitBy dYaw,dPitch /
@@ -1213,7 +1985,10 @@ end oiButton
 --         b3kIsGliding(thing)
 -- SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
---         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing)
+--         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
+--         b3kSetGlow thing,color / b3kGlow(thing)
+-- LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
+--         b3kRemoveLamp lamp / b3kLamps()
 -- MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
 -- BODY    b3kSetType thing,"static"|"kinematic"|"dynamic" / b3kType(thing) /
 --         b3kSetGravityScale thing,s / b3kSetDamping thing,lin[,ang] /
@@ -1290,6 +2065,9 @@ local sGround, sGroundSize, sGroundY
 local sView, sViewW, sViewH, sRenderer, sWant, sStale, sBegun
 local sScene, sSun, sMeshes, sMats
 local sBg, sAmbient, sLight, sFog, sSmooth, sMode
+-- the sun's colour, each thing's glow, and the lamps: sLamp[n] is
+-- "x,y,z;r,g,b;intensity;range" and sLampR3[n] its render3dxt light
+local sSunColor, sGlow, sLamp, sLampR3, sLampCount
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -1896,6 +2674,10 @@ command b3kClear
    repeat for each line tThing in tAll
       b3kRemove tThing
    end repeat
+   put the keys of sLamp into tAll
+   repeat for each line tThing in tAll
+      b3kRemoveLamp tThing
+   end repeat
    b3kTablesReset
    put true into sStale
 end b3kClear
@@ -1941,6 +2723,7 @@ private command b3kTablesReset
    put empty into sOwnMat
    put empty into sOwnTex
    put empty into sChecker
+   put empty into sGlow
    put empty into sTexPath
    put empty into sModel
    put empty into sModelPath
@@ -1956,6 +2739,11 @@ private command b3kTablesReset
    put empty into sPlayer
    put empty into sCamFollow
    put empty into sEvents
+   -- the lamps go with the things (b3kClear destroys their render3dxt
+   -- lights first; b3kTeardown's scene took them with it)
+   put empty into sLamp
+   put empty into sLampR3
+   put 0 into sLampCount
 end b3kTablesReset
 
 -- =====================================================================
@@ -2321,6 +3109,9 @@ private command b3kSceneMake
    repeat for each key tThing in sKind
       b3kVisualMake tThing
    end repeat
+   repeat for each key tThing in sLamp
+      b3kLampMake tThing
+   end repeat
 end b3kSceneMake
 
 -- the scene's background, ambient light, sun, fog and smoothing
@@ -2345,11 +3136,13 @@ private command b3kSceneLook
    if sSun is not empty then
       if not r3LightIsValid(sSun) then put empty into sSun
    end if
+   if sSunColor is empty then put "255,248,236" into sSunColor
    if sSun is empty then
-      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, 255, 248, 236, 1) into sSun
+      put r3LightCreateDirectional(sScene, item 1 of sLight, item 2 of sLight, item 3 of sLight, \
+            item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1) into sSun
    else
       r3LightSetDirection sSun, item 1 of sLight, item 2 of sLight, item 3 of sLight
-      r3LightSetColor sSun, 255, 248, 236, 1
+      r3LightSetColor sSun, item 1 of sSunColor, item 2 of sSunColor, item 3 of sSunColor, 1
    end if
    if sFog is not empty then
       r3SceneSetFog sScene, item 1 of sFog, item 2 of sFog, item 3 of sFog, item 4 of sFog, item 5 of sFog
@@ -2383,6 +3176,7 @@ private command b3kSceneFree
    end if
    put empty into sScene
    put empty into sSun
+   put empty into sLampR3
    put empty into sMeshes
    put empty into sMats
    put empty into sNode
@@ -2417,17 +3211,26 @@ pDy: The y of the direction; negative shines down.
 
 pDz: The z of the direction.
 
+pColor: The sunlight's colour (render3dxt only); empty keeps it as it
+is. It starts a warm white, "255,248,236".
+
 Example:
 b3kSetLight -0.4, -1, -0.3
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"   -- a low evening sun
 
 Description:
 Both renderers light from this direction; a surface facing away keeps a
-dim shade, so nothing goes black.
+dim shade, so nothing goes black. box3dxt's renderer lights in white.
 
 References: b3kSetAmbient (handler)
 */
-command b3kSetLight pDx, pDy, pDz
-   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then exit b3kSetLight
+command b3kSetLight pDx, pDy, pDz, pColor
+   if pColor is not empty then put b3kRGB(pColor, "255,248,236") into sSunColor
+   if b3kNum(pDx, 0) = 0 and b3kNum(pDy, 0) = 0 and b3kNum(pDz, 0) = 0 then
+      b3kSceneLook
+      put true into sStale
+      exit b3kSetLight
+   end if
    put b3kNum(pDx, 0) & comma & b3kNum(pDy, -1) & comma & b3kNum(pDz, 0) into sLight
    b3kSceneLook
    put true into sStale
@@ -2520,6 +3323,143 @@ command b3kSetRenderMode pMode
    end switch
    put true into sStale
 end b3kSetRenderMode
+
+/**
+Summary: Hang a lamp in the world: a light that shines from a point (render3dxt only).
+
+pX: The x of the lamp.
+
+pY: The y of the lamp.
+
+pZ: The z of the lamp.
+
+pColor: Its colour; empty is a warm "255,214,150".
+
+pRange: How far its light reaches, in metres; empty means 8.
+
+pIntensity: How bright, 0 to 4; empty means 1.
+
+Returns: (through the result) the lamp, a whole number, or empty when there
+is no world or the world already has seven lamps.
+
+Example:
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6
+put the result into tLamp
+
+Description:
+Things within the range are lit from the lamp as well as the sun, more
+the nearer they are. Lighting is worked out at the corners of each shape,
+so a lamp shows best on rounded things and small boxes; a big flat box
+whose corners are all out of range is not lit by it. A world holds at most
+seven lamps beside the sun. Lamps go with <b3kClear> and <b3kTeardown>,
+and come back when the renderer changes. box3dxt's renderer has no lamps.
+
+References: b3kMoveLamp (handler), b3kRemoveLamp (handler), b3kSetGlow (handler)
+*/
+command b3kAddLamp pX, pY, pZ, pColor, pRange, pIntensity
+   local tId
+   if sWorld is empty then return empty
+   if the number of lines of the keys of sLamp >= 7 then
+      put "a world holds at most seven lamps" into sLastError
+      return empty
+   end if
+   add 1 to sLampCount
+   put sLampCount into tId
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) & ";" & \
+         b3kRGB(pColor, "255,214,150") & ";" & max(0, min(4, b3kNum(pIntensity, 1))) & ";" & \
+         max(0.1, min(1000, b3kNum(pRange, 8))) into sLamp[tId]
+   b3kLampMake tId
+   put true into sStale
+   return tId
+end b3kAddLamp
+
+/**
+Summary: Move a lamp.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+pX: The new x.
+
+pY: The new y.
+
+pZ: The new z.
+
+Example:
+b3kMoveLamp tLamp, b3kX(tTorch), b3kY(tTorch) + 0.5, b3kZ(tTorch)
+
+Description:
+A lamp that is not there is ignored.
+
+References: b3kAddLamp (handler)
+*/
+command b3kMoveLamp pLamp, pX, pY, pZ
+   local tSpec
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kMoveLamp
+   put sLamp[pLamp] into tSpec
+   set the itemDelimiter to ";"
+   put b3kNum(pX, 0) & comma & b3kNum(pY, 0) & comma & b3kNum(pZ, 0) into item 1 of tSpec
+   put tSpec into sLamp[pLamp]
+   set the itemDelimiter to comma
+   if sLampR3[pLamp] is not empty then
+      r3LightSetPosition sLampR3[pLamp], b3kNum(pX, 0), b3kNum(pY, 0), b3kNum(pZ, 0)
+   end if
+   put true into sStale
+end b3kMoveLamp
+
+/**
+Summary: Take a lamp away.
+
+pLamp: A lamp, from <b3kAddLamp>.
+
+Example:
+b3kRemoveLamp tLamp
+
+Description:
+Removing a lamp that is not there is harmless.
+
+References: b3kAddLamp (handler), b3kLamps (handler)
+*/
+command b3kRemoveLamp pLamp
+   if pLamp is empty or sLamp[pLamp] is empty then exit b3kRemoveLamp
+   if sLampR3[pLamp] is not empty then r3LightDestroy sLampR3[pLamp]
+   delete variable sLampR3[pLamp]
+   delete variable sLamp[pLamp]
+   put true into sStale
+end b3kRemoveLamp
+
+/**
+Summary: The lamps there are.
+
+Returns: One lamp a line, oldest first; empty if there are none.
+
+Example:
+put the number of lines of b3kLamps() into tCount
+
+References: b3kAddLamp (handler)
+*/
+function b3kLamps
+   local tKeys
+   put the keys of sLamp into tKeys
+   sort lines of tKeys numeric
+   return tKeys
+end b3kLamps
+
+-- a lamp's render3dxt light, when render3dxt draws
+private command b3kLampMake pLamp
+   local tSpec, tPos, tRGB, tPower, tRange, tLight
+   if sRenderer is not "render3dxt" or sScene is empty then exit b3kLampMake
+   put sLamp[pLamp] into tSpec
+   if tSpec is empty then exit b3kLampMake
+   set the itemDelimiter to ";"
+   put item 1 of tSpec into tPos
+   put item 2 of tSpec into tRGB
+   put item 3 of tSpec into tPower
+   put item 4 of tSpec into tRange
+   set the itemDelimiter to comma
+   put r3LightCreatePoint(sScene, item 1 of tPos, item 2 of tPos, item 3 of tPos, \
+         item 1 of tRGB, item 2 of tRGB, item 3 of tRGB, tPower, tRange) into tLight
+   if tLight is a number and tLight > 0 then put tLight into sLampR3[pLamp]
+end b3kLampMake
 
 /**
 Summary: Draw the picture now.
@@ -3586,9 +4526,13 @@ private command b3kVisualLook pThing
       if tMat is a number and tMat > 0 then
          r3MaterialSetTexture tMat, tTex
          put tMat into sOwnMat[pThing]
+         if sGlow[pThing] is not empty then
+            set the itemDelimiter to comma
+            r3MaterialSetEmissive tMat, item 1 of sGlow[pThing], item 2 of sGlow[pThing], item 3 of sGlow[pThing]
+         end if
       end if
    else if sOwnLook[pThing] is not true then
-      put b3kColorMat(sColor[pThing]) into tMat
+      put b3kColorMat(sColor[pThing], sGlow[pThing]) into tMat
    end if
    if tMat is a number and tMat > 0 then
       repeat for each item tHandle in sNode[pThing]
@@ -3598,14 +4542,21 @@ private command b3kVisualLook pThing
    put true into sStale
 end b3kVisualLook
 
--- one shared render3dxt material for each plain colour
-private function b3kColorMat pRGB
-   if sMats[pRGB] is empty then
+-- one shared render3dxt material for each plain colour, and for each
+-- colour and glow together ("r,g,b/r,g,b")
+private function b3kColorMat pRGB, pGlow
+   local tKey
+   put pRGB into tKey
+   if pGlow is not empty then put pRGB & "/" & pGlow into tKey
+   if sMats[tKey] is empty then
       set the itemDelimiter to comma
-      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[pRGB]
-      r3MaterialSetSpecular sMats[pRGB], 0.25, 24
+      put r3MaterialCreate(item 1 of pRGB, item 2 of pRGB, item 3 of pRGB) into sMats[tKey]
+      r3MaterialSetSpecular sMats[tKey], 0.25, 24
+      if pGlow is not empty then
+         r3MaterialSetEmissive sMats[tKey], item 1 of pGlow, item 2 of pGlow, item 3 of pGlow
+      end if
    end if
-   return sMats[pRGB]
+   return sMats[tKey]
 end b3kColorMat
 
 /**
@@ -4411,6 +5362,52 @@ function b3kColor pThing
 end b3kColor
 
 /**
+Summary: Make a thing glow with a light of its own (render3dxt only).
+
+pThing: The thing.
+
+pColor: The glow's colour, added to the thing's whatever the lights do;
+empty or "0,0,0" turns it off.
+
+Example:
+b3kSetGlow tOrb, "160,110,0"      -- a gold that shines in the shade
+
+Description:
+A glow lights the thing itself, not what is near it: put a lamp beside it
+with <b3kAddLamp> for that. It works with a colour, a checker or a picture.
+box3dxt's renderer keeps the plain colour.
+
+References: b3kGlow (handler), b3kAddLamp (handler), b3kSetColor (handler)
+*/
+command b3kSetGlow pThing, pColor
+   if sKind[pThing] is empty then exit b3kSetGlow
+   if pColor is empty then
+      delete variable sGlow[pThing]
+   else
+      put b3kRGB(pColor, "0,0,0") into sGlow[pThing]
+      if sGlow[pThing] is "0,0,0" then delete variable sGlow[pThing]
+   end if
+   b3kVisualLook pThing
+   put true into sStale
+end b3kSetGlow
+
+/**
+Summary: A thing's glow.
+
+pThing: The thing.
+
+Returns: "r,g,b", or empty for a thing that does not glow.
+
+Example:
+if b3kGlow(tOrb) is empty then b3kSetGlow tOrb, "120,90,0"
+
+References: b3kSetGlow (handler)
+*/
+function b3kGlow pThing
+   return sGlow[pThing]
+end b3kGlow
+
+/**
 Summary: Give a thing a checkerboard look (render3dxt only).
 
 pThing: The thing.
@@ -5062,6 +6059,7 @@ command b3kRemove pThing
    delete variable sOwnMat[pThing]
    delete variable sOwnTex[pThing]
    delete variable sChecker[pThing]
+   delete variable sGlow[pThing]
    delete variable sTexPath[pThing]
    delete variable sModel[pThing]
    delete variable sModelPath[pThing]

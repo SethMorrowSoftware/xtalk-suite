@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 168 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 174 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -45,7 +45,7 @@ WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
 TARGETS b3kFrameTarget obj / b3kContactTarget obj
 VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
         b3kUseRenderer "auto"|"render3dxt"|"box3dxt"|"none" / b3kRenderer() /
-        b3kSetBackground color / b3kSetLight dx,dy,dz / b3kSetAmbient color /
+        b3kSetBackground color / b3kSetLight dx,dy,dz[,color] / b3kSetAmbient color /
         b3kSetFog color,near,far / b3kSetSmooth 1..4 / b3kSetRenderMode mode /
         b3kDraw / b3kSync
 CAMERA  b3kCamOrbit yaw,pitch,dist[,tx,ty,tz] / b3kCamOrbitBy dYaw,dPitch /
@@ -65,7 +65,10 @@ SCENERY b3kAddGround [size,y,colorA,colorB] / b3kAddWalls [height] /
         b3kIsGliding(thing)
 SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
-        b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing)
+        b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
+        b3kSetGlow thing,color / b3kGlow(thing)
+LAMPS   b3kAddLamp x,y,z[,color,range,intensity] (-> lamp) / b3kMoveLamp lamp,x,y,z /
+        b3kRemoveLamp lamp / b3kLamps()
 MATERIAL b3kSetBounce thing,0..1 / b3kSetFriction thing,f / b3kSetDensity thing,d
 BODY    b3kSetType thing,"static"|"kinematic"|"dynamic" / b3kType(thing) /
         b3kSetGravityScale thing,s / b3kSetDamping thing,lin[,ang] /
@@ -649,18 +652,20 @@ See also: [`b3kSetLight`](#b3ksetlight), [`b3kSetFog`](#b3ksetfog)
 
 ### `b3kSetLight`
 
-`b3kSetLight pDx, pDy, pDz`
+`b3kSetLight pDx, pDy, pDz, pColor`
 
 Set the direction the sunlight travels.
 
 - `pDx`: The x of the direction.
 - `pDy`: The y of the direction; negative shines down.
 - `pDz`: The z of the direction.
+- `pColor`: The sunlight's colour (render3dxt only); empty keeps it as it is. It starts a warm white, "255,248,236".
 
-Both renderers light from this direction; a surface facing away keeps a dim shade, so nothing goes black.
+Both renderers light from this direction; a surface facing away keeps a dim shade, so nothing goes black. box3dxt's renderer lights in white.
 
 ```
 b3kSetLight -0.4, -1, -0.3
+b3kSetLight -0.8, -0.5, -0.3, "255,196,140"   -- a low evening sun
 ```
 
 See also: [`b3kSetAmbient`](#b3ksetambient)
@@ -724,6 +729,79 @@ b3kSetRenderMode "outline"
 ```
 
 See also: [`b3kUseRenderer`](#b3kuserenderer)
+
+### `b3kAddLamp`
+
+`b3kAddLamp pX, pY, pZ, pColor, pRange, pIntensity`
+
+Hang a lamp in the world: a light that shines from a point (render3dxt only).
+
+- `pX`: The x of the lamp.
+- `pY`: The y of the lamp.
+- `pZ`: The z of the lamp.
+- `pColor`: Its colour; empty is a warm "255,214,150".
+- `pRange`: How far its light reaches, in metres; empty means 8.
+- `pIntensity`: How bright, 0 to 4; empty means 1.
+
+Returns: (through the result) the lamp, a whole number, or empty when there is no world or the world already has seven lamps.
+
+Things within the range are lit from the lamp as well as the sun, more the nearer they are. Lighting is worked out at the corners of each shape, so a lamp shows best on rounded things and small boxes; a big flat box whose corners are all out of range is not lit by it. A world holds at most seven lamps beside the sun. Lamps go with [`b3kClear`](#b3kclear) and [`b3kTeardown`](#b3kteardown), and come back when the renderer changes. box3dxt's renderer has no lamps.
+
+```
+b3kAddLamp 0, 2.5, 0, "255,200,120", 6
+put the result into tLamp
+```
+
+See also: [`b3kMoveLamp`](#b3kmovelamp), [`b3kRemoveLamp`](#b3kremovelamp), [`b3kSetGlow`](#b3ksetglow)
+
+### `b3kMoveLamp`
+
+`b3kMoveLamp pLamp, pX, pY, pZ`
+
+Move a lamp.
+
+- `pLamp`: A lamp, from [`b3kAddLamp`](#b3kaddlamp).
+- `pX`: The new x.
+- `pY`: The new y.
+- `pZ`: The new z.
+
+A lamp that is not there is ignored.
+
+```
+b3kMoveLamp tLamp, b3kX(tTorch), b3kY(tTorch) + 0.5, b3kZ(tTorch)
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp)
+
+### `b3kRemoveLamp`
+
+`b3kRemoveLamp pLamp`
+
+Take a lamp away.
+
+- `pLamp`: A lamp, from [`b3kAddLamp`](#b3kaddlamp).
+
+Removing a lamp that is not there is harmless.
+
+```
+b3kRemoveLamp tLamp
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp), [`b3kLamps`](#b3klamps)
+
+### `b3kLamps`
+
+`b3kLamps()`
+
+The lamps there are.
+
+Returns: One lamp a line, oldest first; empty if there are none.
+
+```
+put the number of lines of b3kLamps() into tCount
+```
+
+See also: [`b3kAddLamp`](#b3kaddlamp)
 
 ### `b3kDraw`
 
@@ -1597,6 +1675,39 @@ put b3kColor(tCrate) into tWas
 ```
 
 See also: [`b3kSetColor`](#b3ksetcolor)
+
+### `b3kSetGlow`
+
+`b3kSetGlow pThing, pColor`
+
+Make a thing glow with a light of its own (render3dxt only).
+
+- `pThing`: The thing.
+- `pColor`: The glow's colour, added to the thing's whatever the lights do; empty or "0,0,0" turns it off.
+
+A glow lights the thing itself, not what is near it: put a lamp beside it with [`b3kAddLamp`](#b3kaddlamp) for that. It works with a colour, a checker or a picture. box3dxt's renderer keeps the plain colour.
+
+```
+b3kSetGlow tOrb, "160,110,0"      -- a gold that shines in the shade
+```
+
+See also: [`b3kGlow`](#b3kglow), [`b3kAddLamp`](#b3kaddlamp), [`b3kSetColor`](#b3ksetcolor)
+
+### `b3kGlow`
+
+`b3kGlow(pThing)`
+
+A thing's glow.
+
+- `pThing`: The thing.
+
+Returns: "r,g,b", or empty for a thing that does not glow.
+
+```
+if b3kGlow(tOrb) is empty then b3kSetGlow tOrb, "120,90,0"
+```
+
+See also: [`b3kSetGlow`](#b3ksetglow)
 
 ### `b3kSetChecker`
 

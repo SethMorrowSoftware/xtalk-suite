@@ -87,8 +87,9 @@ function prFastestNear pX, pY, pZ, pRadius
    return tBest
 end prFastestNear
 
--- the whole run; pR3 says whether render3dxt is loaded, pB3 box3dxt
-command prRunAll pR3, pB3
+-- the whole run; pR3 says whether render3dxt is loaded, pB3 box3dxt,
+-- pGp gamepadxt and pAu audioxt
+command prRunAll pR3, pB3, pGp, pAu
    put empty into gPrOut
    put 0 into gPrPassed
    put 0 into gPrFailed
@@ -102,17 +103,23 @@ command prRunAll pR3, pB3
    end if
    prBuild pR3
    if gPrFailed > 0 then exit prRunAll
+   prSound pAu
    prDraw
+   prLook pR3
    prWalk
    prOrbs
    prFall
    prPad
    prToys
+   prCorners
    prKick
    prBlast
    prDrop
+   prSparks
+   prSoundsHeard pAu
    prRenderers pR3
    prButtonsAndKeys
+   prGamepad pGp
    prTiming pR3
    prCheck "no frame of the game threw", b3kFrameError() is empty, prLine(b3kFrameError())
    prClose
@@ -133,7 +140,7 @@ command prBuild pR3
    repeat for each item tName in "uiTitle,uiStatus,uiFooter,oiScore,oiTime,oiStats,oiKeys,oiBanner"
       prCheck "field " & tName & " is built", there is a field tName of card 1 of stack "OrbIsland", tName
    end repeat
-   repeat for each item tName in "oiRestart,oiPause,oiBlast,oiCrates,oiRender,oiLook"
+   repeat for each item tName in "oiRestart,oiPause,oiBlast,oiCrates,oiRender,oiSound,oiLook"
       prCheck "button " & tName & " is built", there is a button tName of card 1 of stack "OrbIsland", tName
    end repeat
    prCheck "the view is the Kit's image, 768 by 456 at 16,58", \
@@ -141,7 +148,7 @@ command prBuild pR3
          the rect of image "b3kView" of card 1 of stack "OrbIsland"
    prCheck "the win banner waits hidden", the visible of field "oiBanner" of card 1 of stack "OrbIsland" is false, \
          the visible of field "oiBanner" of card 1 of stack "OrbIsland"
-   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 2, the uOiUIVersion of stack "OrbIsland"
+   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 3, the uOiUIVersion of stack "OrbIsland"
    -- the view's card has no soft shadow (the engine redrew it under every
    -- frame: 10 ms a frame in the web player); the side panel keeps its own,
    -- which shows this engine reads the property at all
@@ -180,23 +187,29 @@ command prBuild pR3
    prCheck "a world runs", b3kWorld() is not empty and b3kIsRunning() is true, b3kWorld() && b3kIsRunning()
    if pR3 then
       prCheck "render3dxt draws", b3kRenderer() is "render3dxt", b3kRenderer()
-      prCheck "off the web it promises smooth edges", oiRendererWords() is "render3dxt draws: textured, lit, smooth edges.", oiRendererWords()
+      prCheck "off the web it promises smooth edges", oiRendererWords() is "render3dxt draws: textured, lit and glowing, smooth edges.", oiRendererWords()
    else
       prCheck "box3dxt's own renderer draws", b3kRenderer() is "box3dxt", b3kRenderer()
    end if
    prCheck "the renderer button names it", the label of button "oiRender" of card 1 of stack "OrbIsland" is ("Renderer: " & b3kRenderer() & " (V)"), \
          the label of button "oiRender" of card 1 of stack "OrbIsland"
-   prCheck "the HUD counts eight orbs to find", prField("oiScore") is "Orbs  0 / 8", prField("oiScore")
-   prCheck "the status line invites the hunt", prStatus() begins with "Find the 8 golden orbs.", prStatus()
+   prCheck "the HUD counts sixteen orbs to find", prField("oiScore") is "Orbs  0 / 16", prField("oiScore")
+   prCheck "the status line invites the hunt", prStatus() begins with "Find the 16 golden orbs.", prStatus()
    prCheck "and it is green", the foregroundColor of field "uiStatus" of card 1 of stack "OrbIsland" is "23,128,63", \
          the foregroundColor of field "uiStatus" of card 1 of stack "OrbIsland"
-   repeat for each item tName in "hub,arm,lift,wrecking ball,jump pad,orb A,orb B,orb C,orb D,orb E,orb F,orb G,orb H"
+   repeat for each item tName in "hub,arm,lift,sky lift,wrecking ball,jump pad,first domino,hill,sail 0,sail 90,beacon beam," & \
+         "sea north,sea south,sea west,sea east"
       prCheck "the island has its " & tName, b3kThingNamed(tName) is not empty, tName
    end repeat
+   repeat for each item tName in "A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P"
+      prCheck "the island has its orb " & tName, b3kThingNamed("orb " & tName) is not empty, tName
+   end repeat
    put b3kThingCount() into tCount
-   prCheck "the island is 34 things with the player", tCount is 34, tCount
+   prCheck "the island is 164 things with the player", tCount is 164, tCount
+   prCheck "C may drop sixty more", oiMaxThings() is 223, oiMaxThings()
    prCheck "the player stands at the start", b3kPlayer() is not empty and \
-         prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 11, 0.01), b3kPosition(b3kPlayer())
+         prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 22, 0.01), b3kPosition(b3kPlayer())
+   prCheck "the player walks faster than the Kit's default", b3kPlayerGet("moveSpeed") is 6.5, b3kPlayerGet("moveSpeed")
    prCheck "a drag of the view turns the camera", b3kCamDragged() is false and \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
@@ -210,7 +223,7 @@ command prDraw
          the number of bytes of the imageData of image "b3kView" of card 1 of stack "OrbIsland" is 768 * 456 * 4, \
          the number of bytes of the imageData of image "b3kView" of card 1 of stack "OrbIsland"
    put prPixel(384, 4) into tSky
-   prCheck "the top of the view is sky", prNear(item 1 of tSky, 150, 6) and prNear(item 2 of tSky, 192, 6) and prNear(item 3 of tSky, 232, 6), tSky
+   prCheck "the top of the view is the evening sky", prNear(item 1 of tSky, 238, 6) and prNear(item 2 of tSky, 196, 6) and prNear(item 3 of tSky, 160, 6), tSky
    put prPixel(300, 440) into tGround
    prCheck "the bottom of the view is grass", item 2 of tGround > item 1 of tGround and item 2 of tGround > item 3 of tGround, tGround
 end prDraw
@@ -224,15 +237,15 @@ command prWalk
    prSteps 30
    put b3kZ(b3kPlayer()) into tZ1
    prCheck "W walks the player north, away from the camera", tZ1 < tZ0 - 3, tZ0 && tZ1
-   prCheck "walking into orb A collects it", b3kThingNamed("orb A") is empty and prField("oiScore") is "Orbs  1 / 8", \
+   prCheck "walking into orb A collects it", b3kThingNamed("orb A") is empty and prField("oiScore") is "Orbs  1 / 16", \
          prField("oiScore") && b3kThingNamed("orb A")
-   prCheck "the status line counts it", prStatus() is "Orb found: 1 of 8.", prStatus()
+   prCheck "the status line counts it", prStatus() is "Orb found: 1 of 16.", prStatus()
    prCheck "walking north faces north", prNear(abs(b3kPlayerFacing()), 180, 20), b3kPlayerFacing()
 end prWalk
 
 command prOrbs
    local tLetter, tOrb, tP, tTime
-   repeat for each item tLetter in "B,C,D,E,F,G,H"
+   repeat for each item tLetter in "B,C,D,E,F,G,H,I,J,K,L,M,N,O,P"
       put b3kThingNamed("orb " & tLetter) into tOrb
       put b3kPosition(tOrb) into tP
       b3kPlayerRespawn item 1 of tP, item 2 of tP, item 3 of tP
@@ -240,9 +253,9 @@ command prOrbs
       prCheck "touching orb " & tLetter & " collects it", tOrb is not empty and b3kThingNamed("orb " & tLetter) is empty, \
             tOrb && tP && b3kPosition(b3kPlayer())
    end repeat
-   prCheck "the HUD shows all eight", prField("oiScore") is "Orbs  8 / 8", prField("oiScore")
+   prCheck "the HUD shows all sixteen", prField("oiScore") is "Orbs  16 / 16", prField("oiScore")
    prCheck "the banner shows the time", the visible of field "oiBanner" of card 1 of stack "OrbIsland" is true and \
-         prField("oiBanner") begins with "All 8 orbs in", prField("oiBanner")
+         prField("oiBanner") begins with "All 16 orbs in", prField("oiBanner")
    prCheck "and the status line too", prStatus() begins with "Every orb found in", prStatus()
    put prField("oiTime") into tTime
    prSteps 60
@@ -251,22 +264,22 @@ end prOrbs
 
 command prFall
    local tCrate
-   b3kPlayerRespawn 0, 1, 25
+   b3kPlayerRespawn 0, 1, 40
    prSteps 150
    prCheck "a fall into the sea is counted", prField("oiTime") ends with "Falls  1", prField("oiTime")
-   prCheck "and puts the player back at the start", prNear(b3kX(b3kPlayer()), 0, 0.5) and prNear(b3kZ(b3kPlayer()), 11, 0.5) and \
+   prCheck "and puts the player back at the start", prNear(b3kX(b3kPlayer()), 0, 0.5) and prNear(b3kZ(b3kPlayer()), 22, 0.5) and \
          prNear(b3kY(b3kPlayer()), 0.8, 0.3), b3kPosition(b3kPlayer())
    prCheck "and says so", prStatus() begins with "Into the sea!", prStatus()
-   put line 1 of b3kOverlapSphere(4.1, 0.425, 8, 0.2) into tCrate
+   put line 1 of b3kOverlapSphere(4.1, 0.425, 18, 0.2) into tCrate
    prCheck "a crate stands in the pyramid", tCrate is not empty and b3kKind(tCrate) is "box", tCrate && b3kKind(tCrate)
-   b3kMoveTo tCrate, 0, 3, 25
+   b3kMoveTo tCrate, 0, 3, 40
    prSteps 150
    prCheck "a crate that falls into the sea is gone", b3kIsThing(tCrate) is false, b3kIsThing(tCrate)
 end prFall
 
 command prPad
    local tTop, tI
-   b3kPlayerRespawn 1.5, 0.85, -7.5
+   b3kPlayerRespawn 0, 0.85, -16
    put -99 into tTop
    put 1 into tI
    repeat while tI <= 8
@@ -308,7 +321,7 @@ command prToys
       prSteps 10
       put max(tFast, b3kSpeed(tBall)) into tFast
       put b3kPosition(tBall) into tP
-      put max(tFar, sqrt((item 1 of tP + 7) ^ 2 + (item 2 of tP - 5.2) ^ 2 + (item 3 of tP + 10) ^ 2)) into tFar
+      put max(tFar, sqrt((item 1 of tP + 12) ^ 2 + (item 2 of tP - 5.2) ^ 2 + (item 3 of tP + 14) ^ 2)) into tFar
    end repeat
    prCheck "the wrecking ball swings", tFast > 2, tFast
    prCheck "and its rope holds it within 4.5 m of the hook", tFar < 4.6, tFar
@@ -316,10 +329,10 @@ end prToys
 
 command prKick
    local tCrate, tP, tHV, tHub
-   b3kPlayerRespawn 0, 1, 11
+   b3kPlayerRespawn 0, 1, 22
    b3kCamOrbit 0, 24, 9.5
    prSteps 45
-   put line 1 of b3kOverlapSphere(5, 0.425, 8, 0.2) into tCrate
+   put line 1 of b3kOverlapSphere(5, 0.425, 18, 0.2) into tCrate
    prCheck "a crate to kick", tCrate is not empty, tCrate
    put b3kPosition(tCrate) into tP
    put b3kProject(item 1 of tP, item 2 of tP, item 3 of tP) into tHV
@@ -336,17 +349,17 @@ command prKick
 end prKick
 
 command prBlast
-   b3kPlayerRespawn 5, 1, 11.5
+   b3kPlayerRespawn 5, 1, 21.5
    b3kInputInject "w"
    prSteps 8
    b3kInputInject empty
    prSteps 30
-   prCheck "a crate pyramid stands still before the blast", prFastestNear(5, 1, 8, 2.5) < 0.5, prFastestNear(5, 1, 8, 2.5)
+   prCheck "a crate pyramid stands still before the blast", prFastestNear(5, 1, 18, 2.5) < 0.5, prFastestNear(5, 1, 18, 2.5)
    b3kResume
    oiBlast
    b3kPause
    prSteps 2
-   prCheck "X blasts what is in front of the player", prFastestNear(5, 1, 8, 3) > 2, prFastestNear(5, 1, 8, 3)
+   prCheck "X blasts what is in front of the player", prFastestNear(5, 1, 18, 3) > 2, prFastestNear(5, 1, 18, 3)
 end prBlast
 
 command prDrop
@@ -361,7 +374,7 @@ command prDrop
       oiDropCrates
    end repeat
    b3kPause
-   prCheck "C stops at 90 things", b3kThingCount() >= 90 and b3kThingCount() < 95, b3kThingCount()
+   prCheck "C stops sixty things past the island", b3kThingCount() >= oiMaxThings() and b3kThingCount() < oiMaxThings() + 5, b3kThingCount()
    prCheck "and says why", prStatus() begins with "That is plenty", prStatus()
    prSteps 60
    prCheck "ninety things fall and settle without a frame error", b3kFrameError() is empty, prLine(b3kFrameError())
@@ -374,8 +387,10 @@ command prRenderers pR3
       -- for the first frame (prDraw): the blast and the crates leave the
       -- player anywhere, and once left falling past the island's edge, with
       -- nothing but sky behind the bottom of the view (2026-11-21)
-      b3kPlayerRespawn 0, 1, 11
+      b3kPlayerRespawn 0, 1, 22
       prSteps 60
+      b3kCamOrbit 0, 24, 9.5
+      prSteps 30
       oiNextRenderer
       prCheck "V's handler swaps to box3dxt's renderer", b3kRenderer() is "box3dxt", b3kRenderer()
       prCheck "and the button says so", the label of button "oiRender" of card 1 of stack "OrbIsland" is "Renderer: box3dxt (V)", \
@@ -383,7 +398,7 @@ command prRenderers pR3
       prSteps 2
       put prPixel(300, 440) into tGround
       prCheck "box3dxt's renderer draws the island", b3kFrameError() is empty and \
-            not (prNear(item 1 of tGround, 150, 6) and prNear(item 2 of tGround, 192, 6) and prNear(item 3 of tGround, 232, 6)), \
+            not (prNear(item 1 of tGround, 238, 6) and prNear(item 2 of tGround, 196, 6) and prNear(item 3 of tGround, 160, 6)), \
             tGround && b3kPosition(b3kPlayer())
       dispatch "keyDown" to stack "OrbIsland" with "v"
       prCheck "the V key swaps back to render3dxt", b3kRenderer() is "render3dxt", b3kRenderer()
@@ -408,18 +423,190 @@ command prButtonsAndKeys
    prCheck "and ticks again", the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
    dispatch "keyDown" to stack "OrbIsland" with "r"
-   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 8" and b3kThingCount() is 34 and b3kIsRunning() is true, \
+   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 164 and b3kIsRunning() is true, \
          prField("oiScore") && b3kThingCount() && b3kIsRunning()
    prCheck "with the clock and falls at zero", prField("oiTime") is "Time  0.0 s      Falls  0", prField("oiTime")
    b3kPause
    prSteps 30
    dispatch "mouseUp" to button "oiRestart" of card 1 of stack "OrbIsland" with 1
-   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 8" and b3kThingCount() is 34, \
+   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 164, \
          prField("oiScore") && b3kThingCount()
    b3kPause
    dispatch "keyDown" to stack "OrbIsland" with "a"
    prCheck "a walking key is passed on, not eaten", it is "passed", it
 end prButtonsAndKeys
+
+-- ---------------------------------------------------------------------
+-- the sound: audioxt's silent test device when audioxt is loaded (a test
+-- machine may have no sound card), and a harmless "none" when it is not
+command prSound pAu
+   if pAu is true then
+      oiSoundStart -1
+      prCheck "with audioxt the game makes an audio engine", oiSoundOn() is true, oiSoundOn()
+      prCheck "and the sound button says it is on", the label of button "oiSound" of card 1 of stack "OrbIsland" is "Sound: on (M)", \
+            the label of button "oiSound" of card 1 of stack "OrbIsland"
+   else
+      prCheck "without audioxt the game is silent", oiSoundOn() is false, oiSoundOn()
+      prCheck "and the sound button says so", the label of button "oiSound" of card 1 of stack "OrbIsland" is "Sound: none (M)", \
+            the label of button "oiSound" of card 1 of stack "OrbIsland"
+   end if
+end prSound
+
+-- the late-afternoon look: lamps, glowing orbs that pulse, the sea
+command prLook pR3
+   local tOrb, tGlow, tSea
+   prCheck "the island hangs five lamps", the number of lines of b3kLamps() is 5, b3kLamps()
+   if pR3 then
+      prCheck "render3dxt lights it with the sun and the five lamps", item 6 of r3LiveCounts() is 6, r3LiveCounts()
+   end if
+   put b3kThingNamed("orb B") into tOrb
+   put b3kGlow(tOrb) into tGlow
+   prCheck "an orb glows", tGlow is not empty, tGlow
+   prSteps 16
+   prCheck "and its glow pulses", b3kGlow(tOrb) is not empty and b3kGlow(tOrb) is not tGlow, tGlow && b3kGlow(tOrb)
+   put b3kThingNamed("sea north") into tSea
+   prCheck "the sea is a sensor, so a fall passes through it", b3kKind(tSea) is "sensor" and b3kIsVisible(tSea) is true, b3kKind(tSea)
+   prCheck "the kill floor is below the sea", b3kY(tSea) > -6, b3kY(tSea)
+end prLook
+
+-- the corners and the floating isle
+command prCorners
+   local tSky, tLowZ, tHighZ, tHighY, tSail, tA, tB, tBeam, tFirst, tLast
+   -- the sky lift: out over the sea to the isle and back
+   put b3kThingNamed("sky lift") into tSky
+   put 99 into tLowZ
+   put -99 into tHighZ
+   put -99 into tHighY
+   repeat 100 times
+      prSteps 8
+      put min(tLowZ, b3kZ(tSky)) into tLowZ
+      put max(tHighZ, b3kZ(tSky)) into tHighZ
+      put max(tHighY, b3kY(tSky)) into tHighY
+   end repeat
+   prCheck "the sky lift rides from the island's edge out to the isle", tHighZ > -28 and tLowZ < -35.5 and tHighY > 4.2, tLowZ && tHighZ && tHighY
+   -- the windmill's sails and the beacon's beam turn
+   put b3kThingNamed("sail 0") into tSail
+   put b3kRotation(tSail) into tA
+   prSteps 20
+   prCheck "the windmill turns", b3kRotation(tSail) is not tA, tA
+   put b3kThingNamed("beacon beam") into tBeam
+   put b3kYaw(tBeam) into tA
+   prSteps 30
+   put b3kYaw(tBeam) into tB
+   prCheck "the beacon's beam sweeps round", abs(tB - tA) > 10, tA && tB
+   -- the player stands on the hill and on the floating isle
+   b3kPlayerRespawn -16, 3.4, 13
+   prSteps 60
+   prCheck "the hill holds the player up", b3kY(b3kPlayer()) > 2.3, b3kPosition(b3kPlayer())
+   b3kPlayerRespawn 0, 5.6, -43
+   prSteps 60
+   prCheck "the floating isle holds the player up", prNear(b3kY(b3kPlayer()), 5.3, 0.3), b3kPosition(b3kPlayer())
+   -- the dominoes: a push on the first fells the last
+   put b3kThingNamed("first domino") into tFirst
+   put line 1 of b3kOverlapSphere(11 + 0.85 * 15, 0.7, 26, 0.05) into tLast
+   prCheck "sixteen dominoes stand in a row", tFirst is not empty and tLast is not empty and tLast is not tFirst, tFirst && tLast
+   b3kPush tFirst, 2.5, 0, 0
+   prSteps 300
+   prCheck "a push on the first domino fells the last", b3kY(tLast) < 0.45, b3kPosition(tLast)
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prCorners
+
+-- a found orb bursts into eight sparks that are gone in a second and a half
+command prSparks
+   local tCount
+   put b3kThingCount() into tCount
+   oiSparks 0, 2, 10
+   prCheck "a burst is eight sparks", b3kThingCount() is tCount + 8, tCount && b3kThingCount()
+   prSteps 100
+   prCheck "and they are gone a second and a half later", b3kThingCount() is tCount, tCount && b3kThingCount()
+end prSparks
+
+-- every sound the game plays is asked for (whether or not audioxt is
+-- there to play it), and with audioxt each voice is freed when it ends
+command prSoundsHeard pAu
+   local tName, tMissing
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+   b3kInputInject "space"
+   prSteps 3
+   b3kInputInject empty
+   prSteps 60
+   put empty into tMissing
+   repeat for each item tName in "orb,jump,pad,splash,blast,kick,drop,win"
+      if tName is not among the lines of oiSoundsPlayed() then put tName & " " after tMissing
+   end repeat
+   prCheck "each sound is asked for: orb, jump, pad, splash, blast, kick, drop, win", tMissing is empty, tMissing
+   if pAu is not true then exit prSoundsHeard
+   oiSound "blast"
+   prCheck "a sound is a voice waiting to be freed", oiSoundVoices() > 0, oiSoundVoices()
+   prSteps 150
+   prCheck "and every voice is freed once it is done", oiSoundVoices() is 0, oiSoundVoices()
+   dispatch "keyDown" to stack "OrbIsland" with "m"
+   prCheck "M turns the sound off", the label of button "oiSound" of card 1 of stack "OrbIsland" is "Sound: off (M)", \
+         the label of button "oiSound" of card 1 of stack "OrbIsland"
+   dispatch "mouseUp" to button "oiSound" of card 1 of stack "OrbIsland" with 1
+   prCheck "and the Sound button on again", the label of button "oiSound" of card 1 of stack "OrbIsland" is "Sound: on (M)", \
+         the label of button "oiSound" of card 1 of stack "OrbIsland"
+end prSoundsHeard
+
+-- the gamepad: a virtual pad of gamepadxt's, when it is loaded
+command prGamepad pGp
+   local tPad, tZ, tY, tYaw
+   if pGp is not true then
+      prCheck "without gamepadxt there is no pad", oiPadOn() is false and oiPadWords() is "not loaded", oiPadWords()
+      exit prGamepad
+   end if
+   prCheck "with gamepadxt the game starts it", oiPadOn() is true, oiPadOn()
+   if oiPadOn() is not true then exit prGamepad
+   b3kPause
+   b3kPlayerRespawn 0, 1, 22
+   b3kCamOrbit 0, 22, 10
+   prSteps 30
+   put gpVirtualAttach("Orb test pad") into tPad
+   prSteps 2
+   prCheck "a pad that arrives is taken up", oiPadWords() is "Orb test pad", oiPadWords()
+   put b3kZ(b3kPlayer()) into tZ
+   get gpVirtualSetAxis(tPad, "lefty", -1)
+   prSteps 40
+   prCheck "the left stick pushed up walks the player north", b3kZ(b3kPlayer()) < tZ - 2, tZ && b3kZ(b3kPlayer())
+   get gpVirtualSetAxis(tPad, "lefty", 0)
+   prSteps 40
+   prCheck "and let go, the player stops", b3kSpeed(b3kPlayer()) < 0.5, b3kSpeed(b3kPlayer())
+   put b3kY(b3kPlayer()) into tY
+   get gpVirtualSetButton(tPad, "south", true)
+   prSteps 1
+   get gpVirtualSetButton(tPad, "south", false)
+   prSteps 6
+   prCheck "A (south) jumps", b3kY(b3kPlayer()) > tY + 0.2, tY && b3kY(b3kPlayer())
+   prSteps 60
+   put b3kCamYaw() into tYaw
+   get gpVirtualSetAxis(tPad, "rightx", 1)
+   prSteps 10
+   get gpVirtualSetAxis(tPad, "rightx", 0)
+   prSteps 1
+   prCheck "the right stick turns the camera", abs(b3kCamYaw() - tYaw) > 20, tYaw && b3kCamYaw()
+   b3kResume
+   get gpVirtualSetButton(tPad, "west", true)
+   prSteps 1
+   get gpVirtualSetButton(tPad, "west", false)
+   prSteps 1
+   prCheck "X (west) blasts", "blast" is among the lines of oiSoundsPlayed(), oiSoundsPlayed()
+   get gpVirtualSetButton(tPad, "start", true)
+   prSteps 1
+   get gpVirtualSetButton(tPad, "start", false)
+   prSteps 1
+   prCheck "Start pauses", b3kIsPaused() is true, b3kIsPaused()
+   get gpVirtualSetButton(tPad, "start", true)
+   prSteps 1
+   get gpVirtualSetButton(tPad, "start", false)
+   prSteps 1
+   prCheck "and Start again plays on", b3kIsPaused() is false, b3kIsPaused()
+   b3kPause
+   gpVirtualDetach tPad
+   prSteps 2
+   prCheck "a pad that leaves is let go", oiPadWords() is "none connected", oiPadWords()
+end prGamepad
 
 command prTiming pR3
    local tStart, tMs
@@ -470,6 +657,8 @@ command prNoExtension
       oiKick 300, 200
       put "R" into tWhere
       dispatch "keyDown" to stack "OrbIsland" with "r"
+      put "M" into tWhere
+      dispatch "keyDown" to stack "OrbIsland" with "m"
       put "the Pause button" into tWhere
       dispatch "mouseUp" to button "oiPause" of card 1 of stack "OrbIsland" with 1
       put "closeStack" into tWhere

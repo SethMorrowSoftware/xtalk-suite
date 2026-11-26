@@ -151,6 +151,17 @@ Joined the suite on 2026-11-20. What has run, and where:
   was not loaded, a click knocked crates over and a drag turned the camera. Neither has run
   in an IDE: a real window, keyboard and mouse there are verified statically; needs an OXT
   pass (the game's header lists what to look at).
+- **Orb Island 1.2 and the Kit's glow and lamps** (2026-11-26): the island four times the
+  size, sixteen orbs, `b3kSetGlow`, `b3kAddLamp` and a coloured sun, and the game playing
+  gamepadxt and audioxt when they are loaded. On OXT-Beyond 0.2.8-dp.2.1's Linux server
+  engine (9.7.1-BeyondEngine) with the committed `x86_64-linux` libraries of all four:
+  `tests/engine-kit.lc` passed 227 checks with render3dxt and 207 without, and
+  `tests/engine-demo.lc` 169 with render3dxt, gamepadxt (a virtual pad) and audioxt (its
+  silent device), 164 with gamepadxt and audioxt but no render3dxt, 149 with box3dxt alone
+  and 6 with no extension. In the gallery's web Stack Player (web-2026.11.22, headless
+  Chromium) it built, walked to an orb, found both extensions and drew 33 pictures a second
+  where 1.1 drew 37 to 40 on the same machine. A real gamepad, the sound heard and an IDE
+  window are verified statically; needs an OXT pass.
 - **On Windows, the release library** (2026-11-21): OXT-Beyond 0.2.8-dp.1's IDE on the
   maintainer's Windows PC (engine 9.7.1-BeyondEngine build 25923, x86_64), with box3dxt
   installed as an extension from the ABI 2 files then on the suite's main branch: the file
