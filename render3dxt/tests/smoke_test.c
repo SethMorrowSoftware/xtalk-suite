@@ -12,6 +12,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
 
@@ -1226,6 +1227,152 @@ static void test_stale_handles(void)
     CHECK(!alive_again, "a dead handle stays dead through 3000 reuses");
 }
 
+/* The fill's sixteen variants and the culling of whole nodes
+ * (2026-11-27) must draw the pictures the renderer drew before them, byte
+ * for byte. A scene that reaches every variant (textured or not, lit or
+ * unlit, with and without a highlight, fogged and clear, a repeating side of
+ * a power of two and of another size, a cutout), drawn from cameras that
+ * leave nodes behind, beside, above and below the view, at two
+ * supersamplings: on x86_64 Linux the hashes are those the renderer of
+ * f6c0b1a drew (other compilers and libraries round powf and the fused
+ * multiplies their own way, so elsewhere they are printed, not checked).
+ * Everywhere: nodes added wholly outside the view change neither the
+ * picture nor the triangle count, and a node across an edge is drawn. */
+static uint64_t frame_hash(int s)
+{
+    const unsigned char *f = r3x_scene_frame(s);
+    int n = r3x_scene_frame_length(s);
+    uint64_t h = 1469598103934665603ull;
+    for (int i = 0; f && i < n; i++) { h ^= f[i]; h *= 1099511628211ull; }
+    return h;
+}
+
+static int g_uMesh[8], g_uMat[8], g_uTex[3], g_nuMesh;
+
+static int unchanged_scene(void)
+{
+    int s = r3x_scene_create();
+    r3x_scene_set_background(s, 120, 170, 220);
+    r3x_scene_set_ambient(s, 60, 60, 70);
+    r3x_scene_set_fog(s, 150, 170, 200, 12, 40);
+    r3x_light_create_point(s, 0, 3, 0, 255, 200, 120, 1.5, 9);
+    r3x_light_create_point(s, 6, 2, 6, 100, 150, 255, 1.0, 0);
+    int pow2 = r3x_texture_checker(64, 8, 80, 180, 80, 60, 150, 60);
+    r3x_texture_set_repeat(pow2, 1); r3x_texture_set_smooth(pow2, 1);
+    int odd = r3x_texture_checker(48, 6, 200, 200, 200, 120, 100, 80);
+    r3x_texture_set_repeat(odd, 1); r3x_texture_set_smooth(odd, 0);
+    int clamp = r3x_texture_checker(32, 4, 250, 120, 40, 40, 40, 40);
+    g_uTex[0] = pow2; g_uTex[1] = odd; g_uTex[2] = clamp;
+    int *mats = g_uMat;
+    mats[0] = r3x_material_create(255, 255, 255); r3x_material_set_texture(mats[0], pow2);
+    mats[1] = r3x_material_create(230, 80, 50); r3x_material_set_specular(mats[1], 0.6, 24);
+    mats[2] = r3x_material_create(50, 120, 230);
+    mats[3] = r3x_material_create(255, 255, 255); r3x_material_set_texture(mats[3], odd);
+    r3x_material_set_specular(mats[3], 0.3, 12);
+    mats[4] = r3x_material_create(250, 220, 80); r3x_material_set_emissive(mats[4], 120, 100, 20);
+    mats[5] = r3x_material_create(255, 255, 255); r3x_material_set_texture(mats[5], clamp);
+    r3x_material_set_unlit(mats[5], 1);
+    mats[6] = r3x_material_create(255, 255, 255); r3x_material_set_texture(mats[6], pow2);
+    r3x_material_set_cutout(mats[6], 1); r3x_material_set_double_sided(mats[6], 1);
+    mats[7] = r3x_material_create(150, 150, 150); r3x_material_set_flat(mats[7], 1);
+    r3x_material_set_unlit(mats[2], 0);
+    g_uMesh[0] = r3x_mesh_plane(30, 30, 15, 15);
+    int ground = r3x_node_create(s, g_uMesh[0]);
+    r3x_node_set_material(ground, mats[0]);
+    g_uMesh[1] = r3x_mesh_box(0.5, 0.5, 0.5); g_uMesh[2] = r3x_mesh_sphere(0.6, 12, 8);
+    g_uMesh[3] = r3x_mesh_cylinder(0.4, 0.8, 10);
+    g_nuMesh = 4;
+    const int *meshes = g_uMesh + 1;
+    uint32_t seed = 4242;
+    for (int i = 0; i < 90; i++) {
+        seed = seed * 1664525u + 1013904223u; int mi = (int)((seed >> 8) % 3);
+        seed = seed * 1664525u + 1013904223u; double x = (seed >> 8) % 6000 / 100.0 - 30;
+        seed = seed * 1664525u + 1013904223u; double z = (seed >> 8) % 6000 / 100.0 - 30;
+        seed = seed * 1664525u + 1013904223u; double y = (seed >> 8) % 400 / 100.0;
+        seed = seed * 1664525u + 1013904223u; int mat = (int)((seed >> 8) % 9);
+        int nd = r3x_node_create(s, meshes[mi]);
+        r3x_node_set_position(nd, x, y, z);
+        r3x_node_set_rotation(nd, 0, 0.38268343, 0, 0.92387953);
+        r3x_node_set_scale(nd, 1 + (i % 3) * 0.5, 1 + (i % 2), 1 + (i % 4) * 0.25);
+        if (mat < 8) r3x_node_set_material(nd, mats[mat]);
+    }
+    /* mirrored, so the winding turns over */
+    int mir = r3x_node_create(s, meshes[1]);
+    r3x_node_set_position(mir, 1, 1, 2);
+    r3x_node_set_scale(mir, -1, 1, 1);
+    r3x_node_set_material(mir, mats[1]);
+    return s;
+}
+
+static void test_unchanged_pictures(void)
+{
+    static const double cams[5][6] = {
+        { 0, 2, 10, 0, 1, 0 }, { 15, 8, 15, 0, 0, 0 }, { -5, 1.2, 3, 12, 1, 3 },
+        { 0, 25, 0.5, 0, 0, 0 }, { 3, 0.4, 3, -20, 2, -25 } };
+    /* the hashes from the renderer of f6c0b1a (before 2026-11-27), at
+     * 160 x 96, supersampling 1 then 2 */
+    static const uint64_t k_before[2][5] = {
+        { 0x08097b4a7ed02f93ull, 0x3ad63f6d21b72714ull, 0xc2157a2e1a1aed8eull, 0x4e59f36f23abd380ull, 0x117380d17b5480ceull },
+        { 0x50a934f41c80aeafull, 0xee56231439fc733full, 0xfa11a9d70c654299ull, 0x22612c4661e7a392ull, 0x9b53a01244d35f23ull } };
+    int s = unchanged_scene();
+    uint64_t got[2][5];
+    int tris[2][5];
+    for (int ss = 1; ss <= 2; ss++) {
+        r3x_scene_set_supersample(s, ss);
+        for (int c = 0; c < 5; c++) {
+            r3x_scene_set_camera(s, cams[c][0], cams[c][1], cams[c][2], cams[c][3], cams[c][4], cams[c][5], 55);
+            CHECK(r3x_scene_render(s, 160, 96) == 160 * 96 * 4, "unchanged: drawn");
+            got[ss - 1][c] = frame_hash(s);
+            tris[ss - 1][c] = (int)item(r3x_scene_stats(s), 1);
+        }
+    }
+#if defined(__linux__) && defined(__x86_64__) && defined(__GNUC__)
+    for (int ss = 0; ss < 2; ss++)
+        for (int c = 0; c < 5; c++)
+            CHECK(got[ss][c] == k_before[ss][c], "unchanged: supersampling %d camera %d hash %016llx, before %016llx",
+                  ss + 1, c, (unsigned long long)got[ss][c], (unsigned long long)k_before[ss][c]);
+#else
+    for (int ss = 0; ss < 2; ss++)
+        for (int c = 0; c < 5; c++)
+            printf("unchanged: supersampling %d camera %d hash %016llx (checked on x86_64 Linux only)\n",
+                   ss + 1, c, (unsigned long long)got[ss][c]);
+#endif
+    /* nodes wholly outside the view: behind the eye, beside, above and
+     * below the picture, and behind the near plane */
+    r3x_scene_set_supersample(s, 1);
+    r3x_scene_set_camera(s, cams[0][0], cams[0][1], cams[0][2], cams[0][3], cams[0][4], cams[0][5], 55);
+    r3x_scene_render(s, 160, 96);
+    uint64_t was = frame_hash(s);
+    int wasTris = (int)item(r3x_scene_stats(s), 1);
+    int big = r3x_mesh_sphere(2, 16, 12), tiny = r3x_mesh_box(0.01, 0.01, 0.01);
+    g_uMesh[g_nuMesh++] = big; g_uMesh[g_nuMesh++] = tiny;
+    static const double away[6][3] = { { 0, 2, 20 }, { -40, 2, -10 }, { 40, 2, -10 }, { 0, 40, -10 }, { 0, -40, -10 }, { 0, 2, 10.02 } };
+    int added[6];
+    for (int i = 0; i < 6; i++) {
+        added[i] = r3x_node_create(s, i == 5 ? tiny : big);
+        r3x_node_set_position(added[i], away[i][0], away[i][1], away[i][2]);
+    }
+    r3x_scene_render(s, 160, 96);
+    CHECK(frame_hash(s) == was, "unchanged: nodes outside the view change no pixel");
+    CHECK((int)item(r3x_scene_stats(s), 1) == wasTris, "unchanged: and no triangle count (%d, was %d)",
+          (int)item(r3x_scene_stats(s), 1), wasTris);
+    /* one across the left edge is drawn */
+    int across = r3x_node_create(s, big);
+    r3x_node_set_position(across, -9.5, 1, -6);
+    r3x_scene_render(s, 160, 96);
+    CHECK(frame_hash(s) != was && (int)item(r3x_scene_stats(s), 1) > wasTris, "unchanged: a node across the edge is drawn");
+    /* and one scaled up from outside the view into it */
+    r3x_node_destroy(across);
+    r3x_node_set_scale(added[1], 18, 18, 18);
+    r3x_scene_render(s, 160, 96);
+    CHECK(frame_hash(s) != was, "unchanged: a node scaled into the view is drawn");
+    (void)tris;
+    r3x_scene_destroy(s);
+    for (int i = 0; i < g_nuMesh; i++) r3x_mesh_destroy(g_uMesh[i]);
+    for (int i = 0; i < 8; i++) r3x_material_destroy(g_uMat[i]);
+    for (int i = 0; i < 3; i++) r3x_texture_destroy(g_uTex[i]);
+}
+
 static void test_speed(void)
 {
     /* not a pass/fail line (machines differ): the number, for the log */
@@ -1280,6 +1427,7 @@ int main(void)
     test_background();
     test_edges_and_clipping();
     test_stale_handles();
+    test_unchanged_pictures();
     test_speed();
     before = r3x_live_counts();
     CHECK(strcmp(before, base) == 0, "nothing leaked: %s, was %s", before, base);

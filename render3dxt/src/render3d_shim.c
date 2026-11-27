@@ -2474,11 +2474,39 @@ static int job_setup(const Frame *fr, TriJob *j)
     return 1;
 }
 
-/* Fills the rows of a triangle that lie in [ylo, yhi). */
-static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, double *pixels)
+/* A function the compiler must copy into its caller, so that each of the
+ * raster's variants below is compiled with its flags as constants. */
+#if defined(_MSC_VER)
+#define R3X_INLINE static __forceinline
+#elif defined(__GNUC__)
+#define R3X_INLINE static inline __attribute__((always_inline))
+#else
+#define R3X_INLINE static inline
+#endif
+
+/* The interpolated quantities of a pixel: 1/depth, then u, v, light,
+ * highlight and fog, each already divided by depth. */
+enum { Q_IW, Q_U, Q_V, Q_D0, Q_D1, Q_D2, Q_S0, Q_S1, Q_S2, Q_FOG, Q_N };
+
+/* Whether a pixel centre lies outside the triangle: behind an edge, or on
+ * an edge that is neither a top nor a left one (the fill rule). A NaN edge
+ * value is "inside": no compare with it is true. */
+#define R3X_OUTSIDE(w0, w1, w2) \
+    ((w0) < 0 || (w1) < 0 || (w2) < 0 || \
+     ((w0) == 0 && !tl0) || ((w1) == 0 && !tl1) || ((w2) == 0 && !tl2))
+
+/* The fill of one triangle, in one of sixteen variants. TEX: it has a
+ * texture (u and v are stepped); LIT: it is lit (light and highlight are
+ * used); SPEC: its highlight is not zero at every corner; FOG: its fog is
+ * not zero at every corner. A quantity a variant leaves out is one whose
+ * every use would have added or multiplied a zero, or that was never read:
+ * stepping only the others gives each pixel the SAME bytes as stepping all
+ * ten did (the bench in tests/ holds the hashes of pictures drawn before this
+ * change), in a third less time where most of the island is untextured and
+ * near (measured 2026-11-27). */
+R3X_INLINE void raster_core(const Frame *fr, const TriJob *j, int y0, int y1, double *pixels,
+                            const int TEX, const int LIT, const int SPEC, const int FOG)
 {
-    int y0 = j->y0 < ylo ? ylo : j->y0, y1 = j->y1 > yhi - 1 ? yhi - 1 : j->y1;
-    if (y0 > y1) return;
     const SV a = j->a, b = j->b, c = j->c;
     const DrawSt *ds = &j->ds;
     const int x0 = j->x0, x1 = j->x1;
@@ -2489,25 +2517,29 @@ static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, 
     const float inv = j->inv;
     const Material *mat = ds->mat;
     const Texture *tex = ds->tex;
-    const int unlit = mat ? mat->unlit : 0, cutout = mat ? mat->cutout : 0;
-    const int fogOn = fr->fogOn;
+    const int cutout = mat ? mat->cutout : 0;
     const float invFar = fr->invFar;
     const float k255 = 1.0f / 255.0f;
+    const float kd0 = ds->kd[0], kd1 = ds->kd[1], kd2 = ds->kd[2];
+    const float ke0 = ds->ke[0], ke1 = ds->ke[1], ke2 = ds->ke[2];
     double written = 0;
 
     /* Every interpolated quantity is a plane over the picture: its value is
      * l0*pa + l1*pb + l2*pc with l = w * inv and w linear in x, so one pixel
-     * to the right adds a constant. Ten of them (1/depth, then u, v, light,
-     * highlight and fog, each already divided by depth) step with ten adds a
-     * pixel in place of thirty multiplies (measured 2026-11-20). The start of
-     * each row's run is computed in full, so a row's values depend only on
-     * the row: the picture is the same whichever thread draws it. */
-    enum { Q_IW, Q_U, Q_V, Q_D0, Q_D1, Q_D2, Q_S0, Q_S1, Q_S2, Q_FOG, Q_N };
+     * to the right adds a constant. The ones a variant uses step with one add
+     * a pixel each in place of three multiplies (measured 2026-11-20). The
+     * start of each row's run is computed in full, so a row's values depend
+     * only on the row: the picture is the same whichever thread draws it. */
     const float qa[Q_N] = { a.iw, a.u, a.v, a.d[0], a.d[1], a.d[2], a.s[0], a.s[1], a.s[2], a.fog };
     const float qb[Q_N] = { b.iw, b.u, b.v, b.d[0], b.d[1], b.d[2], b.s[0], b.s[1], b.s[2], b.fog };
     const float qc[Q_N] = { c.iw, c.u, c.v, c.d[0], c.d[1], c.d[2], c.s[0], c.s[1], c.s[2], c.fog };
-    float step[Q_N];
-    for (int k = 0; k < Q_N; k++) step[k] = (A0 * qa[k] + A1 * qb[k] + A2 * qc[k]) * inv;
+#define R3X_STEP(k) ((A0 * qa[k] + A1 * qb[k] + A2 * qc[k]) * inv)
+    const float sIW = R3X_STEP(Q_IW);
+    const float sU = TEX ? R3X_STEP(Q_U) : 0, sV = TEX ? R3X_STEP(Q_V) : 0;
+    const float sD0 = LIT ? R3X_STEP(Q_D0) : 0, sD1 = LIT ? R3X_STEP(Q_D1) : 0, sD2 = LIT ? R3X_STEP(Q_D2) : 0;
+    const float sS0 = SPEC ? R3X_STEP(Q_S0) : 0, sS1 = SPEC ? R3X_STEP(Q_S1) : 0, sS2 = SPEC ? R3X_STEP(Q_S2) : 0;
+    const float sF = FOG ? R3X_STEP(Q_FOG) : 0;
+#undef R3X_STEP
 
     for (int y = y0; y <= y1; y++) {
         float py = (float)y + 0.5f, px = (float)x0 + 0.5f;
@@ -2519,40 +2551,50 @@ static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, 
         int x = x0;
         /* skip to the first pixel inside */
         for (; x <= x1; x++, w0 += A0, w1 += A1, w2 += A2) {
-            if (!(w0 < 0 || w1 < 0 || w2 < 0 ||
-                  (w0 == 0 && !tl0) || (w1 == 0 && !tl1) || (w2 == 0 && !tl2))) break;
+            if (!R3X_OUTSIDE(w0, w1, w2)) break;
         }
         if (x > x1) continue;
-        float q[Q_N];
+        float qIW, qU = 0, qV = 0, qD0 = 0, qD1 = 0, qD2 = 0, qS0 = 0, qS1 = 0, qS2 = 0, qF = 0;
         {
             float l0 = w0 * inv, l1 = w1 * inv, l2 = w2 * inv;
-            for (int k = 0; k < Q_N; k++) q[k] = l0 * qa[k] + l1 * qb[k] + l2 * qc[k];
+#define R3X_START(k) (l0 * qa[k] + l1 * qb[k] + l2 * qc[k])
+            qIW = R3X_START(Q_IW);
+            if (TEX) { qU = R3X_START(Q_U); qV = R3X_START(Q_V); }
+            if (LIT) { qD0 = R3X_START(Q_D0); qD1 = R3X_START(Q_D1); qD2 = R3X_START(Q_D2); }
+            if (SPEC) { qS0 = R3X_START(Q_S0); qS1 = R3X_START(Q_S1); qS2 = R3X_START(Q_S2); }
+            if (FOG) qF = R3X_START(Q_FOG);
+#undef R3X_START
         }
         for (; x <= x1; x++, w0 += A0, w1 += A1, w2 += A2) {
             /* a triangle is convex: once a row has left it, it is over */
-            if (w0 < 0 || w1 < 0 || w2 < 0 ||
-                (w0 == 0 && !tl0) || (w1 == 0 && !tl1) || (w2 == 0 && !tl2)) break;
-            float iw = q[Q_IW];
+            if (R3X_OUTSIDE(w0, w1, w2)) break;
+            float iw = qIW;
             if (iw > drow[x] && iw >= invFar && iw > 0) {
                 float z = 1.0f / iw;
-                float r = ds->kd[0], g = ds->kd[1], bb = ds->kd[2];
+                float r = kd0, g = kd1, bb = kd2;
                 int keep = 1;
-                if (tex) {
-                    uint32_t t4 = tex_sample(tex, q[Q_U] * z, q[Q_V] * z);
+                if (TEX) {
+                    uint32_t t4 = tex_sample(tex, qU * z, qV * z);
                     if (cutout && (t4 >> 24) < 128u) keep = 0;
                     r *= (float)((t4 >> 16) & 255u) * k255;
                     g *= (float)((t4 >> 8) & 255u) * k255;
                     bb *= (float)(t4 & 255u) * k255;
                 }
                 if (keep) {
-                    if (!unlit) {
-                        r = r * (q[Q_D0] * z) + q[Q_S0] * z;
-                        g = g * (q[Q_D1] * z) + q[Q_S1] * z;
-                        bb = bb * (q[Q_D2] * z) + q[Q_S2] * z;
+                    if (LIT) {
+                        if (SPEC) {
+                            r = r * (qD0 * z) + qS0 * z;
+                            g = g * (qD1 * z) + qS1 * z;
+                            bb = bb * (qD2 * z) + qS2 * z;
+                        } else {
+                            r = r * (qD0 * z);
+                            g = g * (qD1 * z);
+                            bb = bb * (qD2 * z);
+                        }
                     }
-                    r += ds->ke[0]; g += ds->ke[1]; bb += ds->ke[2];
-                    if (fogOn) {
-                        float f = clampf(q[Q_FOG] * z, 0, 1);
+                    r += ke0; g += ke1; bb += ke2;
+                    if (FOG) {
+                        float f = clampf(qF * z, 0, 1);
                         r += (fr->fogC[0] - r) * f; g += (fr->fogC[1] - g) * f; bb += (fr->fogC[2] - bb) * f;
                     }
                     drow[x] = iw;
@@ -2560,10 +2602,44 @@ static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, 
                     written += 1;
                 }
             }
-            for (int k = 0; k < Q_N; k++) q[k] += step[k];
+            qIW += sIW;
+            if (TEX) { qU += sU; qV += sV; }
+            if (LIT) { qD0 += sD0; qD1 += sD1; qD2 += sD2; }
+            if (SPEC) { qS0 += sS0; qS1 += sS1; qS2 += sS2; }
+            if (FOG) qF += sF;
         }
     }
     *pixels += written;
+}
+#undef R3X_OUTSIDE
+
+/* Fills the rows of a triangle that lie in [ylo, yhi), with the variant
+ * of raster_core its material and corners need. */
+static void raster_triangle(const Frame *fr, const TriJob *j, int ylo, int yhi, double *pixels)
+{
+    int y0 = j->y0 < ylo ? ylo : j->y0, y1 = j->y1 > yhi - 1 ? yhi - 1 : j->y1;
+    if (y0 > y1) return;
+    const Material *mat = j->ds.mat;
+    const int tex = j->ds.tex != NULL;
+    const int lit = !(mat ? mat->unlit : 0);
+    const int spec = lit && (j->a.s[0] != 0 || j->a.s[1] != 0 || j->a.s[2] != 0 ||
+                             j->b.s[0] != 0 || j->b.s[1] != 0 || j->b.s[2] != 0 ||
+                             j->c.s[0] != 0 || j->c.s[1] != 0 || j->c.s[2] != 0);
+    const int fog = fr->fogOn && (j->a.fog != 0 || j->b.fog != 0 || j->c.fog != 0);
+    switch (tex | (lit << 1) | (spec << 2) | (fog << 3)) {
+    case 0:  raster_core(fr, j, y0, y1, pixels, 0, 0, 0, 0); break;
+    case 1:  raster_core(fr, j, y0, y1, pixels, 1, 0, 0, 0); break;
+    case 2:  raster_core(fr, j, y0, y1, pixels, 0, 1, 0, 0); break;
+    case 3:  raster_core(fr, j, y0, y1, pixels, 1, 1, 0, 0); break;
+    case 6:  raster_core(fr, j, y0, y1, pixels, 0, 1, 1, 0); break;
+    case 7:  raster_core(fr, j, y0, y1, pixels, 1, 1, 1, 0); break;
+    case 8:  raster_core(fr, j, y0, y1, pixels, 0, 0, 0, 1); break;
+    case 9:  raster_core(fr, j, y0, y1, pixels, 1, 0, 0, 1); break;
+    case 10: raster_core(fr, j, y0, y1, pixels, 0, 1, 0, 1); break;
+    case 11: raster_core(fr, j, y0, y1, pixels, 1, 1, 0, 1); break;
+    case 14: raster_core(fr, j, y0, y1, pixels, 0, 1, 1, 1); break;
+    default: raster_core(fr, j, y0, y1, pixels, 1, 1, 1, 1); break;
+    }
 }
 
 static SV to_screen(const Frame *fr, const CV *v, double tanH, double aspect)
@@ -2701,6 +2777,16 @@ static void resolve_rows(const Frame *fr, int ylo, int yhi)
         const uint32_t *src = fr->color + (size_t)ylo * W;
         unsigned char *o = fr->out + (size_t)ylo * W * 4;
         size_t n = (size_t)(yhi - ylo) * W;
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ \
+    || defined(_WIN32)
+        /* the same four bytes as below, written as one word: 0,R,G,B in
+         * memory is B,G,R,0 read little-endian (every platform built for) */
+        for (size_t i = 0; i < n; i++) {
+            uint32_t c = src[i];
+            uint32_t word = ((c & 0xFFu) << 24) | ((c & 0xFF00u) << 8) | ((c >> 8) & 0xFF00u);
+            memcpy(o + i * 4, &word, 4);
+        }
+#else
         for (size_t i = 0; i < n; i++) {
             uint32_t c = src[i];
             o[i * 4] = 0;
@@ -2708,6 +2794,7 @@ static void resolve_rows(const Frame *fr, int ylo, int yhi)
             o[i * 4 + 2] = (unsigned char)(c >> 8);
             o[i * 4 + 3] = (unsigned char)c;
         }
+#endif
         return;
     }
     const unsigned div = (unsigned)(ss * ss);
@@ -2975,12 +3062,54 @@ static void clip_and_draw(Frame *fr, const DrawSt *ds, const CV *in, float nearZ
     if (n == 4) queue_triangle(fr, ds, &s[0], &s[2], &s[3]);
 }
 
+/* 1 if no part of a node can reach the picture: the sphere around its
+ * mesh's box, moved as the node is, lies wholly behind the near plane or
+ * wholly beyond one side of the view. Every triangle of such a node would
+ * be skipped as behind the near plane, or set up and then refused by
+ * job_setup as off the picture (a corner clipped at the near plane lies
+ * between two corners, so inside the sphere too), so leaving the node out
+ * draws the same picture, byte for byte, without moving its vertices
+ * (2026-11-27: most of an island's nodes are behind or beside the camera).
+ * The margin covers the rounding of the projection; a node near an edge is
+ * drawn as before. */
+static int node_outside_view(const Scene *sc, const CamFrame *cam, const Node *nd, Mesh *m,
+                             const double R[9], double aspect)
+{
+    mesh_bounds(m);
+    const double *S = nd->scale, *T = nd->pos;
+    double c[3], e2 = 0;
+    for (int k = 0; k < 3; k++) {
+        double lc = 0.5 * ((double)m->bmin[k] + (double)m->bmax[k]) * S[k];
+        double le = 0.5 * ((double)m->bmax[k] - (double)m->bmin[k]) * fabs(S[k]);
+        c[k] = lc;
+        e2 += le * le;
+    }
+    double wc[3] = { R[0] * c[0] + R[1] * c[1] + R[2] * c[2] + T[0] - cam->eye[0],
+                     R[3] * c[0] + R[4] * c[1] + R[5] * c[2] + T[1] - cam->eye[1],
+                     R[6] * c[0] + R[7] * c[1] + R[8] * c[2] + T[2] - cam->eye[2] };
+    double vx = wc[0] * cam->r[0] + wc[1] * cam->r[1] + wc[2] * cam->r[2];
+    double vy = wc[0] * cam->u[0] + wc[1] * cam->u[1] + wc[2] * cam->u[2];
+    double vz = wc[0] * cam->f[0] + wc[1] * cam->f[1] + wc[2] * cam->f[2];
+    double dist = sqrt(vx * vx + vy * vy + vz * vz);
+    double rad = sqrt(e2) * 1.001 + dist * 1e-4 + 1e-3;
+    if (!isfinite(rad) || !isfinite(dist)) return 0;
+    if (vz + rad < sc->nearZ) return 1;
+    double kx = cam->tanH * aspect, ky = cam->tanH;
+    double nx = sqrt(1.0 + kx * kx), ny = sqrt(1.0 + ky * ky);
+    if ((vx + vz * kx) / nx < -rad) return 1;      /* left of the picture  */
+    if ((vz * kx - vx) / nx < -rad) return 1;      /* right of it          */
+    if ((vz * ky - vy) / ny < -rad) return 1;      /* above it             */
+    if ((vy + vz * ky) / ny < -rad) return 1;      /* below it             */
+    return 0;
+}
+
 static void draw_node(Frame *fr, const Scene *sc, const CamFrame *cam, const Node *nd, double aspect)
 {
     Mesh *m = meshes_get(nd->mesh);
     if (!m || m->nt == 0 || !scratch_reserve(m->nv)) return;
     double R[9];
     quat_matrix(nd->rot, R);
+    if (node_outside_view(sc, cam, nd, m, R, aspect)) return;
     const double *S = nd->scale, *T = nd->pos;
     /* normals go through R * S^-1 */
     double inv[3] = { 1.0 / S[0], 1.0 / S[1], 1.0 / S[2] };
