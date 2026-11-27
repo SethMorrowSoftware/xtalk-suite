@@ -151,6 +151,14 @@ Joined the suite on 2026-11-20. What has run, and where:
   was not loaded, a click knocked crates over and a drag turned the camera. Neither has run
   in an IDE: a real window, keyboard and mouse there are verified statically; needs an OXT
   pass (the game's header lists what to look at).
+- **Orb Island 1.4** (2026-11-27): three levels in height on the one island (the shore,
+  terraces at 9 m, a summit at 17 m), 26 orbs, two flying enemies, a feather that gives a
+  double jump, two more lifts, a second jump pad, six more of Kenney's CC0 models, and a tune
+  audioxt composes each session in an offline engine. On OXT-Beyond 0.2.8-dp.2.1's Linux
+  server engine (9.7.1-BeyondEngine) with locally built libraries: `tests/engine-demo.lc` passed
+  263 checks with render3dxt and audioxt (its silent device), 242 with box3dxt alone and 6
+  with no extension. In a web
+  page, a desktop IDE and by ear: verified statically; needs an OXT pass.
 - **Orb Island 1.2 and the Kit's glow, lamps and looks** (2026-11-26): the island four
   times the size, sixteen orbs, a pressure plate and vault, crumbling and turning platforms,
   checkpoint flags, Kenney's CC0 models from three of his kits (`examples/models/`), a

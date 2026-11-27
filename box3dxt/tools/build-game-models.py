@@ -68,6 +68,13 @@ MODELS = [
     ('lift', 'platform-medium.glb', (2.6, 0.4, 2.6), 'box'),
     ('wall-x', 'wall-high.glb', (5.6, 3.2, 0.6), 'box', {'palette': 'colormap-fps.png'}),
     ('wall-z', 'wall-high.glb', (0.6, 3.2, 5.6), 'box', {'palette': 'colormap-fps.png', 'turn': 90}),
+    # version 1.4's two upper levels (2026-11-27)
+    ('terrace', 'platform-large-grass.glb', (10.0, 1.2, 10.0), 'box', {'palette': 'colormap-fps.png'}),
+    ('slab', 'platform-large.glb', (3.2, 0.5, 3.2), 'box'),
+    ('enemy', 'enemy-flying.glb', (None, 1.3, None), 'uniform', {'palette': 'colormap-fps.png'}),
+    ('fountain', 'pavement-fountain.glb', (4.4, 1.6, 4.4), 'box'),
+    ('coinblock', 'block-coin.glb', (1.4, 1.4, 1.4), 'box'),
+    ('sprig', 'grass-small.glb', (0.7, 0.45, 0.7), 'box'),
 ]
 # a model drawn as moving parts with its own animations (b3kAddLookPart and
 # b3kPoseLookPart): name, source, the height it fits (centred, like a

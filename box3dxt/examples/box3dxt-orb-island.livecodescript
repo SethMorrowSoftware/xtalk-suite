@@ -2,7 +2,7 @@
 -- box3dxt-orb-island.livecodescript  /  Orb Island
 --
 -- A 3D game on the b3k Kit: walk a floating island 60 metres square, find
--- the sixteen golden orbs, and do not fall into the sea. A sweeper arm
+-- the 26 golden orbs on its three levels, and do not fall into the sea. A sweeper arm
 -- turns in the middle, a wrecking ball swings under its gantry in the
 -- north-west, a lift rides up a tower, a ramp climbs to a plateau, stairs
 -- climb to a ledge, and a green jump pad throws you up to a floating
@@ -25,6 +25,18 @@
 -- Version 1.2 (2026-11-26) is four times the island of 1.1, which was
 -- 30 metres square with eight orbs; 1.1's eight are A to H, moved out
 -- with the island.
+--
+-- Version 1.4 (2026-11-27) makes the island TALLER: one island, three
+-- levels in height. The shore is 1.2's sixteen orbs; the terraces, 9 m
+-- up in the north, are two grass terraces joined by a bridge of slabs,
+-- a turning plank and crumbling planks, with a flying enemy patrolling
+-- it, a second jump pad, a coin block and a feather that gives a double
+-- jump (reached by a stair of slabs in the west or a lift in the east);
+-- the summit, 17 m up, is a round isle with a fountain and a second
+-- enemy, reached by a climb of slabs and a lift. Ten more orbs (Q to Z),
+-- a flag on each upper level, the HUD naming the level you are on and
+-- each level's orbs, and music: a new tune each session, composed by
+-- audioxt in an offline engine (N turns it off).
 --
 -- WHY THIS EXAMPLE EXISTS: it is the Kit's showcase, the 3D sibling of
 -- box2dxt's games. Every system the Kit has carries part of the game:
@@ -77,7 +89,8 @@
 --           / Space jumps / Q and E turn the camera / drag the view to
 --           look around / click a crate or ball to kick it / X blasts what
 --           is in front of you / C drops crates / V swaps the renderer /
---           M turns the sound off and on / P pauses / R restarts
+--           M turns the sound off and on / N the music / P pauses /
+--           R restarts
 -- GAMEPAD   left stick walks / right stick or the shoulders turn the
 --           camera / A (south) jumps / X (west) blasts / Y (north) drops
 --           crates / B (east) swaps the renderer / Start pauses / Back
@@ -89,8 +102,9 @@
 --   2. Walking: WASD and the arrows move the player relative to the camera;
 --      Space jumps; Q and E turn the view; the camera follows smoothly.
 --   3. The orbs: touching one removes it in a burst of sparks, shakes the
---      camera a little and counts it ("Orbs 1 / 16"); the sixteenth shows
---      the banner with the time.
+--      camera a little and counts it ("Orbs 1 / 26"); the last shows the
+--      banner with the time. The HUD names the level you are on and how
+--      many of each level's orbs are found.
 --   4. The toys: the sweeper turns and pushes you; the lift carries you up
 --      the tower; the jump pad throws you onto the floating platform; the
 --      wrecking ball swings and knocks you; the windmill's sails sweep
@@ -104,11 +118,16 @@
 --   6. Mouse: dragging the view turns the camera and does NOT kick; a click
 --      on a crate or ball kicks it away from the camera. Untick "Drag the
 --      view to look around" and a drag does nothing.
---   7. X, C, V, M, P, R and the six buttons do what they say; V says
+--   7. X, C, V, M, N, P, R and the seven buttons do what they say; V says
 --      render3dxt is not loaded when it is not, M that audioxt is not.
 --   8. A real gamepad: the stick walks, A jumps, the pad rumbles on an orb.
 --   9. Sound: the sea, the chimes climbing, the blast, the splash, the
---      fanfare; in a web page from the first click or key press.
+--      fanfare, the island's tune (a different one each launch; N stops
+--      it); in a web page from the first click or key press.
+--  11. The levels: the west stair and the east lift reach the terraces,
+--      the bridge's planks crumble and turn, the flying enemies knock
+--      you back, the feather lets you jump again in the air, and the
+--      climb and the summit lift reach the summit.
 --  10. Every label is readable in the light and the dark appearance (each
 --      control sets its own colours).
 --
@@ -591,7 +610,7 @@ end uiMenuSource
 -- the Kit (below) or the UI kit (above) uses.
 -- =====================================================================
 -- bump when the built chrome changes, so a newer paste rebuilds it once
-constant kOiUIVersion = "3"
+constant kOiUIVersion = "4"
 -- the view, in card pixels: 768 x 456, five by three
 constant kOiViewL = 16
 constant kOiViewT = 58
@@ -621,6 +640,16 @@ constant kOiOrbGlow = "90,60,0;140,96,0;190,130,10;140,96,0"
 -- island was built with
 constant kOiMoreThings = 60
 -- the notes of the orb chime, one a found orb, climbing a pentatonic scale
+-- the three levels: a player above kOiTier2Y metres is on the terraces,
+-- above kOiTier3Y on the summit
+constant kOiTier2Y = 7.5
+constant kOiTier3Y = 15.5
+constant kOiTierNames = "the shore,the terraces,the summit"
+-- the music: an eighth note at 100 beats a minute, eight bars round, made at
+-- 22050 samples a second in one channel (a quarter of a CD's data)
+constant kOiMusicRate = 22050
+constant kOiMusicStep = 0.3
+constant kOiMusicVolume = 0.32
 constant kOiChime = "523.25,587.33,659.25,783.99,880,1046.5,1174.66,1318.51,1567.98,1760,2093,2349.32,2637.02,3135.96,3520,4186.01"
 
 local sOiOrb          -- [orb sensor] -> its letter, while it waits to be found
@@ -693,6 +722,26 @@ local sOiShadow       -- the blob shadow under the player
 local sOiDust         -- [puff] -> "vx,vz,born ms"
 local sOiDustAt       -- the clock time of the last running puff
 local sOiOrbPhase     -- [orb] -> its bob's phase
+-- version 1.4's three levels: the shore, the terraces (9 m) and the summit
+local sOiOrbTier      -- [orb] -> its level, 1 to 3
+local sOiTierCount    -- [level] -> how many orbs it has
+local sOiTierFound    -- [level] -> how many of them are found
+local sOiTierBest     -- the highest level the player has reached this run
+local sOiUpLift       -- the lift from the tower's top to the east terrace
+local sOiUpWait       -- the clock time at which it moves again
+local sOiTopLift      -- the lift up to the summit
+local sOiTopWait      -- the clock time at which it moves again
+local sOiPad2         -- the jump pad on the floating platform
+local sOiFeather      -- the feather (a sensor): a double jump once touched
+local sOiEnemy        -- [enemy] -> "x,y,z;x,y,z;seconds": its two ends
+local sOiEnemyWait    -- [enemy] -> the clock time it sets off again
+local sOiEnemyAt      -- [enemy] -> 1 or 2, the end it last set off for
+local sOiHitAt        -- the clock time an enemy may knock the player again
+-- the music (audioxt): a tune composed at the start, played round
+local sOiMusic        -- the tune's sound, 0 for none
+local sOiMusicOff     -- true when N has turned the music off
+local sOiMusicSecs    -- the tune's length in seconds
+local sOiMusicMs      -- milliseconds the composing took (for the test)
 
 -- =====================================================================
 -- Lifecycle
@@ -769,6 +818,20 @@ command oiNewGame
    put empty into sOiDust
    put 0 into sOiDustAt
    put empty into sOiOrbPhase
+   put empty into sOiOrbTier
+   put empty into sOiTierCount
+   put empty into sOiTierFound
+   put 1 into sOiTierBest
+   put empty into sOiUpLift
+   put 0 into sOiUpWait
+   put empty into sOiTopLift
+   put 0 into sOiTopWait
+   put empty into sOiPad2
+   put empty into sOiFeather
+   put empty into sOiEnemy
+   put empty into sOiEnemyWait
+   put empty into sOiEnemyAt
+   put 0 into sOiHitAt
    if there is a field "oiBanner" then hide field "oiBanner"
    b3kSetup
    -- each frame's time spent in equal steps: at a frame rate that is not a
@@ -929,6 +992,8 @@ command oiBuildIsland
    oiBuildTrees
    oiBuildVault
    oiBuildEastIslet
+   oiBuildTerraces
+   oiBuildSummit
    oiFlag "west rock", -46.1, 2.4, 3.4
    oiFlag "sky isle", -3.5, 4.5, -39
 
@@ -951,6 +1016,22 @@ command oiBuildIsland
    oiOrb "O", -20, 1.6, -22
    -- P waits in the vault, behind the gate the pressure plate opens
    oiOrb "P", 26, 0.8, -26
+   -- the terraces, 9 m up (version 1.4): Q on the west terrace, R over a
+   -- crumbling plank of the bridge, S on the east terrace, T on the west
+   -- stair, U on the coin block, V in the air over the second jump pad
+   oiOrb "Q", -19, 9.8, -22
+   oiOrb "R", -2.6, 9.8, -22.2
+   oiOrb "S", 16.5, 9.8, -27
+   oiOrb "T", -27.4, 6.8, -15
+   oiOrb "U", 11, 11.1, -21
+   oiOrb "V", 0.8, 9.6, -19.5
+   -- the summit, 16.7 m up: W over the fountain (the feather's double
+   -- jump reaches it), X on the coin block of the climb, Y at the edge, Z
+   -- high over the summit's coin block
+   oiOrb "W", -3.4, 19, -37
+   oiOrb "X", 3.4, 12, -32.4
+   oiOrb "Y", 0.2, 17.6, -39.6
+   oiOrb "Z", -7.5, 19.7, -38
 
    -- LAST, the grass and the sea: render3dxt draws in the order things were
    -- made, and a pixel of grass already hidden by a tree or a stone is then
@@ -1288,7 +1369,34 @@ command oiOrb pLetter, pX, pY, pZ
    put pLetter into sOiOrb[tOrb]
    put sOiOrbCount * 0.9 into sOiOrbPhase[tOrb]
    add 1 to sOiOrbCount
+   put oiTierAt(pY) into sOiOrbTier[tOrb]
+   add 1 to sOiTierCount[sOiOrbTier[tOrb]]
+   if sOiTierFound[sOiOrbTier[tOrb]] is empty then put 0 into sOiTierFound[sOiOrbTier[tOrb]]
 end oiOrb
+
+-- the level a height is on: 1 the shore, 2 the terraces, 3 the summit
+function oiTierAt pY
+   if pY > kOiTier3Y then return 3
+   if pY > kOiTier2Y then return 2
+   return 1
+end oiTierAt
+
+-- the level the player is on now
+function oiTier
+   if b3kPlayer() is empty then return 1
+   return oiTierAt(b3kY(b3kPlayer()))
+end oiTier
+
+-- the name of a level, "the shore" ...
+function oiTierName pTier
+   set the itemDelimiter to comma
+   return item max(1, min(3, pTier)) of kOiTierNames
+end oiTierName
+
+-- found and to find on a level: "found,count"
+function oiTierOrbs pTier
+   return b3kNum(sOiTierFound[pTier], 0) & comma & b3kNum(sOiTierCount[pTier], 0)
+end oiTierOrbs
 
 -- step pStep of the orbs' pulse, as "r,g,b"
 function oiGlowStep pStep
@@ -1653,6 +1761,244 @@ command oiBuildEastIslet
    oiFlag "east islet", 51.5, 0, -2.2
 end oiBuildEastIslet
 
+-- =====================================================================
+-- The two upper levels (version 1.4, 2026-11-27): one island, three
+-- levels in height. The terraces are two of Kenney's large grass
+-- platforms 9 m up, over the north-west and the north-east, joined by a
+-- bridge of planks across the north; the summit is a round isle 16.7 m up
+-- in the north with a fountain on it. The ways up:
+--   * the west stair: slabs climbing from the west ledge (3 m) round the
+--     island's edge to the west terrace, one of them crumbling;
+--   * the upper lift: from the tower's top (5 m) to the east terrace;
+--   * the second jump pad, on the floating platform: up past orb V to the
+--     bridge;
+--   * the climb: from the east terrace a slab, a coin block and a slab to
+--     the summit lift.
+-- A flying enemy patrols the bridge and another the summit; touched, it
+-- knocks the player back. The feather on the west terrace gives a double
+-- jump, which the summit's fountain and its highest orb want.
+-- =====================================================================
+command oiBuildTerraces
+   local tTurn
+   oiTerrace "west terrace", -18, 9, -20
+   oiTerrace "east terrace", 14, 9, -24
+   -- the west stair: each top a metre above the last, a short jump on;
+   -- the fourth crumbles. From the west ledge (top 3 m at -18, -3.6).
+   oiSlab -21.8, 4, -7.4
+   oiSlab -25.4, 5, -11
+   oiSlab -27.4, 6, -15
+   oiCrumbleSpot 4, -26.6, 6.75, -19.2
+   oiSlab -25.5, 8, -23
+   -- the upper lift, on the tower's north face (z -16): from just above
+   -- the tower's top (5 m) to the east terrace's (9 m), whose south edge
+   -- is 0.2 m beyond it
+   b3kAddPlatform 18.5, 5, -17.5, 2.6, 0.4, 2.6, "70,180,190"
+   put the result into sOiUpLift
+   b3kName sOiUpLift, "upper lift"
+   oiLook sOiUpLift, "lift"
+   -- the bridge across the north, from the west terrace's east edge (x -13)
+   -- to the east terrace's west edge (x 9): a plank, a turning platform,
+   -- two crumbling planks and a plank, a jump apart
+   oiSlab -10.4, 9, -21
+   b3kAddPlatform -6.4, 8.7, -21.6, 3, 0.6, 3, "200,170,110"
+   put the result into tTurn
+   b3kName tTurn, "bridge turner"
+   b3kSetSpin tTurn, 0, -40, 0
+   oiLook tTurn, "platform"
+   oiCrumbleSpot 5, -2.6, 8.75, -22.2
+   oiCrumbleSpot 6, 0.8, 8.75, -22.8
+   oiSlab 6.2, 9, -23.6
+   -- the second jump pad, on the floating platform (top 3.7 m)
+   b3kAddSensorBox 0.8, 3.8, -19.5, 1, 0.2, 1
+   put the result into sOiPad2
+   b3kName sOiPad2, "high jump pad"
+   b3kSetVisible sOiPad2, true
+   b3kSetColor sOiPad2, "90,200,110"
+   b3kSetGlow sOiPad2, "20,90,30"
+   -- a coin block on the east terrace, orb U on top
+   oiBlock 11, 9.7, -21
+   -- the feather, at the top of the west stair
+   b3kAddSensorBall -21, 9.9, -23.5, 0.8
+   put the result into sOiFeather
+   if sOiFeather is not empty then
+      b3kSetVisible sOiFeather, true
+      b3kSetColor sOiFeather, "150,230,255"
+      b3kSetGlow sOiFeather, "40,120,170"
+      b3kName sOiFeather, "feather"
+   end if
+   oiEnemyMake "bridge", -9, 10.3, -21.4, 5, 10.3, -23.4, 6
+   oiFlag "west terrace", -15, 9, -17
+   oiFlag "east terrace", 17, 9, -21
+   repeat for each line tTurn in "-21,-17,40" & return & "-14.5,-23.5,150" & return & "11,-27.5,260" & return & "18,-27,20"
+      oiSprig item 1 of tTurn, 9, item 2 of tTurn, item 3 of tTurn
+   end repeat
+end oiBuildTerraces
+
+command oiBuildSummit
+   local tIsle, tTuft
+   -- the climb from the east terrace's north-west corner (9, -29)
+   oiSlab 6.6, 10.1, -31
+   oiBlock 3.4, 10.6, -32.4
+   oiSlab 0.2, 11.9, -31
+   -- the summit lift: from beside the last slab (its top 12.2 m) to the
+   -- summit's (16.7 m), 0.5 m from the isle's edge
+   b3kAddPlatform -3.4, 12, -30.2, 2.6, 0.4, 2.6, "230,150,60"
+   put the result into sOiTopLift
+   b3kName sOiTopLift, "summit lift"
+   oiLook sOiTopLift, "lift"
+   -- the summit: a round isle 10 m across on a hanging rock
+   oiStatic "cylinder", -3.4, 16.2, -37, 1, 10, "132,190,98"
+   put the result into tIsle
+   b3kName tIsle, "summit"
+   oiLook tIsle, "isle", 10 / 12
+   oiRock -3.4, 15.71, -37, 5, 9
+   -- the fountain, 1.6 m high: a double jump stands on it
+   oiStatic "box", -3.4, 17.5, -37, 4.4, 1.6, 4.4, "170,176,190"
+   b3kName the result, "fountain"
+   oiLook the result, "fountain"
+   b3kAddLamp -3.4, 19, -37, "255,214,140", 10, 1.8
+   oiBlock -7.5, 17.4, -38
+   oiEnemyMake "summit", -6.6, 17.5, -34.2, -0.2, 17.5, -34.2, 5
+   oiFlag "summit", -0.4, 16.7, -33.6
+   repeat for each line tTuft in "-6.5,-40.5,30" & return & "-1,-41,120" & return & "0.8,-35.5,210" & return & "-7.4,-35.4,300"
+      oiSprig item 1 of tTuft, 16.7, item 2 of tTuft, item 3 of tTuft
+   end repeat
+end oiBuildSummit
+
+-- A terrace: Kenney's large grass platform on a box 10 m square and 1.2 m
+-- thick, its top at pTop, a rock hanging under it
+command oiTerrace pName, pX, pTop, pZ
+   oiStatic "box", pX, pTop - 0.6, pZ, 10, 1.2, 10, "132,190,98"
+   b3kName the result, pName
+   oiLook the result, "terrace"
+   oiRock pX, pTop - 1.19, pZ, 5, 7
+end oiTerrace
+
+-- A slab to jump on: Kenney's large platform on a box 3.2 m square and
+-- 0.5 m thick, its top at pTop
+command oiSlab pX, pTop, pZ
+   oiStatic "box", pX, pTop - 0.25, pZ, 3.2, 0.5, 3.2, "196,170,130"
+   oiLook the result, "slab"
+end oiSlab
+
+-- A coin block, 1.4 m a side, centred at pY
+command oiBlock pX, pY, pZ
+   oiStatic "box", pX, pY, pZ, 1.4, 1.4, 1.4, "240,190,60"
+   b3kName the result, "coin block"
+   oiLook the result, "coinblock"
+end oiBlock
+
+-- A small tuft (Kenney's grass-small) on a level whose top is pTop
+command oiSprig pX, pTop, pZ, pTurn
+   local tTuft
+   b3kAddSensorBox pX, pTop + 0.225, pZ, 0.7, 0.45, 0.7
+   put the result into tTuft
+   if tTuft is empty then exit oiSprig
+   b3kSetVisible tTuft, true
+   b3kSetColor tTuft, "96,170,92"
+   b3kSetRotation tTuft, 0, pTurn, 0
+   b3kName tTuft, "sprig"
+   oiLook tTuft, "sprig"
+end oiSprig
+
+-- A flying enemy (Kenney's, CC0): a kinematic box that glides between
+-- two ends, turned to face its way, resting a moment at each end
+command oiEnemyMake pName, pX1, pY1, pZ1, pX2, pY2, pZ2, pSecs
+   local tEnemy
+   b3kAddPlatform pX1, pY1, pZ1, 1.2, 1, 1.2, "200,90,190"
+   put the result into tEnemy
+   if tEnemy is empty then exit oiEnemyMake
+   b3kName tEnemy, "enemy " & pName
+   oiLook tEnemy, "enemy"
+   put pX1 & comma & pY1 & comma & pZ1 & ";" & pX2 & comma & pY2 & comma & pZ2 & ";" & pSecs into sOiEnemy[tEnemy]
+   put 0 into sOiEnemyWait[tEnemy]
+   put 1 into sOiEnemyAt[tEnemy]
+end oiEnemyMake
+
+-- The two new lifts, as the tower's: a rest at each end, then a glide
+command oiTickUpLifts
+   if sOiUpLift is not empty and b3kIsThing(sOiUpLift) then
+      if not b3kIsGliding(sOiUpLift) and sOiClockMS >= sOiUpWait then
+         if b3kY(sOiUpLift) < 7 then
+            b3kGlideTo sOiUpLift, 18.5, 8.8, -17.5, 3
+         else
+            b3kGlideTo sOiUpLift, 18.5, 5, -17.5, 3
+         end if
+         put sOiClockMS + 4500 into sOiUpWait
+      end if
+   end if
+   if sOiTopLift is not empty and b3kIsThing(sOiTopLift) then
+      if not b3kIsGliding(sOiTopLift) and sOiClockMS >= sOiTopWait then
+         if b3kY(sOiTopLift) < 14 then
+            b3kGlideTo sOiTopLift, -3.4, 16.5, -30.2, 4
+         else
+            b3kGlideTo sOiTopLift, -3.4, 12, -30.2, 4
+         end if
+         put sOiClockMS + 6000 into sOiTopWait
+      end if
+   end if
+end oiTickUpLifts
+
+-- The enemies fly to and fro; one within reach of the player knocks it
+-- back and up, away from itself, once in 0.9 s at most
+command oiTickEnemies
+   local tEnemy, tEnds, tTo, tFrom, tPlayer, tDx, tDy, tDz, tD
+   put b3kPlayer() into tPlayer
+   set the itemDelimiter to comma
+   repeat for each key tEnemy in sOiEnemy
+      if not b3kIsThing(tEnemy) then
+         delete variable sOiEnemy[tEnemy]
+         next repeat
+      end if
+      if not b3kIsGliding(tEnemy) and sOiClockMS >= sOiEnemyWait[tEnemy] then
+         put sOiEnemy[tEnemy] into tEnds
+         set the itemDelimiter to ";"
+         put 3 - sOiEnemyAt[tEnemy] into sOiEnemyAt[tEnemy]
+         put item sOiEnemyAt[tEnemy] of tEnds into tTo
+         put item 3 - sOiEnemyAt[tEnemy] of tEnds into tFrom
+         get item 3 of tEnds
+         set the itemDelimiter to comma
+         -- it faces its way: Kenney's enemy looks down +z
+         b3kSetRotation tEnemy, 0, atan2(item 1 of tTo - item 1 of tFrom, item 3 of tTo - item 3 of tFrom) * 180 / pi, 0
+         b3kGlideTo tEnemy, item 1 of tTo, item 2 of tTo, item 3 of tTo, it
+         put sOiClockMS + 1000 * it + 800 into sOiEnemyWait[tEnemy]
+      end if
+      if tPlayer is empty or sOiClockMS < sOiHitAt then next repeat
+      put b3kX(tPlayer) - b3kX(tEnemy) into tDx
+      put b3kY(tPlayer) - b3kY(tEnemy) into tDy
+      put b3kZ(tPlayer) - b3kZ(tEnemy) into tDz
+      if abs(tDy) > 1.4 or abs(tDx) > 1.4 or abs(tDz) > 1.4 then next repeat
+      put sqrt(tDx * tDx + tDz * tDz) into tD
+      if tD > 1.3 then next repeat
+      if tD < 0.01 then
+         put 1 into tDx
+         put 0 into tDz
+         put 1 into tD
+      end if
+      b3kSetVelocity tPlayer, 7 * tDx / tD, 5.5, 7 * tDz / tD
+      put sOiClockMS + 900 into sOiHitAt
+      b3kCamShake 0.12, 200
+      oiRumble 0.5, 0.3, 160
+      oiSound "ouch"
+      uiStatus "Ouch! The flying enemy knocks you back.", "warn"
+   end repeat
+end oiTickEnemies
+
+-- A new level reached is announced, once a run each
+command oiTickTier
+   local tTier
+   put oiTier() into tTier
+   if tTier <= sOiTierBest then exit oiTickTier
+   put tTier into sOiTierBest
+   oiSound "tier"
+   oiSparks b3kX(b3kPlayer()), b3kY(b3kPlayer()) + 1, b3kZ(b3kPlayer())
+   if tTier is 2 then
+      uiStatus "Level 2: the terraces. " & item 2 of oiTierOrbs(2) & " orbs up here; the summit is higher still.", "ok"
+   else
+      uiStatus "Level 3: the summit! " & item 2 of oiTierOrbs(3) & " orbs at the top of the island.", "ok"
+   end if
+end oiTickTier
+
 command oiCrumbleSpot pSpot, pX, pY, pZ
    local tSensor
    put pX & comma & pY & comma & pZ into sOiCrumble[pSpot]
@@ -1773,6 +2119,8 @@ on b3kFrame
    oiPadTick
    oiTickLift
    oiTickSkyLift
+   oiTickUpLifts
+   oiTickEnemies
    oiTickHero tMs
    oiTickDust tMs
    oiTickOrbBob
@@ -1787,6 +2135,7 @@ on b3kFrame
    -- drawing (12 ms in headless Chromium, 2026-11-26), and four of those a
    -- second were the hitches, and the gaps in the sound: there, once a second
    if sOiClockMS - sOiHudAt >= sOiHudEvery then
+      oiTickTier
       oiHud
    end if
 end b3kFrame
@@ -1820,9 +2169,26 @@ on b3kSensorEnter pSensor, pVisitor
       oiSound "pad"
       exit b3kSensorEnter
    end if
+   if pSensor is sOiPad2 then
+      -- 12 m/s: 7 m up, past orb V, to the bridge overhead
+      b3kPlayerJump 12
+      oiSound "pad"
+      exit b3kSensorEnter
+   end if
+   if pSensor is sOiFeather then
+      oiSparks b3kX(pSensor), b3kY(pSensor), b3kZ(pSensor)
+      b3kRemove pSensor
+      put empty into sOiFeather
+      b3kPlayerSet "airJumps", 1
+      oiSound "feather"
+      uiStatus "The feather! Jump again in the air for a double jump.", "ok"
+      exit b3kSensorEnter
+   end if
    if sOiOrb[pSensor] is not empty then
       oiSparks b3kX(pSensor), b3kY(pSensor), b3kZ(pSensor)
       delete variable sOiOrb[pSensor]
+      add 1 to sOiTierFound[b3kNum(sOiOrbTier[pSensor], 1)]
+      delete variable sOiOrbTier[pSensor]
       b3kRemove pSensor
       add 1 to sOiFound
       b3kCamShake 0.06, 120
@@ -1980,6 +2346,9 @@ on keyDown pKey
       case "m"
          oiToggleSound
          break
+      case "n"
+         oiToggleMusic
+         break
       default
          pass keyDown
    end switch
@@ -2004,6 +2373,9 @@ on mouseUp pButton
          break
       case "oiSound"
          oiToggleSound
+         break
+      case "oiMusic"
+         oiToggleMusic
          break
       case "oiLook"
          oiToggleLook
@@ -2359,8 +2731,202 @@ command oiSoundStart pDevice
    end if
    put 0 into sOiSeaAt
    put true into sOiSeaUp
+   oiMusicMake
    oiSoundLabel
 end oiSoundStart
+
+-- ---------------------------------------------------------------------
+-- The island's music, composed afresh each session
+-- ---------------------------------------------------------------------
+-- A little tune in C on a steel-drum-ish voice, over a sine bass, soft
+-- chord stabs and a shaker: eight bars of eight steps (kOiMusicStep
+-- seconds each), chords C F G F C F G C. The notes are not stored: they
+-- are drawn at random from the C pentatonic scale, walking a step or
+-- two at a time and landing on a chord tone at the start of each half
+-- bar, so every session hums a different tune that still sounds like
+-- the island. audioxt does the work twice: an OFFLINE engine
+-- (auEngineCreateOffline) plays the voices into samples step by step,
+-- nothing heard, and the samples become one looping sound on the live
+-- engine (auSoundFromPCM). Mono at kOiMusicRate hertz keeps it small:
+-- about 19 seconds is 850 KB. Composing takes a moment once, at start;
+-- after that the music costs the frame nothing.
+command oiMusicMake
+   local tEngine, tData, tErr, tT0
+   put 0 into sOiMusic
+   put 0 into sOiMusicSecs
+   if not oiSoundOn() then exit oiMusicMake
+   put the milliseconds into tT0
+   try
+      put auEngineCreateOffline(kOiMusicRate, 1) into tEngine
+   catch tErr
+      put 0 into tEngine
+   end try
+   if tEngine is not an integer or tEngine <= 0 then exit oiMusicMake
+   put oiMusicCompose(tEngine) into tData
+   auEngineFree tEngine
+   if tData is empty then exit oiMusicMake
+   put auSoundFromPCM(sOiAudio, tData, "s16", kOiMusicRate, 1) into sOiMusic
+   if sOiMusic is not an integer or sOiMusic <= 0 then
+      put 0 into sOiMusic
+      exit oiMusicMake
+   end if
+   put the number of bytes in tData / (2 * kOiMusicRate) into sOiMusicSecs
+   auSoundSetVolume sOiMusic, kOiMusicVolume
+   auSoundSetLooping sOiMusic, true
+   if sOiMusicOff is not true then auSoundStart sOiMusic
+   put the milliseconds - tT0 into sOiMusicMs
+end oiMusicMake
+
+-- the tune's samples, s16 mono: each step starts its notes, then the
+-- offline engine renders that step; a voice is freed once it has ended
+function oiMusicCompose pEngine
+   local tData, tFrames, tBar, tStep, tRoot, tChord, tNote, tPos, tLast
+   local tRhythm, tLive, tKeep, tLine, tNow, tLen
+   set the itemDelimiter to comma
+   put round(kOiMusicStep * kOiMusicRate) into tFrames
+   -- C pentatonic from middle C up, as MIDI notes; tPos walks it
+   put "60,62,64,67,69,72,74,76,79,81" into tNote
+   put 6 into tPos
+   repeat with tBar = 1 to 8
+      -- C F G F C F G C: the root as a MIDI note, and the chord's tones
+      put item tBar of "48,53,55,53,48,53,55,48" into tRoot
+      put item tBar of "0 4 7,0 4 9,2 7 11,0 4 9,0 4 7,0 4 9,2 7 11,0 4 7" into tChord
+      -- where the melody plays this bar: one of four rhythms, the last
+      -- bar held on its first note so the loop breathes before it turns
+      put any item of "10101110,10111010,11011010,10100110" into tRhythm
+      if tBar is 8 then put "10000000" into tRhythm
+      repeat with tStep = 0 to 7
+         put auEngineTime(pEngine) into tNow
+         -- the bass: the root on 1 and 5, the fifth on 4 and 8
+         if tStep is 0 or tStep is 4 then
+            oiMusicVoice pEngine, "sine", tRoot, 0.26, 2 * kOiMusicStep, tNow, tLive
+         else if tStep is 3 or tStep is 7 then
+            oiMusicVoice pEngine, "sine", tRoot + 7, 0.2, kOiMusicStep, tNow, tLive
+         end if
+         -- the chord: three soft triangles on the off beats
+         if tStep is 2 or tStep is 6 then
+            repeat for each word tLine in tChord
+               oiMusicVoice pEngine, "triangle", 60 + (tLine mod 12), 0.06, 0.9 * kOiMusicStep, tNow, tLive
+            end repeat
+         end if
+         -- the melody
+         if char tStep + 1 of tRhythm is "1" and not (tBar is 8 and tStep is 7) then
+            if tStep is 0 or tStep is 4 then
+               -- a strong beat: move to the nearest chord tone
+               put oiMusicNearest(tNote, tPos, tChord) into tPos
+            else
+               put max(1, min(10, tPos + any item of "-2,-1,-1,1,1,2")) into tPos
+            end if
+            put item tPos of tNote into tLine
+            put kOiMusicStep into tLen
+            if char tStep + 2 of tRhythm is "0" then put 2 * kOiMusicStep into tLen
+            if tBar is 8 then
+               put item 1 of tNote into tLine
+               put 6 * kOiMusicStep into tLen
+            end if
+            oiMusicVoice pEngine, "sine", tLine, 0.17, tLen, tNow, tLive
+            oiMusicVoice pEngine, "triangle", tLine + 12, 0.05, 0.6 * tLen, tNow, tLive
+         end if
+         -- the shaker, louder off the beat; quiet in the last bar's tail
+         if not (tBar is 8 and tStep >= 4) then
+            if tStep mod 2 is 1 then
+               oiMusicVoice pEngine, "white", 0, 0.035, 0.07, tNow, tLive
+            else
+               oiMusicVoice pEngine, "white", 0, 0.015, 0.05, tNow, tLive
+            end if
+         end if
+         put auEngineRender(pEngine, tFrames, "s16") after tData
+         -- the voices that have ended are given back
+         put auEngineTime(pEngine) into tNow
+         put empty into tKeep
+         repeat for each line tLine in tLive
+            if item 2 of tLine <= tNow then
+               auSoundFree item 1 of tLine
+            else
+               put tLine & return after tKeep
+            end if
+         end repeat
+         put tKeep into tLive
+      end repeat
+   end repeat
+   repeat for each line tLine in tLive
+      auSoundFree item 1 of tLine
+   end repeat
+   return tData
+end oiMusicCompose
+
+-- one note of the tune: MIDI note pNote (0 for the noise), fading from
+-- pLevel to silence over pFor seconds; pLive collects it to be freed
+command oiMusicVoice pEngine, pShape, pNote, pLevel, pFor, pNow, @pLive
+   local tSound
+   if pShape is "white" then
+      put auSoundNoise(pEngine, "white", pLevel) into tSound
+   else
+      put auSoundTone(pEngine, pShape, 440 * 2 ^ ((pNote - 69) / 12), pLevel) into tSound
+   end if
+   if tSound is not an integer or tSound <= 0 then exit oiMusicVoice
+   auSoundFade tSound, 1, 0, pFor
+   auSoundStart tSound
+   auSoundStopAt tSound, pNow + pFor
+   put tSound & comma & (pNow + pFor) & return after pLive
+end oiMusicVoice
+
+-- the place in pScale, nearest pPos, of a note in the chord pChord
+-- (pitch classes, as words)
+function oiMusicNearest pScale, pPos, pChord
+   local tD, tP
+   set the itemDelimiter to comma
+   repeat with tD = 0 to 9
+      repeat for each item tP in (pPos - tD) & comma & (pPos + tD)
+         if tP < 1 or tP > 10 then next repeat
+         if (item tP of pScale) mod 12 is among the words of pChord then return tP
+      end repeat
+   end repeat
+   return pPos
+end oiMusicNearest
+
+-- N: the music off or on again (the sound itself is M's)
+command oiToggleMusic
+   if not oiSoundOn() then
+      uiStatus "No music: load the audioxt extension for the island's tune.", "warn"
+      exit oiToggleMusic
+   end if
+   put sOiMusicOff is not true into sOiMusicOff
+   if sOiMusic > 0 then
+      if sOiMusicOff then
+         auSoundStop sOiMusic
+      else
+         auSoundStart sOiMusic
+      end if
+   end if
+   if sOiMusicOff then
+      uiStatus "Music off. N plays it again.", "ok"
+   else
+      uiStatus "Music on.", "ok"
+   end if
+   oiSoundLabel
+   oiHud
+end oiToggleMusic
+
+-- true while the tune plays
+function oiMusicOn
+   return oiSoundOn() and sOiMusic is an integer and sOiMusic > 0 and sOiMusicOff is not true
+end oiMusicOn
+
+-- the tune's length in seconds, and how long composing it took (the test
+-- reads them)
+function oiMusicSecs
+   return b3kNum(sOiMusicSecs, 0)
+end oiMusicSecs
+
+function oiMusicMs
+   return b3kNum(sOiMusicMs, 0)
+end oiMusicMs
+
+-- the tune's sound, 0 for none
+function oiMusicSound
+   return b3kNum(sOiMusic, 0)
+end oiMusicSound
 
 -- a new run sets the game clock back to 0: the last run's one-shot sounds
 -- are freed now (their deadlines are on the old clock, which the new one
@@ -2378,6 +2944,7 @@ command oiSoundStop
    if sOiAudio is an integer and sOiAudio > 0 then auEngineFree sOiAudio
    put 0 into sOiAudio
    put 0 into sOiSea
+   put 0 into sOiMusic
    put empty into sOiVoices
    oiSoundLabel
 end oiSoundStop
@@ -2421,6 +2988,12 @@ command oiSoundLabel
       set the label of button "oiSound" to "Sound: off (M)"
    else
       set the label of button "oiSound" to "Sound: on (M)"
+   end if
+   if there is no button "oiMusic" then exit oiSoundLabel
+   if oiMusicOn() then
+      set the label of button "oiMusic" to "Music: on (N)"
+   else
+      set the label of button "oiMusic" to "Music: off (N)"
    end if
 end oiSoundLabel
 
@@ -2476,7 +3049,8 @@ command oiSound pName
    switch pName
       case "orb"
          set the itemDelimiter to comma
-         put item max(1, min(16, sOiFound)) of kOiChime into tNote
+         -- sixteen notes climb; the terraces' and the summit's orbs climb them again
+         put item ((max(1, sOiFound) - 1) mod 16) + 1 of kOiChime into tNote
          oiVoice "sine", tNote, 0.22, 0, 0.45
          oiVoice "triangle", tNote * 1.5, 0.1, 0.07, 0.4
          break
@@ -2529,6 +3103,23 @@ command oiSound pName
          oiVoice "pink", 0, 0.16, 0, 0.9
          oiVoice "sine", 70, 0.22, 0, 0.9
          break
+      case "feather"
+         repeat with tI = 0 to 4
+            oiVoice "sine", 784 * (1.122 ^ tI), 0.12, 0.06 * tI, 0.25
+         end repeat
+         break
+      case "ouch"
+         oiVoice "square", 220, 0.08, 0, 0.12
+         oiVoice "square", 165, 0.08, 0.1, 0.18
+         break
+      case "tier"
+         set the itemDelimiter to comma
+         put 0 into tI
+         repeat for each item tNote in "392,523.25,659.25,783.99"
+            oiVoice "triangle", tNote, 0.14, tI * 0.09, 0.4
+            add 1 to tI
+         end repeat
+         break
       case "win"
          set the itemDelimiter to comma
          put 0 into tI
@@ -2545,7 +3136,7 @@ end oiSound
 -- The HUD: written four times a second at most, and a field only when its
 -- text changed (a field write is the costliest thing a frame can do).
 command oiHud
-   local tScore, tTime, tStats, tSound
+   local tScore, tTime, tLevel, tStats, tSound, tT, tLvl, tOrbs
    put sOiClockMS into sOiHudAt
    if there is no field "oiScore" then exit oiHud
    put "Orbs  " & sOiFound & " / " & sOiOrbCount into tScore
@@ -2556,10 +3147,23 @@ command oiHud
    else
       put "Time  " & format("%.1f", sOiPlayMS / 1000) & " s      Falls  " & sOiFalls into tTime
    end if
+   -- the level the player is on, and the orbs found on each of the three
+   put oiTier() into tT
+   put "On level " & tT & ", " & oiTierName(tT) & return into tLevel
+   repeat with tLvl = 1 to 3
+      put oiTierOrbs(tLvl) into tOrbs
+      if tLvl > 1 then put "     " after tLevel
+      put word 2 of oiTierName(tLvl) & "  " & item 1 of tOrbs & " / " & item 2 of tOrbs after tLevel
+   end repeat
    put "none (audioxt not loaded)" into tSound
    if oiSoundOn() then
       put "on" into tSound
       if sOiMuted is true then put "off (M)" into tSound
+      if oiMusicOn() then
+         put ", music on (N)" after tSound
+      else
+         put ", music off (N)" after tSound
+      end if
    end if
    put b3kStats() into tStats
    put "renderer  " & item 4 of tStats & "   lamps  " & the number of lines of b3kLamps() & return & \
@@ -2573,6 +3177,10 @@ command oiHud
    if tTime is not sOiHudText["time"] then
       put tTime into field "oiTime"
       put tTime into sOiHudText["time"]
+   end if
+   if tLevel is not sOiHudText["level"] and there is a field "oiLevel" then
+      put tLevel into field "oiLevel"
+      put tLevel into sOiHudText["level"]
    end if
    if tStats is not sOiHudText["stats"] then
       put tStats into field "oiStats"
@@ -2604,17 +3212,27 @@ command oiBuildUI
    put 1072 into tR
    uiPanel "oiSide", "800,52,1088,600"
    uiSection "oiSecScore", "1  Orbs", tL & ",64," & tR & ",84"
-   uiLabel "oiScore", "Orbs  0 / 0", tL & ",92," & tR & ",124", 22
+   uiLabel "oiScore", "Orbs  0 / 0", tL & ",82," & tR & ",106", 20
    set the textStyle of field "oiScore" to "bold"
-   uiLabel "oiTime", "Time  0.0 s", tL & ",126," & tR & ",146", 13
+   uiLabel "oiTime", "Time  0.0 s", tL & ",106," & tR & ",122", 11
    set the foregroundColor of field "oiTime" to kUiInkSoft
-   uiSection "oiSecPlay", "2  Play", tL & ",154," & tR & ",174"
+   -- the three levels: the one the player is on, and each one's orbs
+   -- a fixed rect, two lines of 14 px under a 6 px margin: uiWrap would
+   -- fit it to the one line it starts with and cut the second off, and
+   -- with no top margin the first line's tops are cut
+   uiLabel "oiLevel", "On level 1, the shore" & return & "shore  0 / 0", tL & ",122," & tR & ",158", 11
+   set the margins of field "oiLevel" to "8,6,8,0"
+   set the fixedLineHeight of field "oiLevel" to true
+   set the textHeight of field "oiLevel" to 14
+   set the foregroundColor of field "oiLevel" to kUiInkSoft
+   uiSection "oiSecPlay", "2  Play", tL & ",158," & tR & ",178"
    oiButton "oiRestart", "Restart (R)", tL & ",180,940,204", true
    oiButton "oiPause", "Pause (P)", "948,180," & tR & ",204", false
    oiButton "oiBlast", "Blast (X)", tL & ",210,940,234", false
    oiButton "oiCrates", "Drop crates (C)", "948,210," & tR & ",234", false
    oiButton "oiRender", "Renderer (V)", tL & ",240," & tR & ",264", false
-   oiButton "oiSound", "Sound (M)", tL & ",270," & tR & ",294", false
+   oiButton "oiSound", "Sound (M)", tL & ",270,940,294", false
+   oiButton "oiMusic", "Music (N)", "948,270," & tR & ",294", false
    uiCheckbox "oiLook", "Drag the view to look around", tL & ",300," & tR & ",320"
    -- made as a push button first, so it would keep a push button's frame
    set the showBorder of button "oiLook" to false
@@ -2626,7 +3244,7 @@ command oiBuildUI
    uiWrap "oiKeys", "WASD or arrows: walk; Space: jump" & return & \
          "Q and E, or drag the view: turn the camera" & return & \
          "Click a crate or ball: kick it" & return & \
-         "X blast, C crates, V renderer, M sound," & return & "P pause, R restart" & return & \
+         "X blast, C crates, V renderer, M sound," & return & "N music, P pause, R restart" & return & \
          "Gamepad: left stick walks, right stick looks," & return & \
          "A jumps, X blasts, Y crates, Start pauses", tL & ",352," & tR & ",466", 11
    uiSection "oiSecKit", "4  Under the hood", tL & ",470," & tR & ",490"
@@ -2644,7 +3262,7 @@ command oiBuildUI
    set the margins of field "oiBanner" to "8,24,8,8"
    hide field "oiBanner"
    uiFooter "Orb Island: a demo of the b3k Kit, carried below its game code from box3dxt/src/box3dxt-kit.livecodescript. " & \
-         "Sixteen orbs on an island 60 metres square; gamepadxt and audioxt are used when they are loaded.", \
+         "26 orbs on three levels of an island 60 metres square; gamepadxt and audioxt are used when they are loaded.", \
          "16,524,784,600"
    set the uOiUIVersion of this stack to kOiUIVersion
    set the loc of this stack to the screenLoc
@@ -2811,6 +3429,73 @@ private function oiModelData pName
          break
       case "wall-z.mtl"
          put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0LOwNAGSRpYgwsSYKw8qawiRNTUwA5FGpkDSzNAILm0EkTY2NwaRlkZA0sTCDC5tDJG2NAPpM7YA22BizgUAU80sinsAAAA=" after tData
+         break
+      case "terrace.obj"
+         put "H4sIAAAAAAAC/3VXS5LtJgyd9yrYAG3zh+0kealKVXcyyEvWH6QjYcBkco2OhCTEkXz9/fPr649fzPdfv/34+vz++fXxr4mf9a7G3p/O93X0gbHkG2EZS4aySwr5DKj0PbqzrwcGK0XIPxD13verq+6Voa4arvqGgcEKiD2Z2aPdOzP7TsSezm7fR7CHetjDKeyhSJM7O/l7zmGPWe+2sl8rM8LY5zJGiva5s5GinXI8gu/d9hRmKZl9bvQIHo5zPPlzM3a7mgU7VuJV3JkOITsgd9GLvwsjXbNxcvK9b7PvfXOiuy97Nnt5s4eg9p2sPZ3oDqM4fblAitiDlT2axRTlSpQhwY2u6OsdZKv0tqg5Ps2Z42rVgwC4+yF2v4ylTZ5sKMPZhiKJzQgkMuKIaNXHnP4A0w5MwScjleF5Cm41+pSgTZuftAaanTxtMHkRMO1JL0Uf2dk9PfuKZfda2D1d+w70ysXuZ7KnYtlTdeyx+PZ/avC6/p1oJ3qmfctChgNfNkptLNxZe6L23jZbg/zZvfFEjeTXFSCZB2LkBvdixJsoFydI6Tv4IQaNRZchYqZG3ilIGXGaIJm3NBbtW14i2C2EfXu0h8ztOxX7PrJ9H1Dj2ykBTtBqhn3ZDfbAdoqsYewhjn0q+TI7uTvsnEtgn6r6YTbO+8KOO7m+dirwCrzOvxXoNloOvjdajcVNWl1Y9/HP3z/6/zrz6/3xu0nXFY27rmRy/+kArxmN/Uct6nVVBXjNaOur" after tData
+         put "DtDDuPu6GuvICQvAu8NGkL8u1/MI/eGMi/QgWGTRJnoQTLsGeq8uoBumPUyvp+9GrhrvSOqwyKqlrZQZndKErgu3CYEeHRSZdU7KwAma0B+9ZX2jB1lCFi2Sp2ANsATTHFSGFnvJSU89eBO6WQgmeJIIFlm0mSSCA5IV7YBFFu0tR8FBxakUgaxFFm3SkLQ70mX2X/IsF94lUYUNzXikFZVHERQLun91DpYMGxPqilY82upA/MZbYCwG7BR2C+xX13i4YexnY6/Gzs3WMazWMDMxKhwXWI8Y0wLn1TecmqhVgl6tXdusUYJYV2vXNrjO8DilOFFYE8RC4RBXGDKzusM6JYixqXDnZdA+VaE9FiaRuz40KEPqnUR+ssk3PxI5z9R6JBeTArUvo9Qj2bOIAKwjD+SxwlGFY25e3mRyxqOIi+LZrKBxyrDmfKBNgCm7go5hXxlOKLsSuZ9yY23R0VAcnEJbtHFKgdPKnV10PFTH/VWRUA3SfSxnUxGyasiK47CvApiOUzNPDew2tcowQZChVbiiVO3Gw8nhW+QBzSO4VQzuVmjAiUYxXFILrCoYfi1houPCWtOhfvOhK66bQ6VBE6qK8kPYEmRCKz/AlqyjX/khbHFSFfBDyMLsmAjIZHkcCz9Qguzmiy+DLVVpIvwQtji9SvBD2MLWSbmWB1ua8EH5IXy4ZRqrLGwZsPADbKm3+FZ+CFui5K38ELZEZabwA8dhJ3zxwg/hg1OuQRa2IAG95zrY4pUm" after tData
+         put "IAgokeR1DglkCcII8EPI4iWzwRDmS8uaGe5b+dLyQpQwDfK6vTfqNO+f+a6w214SbYbH2FdYhrBaxxXW0ZfuZe7v1piIya2+ZdN4SyS3WGsmMvDF+gXv75QwO3neKWGSp5dHWeC8wXl+S2jlo3SXa9w5DlPYNekkkkWbFc4LXDa44FEFzoALrLNaqyzaqHBcYM0EiwFrJhWxKnxRiwAWGdpSVrjIJk0QC4WpRRhukGmg0eNWWGTR1g2Gr9Y2mGVwv+Na+qRjMGKyRUyrqGMwDq2yBIsBK9VyWGAlTxYZnZKVPCpDW+4VhoyhNcNgc9FMKuQKqlUNqbJo1TcWA84bDGIW/ftSkVnDqdr46wZZtRoSiwGPf5ZpgfNC+oxvmv4f/rr6v+quo3/JtGa0e6SXAD1Mv+jMKqIhrRntqRb5pOlfco4IGYwjUvBfJ5FFS7wM+EYqYsSuyBISNGw+bade6BOTOJX16yMNrXpl1hsPcgchnoii0+7CQtCygiC0147DQlBXVtSJsfYhFgMe1vNu5D3D2OS1hbBQ2NXJ2t/8ueQdf0X5Wz6uSBZtt/ZePtp84DP5yJ9DPsoZSRZtL45P8jnoM5/KFz6Fr3JKX1RLX0m+DcLwXvEkhfYJOuERNmhMOJtygPZJzeEEHFzOIyX1dWg5FSmS90oFFOGhhmrBGCV7eV5G+o5q64tOtei0/wAhTWis7BkAAA==" after tData
+         break
+      case "terrace.mtl"
+         put "H4sIAAAAAAAC/03OvQ2EMAyG4T5TMAHCf/lghhsD6IAK6da/GEfmirzNo9i+9u95H8M6lc82TCODskLl6kqhBmmt7YHmRA6stng9MyNVQonNBwhalVM1VP2X+dJKL1og1AHwvYtIcu0nE7/9W4zO8pz1DFdY+QGZoCWF8QAAAA==" after tData
+         break
+      case "slab.obj"
+         put "H4sIAAAAAAAC/3VZSZLluA3d1yl0AWYSnHmdttsRjqhqL1z2+U2MBPXpTX7x4QHExEHKX79//vznH8+vf/39z59fv37//PHfB77aE+JXbGM9lp4IqrEjmCo/M5abYSUBY0vLlNfAwMWL1WHNEJ1imdhT5MZYT9vchlQVkXBhhSvt4lv4dCRc4g+3GMItK+EWR7jl6rAZnFEXTbj5/uaahfaqSnBlMUfDrt92NDhP7+jFQLjO5dMXdnFv2C2mW/i7RuEo0gu7Z+MzxWdvlMoZKq1vrEmCKnx2qZ/jUznctL3bnzbD/6V+Wg1XB8LN/XCPM5ey1dfgBSoWrsxwo8avWedmQk4MzvpoayRqDcPiCbK2U4av2LdyzDLLcCWPbXpivDEPIuTuMIZ6dm6X6cETy93PzBPXbS8VrjgUx0uQPDHemI4Yv0YCn8VBYJ/Ond49Fg9QtA/l4ZWbzFKrnyV7YrwxX8SxsVkZ8/FJBYYLT6HpVqLqdmcvAffDyM0bnJ4Yb0xHpLbSABdBdi8Y0mLLUIcDiwcoyoduNN1ZZdsF82aBKR3EeGMexFiaYVkxgO11yQd4YqXtWVQbklnsulCjNe0Cx8GLN+LB23tUgipYlUh0lW4sniAoT3SXo80wGFUD2RtJovbaxHhjnsSSzSJMweZWjnxwGXhiJe9ZQPoGbJLYpPR76WIthufFG9HxsDh7khjbKxH4ON4xezBbfKY8dtsMScOY03kInhdvxJNXrdlnkRyOUbayEUcx" after tData
+         put "4ks5Htqzus4ugoFbK5aH6rv4ZG4irinXJKOdZwNup+N1CmxMVL0m9GZQy6+tfWETPC1eeAdt7EZPclDUfeCC0hg7oOHWl6jGsVcNH8qrM91aaI4VLzTPSnEHtc4zCcot3+qh6DFR9Zqp7wmEVJz54Unxg3WQxoZAXK27clFp1QocT83oVWHsLSByYlNKzlr2tHjhGe0v6mzsQSozdIZaQYg2i1aERZdTOnfw2Eaor2LSjzAmDdHJv4hlClMUoNtMU5SgkdKcOAyf42OO8JokXEyGi/fh4k24BB4uYaoPwTlBTgb1cj0uwnvu4Ca3icJtprAz+km8Wbzp+lQEl15HtLg/wbsy5Tq4ZJ/ARx5eiYqPpoVrGOGdT9aKODTZ0VJafRyJklkhtaDEV4Vw65GrDHvOdpPkb3CXVQkeFyzGKw5NsaZsMhactSFxV80oGQhqAQsljs9X28qS6zxsWqXsmt6lWdhN82WLQgjNGjJbIf7z7z9//f75/C3++MdT4vd3Lk8e/NPxZ8EyFmmBFwzMngpPD5f0ghP/KLuccBG4Rmf0k020p8JpW5RKViNwsNUTliv7A355IrAYKfUFV/7RVPGDwe0FN/4Z6iAaqU9F2+2pqNQQlrFIUakijEb6U1F7PBVj7gjLmKUNoxoLbhj8fNoKp8SnZfxBWMYixZkmwmvuAk9bc5X0tI4jhGUs0oEjhLnyjfPbNN86ZmnVnPCDKdUXzKkiv8lI9HDVDPKDwcWzh6VqSPAyVqll" after tData
+         put "kDJs4ViUPBYpZ39nkBO9U6VjkXYpAyfH8ts0VTIWqZVhGVlbdF8Orjt7B/xZsIxViroZYVSrT18urJeaju5iODoWKU6JfneMqz8dpxxPR1uYEx2zdOBM6PfAuecz1lw1PgNtYZQ6FmnBEcK8DDrXruu6lLFKtSH4wWCtJT8oPOAFcxf1eMI8ppwYvILXVBUJXscs3RmkDFs4FiWPRcrZdxmkRO9UyVilWcrAydH8cuJ2vlWqZZBNSfeqeW54KtUoR6VGHo1ac3RpTR2LdEh/D27NyW0/QVpTxipNskhmpg6ehTp0VmlNHYu0SdtPWi3P5EaeU9aOjlkKMUrf09OKZHILTF31Mlbx0Pj5Yav1E+cx+05mkoeHbqj8YHDz7KHpmrpF6liklkXKsgVskfJYpFwBl0Xg5Fq6ZMzSoZu1JMiSrDuqjE2sxVj38NU+mFhsq7R+M/6SRBFlYKMBSZZ2zet3OVMxpx3HJFFEGQPHJFkerrcJgOXAeuUEQKsYnyHGwHkrSdCXvn5x5rF+0SpFaYgycN5BkiZ1lnqDrv6NKKOapJ4SyB8S7aphkvGSFJOUlyR5HcqOZrRZdhRRxs515ipYpDsHgiiD6+VzzXXxGVXEGFUrxxl09SmWUUWUsSvXaS8EGLS9rfdf2d82IowUZZ+EBLTHQUq0gULSXW4jytAtF1KlDRFSox0PUpe9biPKGLKVQpq080KOtD1CBtmSDTGGbqj0hBVLUvWkm4QhxrCu4icnsT5I5SWZ" after tData
+         put "b0nSjhxvCUh3peglmB3LaNLsGCKMnWuuh4vUcqCIMrheR66zVGFnVBFlgFaOM7irwRn29TGGVS5n9joX9iBX9cAQZTSNB18Y0AN8McBI8VouHigiDHyV4OzgawJ6iy8A6Aneq9kDQ5RRNFK8XWN28DqNXuPtmvNmiDKGRlqkYvJaAvaSsBFh2GuPPDldq7a8Cm1J/ZBoR5a3JGvfNS+h7GhGh2ZHEWPsXFeugkW6cyCIMrhePtdcF59RQ5TRtXKcQVeNZhlVRBm7cnwHg8q3Wah6vTXEGHo/gyrdW2WVVL3kbkQZes+FyhcxqHzTgqp3rI0Io+kVDhrf+KBJxze9Cm5EGXrnpSesmLyx0DxcOUWMYV1V80ti1ZY3GZM0+JBIR9b4lsgtEex+KNlwGbVd2RBhuFzzdXdHunMgiDJqtMpprvkO7DKqiDHsxOAM7mo028kNUQZXTr9F4MmKVh88yh7sOLyWfX8PRheZqrxcmDR48Mzjw+P7G9Y5vSYCNIs/tM/xGFkbxY0Ylu6yAP3BDRvoxRnnxC0yxwfXX0YuLdpluLB9mgYNi+4kKZOQjQXMD67AnB5a6Jh4tmZSgxPR2AFRUnZ55PVYXxP4swiL8gvlJsn1ROvrY47cpLdxvH46jnzX2eh4fd/p3q7tifrtqJ4fifTrUD2/Bk3/ecfugPIVSMjJmhyOj0H5ZKf3B5tywPbBph5wO23r5xz7jtM8G+aL3c/vOMKG+YKHh/dNFw7Yjo7q4X1uVDd+" after tData
+         put "5OqrC4Wuk6ttnuXnarQlw77GZ0KXDjLw51kuNxLhqyk+E7o87LKUYCmtOGBtGUsONLeMRYoNmnkldiGRKWTyiCVEd+q4aNYGsYTAOxOPRapW8Xc+eItZP/QXQR6KrChaHNpPsLOoKlodCv1EQchN4XbAxvba7LeHWQkvYgwPD8Nw7BRpq0irXoAjhGUs0sVOtPhXDlOmmFKhHSMViRHHIl3JSVV2stQoqtQpijQkShyzFLeZNK1hSFcsSaLx3zwokz5iBZ2TjTkfWLpdA46AJpd4JKU4Fim5IklKSVuBk7BbQ6XcMdrsmX2vfAjgOafHBB0NAvB5QEfDkHNCdn85G4ru3XwaiDDKASIbOh8N6DV0KcfaueloAD6O5CiQg4FPAKknHhRixwzIUSBbf9I9XsZyMEQ5bfQokIOBnPnxP6vFyTuBKAAA" after tData
+         break
+      case "slab.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMyNUWQFmZceVBpQ5C0IVDQwtAISBqbI6SMYFJmRiYgXUZwGWOYjLkRyDxjAzMuAP5Ttv1vAAAA" after tData
+         break
+      case "enemy.obj"
+         put "H4sIAAAAAAAC/41bW9IdqQ1+n1WcDWA3l4ZmO0lmqlJlJw+ZZP1Bd0Hrd1Ku+k/zSQghhBAX//zzx4+//+Xz859/+/3Ht59//vjtP5/rWy3jk65vV+lYeBAsE8HaHwD77TnrU9+cV8uOs/QGYNuq5/EAeNe8VUfG2RyWe0XGaxM515/ruX3dDrWuex6NrL+lHvIW36zKlyLG9AXnW8UUGiiFFkqhNVJojhT2PYVGToFJUjiaKbIUsI4MP/0C1nK3ral+ozHnDhLrw6ztKoJCKb/lAvzMU7BndjLi9sAYxXvaDkaNhW3F6kb9DS0T2uAr9RktV1NNrVMwtPDTdysKvDOLiL415wUvsHUn4OitF6usXF9ZDTUbOKkG/u8uePd4i02h3N1ibwlbz1Lci91k74nKE2oPWjsY6BB2LWwpHjGeDauj8zknmYLPBpZ2GpwwN14m8nB5BWW4l/LG6OfnUT2FLaVIavJijxE82or6GRkk7nrcSuscoE+HkLDt/fdr7KUjg36iGVgObPcEXTC8y/0CPGfO3k76oqH60AqALscel9E38zUddqOoC83GGMR9xIphOMy5eq6BjpvRRkcLqPtW05AUKZcieSlSJb11SVHXUtS3FKsTaV0bLYQea4jVa8MottCqyljptLQ6iJoo3RnromW+Vo/dFBS8xm++FDO+G0mBMinqXIp6l6LuYdtUGpSWVNbcgVcPQOJMX7HSZO7EevP8/T/Qa4y3AAUHuhg7Qms8GBjGB672" after tData
+         put "19U95wDVrms6rKORBaPKgL0qU/qgrZThGDdQmm5NBu6lUAp1T5Ge6Uuxbw1S2IEU98CaAhdo99t4pcy3mfMsQfuK+paM1StFUs9uHbybBilUIWorbMqPtO9q2HxglfRLAV8YwHkVTjSIXI2zcR0rRO/RdwN43gNl3sNdGF2RwfWWBRCYQvSL+kFToVZhB8K++obWd82nSgJGWPqiNpmfOfepwpwyp1+MEd9W2Y+9VX+NfQhu9WEZp/SCwq8kl60H6F2+TseBFVdKx8mZcM7P0ZIx7jnzzrln+DdmGVc/Kp+Ysu16a9YiTWzJ1QG+auOqQd0c5IOjVUHNFA50rFbfOAmDcBFhrvKTyaE9I2NlzJjzDQKrU3PevEjF4Lubh1IOfQmoNW+shrqezhZoxcFrB6klOhA4wNzud/XNUNxOhFEzkj9vbSvo2z5Aavuoju0I5ttWjBa9jAkS60NHHeV2h0KUcO1s9/MV232wvTDXQntLa0HNlt8tKPbUt3ZglVM9mQx7b5+vGe+T8QX6ZlrE2IJmjlnDGdratBA6MwXDvKE8bQ6UeGMJmbLZlk+xDjSpL9BXT1EUS2F0SmFQTmF4S1EgTFEUTUG0TVFUTlFQT2H4T+FKk8L1I8ULUIqXixRO1RTO1RSGlBTGlBTGpBRGixQH/xSuHimOtimM4SmO9ykOuCkO2SlcXVK4jKVwgUhRlEtR2E3R6pbCRSOFS0EKg3SKFtIUxfgUrZopXAtTuEClKHqnKKqkKCal" after tData
+         put "MCilKPilKHSmMMimMCamMHymMPqmIO6nYHlI0WKQotUgBctXihamFC1qKVjVUrRIpmhdS1+FzijOpzBMpzikpzBSpzCop3itSOHC8g9YwvDgnraFjNDmJHuItnwH18GEPCBtUJkiJcoXloxtY1WrdVZ619mqpDdTCrl2fVLQsRT0LAWKp0Dz9DZBOnqTAuuuf1l4cULg4dRdGSsYUSbUKmVTBy+/hmCjMIb0U2CKJCYnUqu72tpMknZi7N1K1EikYtC9wApBh2OF4RycfqUH0/7OzmB3YJ9iFKo5H5a+SYLKXhxhbzlQn+oVV7SSCDEZv1bQ6eclpUCU9N51/q1zOhTkfku3vcFEnRDaWgr03cWexv2kVd0c9HR4mhubbxfI9DYfESRtbnM6oYhKm9tEsySaJK858hKXTJ73wrOJd5/eHY86Gcie/fMeUsbMq75G0uZ6u+fhQJ4OLZAiHx48E+A89xfQ4eCvCXg2BIakuwn8ZIt8ibgAuyOwD8DG8d7MoA1JAVd6szmuFLClSFx6t2oQTgaeFDitLOTIjNbyVsQJ6HAXqgrHHVTE+L7R9aArJVdk0VIsEiqUmjyZLqemCaNk+nFlX8R7KOWG1Awj/JTi5Nsb8edNWjrEpbP5dHT56Ew62k9H79LZvXQYJznT/ftfv//888fnr9dvf3za8/17XhvN/Az4uNcHIveiKWZMEz+ANi/47Osjf//ey/otCCBNIOWpACCpEkmbI17fmvGYJrN9/16yl+ha" after tData
+         put "U4yY2oSfRSnXkv309QvM+VofFT+QppgwNfiVanB7UK5bPhp+IBG0zGV9gHZr31KuiQgSFROufCECxIxim1ZYCOrQsKZiyjVMbGVdlehqWgXh4q5hzRtNUvKg36uJbfJkysWUcVIurlMuoZTroGSl5J2SlUItmgalnHVyPilSh5BQmrSndfJNPkqjhx+POKt8euI04jyJaF0i8qevWZVYOhh6kslyfshCCxEzEiZcBd3pkb7ncnmi1TRMuQZ+ILGQuzKkTEhTTJge8elS2ZVL4Y881KcVM67HiNAPsHUFDdf6Xiq2iETFjKsggsQiFW5Sh7mRJpDydFV1shJ1yEdRbWp5EbsRMRIsk9cqHzhqaPL6CKZctxHZOyvPFxDKPZSONelqs+4rZlzW/SbtNNGmmTY4RxFTLqeNWKB1+TALtPIijp2ISrJ9m5lcIeUZYvLWqduNu980GDSZHLQGLKe8sRPoqLd2YvLHbT1sD6t3N/m4Vc+b5/HNM/y+tUFth334aA97oDw39+CuJKfL75DlofRGy4NgwoQ0WmHWx8Qlp/QuS07p9wYJD5KEWyXeSmobtGlycxS6B9vUt6aacHPMBLSBY7hWlYGetyoOHEJcVUbdMeVCYueWhjQ5LCiO50W0oDjmSXwuJfKnJ2YjggVK58bh44FxL0PbLEMx5cKa+Lm8CDMB+PBd0X6KEZgLiJMdYwz6ZR3UBKV7vdTtH/bCh91+6mqiSD0pggjHM07KvL6U1s46z9gpQ11z" after tData
+         put "1INiGjAy7xel7BpAAsWUwRN0ZvmoOlPntWPKhUQYqMqK5Fp49GtWL3GYcomeRNSxnkpURzAR5iVT4sojMZsc7ZGuwBiDsjjWXd1A/UY9iZiw2sO2oeymXprVTFwkF5I5LgILVqpX2SDlkWqgG0qiD7WafHqiszeHdxIPkfHR/LJeXYj3zqVilz4krWTVUGs6TLmQOLjbD/9KklwvjtM1Z/m4tMFcBSs7l8ikvnH4r7mpBfjTE28zD40hMaGmkqiQfIOUR2UCDUWVrNyqqsOUC4nSIK8cNesYY+JlkPJINRTJTqMJL1KwV0VGmqo9KhKMVZpYbarVrD3RBblW8JR9Ga2QqyVYPtYPxPT1Q9F1faxVAvQBd1w/A9VZH49yY130NGKDsDAd97JUvT51NbumLKQ8OCfpQ+Elq8IKA6lRbR9In+r9gdSkdoMhv6iDqbCfXG3VqU1gy9YkU2FJb2Cpe9Vug9v6QBbSsEkqM5WacJowt8JUFqp2h2xCvWbToO9hWSyG9jTue7Hd1WAuC3WZ5qbAB+OhTR42Yao22VeT99BKws1lpt4LvrtTkC2o3eEyU8Ww7CekGesJelNZqIu7ATdkok2Ghd0DfRLLTKVBAiE4TOoQqABwU5mpkCq2Zs7GFiNZZkGmmmGxu+rm6t+sMFFV774+7inORn4B3aEyU80H0Y9ET1VQykwV/5baOCwmhMtMpUHCRA3TukrZHQx4l7nTi1IvOdOAAZl9/RacPRmN2DfKg31gDqRM" after tData
+         put "tEGG3s1n/WY2ToaRKY9RiBMpHb0jQ2dXHzNlyGD/jCn2ahpT5NUgpuMX1SIuqwYZKhrFuCe6xlZL9JLa1JVdIPP4aqw8Q8KDjSkkPIXdRBFIp5cbOYogylF5cmZIRteYsbE30zIiHJBW4LBaHR6O0djHFFEOlWZqi/XN6gIpDxkSFZ8YBI1FKYIIB2wKME6qt9AAiVKohCDM4XVAx3Gu9nI+4bChIIu4ulpHEOGAxBoDFtvKVIGEtFWvnHCY2uLkNGoyimgeRoQDEkQMAhmypHY5n6wcvxQRDjIg6oa6mIdDltloMjEiHOb71DM3EXUCqk7MYbrRULkJ2DlaKiIcpoHMMfFk0t77ts5C8npJEGA+4f6yfmC72NciAoEInBJa6StswQ51fGDn2B+DYe/UJ1MXDH0f1wf2GiN/YJQGyB5L9qjahMiGXo+m3FgX4EUf9wcy+rGaWLIHysYPgWGDMB7eqd/XB2bTmLjLvcEYUmYq7OdA9gP5e8YD6HZ/wEBP4VNrKDMVRgH8AEz7rLUHLFw+sBXvEBC4zFTYGzzYJOSEN9dmWcDNZaJ2mPWg96DtxqAksUu+ymWmdtlawsblWSvV+rmXEDjQxsWQykyF0/QHZaPhRUHYjj3TusNUHUseBhoWHg0YYi7zIOEQghA0PJuOHQBgKgtVOi9CeEh1LKnMVPI5EyL2FcNKmak4VguGTeVc6QV4+Rq0VarQHS4zVTvPTZKN2GLQJJVFIdGEbSRufro9W1BMxULg" after tData
+         put "9OguPCgwOlRmKmxCZzY/oUE0h+AyU1VBbpINa/amsigkhiX/V9OITbjMVJobIASnhQyxwlJmqow8T26yKIsE2VSWqa9zHm3Gg8iuB01SmakaODi+iBfplKKyRB/tPE1uUUg04bJQsRcAc8TgSYL2tSklYQYdwHFTKNAww2WhihAaVAlwGma4zFSKe9BLCq4M63QVNg69wi3uQ8NAkcwGjanqVTwMFKR4EkCTVGaqDgOfLfHRz5TTUikztR8wnepOOW2iD4WfA56uCYCnq/3Jel6Sr8xI4d+qFEGEoymlHZRbKfdB6S/KeEkbXsr6fZRCSme+1cp6c6SIchSllINSTwoh61c1yO2g3C8K65a1P/TlKONF4X7l50V5+HcqZe4UvaVTCt/WZT204C9HURsUWr9yafwrB+uGCEdXykLmSoZg8zZXsgJ7u4mpviLCcUNZpM2VRMJ2cMJ+CBJPTIYEUY4O5a2OSDVpgjCHk/Zwy52lVtVNEOGY2g6d6qNU+LVdnCDK8chxf+Ez2MKntUXvVxURDj2LLc9B6S8KX8cUOydmZPC9p85pRcZ1UnjmGkVvUcftEeHQ9BJsS0uRHNjobp6Xdt5D69ZaypQ66f6c9u+S1OnpiRwRcBN6UkDJkVSS8xBacOWYhPbjFihJhdeJklRSblqs+VxBd/Oce8hRhh580OkJL7+krt+aQNtjSpqOFEGEo/PKkjElnJb+29ZEEeaAUXhoA5Jx8dKtCWaXxW9nlEO3qTCmz3Bb" after tData
+         put "E93aKiIcD69j/CXbmG1LJwhzwLqKy5ZSqId+2y2IcFgdWIyn29e6jY4gwjE4/bNNEVOsjvIyB9kedUM7yRZr/Upeoohw2BaVrG4ctufWOsJh0grmfLoVpqMBv31WjpvTQkN4K0wj6LfPwsHSZDbSaxs8Ox/8tkWeuiCFD6L5+cwjj3Qee1KzMLmsyHazI58i/JFHNUQsL2Kzy2s+wpb3QPJAiBNavBGUy85CCJ5Vdnle0OXio9vDmt5eRLsv7vISp1/yYdf+97NjCzEi3wjrBTH2a6h1b3klQ+989OWPCbj4aI+uQu71gYpiRcWE6eqyMvDDH36Ykrs+DtLHKoAZFzaIx8Is33M5omLKVU0dXiX01Y+uRop0/xoH64yDcr0ovH5oVmLIPCn2hKbKc5lub2nq66HNbW9pKpsZrTRoKV0fWFExYRq6ADcm2XMbe2VjmHI9KtRerIhatak2ihmXe/QiT0/spYq5sT090Wcmjz3skOcl8tzkeT8zkZabaaOYcbk3KPV8SXIVe4QhM8KelJiq+tqjn4+p9IGFPv+47fbfHnvINe1td5v62MOef1w2UeW1h7z+sNtuvNm7KTWhD/fEQd8/6BMH4sLMKL/eItjrrafumHIJEZzpefgXpWOgwrgGNySMCZPclgM7P3IU1SWvIuWlO/q6ESG7rZfbe0+R+/xpN9OC9Bfl2il20/9MjwgHUrQv2juwHZ5SItv6VEy5NqI+BnA19epfazKXDYBd4OuVvnt+wVfx" after tData
+         put "cjWPV2BtvzXXe3R9YOKvz+WqfL8E1xtyjTEstim23ZBzUOObcbkpF8pxQ25X8hib3fW2Xnjvd9J6Ya3OyTWbYtuFNT995BtnuYFGSt0vnPUKWqr5C2e9graaTS+c7apbVkPM/Rb0gdY/cPQPS/pKRz6wrn0guYFkGr4RhdMVGBLgBqJUwW9Eb6qCPYNcbf1ASrV+6BKHykwFbfDQaYn9YA86NoYJCZaQgjfolFRRPaIZTGWh3iYVUieeF7pdpjL9vXeQN+q6g+8OLTsoL1V1iVyNPtxR7iZZDgSyXN3LU5mIYwf5REDR4dC6g5zh1G0vN/hEG9vjJDLjfL7GniEeqeKeIT57Nog19dmsZIPTMj1MwPCF3pAPe3hmCd4VZHrXnsNtmV7P1ANJ4zit096S1nQk77orh/UOEh61hOvGwzTtjkCOR56PlHvyM0XpKHSASX2D9lRYeiL1JTH9w9ilk8yjvZz2zkL20HJ8KBtx3qbL0TtvzIUqsGzMeceNJ5S29+dtul7RCBtv04VbNua845arDt6YyzYdFbLdvDztkJsb2ZjzNl1P5HljTtt0vdCRjTlv0+WkNUMaNuBU6cZT3wx3/JOuG/HLUQafE2dInwZcEDa87Mqg6aTb2InH6plSH5i2mW+8Mr5kvSC2dDzpzqBRp7tsZHK1wD54wm61Ol3DcW1si1uHIe/Na6FypAssxfdKed7KE6IsSGJIWSpfGOgOXii2s1ZEOLSOWFROJMyyijAH7W+3Onwi" after tData
+         put "YRRBdJwaH/OzGW03bicFijCHjYUiOlw2TDoWwmMGEjfS4xHdxAsiHDRc3qjqguZ6jAiH1VEdyGbiF1iJEWMxeUySowyrJIhy6BGDuBUdyfgjIEHU8RrfZqhr66GKHn8IIhymgTi/HGnRUY0/BlMOnRWigUxEOzoTRDlMNxxH0ckfnQkiHDbF5IhONDDdVCfmIGe353iXpDiYGkEsguuR1Q5+IwoBD74RhXwRjQsXXVRCAl5QIAMRMLzjkMICx2Ui4qkzFZmIOwrLLDDRm7Ta0//9oDJTgXsyt2YnzSUnUvy4/b4rf+wg27N9cjlgviHR4yjSltp3SnOZqYW14/RIlNa+VJfPaEblip+5g7zlsf9Z5FD7v0PFlT98yfNftRRzxvpaAAA=" after tData
+         break
+      case "enemy.mtl"
+         put "H4sIAAAAAAAC/03QvRHDIAwF4J4pPEFOoF9myBhxusRV7rJ+eIaAC17Bd0ISx/P7/ry2B6X7vtFNVJGOVNN0DM6dgwGlILhOLV3b1Urjydy5ZmnJOcCyWDqroE6dW1rYZO3MbpgMp8pEA+Z26QQulzrvdUboZ+dQftkoBlc86QV7hefJdcw8uxbx9Rv0bxt07uScfhZAy/tJAQAA" after tData
+         break
+      case "fountain.obj"
+         put "H4sIAAAAAAAC/3VWW7LlNAz8n1VkA77jt5PtAEMVVffCBwPrx1K3/EjCzznpbkmW5Yf89fPz849fjq+/fvvx+fH18/Pbv4eLH/Fw/uM8+kfHA7obBnR33Yhaws3lnXl6gekhczVKwZ10xoaPcLVhKmYGVFkJZ4x7je/eB3DvI8RcZsDhqewjNWH93WxMy4hndquZe0Rz76N2Q98U+xyJbkmXGDZD0oshXYdh/9iGHowY+kcwi7Xn8hjBBlhKAOLV7XWER2qPzN5n+V6kWVL1fpTeYi4zuG2A1e/ptlq5bQMwjfsO2A0/Woj7fio+LRugozs7yMWsR1kZI9yro3sfxL0kE6566GWgnxs1mdgaGE2B5p0c0JB7CeieEd0essN0yRLgZPdvzqGUYz3BZtB5Tevp9PBZbNwS+YX1k9D4f0qxNYp8yTe+SAUhTVPJTaqXGUvVwoINuv/Bi71kd+Ga2IiJTxJMwazPBRt0j3juHtDdIkoRZH3EoDQyJwgbQZcU2dxsd1NT3RLqTnmDDHhdslfaKCeQFMgKRn0Q7x7UvaHrWqAz7PYR/vn7R++sx6/+2+9HOL9/T0f08huu/ts5IlUyOf0nVzy4Eqav2ZXFN7SNa+ob1zEYIZALkytp45L+ZsaLM17Mm11WLq52anGUQruFi2nl4Fsqfcvia1xdfHUMq2SQSvYZNc0q6vybcL0q2RRyMvPzCEEV0cWuRytUZCZFuD7OBaSjXeLbM66mGNdR6Ee0iqQG4pwk" after tData
+         put "DZMkJ7EsCmNVrQkQFpDaSdNLo5EcpsQqJo+hUpBsFEERThEV5pmSzIRcxhyJoJhdkSqoxZF6bqdwQFASfYGa1DGdqCMRFPM9lbtkDbLHGgBRafDVqVPRmgw7KOabg3JJfHOkLxCUuNkFrS45ICg5YYyMpfIobWD9AaHlbPUnW3QXsNZAJpmpqkeuUl/ZeVJZIiiF3uCa1NfsgKDkhmrrv26oEzp33kkln6i2VsQUckRQEivWowcdMWi8MDlB2LpcAbNTfdipBfbmtJvWrEGgksyuTjvjiBDVcww/uZQ3DuMGcm3JJW1c0t+LXJi+yXzTQHc7cJFcXDiOkfRGzHoXZd5j5PDLOzWVaZd2O70xU9zspjV3VqIiZ0U5P+0GBy8ovCs1LsfIceP0N7GHAMWycefkzFfjcox4bnbTetiBy+w/uS3cud7bctRajxmzNrDYtFfFkw2vY6pVkPaAXpt4HVUuCI+OIMfNMFW5J+UkwQ0tLTCkNc5gapXrRTLBB5pdpJFYA1OtcpkLjQ8bEkZLglBHJq3XMVZOD53RWnPHVDFZ63T+aHIbFfRCoQ1DxZwXWoNOa2KqGGJUXgeXc9JnIMe1z1dOgNLEUKscujxp4KPKaZBLCB+DlqNSF1rxUeXUSOXxMWg5jrLY+GC1FmtiqjZfC8ISj0yIqVrlMa+xfLaRbLGhYnLLLBlrbA0uNlUbkrvThhibFNhULeRcJ5vOKBWwqWNVsSesVLYMxLZj1GnZX1i0uZGIGQtB" after tData
+         put "bA9oH5AGV+SHLVdPvR5Y3iR4NsrPOYh8aDOpfD1JA9IudKIxoT/Kz4kuh7ag13fg5QsEIa6UIn1ABT6kBpc3Tu/yUMiVhWOf4lsQrz92eyK8CwPz17cgXn8XWyYeifosNEqnibefCvONiFdh5dMPD0E+/Yo9HYj1QUHW1qGghuFAn2HT0ZnID2eti6TLlflGkazx4MI88IjQlxrTk0x0MbLk9h8+2w3V3BMAAA==" after tData
+         break
+      case "fountain.mtl"
+         put "H4sIAAAAAAAC/0XNvQ2AIBCG4Z4pmMAccL8zOIbaKZWJ68sJweYteC4f9Xiu+4wbhHWPsFCRVlZuVdNQB6fBnLyKrQJ5cu7M4iyWWw1tcuksVHyWzFl4MnZGfydf4PRP00DwPzHjd6PhBVVfJMa4AAAA" after tData
+         break
+      case "coinblock.obj"
+         put "H4sIAAAAAAAC/41cWZLgOG79n1PkBdClhdquY3smwhE99ofHPr+J5T1QImrs6IhOCQCxEQQBKLP+/o8///z3f/n5+3/+21///OPv//jzL//zI8sf53L/9P8fj74c6+XQ/tCh1xt2bwPlvSVUHDxCV1urTF48SdnFfuWXoj48R5YvjgKWL42o6KCR5HqVLR/jC9tL00H3Ef7P3FlYLrPpM1epNZXaVKlsld86a9Ks8v4/cf4LNMdCue3Vrpf+gNzjVHw7X5YMwAom9eKQ4sB3EH5g7QSMPlSY/B44upssi238QiFJCrslbSxWj4Z/KL+ElZRa9YKl/Eajr48KV1Yurzy5/NGu3QVZ+Dld2/Zpr9vt4b6PsKDbW67dN5Pbjnsg3F1IW0ZCt2q/Ryn7sQ2r73HxS8NY/NImPPiW3J59Yhhq7/c6wNy8tzYgfDuisEVhX9C2/0xLbz1ls4yPLurCyoOFDz4uUPcV3is8/1XDA232XeG6z4a7UVNcfMPnq79UGytV7Em13VJFn5RBINWeSbnlUgWMVIdEqhMhZfhLFdZShaGUp0LKQJTqVEmx31LFolRRIEU0ShUaUu/nFAlSxJAUp0WqoyHVQZAixqUISymOhxSBKeXJOu/Qz5Udsm5sT+czAu8zTMjV6sKJUJV2s5JQBbsWY3LHdg/qxNpjm1R8rw1tuHiUzPti4Nh3aNBmb7Parg3NG6400g2W0GE3jszHizKtbjjdby9KqY9UfpTSGTJ74x7Xpy+l" after tData
+         put "3AiZduIlf/CmVO6UMgxkDph2Dkd/8KnMUXjz5OxTYFZx+YkiP9lzVH5Cw09D+8bkJ8Z94St+XLV2zWq8w8eXvg5CgMb49gM9BeM3uN+mp/77FInz9n69Jl8Jd94xRRROQTDZL5MDhgviHSyz1+Xr9lHyJ/y/7pNqt2WKioy9KvTSYXmvSFHjyFiDDFlornJydd4rUtUJMlcYUtUmUlRh37UfbfJekap2kqLckbnskqLgkapik7yU5o2WKhal2n6polHKoJBqD6UMAakCSKpDI9UJkfI4SBXmUoWllKdEysCU6pS9qzOpCsmxocqiTepScuAw1HJSl11SFm5SV35SVr4zi49uQ0UrdZ0qZU0pZaUrdVUpdbEsVdEmVWH59XEtbdKsOInym6MznzupDq1UqUrKtCRlDpIquUiVC6RKTVJlA6kTWxEGZdyWoVFGbR0u5Z7WYVEGVnnEyrNUH5ryGJTBWp+jOlR/dxLn0ljK8l3KilmqAl7KOlqqwleqqlmqkluqRkPKpkLKDkKq1kCqSl6qxkKqWl6qtkTKGlnKcl7K0lnKgl7qilrK4lfq8lnK+lvK/kPKXkPqvkLKbkHKyl7qfkPq2l7KlkWKElqq8l6qwlqKAl+qaluKElmK4lqKslyKBkSqbkOq3kKKtkGKSl+KjkOKWl/KZmVbD8Vsuy4Oscthft6eLWAFSIqlnWy3fVuvg6DVQmdt68B/ptp8hxezNci+K/vzufr6Z9CiWvmlc7KRyoneNKsa" after tData
+         put "8tL0u0rmZTKtc898fPoFuRdGJ8gMcr9/3P4F0Z/LfU0+dhgugAIov19eEo50/xcEYkeXEZY+G8nkSze65KPICHxHy8feYvUMnRSSiqeUakpl4/eEpPzxLCXtGMcv6BtYrv+dqDHqXvK/yytYoVGt0CwlvuspyLUYYCajy3uD5Aszbq+VumG+fQOsrb5Rb7IP1eJX0hY105W7Oi7UzfOdfK/8LPQ9TqqCfcFrVnVmXvH+qFn4dPZV4arZLYXby83RozywigvaD3gB/G7QTPiFXb+FSLVwBr5d7cC3s6FfSfl2VQIn80qexXKp1n92cmBZaflVcoZNRwTA1w6C5SvQguUEm0/iIEjekirplfDfsfwcmVRpAr6Ev3OqFNWJVFWMjBfze/H7PpCi+JCiuJGq/JC55JGqJJGi6JGixJGiDJGiDpG5EJG57JG57pGp8JGiXpG5qpGiYpG5rpGiZpG5spGqaJGiuJG6aJGywJG5IpFvWTHQyf8DVlz2UlUQUlcLUlYwUtU6UhYhUhcxUhY8UtRaUpVLUlZgUpVvUtYbUpYmUhYSUlUSUhdHUldSUhUeUpUyUhY9UhddUlZdUhZTI3SqVqSqaqSofqSqkqSoYmQuWaSqiaQoWqQolKSoZKQqlaSqjGQuXmSuXmQqX6QolqSolmQul2Suc6SohmSudKSoh2SudaSoiKSoYKSudaSsi6SqoKSsZaQoemQujaSqoKQqEqSoOqQsMaSqeaSsjqSqW6QseqQukKSq" after tData
+         put "z6SssKQu26Qs+6SuVaQubKQuQ6SsQ6QsraSswuR3RUtRCklVNElZsklVs0lRiP2HBY21teZ0wlZd93giuAN2GJ3PqY+EiQEH2GrOeOwYYa1n49PmFF+5g1iIeHN7MRt4CZgNelC5QQ/Jtdewdk26L9lkqkn9Ci0dR6NGO+Vr6MRNKt2kMkwqy6R2y1eb2cOlg78bWOxzsaXzjha295+WSi4TCtX9ZCasAEm58iJVQj6Ah5D1SZD8FiYDMJbKyF6+oCepfGFqKmnQd+Fg4ovqQ1QwLzWdmUmpxtcbX4dNLi28tfzhqdSqz9u3Vd9txOMEJ0/z8RB/6B1wn6Gc/j624qGsXTEDS42bnxcTZdFs0d1ykcyrPrLfoj5MDJGKTUKNMg37aqk/QwVTZzC/rwp5z3CSY9EJhwTJ5YI28gwp4Oi/P36kIrcbcbSPFq8l8l5jUmQQ02JjGrV6KfX8fNQ+fwazoCTtHvdDPpEBHsP+yDc4JDfBdkxyy+D2ZIt9Si6+r8KNrZSZhctXmEyMft7aSSH752PjpK8UWyTvQJF5y+QbKfLdRKn34bt18t1sqQJXiliVT3DKJ/TkEzYyxaq84kaK6O7/rREI4LIq1GEBIkSTY8PXKeTgB7dqAl7vkQUZvO93Z/ni6PfMSD++vhX4rP5I/2q3mJ0MfGsdr8Z3u7MfhtXrNVT+Y73Gd0nAh92H/EvND6VJ/333W36QT8B//9df//6PP3/+dfnL336O69evHiXH3X/cP8fT" after tData
+         put "fzwdfK6/fp3rz7n1H9vPufcfu4KP/nAQe/Yfp4KX/rDEe/BScOd9XhRB3v3hfH6uvuhafq7O61oV7LL8PUVeHXxt4OWLFLwb06uZ3tcRvK/LNLtu5/UEk3s1vQN7b6H3dZre/h68lHp3WSECvO/D9L5P0/u+Qu+Q5e+DyNv0Dl6+SMGPMX0W0/tZg/ezm2ZPM17PEUyey/QG9g69n8309vfgpeDHZYUI8F6X1RRfl800X5c9VA9xAUix69JM+WAYCw1xGO91OU3/dbko5DEd13VxnusKZutuRiRFCzPW5TY7AgKutuYIyZBHOevlxqy3G7M+YUxKNsiowbaYOeTqaw2j0bb3n2ph6z/VE4dhOu3VaTfduW7ppvtrGmyd/70mxd659wyrGHXbCQi4Kmbvcu59kEc5e3/qaXXd+9pb13au92XcQrJDRg32jrnv5OprDXM5//12e/YHctrq2rbNubYd3Nrh9pDihD1tcXscAq6GuUIy5KWcx+05FrfnWGEPJDtk1ODY3B5w9bWG2Z3/0dye44AczSqqrWYb4/qAm2YntQcUmljcnuN0exwCrrZmD8mQRzma8tQeTW5qjyYitweSHfLS4HZ7wNXXGuZx/pbHuj2W7UyOZhvVVrOQctW049w0a6k9pLhhj+XGExBwNcwTkiGPcjQVqj2a9NQeTVBuDyQ7ZNTgbm4PuPpaw6h3+mnU/Pb006hZ8LHTqFno6bSanZ5uqaajxzTQbNY7k6To3B879Zoznw0Q" after tData
+         put "cLU1Xc7zDPIoR1Nkz3D94dYHXf3ogx18CnfQoMW2LApqyTrWG27Vx6M/bPpw9oddHy5DHvr49IeuXU86/UFVWFdDqqB1H6g0K/UEZ8imsJsw8lekZqueoEbhKVNTaM98/UFZrMpC+a+PsYUeAXsptCpyWwb+wcKQl3lz03z4KM0TXt00T/W92TSDdQdumq/cb5r1+u4lxRm7t2mW7bsXEHA1zGUuTnkp5/Hd2/bFd2/bV+wehQdo1GLffPfIOtYbbncpmhXVKs2fLk2zleqsecwYP+CnuU+tAoXmKrdKc61a5RBwtTV7iIY8ymlHWKWJ06xqF62C8AC9tLjDKrCO9YZ7XIrmRrVKs6hL05ylOms2U8aau5yfZkC1ihQ3rNKMq1Y5BFwN84RoyKOccw2rzi2sOndaBeEBGrU4W1gF1rHecEcE+3nGSTsvRv35xBm6lojwa2VgX3uctKRqPGnnHSctYORvK484CSk8ZV5XnDTNqXbSrocnLfV44qQNCt1LnDTyDxaGxKG+kVHuPN03csWNk3znAb6RUUj1ZEa5kVEeZJQ7M8qDE5/CU+aDjPIgozyZUajHg4wyKPQgo5D/kxnFs7HC7rDTU6/K3D2zPf1hc/67pThju1vC7HYOVCfs3D1Z34SRvyEv6EHhg8zH7dw953YWnggfQ0KPgL0UWje3k/zBgv2TkqFx8h7HG6FsZtAoaX3bhrYq2iiCvXFCG2XY7M2i9dGYPtXJ0TihjbL+SMHROIVkw2b/" after tData
+         put "BF5gEu/orqi3qwAwmEAzF+kiBnCIhN4wL8C0Mlq44E1zooWLbusMTdDCRcu2BBO8e0NHMFq4aOjW0CSYoglrIRItXDR0d3gQLVw0dEcYH50ceIEJ3gNLvUOFaP/ABGAX6SISDJHQG/1qgGll2BG8oUk0k+j7ttAEzWQ0j2cwwXu0lgRHMxmt5QVNgik6wSVkZjOJ5rKFF9lNorlcwwXoKoNl8iIguk4a4LoAnpyIcNkuaeiLw3DYAFMDTIthE9inbehu0X3eoRF7TPayWzBLSHS7iWF3i253D73In33pCQ3Y3Ua36x2sYdDdotu94F50ueRKboCQgvZAJ3bI5EZt0W8v4eTEQAPaQ9uBSR+EhZRD3dh5ozO2Hnrsf9mJa5ezvHpzdOLEsPOOTtwpxk6fPbP2MN6bo/NGJ27dtWHQeaMTN4qxAydXciMEFGkPpgPo3smNmNDA5Y0Y+iLtge3ApA9gIeSkpZgKRNfu/f3Ym3MG0MCNEEwJEhNTAU4JDuhG/tHPa13rGmAqwCnBBl9zKgBNHngH0wFyJTdAOD9Ie0InYsiN2oYGLu+FgQa0h7YDkz7AxAJy0lJMLDBROKEbJxaYTyzgRkhMMBLDiQUmGCt0A3/OGho04MQCE4wbvubEAhOMA97B5IJcyY0QUKQ90AlTD3IjJjRweSOGGtAeTm+ASR/AQsihbpimcNqxQTdOUzA7OcGNEExXEoNpCqYrF3UDf8xBFmjAaQqmKw2+5jQF05UV3sFUBVyT" after tData
+         put "GyGYu6Q9oRMwyY2Y0MDlvaZE8AXtoe3ApA9gIeSkpZj0YBJjM5tx2MK5jvaY52sWFJOfxHDSg8mPUYyTJY5nrIHzYRAnPTH7wTDHkBz1YPbjRK+ZD5kn0wANNDQslBtGRmSZinMMZWJfKChC2+gHYNIfbu0gihoOwyhOiLz9ew2Bcjxl3ef2HllxPJXIHEahmQyq1yQsx0fWM/nIisMojqe8NzQkh1EcTznVayqV/JNtwkg12MkZGgdbyTaRUCiEv5DpqsFOOobIwUO0nTIHJ2B2FrMtn4KN4ytOylrsckIwS0tMzM44SzsiZpJ/DLy2m4HB2VlO0zach2F4BnUengdO0cg8mQKUk7Y0LJRLVLKk4lDFxb5QUIS20Q/ApD8w3qOowWzM9zB/O6Eg53uY5i3gR0jM+xLD+R7mfSu0A38O5RpVyPkeJ343PZ8DPkz8DrqJkz4yT6YEkSYNg3IcFCZL4qCKix1RVIS2ce4JTPoD1lJUaogZJGeEGxTkDBITxxP8CMFMMjGYQWImeVE78MfgcKEKOYPkVLLR8zmExFRypZs4jQTzgSlBnFimYaEcUQNL4qCKi33NWeEX2kY/AJP+gLUUNZjNMSlnlzdzI8eTORLdmMQShsHpgMwxKQenO3MjReVg82T6yzEpBqcxBzUkx6QcnF5M1pyXJv9kS1hSpZ1UMkeuyTYt4CR34R2QSCqUdqZjiBw8BNtTZmqbQ11OWvPGyqEux7x5tSSMY95E5lAXV9edNxZF" after tData
+         put "5Rg2L6Uc6nLMmzdzDnU55s0rlNPd5J9sE0aqwU7OojkgTraJhEJ33sxpHl012EnHEDl4iLZT5uAEjqBjLowx8mv0m+PmBrYDjEPpARkj6GEofVDbFIWhsdcRNqjmCDqH0ht2ZRhBU7MH7uMseuB/p52A5cR6sBNKJjLZpgVQKIS/kVSIdg6OIXLwEAfmlBnaYnJuZFo5rdvaH/Z42OxsrS9kwPrDlsgTsBUPO5HbPiFbIreJ7VEgDzycBduGhzuR94R8iNSaY922/nDjwZDmhISBqi1E+mP3clvjwcltCwhLqi2R0LbBTue/Jtt1pErfOuyAkv3BLv7tMG0JI9VF5GaPZ0ea+y64z0ItYSbqfiEJI5XVTptFcDxGSOyMhJthojBSaW3SIYrUq3Xdj9iV/YyQ2F1bwEilXyw7xFYeWKAG7xfJDam2721A6t3dH4wtYWAxIA94yINJqZ50AmB23ZspiSSMVB5y7gQodJ7QdqHMhNGmRBJGKvsU6nZeLfb4xK7bleebTWTA+sOdyA2wCw9PIp8v0q9UR95ftnbnfJAB6w/bzDa49YeM27tNyINIu5L05NmtaQ8Hj2DCSHUmEnnoufCQqSZhpMqE8UDbB3Y6/yPZHiNV+tZg+x1K9odmiXq3SABsoNqJtK+/+9MXqPvaEu5rmu0TZk5u64gkjFTNvpO21VbuscBCojWSM0w6jFTNrs+mxXGz+7DdsSvtiZBorm3ASNXshmyPrVxjgW3jsZDcFFLb25XI" after tData
+         put "ZvfQYaYkbAV/ItsaHvJgUjttihFOIOwMUxJJGKk85NwJZyjUti20teh2mYTdsCmRhJGq2fl3O/clAmBDJFiXbJudyID1h0ak5Q6D7Xg4cuUxIc9EtontVSAvPNwF2zMeGuMWjyNyTaTflj/tWPCw4ggmLKm2REYeaseOB6aaAUaqlkhoe8DO9lAhwpIqfWuwfhuHkvpw4loeYKBytQ1pl2tP482uiZ6Mw32XrSQs7q0RSRip7OqwNI5HhMRB8gyTY6CyxtquyOaXwhq7sjEk7NgTRqqTdzYeYxu3i+SGPPwWTKS1ZXbRDTCwGJAnPOTB1Kns92/CCYRtYcqAJIxUHnLmhA0K+QVzRXS7zIRBoQFJGKn8GjI77zP2+Mau36zeBuQdD8+SyAbkA+RK5LNOyC2Ry8R2n5EB6w9tZhvc+kPG7XNOyAvIY/Hbsj+ceLhwBAcYqe5ERh46lgcPTDUDDFQrE8axhrbBbQf/nWwVRqqVvg3YCiX7w8rid4CRiu1Bs8u1p/HDrglNxuY+y9QDDPdWIgkj1eFXx2Mrj1hgIaEX3ZN3GWCkOqzitSvysEtBL1fbFb2RLCT8cgWMVMfGOxuPsY16qQW5IdeoE4A8rPj1iy5hO/gTeWzhIQ8mtdN6gnACYXeYkkjCSOUhF04IhY69hbYW3S6TsAc2JZIwUh12/rud6EStW9rOqfG7it7uQSuVbep2fVfu67xyZxO2zSt3tKl79rD7PiGzsNy3iW2FbLNCiSTbo0DS" after tData
+         put "lOx+PS03NH4NXWHLlrGNVFsi2fixPTS257tlNFc9LyRhpHK3POkhXWBpYiG5rQSMVH7lWU0Vj0MfF+Sv3o5UfkO2d29HqgF5R4d27tGSRs9mFSBgpPL6yR1vOW8bqAZkwkhlmvnwwC6znTBS2UrCSOUPtnKNpvcEck9k9IAD1ZatcS4gi5tNdcLAYkDe29S+7UWHduAhm817n1ZexUq2jHexks1mdqL380U+2Yne95dthXyWQqF7YrsWK2HKkz2sX6oNjV+L3s4PEmAD1Q3k0NKxybMYet6Nn2XBbUQSRip3S9voIVtgaXMnua0MGKncG81iKB6zGwP5q0MDlTu5Xa8OLfu4AdnQez1x90XnZU1YwEjl3m7uPrvgjpHqzk4UMFLZkKT5rphvT8JIZbUjYaTyB9P2ihs9YKSylTt62AttcDa4XJAsWrbGhO1oD4lEyzU2Yc/cZ0V71R+GlvH5rmx7sZINUZtXNrSMLfvJdkzI7Cdbm9hWyLNQqE1srwJJU7ITPeK6iiasoUNr2b61kaolkk0YW7UbF0DCLO/3q2NEEkYqd8uSHupI+4DYryuQ20rASOVXpIVJPA49VZC/+yxQ+bV8vvssUg3IBR3UEe1h9E/WEAFGKve2HQd38z5SJTJhpDpx6cRObYSRylYSRqoLF10EwEoYqWzlg04UVHu2qbkAyJvT44EtWAzIp02t1FF0SxcesvF7jmnlU6xkW7MUKx8g1+x51gm5JXKZ2M5IwEaFhpVkuxcr" after tData
+         put "dzy0RMZ1Fa1UQ5/VsglrI9WSSLZSbLgaLoABdvrVMSAJSyq/F9NDtuDy6wrkthIwUpk3mrepWyDRGYF87JZI5U72yzW7JfZUA/KMPsiqJm3yoguytmZFMwiqZWHj55fwOawckAkj1YZLx3eqX1eAkcpWEkaqnRfdE1ckYKSylQf6SVzLTzabWDCwyBlwwg60aoFEh9b4icO+FaKtWbNzSRipzvlbYSKzt1uvCZkz+vV5c3ut5MfFROYXPxvzaenNz1PDV6mEkYrpavfR4k4YqaitwUj1sGjnZ6yAkYqmGIyfxPJLGL9KuR8f2HS+vkolVSK5gMgjm7AD7dsaFxfIbSVgpLKLy5uweBw+bK28LIePXaDyiWV7fexKqgHJD08o2q/h29Iyfeza5u9ZiczO5donZH54uo43t/fKa0Lyq1SzUVQ7xk8oPDUDjFR5Um38pbXjhYMXVNTWYKQ6WJLyg0zASEVTFJZU/FozfDlZohe4sv/ILyekGpCxgMi2Zouxojm5Ii2D3FYGjFTN07JdlvGYH19A/vogA6rmU7Xr9UEmqQYkitkNJemWVWfCSHXP31wSmXX59kyfcvLjyL6+ub1W8iNNftPJLyc+PNiHMf8w3U8YqDZmk4bhAWCkSm33gWpnkho+GkR6azmwGGCkyi8KnO67HxfY1F7T/aRKJBcQeWUBfaH09jHSQ3JbCRipLs6Y8Dh8IAjy90cDUPmxP18fDZIqkfk5AAXXnTP6hJGqFd8FiMyq8z4m" after tData
+         put "ZA7w7+vN7b3ymZA53ffW+BxH0ZxADzBSMZscaI0BIxW1VVhSMUnlYDtgpKIpBiMVp945gfav17ApakdOoEmVSCwg8tiyPNxQWNpOaaoJclu5ozxESbo9WR5igoIhNshfg21QHX4on9dgO8ffgURlZO749asXT79+HT/6F3X253n6a1s//utkP15z29+L6QPBdursDw76w+MMlJX95vevX5v+4nb/ob8z3H/4v8bg751qawO4B8Omv9fXf+gvr/36tS8J1oqyH3fHqlEqJ1RxklTNcMnXHmgNzfD3wLoyaYY2tb2EdAvsFrB3YPvatiR1MFG5g8DAgUWYHZy0J4z7xSWFUyjQ8HSSYe0Xi+09sFrRHVYZ2wNtojH+HljtZduVLvWtC8/aH8HZO7BwlC/jfhtL+0NMew+sDgb8cu9O2D2Ecg/9zTEajJZrtZA9GF5kEO/AIrx8mQdpxKc9B1xbcfs+qwOY44QtziVtCyxNNha+m7FfVvbYu7MHXzMBsfiJTcPF5uvU5ziCJMM13oE1VwzUHtyundXK/u7YYIKzagTdHC3Cw3iww3tgO7uYtOtD2JIbgPfAdlv8t3sC3KXuQ6jHO7CgRjh3jTU3MarjPbDqS5979YcjNjsDEu+B7bz9UugidSYZWILj3bHc4hCJYIcmeA9s/3FYOtV/KwCuC09n+AJrjkzqCB8d6B17BhuwYOJ4hLDrmQEPLDYb4WY+Co/Z1MjfHevet2tADcCxYwLAe2DNkYwY+0ux" after tData
+         put "Htw/mkV+1Cb99wJ+/bp+9O8Tf/SPBOwvUPWW+LEGSf/Gs/84B7DelVdg9S/tdaXd32SgjF2E3rH+G+KdfNM/Leg/+vHpPDb/t1H0AWAt5axu87WOc7EDreIgyEPRTGJo2Vtg1DaAdI2t1r/T12eDBoUrisBjcMR7YOkKVxSB5x7JMA0sgyMcF2BS492xdImrGe6in/zd1TZfp87Yl88+BTYMDgY44gjneA8sOcd2+tke0oe/B1Y3PsPT9tzPFiIgMOrmXGzRxiD2N8cEP1uK8AW/ePfAQkxFgCI5fJIFwhfujhiLQ8dQi3dg7QAndSRQguMdYWxus7+uVd+HCjh0f8N7YOPE/C9kEKvWpIgAAA==" after tData
+         break
+      case "coinblock.mtl"
+         put "H4sIAAAAAAAC/0XOsRGAIAwF0J4pmMAjhIRkBsdQO6XyzvUFwVDkF/+RC+V4rvv0W3Dr7sOSpUYiqokgrgyFrgqNibU9CpNjZyG1VDDFsRx1JqFxGpeZLIXmNjWGWnKdaDX/dUb8PmuSfxGITTK7F3X0fhblAAAA" after tData
+         break
+      case "sprig.obj"
+         put "H4sIAAAAAAAC/31US3LdMAzb5xS6gN/TX/Z12iYznXlJF01z/pIgJMuxk41tAhQFQrRe3x+P3z/c659fz4/b6/vj6cMt/hbS5vwtxqJBCs3QVAQMGxJyucgc6JQ5Voc16KsXjZWpKUuuLxk5IV6gqVxVCEkrSNIW9Bmj6vABWEKGX8GszMvbGUx+Oy32pfRt5Jk3A2ud9va+zDVDU7Vxo3ifk7bv4xAvr5zPRbXLc1ET/11Ns8nUgytubKR2nLCaD9anC1QO8unjDWcpj7Uppsf5ph9FtYgD8hWPWRdJS89CcX3O1ZC3fJ14kTelWQMg2kasouGg/bb1M7ZMYF/c1yLtsHJHlh2CkfMqArMGDPyWsCmTVn1Ykz3rhH2xcEHWceER61OyYSp2EZ+hagv1sErHMBk2jq31PKzXf6FZ+YxaGW0TqlCPcyrUqoISZpA5kJhQrY25sOLKtDJKHWVdqDqJWi5ULReylm90Xcladl059kefmUtkPNex7DMEVcGKx8NhBKiIx7SrLFv67++zXMvup396ceV+31y934N3TZ5BIItArPIZBVIqgchKhCKYctUiYwTb5N1c8PJaXQjy2gRlTDLe71F3VjoGkPKnCil3yIvR2UJyiib5KKzoQpaosoTGZEVLbAorv44NlIUM4ZNnTHZXF6THJFtKW0lb6TFZEZS0a/DV2DYJVH7tzRg7CUTRSTdjsthi0s0tZoFalO2AFThKnAO7ngRaTDaKnXkWaB6AVbvBZ8Zk" after tData
+         put "e3YZxsKK6RjIDr9pBo3FTpPf3LkfA8bMRQnl19MpUxkWGRVkmlKw2ZTZAldtBLWqspETaVwfGz+UDUcZG2ueTI5SGUauO5r6CB76EEc5vn2oGdLtYbMdEse320mXachh1D3X7uIYk8U2u7ZeqUvmRqbYSE2W/uSuoqvDT8adlWnLbXeUPiubIVr5lfHuNFfjZthrMDQOF8hewS6KUdduEZYFNy4knI0gTvtxsiNGVL+BajkBBC+KVkV1c8FXfAMdN5imj0sNgeFacNxpWNuvLxQ1fYr3ZWbgKMXQKMFGLRrJpRBk0oCP3syk/VQYK8eW+4mYR+wSbVuX44h4kurQMF0DEixHx7W5sdRM5Nmqa/8B7TEZCbYLAAA=" after tData
+         break
+      case "sprig.mtl"
+         put "H4sIAAAAAAAC/8tLLc8tyVFINuDyTlEw0DMytwCSZpYmQNLE0oQrDyptCJE2NrEEkuZmhkDS1MiSCwDTlrHYPgAAAA==" after tData
          break
       case "character-antenna.obj"
          put "H4sIAAAAAAAC/31WSZLcOAy8+xX8AFqiRLJK35kZd8REdM8cvLzfWBIgJbH64hIysSRAkO3Pnx8f//6VPv//5/vH2+fPj2+/E61vay1pfctlh8HoCM6wcKQXnkWZh3m649cgsDmkRi7VvhXL6yH/tod9j36GbWNsyXXALBbYKbbsbayxlfA7Y1bDMJqJoZlqmkmkVzlvxWmmnObSex269u3geWgsk6bV6aZeKtFUFA2qelM0nRRNR0XXFk7FprXGMx6bndafzIW+TPBiBMM+kR/ylp+ns1Jwb+U8gHClqe+tFBKwx9Ar4g2kKfoi/l5pqmkqf9boWGYqaCb95niJttHD83xL4Hk6o9Fx5ncKphvqY7vlpFlSB/9La8pplQ+GbMsO/VTuCwQA3ZA1ETJyDeUOfScQX/XpbE0/4aV6mrT/2AK6IFUmfA6TtKfcj82jcgmEThBNFNBEKE1k0TzftSrdxdJMbeSnU5emjU59mjYaxHlRGqp6idHPldAgJZqg2VRoNhYaZF+rTIr0Axx6m5a9D4FeBc9ir+dzqIisz/PRMYXojNEMvMbCMhadHT3UMJqB09hrhZmQieBJXz39TMVE7dntCrXu1o6OnaCJ191piKMzRmfwJTZAv3585//hpb/Xb+/pWJZHyuuyPFPOy3IE1JaFF0EZxvKDzZryk39ayuzCS/qeNqb5LXRYnQQuy7Jtaav8s6eNU/Gj+J529t6eaec625H2bVl2kWC8e+9s7eoNN0661+6N" after tData

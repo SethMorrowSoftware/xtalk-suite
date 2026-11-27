@@ -92,6 +92,20 @@ drift gates are the suite's.
   `settle` joins them and books the picture and its statistics to the scene. One picture
   at a time, for all scenes: the queue is one. The smoke test holds a begun picture to the
   bytes of the one drawn at once, and destroys what the threads read while they draw.
+- **The fill loop is one function made twelve times** (2026-11-27): `raster_core` is
+  always inline and takes texture, lighting, highlight and fog as constant flags, and a
+  switch picks the copy a triangle needs (a highlight or fog whose corners are all zero
+  takes the copy without it). Every copy does the arithmetic the one loop did, in the same
+  order, so the picture is the same to the byte: `test_unchanged_pictures` holds ten hashes
+  taken before the change (checked on Linux x86_64 with GCC, where they were taken).
+  A node whose bounding sphere lies wholly outside the view is skipped before its
+  triangles are set up (`node_outside_view`); its margin is generous, so a node that
+  touches the view is always drawn. And a point light whose range ends short of a node's
+  bounding sphere is left out of that node's lighting loop (it would add nothing to any of
+  its vertices): Orb Island's six lamps light only what is near them, and its picture's
+  setup fell from about 4.7 to 2.9 ms. `test_unchanged_pictures` pins five more hashes,
+  with short-range lamps among the nodes, taken from f6c0b1a's renderer; a cut 30% too
+  eager fails fifteen checks.
 - **Depth is stored as 1/depth** (0 is "nothing drawn"), and every attribute is interpolated
   divided by depth, stepping by a constant a pixel.
 - **Lighting is per vertex** (Gouraud), cached per mesh vertex for each material and side;
@@ -139,4 +153,4 @@ installed as extensions): the demo's window was built, its boot self-check read 
 the picture was seen and recorded, and a real pointer dragged, kicked and pressed every
 button; 57 pictures a second with nine things, 50 to 52 with about fifty. The demo's look was rebuilt on 2026-11-21 (its own painted buttons and toggles, a dark log, a sky, the wheel, pictures a second on the picture's corner) after a Windows pass under a dark theme showed white words on white: that look has run on the server engine (`tests/engine-demo.lc`), been seen offscreen on the Linux desktop engine, and been seen on Windows. One Windows engine has opened the demo (OXT-Beyond 0.2.8-dp.1, 64-bit, dark system appearance, a locally built library (from 3c66637 at the later runs, by their record), 2026-11-21 between 01:19 and 02:00 UTC; an earlier record dated the first screenshot 2026-11-20): a screenshot showed the scene drawn, nine things, 7.8 ms a picture on 6 threads, and the white words that the rebuilt look answers; then the rebuilt look (cd52080, then be477c8) was readable throughout, drew 16 pictures a second with two other 3D stacks running in the same engine, and showed the faults fixed in 5fabc82 and 904bb16 (the badge, the self-check printed twice after a quick reopen, the far floor). 904bb16's fixes, the wheel and the buttons' hover have not run there. Later on 2026-11-21 the demo as merged (fa0a07a) opened on that machine with its boot self-check green (12 passed, 0 failed, 0 skipped). One web engine has run it: a locally built OXT-Beyond web engine with the web archive linked (not a released engine), in Chromium, 2026-11-21, played OXT-Beyond's Render3D Tour at 59 to 60 pictures a second and the demo at 34 to 36 with its boot self-check green (the archive as merged, fa0a07a; the one rebuilt with 457c244's leak fix has run its own tests under node only). No engine on
 macOS or Android, and no released web engine, has loaded it: there, and for everything on Windows that those runs do not show, it is verified statically; needs
-an OXT pass. Committed: the web archive (`src/code/wasm32-emscripten/render3dxt.a`, built by hand with emsdk 6.0.12, 2026-11-20, and rebuilt with 457c244's fix 2026-11-21) and the six desktop and four Android libraries (the first release dispatch, 2026-11-21, f6c0b1a); of them only the x86_64-linux library has met an engine (OXT-Beyond 0.2.8-dp.1's Linux server engine, 2026-11-21: OXT-Beyond's Android functional test for render3dxt passed with it). Open work is in the suite's `docs/WORK-PLAN.md`.
+an OXT pass. Committed: the web archive (`src/code/wasm32-emscripten/render3dxt.a`, built by hand with emsdk 6.0.12, 2026-11-20, and rebuilt with 457c244's fix 2026-11-21, and again with the faster fill loop and the view cull 2026-11-27, after the tree before that change had rebuilt the committed archive byte for byte) and the six desktop and four Android libraries (the first release dispatch, 2026-11-21, f6c0b1a); of them only the x86_64-linux library has met an engine (OXT-Beyond 0.2.8-dp.1's Linux server engine, 2026-11-21: OXT-Beyond's Android functional test for render3dxt passed with it). Open work is in the suite's `docs/WORK-PLAN.md`.
