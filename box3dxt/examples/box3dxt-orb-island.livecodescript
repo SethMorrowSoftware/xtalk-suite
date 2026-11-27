@@ -38,6 +38,19 @@
 -- each level's orbs, and music: a new tune each session, composed by
 -- audioxt in an offline engine (N turns it off).
 --
+-- Version 1.5 (2026-11-27) makes the island LIVE: four gulls wheel over
+-- it, crying now and then; five songbirds (robins and bluebirds) hop and
+-- peck on the grass, sing, and fly up to the tip of a tree or a coin
+-- block when you come near, coming back down once you have gone;
+-- butterflies flutter over the tufts; fish leap off the shore with a
+-- splash; the clouds drift. The creatures are this file's own low-poly
+-- models, a few points each (oiCritterObj), not physics: each is a still
+-- sensor high above the island, drawn where it flies by its pose, and one
+-- out of sight is hidden and not posed. It is also quicker: the orbs,
+-- lanterns, dust and sparks are drawn with fewer sides (b3kSetDetail),
+-- and the Kit no longer places again a still thing whose pose has not
+-- changed.
+--
 -- WHY THIS EXAMPLE EXISTS: it is the Kit's showcase, the 3D sibling of
 -- box2dxt's games. Every system the Kit has carries part of the game:
 --   * the world and the loop: b3kSetup, b3kSetStepMode, b3kStart, b3kPause,
@@ -128,6 +141,12 @@
 --      the bridge's planks crumble and turn, the flying enemies knock
 --      you back, the feather lets you jump again in the air, and the
 --      climb and the summit lift reach the summit.
+--  12. The life: gulls wheel overhead with their wings beating then
+--      gliding; songbirds hop and peck near the trees, fly up to a tree's
+--      tip as you walk up to them and come back down when you leave;
+--      butterflies flutter over the tufts; now and then a fish leaps off
+--      the shore with a splash; the clouds drift; the birds chirp and a
+--      gull cries, from their side of you.
 --  10. Every label is readable in the light and the dark appearance (each
 --      control sets its own colours).
 --
@@ -742,6 +761,40 @@ local sOiMusic        -- the tune's sound, 0 for none
 local sOiMusicOff     -- true when N has turned the music off
 local sOiMusicSecs    -- the tune's length in seconds
 local sOiMusicMs      -- milliseconds the composing took (for the test)
+-- the island's life (version 1.5; see "The living island" below): declared
+-- here, above every handler that names them, because a name resolves by
+-- where it is written (suite engine note 1.2)
+local sOiLife         -- [creature] -> "gull", "song", "fly" or "fish"
+local sOiLifeArg      -- [creature] -> its numbers, by kind (see oiLifeMake)
+local sOiLifeShown    -- [creature] -> true while drawn
+local sOiLifeAt       -- [creature] -> "x,y,z" where it was last posed
+local sOiSongMode     -- [songbird] -> "ground", "fly" or "perch"
+local sOiSongFrom     -- [songbird] -> "x,y,z" a flight starts from
+local sOiSongTo       -- [songbird] -> "x,y,z" a flight or hop ends at
+local sOiSongT0       -- [songbird] -> the clock time it started
+local sOiSongFor      -- [songbird] -> how long it takes, ms
+local sOiSongNext     -- [songbird] -> the clock time it next hops or sings
+local sOiSongYaw      -- [songbird] -> its heading, degrees
+local sOiSongPeck     -- [songbird] -> the clock time a peck ends
+local sOiSongFlights  -- flights from the player this run (the test reads it)
+local sOiFishNext     -- [fish] -> the clock time it next leaps
+local sOiFishLeap     -- [fish] -> "x,z,dx,dz,start ms" of its leap
+local sOiFishLeaps    -- leaps this run (the test reads it)
+local sOiClouds       -- the clouds, which drift
+local sOiCallPCM      -- ["chirp"|"gull"] -> a call's sound, cloned to play
+local sOiCallVoices   -- the calls playing: "sound,clock ms to free it" a line
+local sOiCalls        -- calls heard this run (the test reads it)
+local sOiLifePosed    -- creatures posed in the last frame (the test reads it)
+local sOiLifePosedLast -- and in the frame before it
+local sOiLifeHalf     -- [creature] -> 0 or 1, the frame it is posed on when far
+local sOiLifeTurn     -- 0 or 1, this frame
+local sOiLifeQuarter  -- [creature] -> 0 to 3, the frame of four it is looked at unseen
+local sOiLifeFrame    -- frames counted, for those turns
+local sOiLifeBody     -- [creature] -> "x,y,z,yaw,pitch" it was last posed at
+local sOiLifeWings    -- [creature] -> "wing,fold" its parts were last posed at
+local sOiCryAt        -- the clock time a gull may next cry
+local sOiCloudTurn    -- frames counted, for the clouds' turns
+local sOiTreeTops     -- the tip of each stand's tallest tree, "x,y,z" a line
 
 -- =====================================================================
 -- Lifecycle
@@ -838,6 +891,12 @@ command oiNewGame
    -- sixtieth's multiple (a web page's 26, a 144 Hz screen) whole steps
    -- made the island lurch, two steps one frame and three the next
    b3kSetStepMode "smooth"
+   -- in a web page the sound is mixed on the page's own thread, between
+   -- the engine's turns: a frame longer than its 46 ms buffer made the
+   -- music and the footsteps crackle while the player walked (seth,
+   -- 2026-11-27). A turn for the browser in each frame keeps it fed, for
+   -- about 4 ms a frame.
+   b3kSetBrowserTurns true
    if b3kWorld() is empty then
       uiStatus "Nothing can run: " & b3kLastError() & ". Load the box3dxt extension, then press Restart.", "bad"
       oiHud
@@ -1033,6 +1092,9 @@ command oiBuildIsland
    oiOrb "Y", 0.2, 17.6, -39.6
    oiOrb "Z", -7.5, 19.7, -38
 
+   -- the island's life (version 1.5): gulls, songbirds, butterflies, fish
+   oiBuildLife
+
    -- LAST, the grass and the sea: render3dxt draws in the order things were
    -- made, and a pixel of grass already hidden by a tree or a stone is then
    -- refused by its depth alone, never textured or fogged. Made first, the
@@ -1062,7 +1124,9 @@ command oiSeaAndSky
    oiSea "south", 0, 54, 140, 72
    oiSea "west", -44, 0, 52, 60
    oiSea "east", 44, 0, 52, 60
-   -- clouds: white balls that glow a little, so their shade stays light
+   -- clouds: white balls that glow a little, so their shade stays light;
+   -- they drift (oiTickClouds)
+   put empty into sOiClouds
    repeat for each line tCloud in "-22,17,-12" & return & "16,19,10" & return & "6,16,-36" & return & "-30,18,22"
       oiCloud item 1 of tCloud, item 2 of tCloud, item 3 of tCloud
    end repeat
@@ -1099,6 +1163,7 @@ command oiCloud pX, pY, pZ
    b3kSetVisible tCloud, true
    b3kSetColor tCloud, "250,246,242"
    oiLook tCloud, "cloud"
+   put tCloud & return after sOiClouds
 end oiCloud
 
 -- The four corners and the far west: dominoes, a windmill hill, a stone
@@ -1209,7 +1274,8 @@ end oiBuildSkyIsle
 -- at (2026-11-26). Then grass tufts, which only show: a sensor is passed
 -- through.
 command oiBuildTrees
-   local tTree, tS, tH, tKind, tThing, tTuft
+   local tTree, tS, tH, tKind, tThing, tTuft, tA
+   put empty into sOiTreeTops
    repeat for each line tTree in "-9,25,1,trees,20" & return & "-12,9,1.1,grove,75" & return & "9,10,0.9,grove,140" & return & \
          "12,23,1,trees,200" & return & "-24,25,1.2,trees,260" & return & "-26,-6,1,grove,310" & return & \
          "25,7,1.1,trees,35" & return & "26,-7,0.9,grove,100" & return & "-6,-26,1,trees,165" & return & \
@@ -1224,11 +1290,32 @@ command oiBuildTrees
       put the result into tThing
       oiFix tThing, 0, item 5 of tTree, 0
       oiLook tThing, tKind, tS
+      -- the tip of its tallest tree, where a songbird perches (version
+      -- 1.5): the model's highest point, turned and scaled as the stand is
+      if tKind is "trees" then
+         put oiTurnXZ(-1.25 * tS, -1.2 * tS, item 5 of tTree) into tA
+      else
+         put oiTurnXZ(0.93 * tS, -0.87 * tS, item 5 of tTree) into tA
+      end if
+      put item 1 of tTree + item 1 of tA & comma & tH + 0.04 & comma & item 2 of tTree + item 2 of tA & return after sOiTreeTops
    end repeat
    repeat for each line tTuft in oiTufts()
       oiTuft item 1 of tTuft, item 2 of tTuft, item 3 of tTuft
    end repeat
 end oiBuildTrees
+
+-- a point "x,z" across a thing turned pDegrees about y, as the Kit turns it
+function oiTurnXZ pX, pZ, pDegrees
+   local tC, tS
+   put cos(pDegrees * pi / 180) into tC
+   put sin(pDegrees * pi / 180) into tS
+   return pX * tC + pZ * tS & comma & pZ * tC - pX * tS
+end oiTurnXZ
+
+-- the tip of stand pN's tallest tree, "x,y,z" (oiBuildTrees' order)
+function oiTreeTop pN
+   return line pN of sOiTreeTops
+end oiTreeTop
 
 -- where the tufts grow: x, z, turn; in twos and threes by the trees
 function oiTufts
@@ -1278,9 +1365,15 @@ end oiTuft
 -- A lantern post; pLamp hangs one of the Kit's lamps in it as well (a
 -- world holds seven, so not every post has one).
 command oiLantern pX, pZ, pLamp
+   local tPart
+   -- thin and small: eight sides round the post, ten round the lamp
    oiStatic "cylinder", pX, 1.1, pZ, 2.2, 0.16, "60,58,66"
+   put the result into tPart
+   b3kSetDetail tPart, 8
    oiStatic "ball", pX, 2.35, pZ, 0.45, "255,226,150"
-   b3kSetGlow the result, "255,170,60"
+   put the result into tPart
+   b3kSetDetail tPart, 10
+   b3kSetGlow tPart, "255,170,60"
    if pLamp is true then b3kAddLamp pX, 2.35, pZ, "255,190,110", 7, 1.6
 end oiLantern
 
@@ -1363,6 +1456,9 @@ command oiOrb pLetter, pX, pY, pZ
    put the result into tOrb
    if tOrb is empty then exit oiOrb
    b3kSetVisible tOrb, true
+   -- twelve sides, not the Kit's 24: an orb is small and mostly far, and
+   -- the 26 were two fifths of the start view's triangles (version 1.5)
+   b3kSetDetail tOrb, 12
    b3kSetColor tOrb, kOiOrbColor
    b3kSetGlow tOrb, oiGlowStep(1)
    b3kName tOrb, "orb " & pLetter
@@ -1648,18 +1744,22 @@ end oiShadowTick
 
 -- Dust: small pale balls that drift out, shrink and are gone in 0.45 s.
 -- Sensors, so nothing trips on them; at most fourteen at once.
-command oiDustBurst pX, pY, pZ, pCount
+command oiDustBurst pX, pY, pZ, pCount, pColor, pSplash
    local tI, tA, tPuff
+   if pColor is empty then put "238,230,214" into pColor
    repeat with tI = 1 to pCount
       if the number of lines of the keys of sOiDust >= 14 then exit repeat
       b3kAddSensorBall pX, pY + 0.1, pZ, 0.32
       put the result into tPuff
       if tPuff is empty then exit repeat
       b3kSetVisible tPuff, true
-      b3kSetColor tPuff, "238,230,214"
+      b3kSetDetail tPuff, 8
+      b3kSetColor tPuff, pColor
       b3kSetGlow tPuff, "60,56,50"
       put random(360) * pi / 180 into tA
       put 1.6 * cos(tA) & comma & 1.6 * sin(tA) & comma & sOiClockMS into sOiDust[tPuff]
+      -- a fish's splash is white water, not the hero's dust (oiDustCount)
+      if pSplash is true then put comma & "splash" after sOiDust[tPuff]
    end repeat
 end oiDustBurst
 
@@ -1701,9 +1801,26 @@ function oiHeroAct
    return sOiAct
 end oiHeroAct
 
+-- the hero's puffs of dust in the air (a fish's splash is not counted)
 function oiDustCount
-   return the number of lines of the keys of sOiDust
+   local tPuff, tN
+   put 0 into tN
+   repeat for each key tPuff in sOiDust
+      if item 4 of sOiDust[tPuff] is not "splash" then add 1 to tN
+   end repeat
+   return tN
 end oiDustCount
+
+-- the fish's splash puffs still in the air: the island's own, which come
+-- and go whatever the player does (a test that counts things leaves them out)
+function oiSplashCount
+   local tPuff, tN
+   put 0 into tN
+   repeat for each key tPuff in sOiDust
+      if item 4 of sOiDust[tPuff] is "splash" then add 1 to tN
+   end repeat
+   return tN
+end oiSplashCount
 
 -- =====================================================================
 -- Platformer pieces: a pressure plate and the vault it opens, crumbling
@@ -1822,6 +1939,7 @@ command oiBuildTerraces
    put the result into sOiFeather
    if sOiFeather is not empty then
       b3kSetVisible sOiFeather, true
+      b3kSetDetail sOiFeather, 12
       b3kSetColor sOiFeather, "150,230,255"
       b3kSetGlow sOiFeather, "40,120,170"
       b3kName sOiFeather, "feather"
@@ -2105,6 +2223,858 @@ function oiCheckpoint
 end oiCheckpoint
 
 -- =====================================================================
+-- The living island (version 1.5): gulls that wheel over it, songbirds
+-- that hop on the grass and fly up into the trees when the player comes
+-- near, butterflies over the tufts, fish that leap from the sea, clouds
+-- that drift, and the birds' calls. None of it is physics: each creature
+-- is a tiny sensor ANCHOR high above the island (kOiLifeY, out of
+-- everyone's reach) that never moves, and the whole creature is drawn
+-- where it is by its look's pose (b3kSetLookPose: place, heading, pitch)
+-- and its wings by their parts' poses (b3kPoseLookPart). A pose costs a
+-- line of script; a body moved every frame would cost the physics step
+-- too. A creature the camera cannot see is hidden and not posed at all,
+-- and the Kit skips placing a static thing whose pose has not changed, so
+-- life out of sight costs the frame next to nothing.
+--
+-- The creatures are made here, from a few points each, by oiFlatObj: an
+-- original low-poly gull, songbird, butterfly and fish (Seth Morrow's,
+-- like the rest of the game; not Kenney's), flat-shaded, a face its own
+-- colour.
+-- =====================================================================
+-- the height of the anchors: no jump, pad or lift gets near
+constant kOiLifeY = 80
+-- the kinds, and how far from the camera each is drawn: a gull to where
+-- the fog has all but swallowed it (b3kSetFog kOiSky, 36, 84); a songbird,
+-- a butterfly or a fish only while it is more than a speck. Past these
+-- it would be a pixel or two, and posing it costs as much as a near one
+-- (in a web page, where the script is slower, 1.5's first cut drew all
+-- sixteen to 78 m and lost 3 pictures a second of 26; 2026-11-27)
+constant kOiLifeKinds = "gull,song,fly,fish"
+constant kOiLifeFar = "78,30,16,50"
+-- nearer than this a creature is posed every frame; farther, every other
+-- frame, half of them one frame and half the next
+constant kOiLifeNear = 14
+-- a songbird flies off when the player comes this near (metres)
+constant kOiSongNear = 3.6
+
+
+-- Every creature, made once with the island. The anchors are things the
+-- island was built with, so C's limit counts them.
+command oiBuildLife
+   local tLine, tI
+   put empty into sOiLife
+   put 0 into sOiSongFlights
+   put 0 into sOiFishLeaps
+   put 0 into sOiCalls
+   put 8000 into sOiCryAt
+   -- gulls: "centre x, centre z, radius, height, radians a second, phase"
+   put 0 into tI
+   repeat for each line tLine in "0,-8,30,24,0.16,0" & return & "0,-8,30,25.5,0.16,0.5" & return & \
+         "-6,-20,20,29,-0.21,2" & return & "10,4,36,21,0.13,4.1"
+      add 1 to tI
+      oiLifeMake "gull", tLine
+   end repeat
+   -- songbirds: "home x, home z, ground y, perch x, perch y, perch z, kind"
+   -- (kind 1 a robin, 2 a bluebird). On the shore they perch on the tip of
+   -- a tree of the stand beside them; up on the east terrace and the summit,
+   -- on a coin block
+   repeat for each line tLine in "-7,22.5,0," & oiTreeTop(1) & ",1" & return & "10.5,21,0," & oiTreeTop(4) & ",2" & return & \
+         "8.5,7.5,0," & oiTreeTop(3) & ",1" & return & "13.5,-25.5,9,11,10.45,-21,2" & return & "-1.5,-39,16.7,-7.5,18.15,-38,1"
+      oiLifeMake "song", tLine
+   end repeat
+   -- butterflies: "centre x, ground y, centre z, phase, kind 1 to 3"
+   repeat for each line tLine in "-9,0,23.5,0,1" & return & "12,0,22.5,2.1,2" & return & "-24.5,0,-13.5,4,3" & return & \
+         "-17,9,-19,1,1" & return & "-4,16.7,-39.5,3,2"
+      oiLifeMake "fly", tLine
+   end repeat
+   -- two fish, each leaping now and then off the shore
+   oiLifeMake "fish", "1"
+   oiLifeMake "fish", "2"
+end oiBuildLife
+
+-- one creature: its anchor, its parts, and its numbers
+command oiLifeMake pKind, pArg
+   local tThing, tMtl, tObj
+   b3kAddSensorBall 0, kOiLifeY, 0, 0.1
+   put the result into tThing
+   if tThing is empty then exit oiLifeMake
+   b3kSetVisible tThing, true
+   b3kName tThing, pKind & " " & (the number of lines of the keys of sOiLife + 1)
+   put pKind into sOiLife[tThing]
+   put pArg into sOiLifeArg[tThing]
+   -- the frame it is posed on when far: every other creature the other
+   put (the number of lines of the keys of sOiLife) mod 2 into sOiLifeHalf[tThing]
+   put (the number of lines of the keys of sOiLife) mod 4 into sOiLifeQuarter[tThing]
+   put true into sOiLifeShown[tThing]
+   set the itemDelimiter to comma
+   switch pKind
+      case "gull"
+         put oiCritterMtl("gull") into tMtl
+         b3kAddLookPart tThing, "body", oiCritterObj("bird body"), tMtl, 1.5
+         b3kAddLookPart tThing, "wing l", oiCritterObj("bird wing l"), tMtl, 1.5
+         b3kAddLookPart tThing, "wing r", oiCritterObj("bird wing r"), tMtl, 1.5
+         break
+      case "song"
+         put oiCritterMtl("song" & item 7 of pArg) into tMtl
+         b3kAddLookPart tThing, "body", oiCritterObj("bird body"), tMtl, 0.55
+         b3kAddLookPart tThing, "wing l", oiCritterObj("bird wing l"), tMtl, 0.55
+         b3kAddLookPart tThing, "wing r", oiCritterObj("bird wing r"), tMtl, 0.55
+         put "ground" into sOiSongMode[tThing]
+         put item 1 of pArg & comma & item 3 of pArg + 0.045 & comma & item 2 of pArg into sOiSongTo[tThing]
+         put sOiSongTo[tThing] into sOiSongFrom[tThing]
+         put 0 into sOiSongT0[tThing]
+         put 0 into sOiSongFor[tThing]
+         put random(1500) into sOiSongNext[tThing]
+         put random(360) into sOiSongYaw[tThing]
+         put 0 into sOiSongPeck[tThing]
+         break
+      case "fly"
+         put oiCritterMtl("fly" & item 5 of pArg) into tMtl
+         b3kAddLookPart tThing, "body", oiCritterObj("fly body"), tMtl
+         b3kAddLookPart tThing, "wing l", oiCritterObj("fly wing l"), tMtl
+         b3kAddLookPart tThing, "wing r", oiCritterObj("fly wing r"), tMtl
+         break
+      case "fish"
+         put oiCritterMtl("fish") into tMtl
+         b3kAddLookPart tThing, "body", oiCritterObj("fish body"), tMtl, 1.6
+         b3kAddLookPart tThing, "tail", oiCritterObj("fish tail"), tMtl, 1.6
+         -- the first leaps come soon, so a player at the shore sees one
+         put 2500 + 3000 * pArg + random(2000) into sOiFishNext[tThing]
+         put empty into sOiFishLeap[tThing]
+         break
+   end switch
+   oiLifeHide tThing
+end oiLifeMake
+
+-- A creature's model, OBJ text from a few points: "x,y,z" a line, then
+-- faces "material a b c [how]". Forward is +z and up +y, metres. A wing's
+-- origin is its shoulder, where it turns. Made once and kept.
+function oiCritterObj pName
+   local tV, tF
+   if sOiModels["critter:" & pName] is not empty then return sOiModels["critter:" & pName]
+   switch pName
+      case "bird body"
+         -- a spindle: beak tip forward, tail behind, a fan of a tail
+         put "0,0.03,0.22" & return & "0,0.035,-0.24" & return & "0,0.115,0.04" & return & \
+               "0,-0.075,0.02" & return & "-0.08,0.02,0.03" & return & "0.08,0.02,0.03" & return & \
+               "0,0.025,0.31" & return & "-0.02,0.03,0.21" & return & "0.02,0.03,0.21" & return & \
+               "0,0.005,0.215" & return & "-0.07,0.03,-0.33" & return & "0.07,0.03,-0.33" into tV
+         put "back 1 3 6 out" & return & "breast 1 6 4 out" & return & "breast 1 4 5 out" & return & \
+               "back 1 5 3 out" & return & "back 2 6 3 out" & return & "belly 2 4 6 out" & return & \
+               "belly 2 5 4 out" & return & "back 2 3 5 out" & return & \
+               "beak 7 8 9 0,0.02,0.24" & return & "beak 7 9 10 0,0.02,0.24" & return & \
+               "beak 7 10 8 0,0.02,0.24" & return & "tail 2 11 12 two" into tF
+         break
+      case "bird wing r"
+         put "0,0,0.07" & return & "0,0,-0.08" & return & "0.3,0.01,0.05" & return & \
+               "0.3,0.01,-0.07" & return & "0.56,0,-0.09" into tV
+         put "wing 1 2 3 two" & return & "wing 2 4 3 two" & return & "tip 3 4 5 two" into tF
+         break
+      case "bird wing l"
+         put "0,0,0.07" & return & "0,0,-0.08" & return & "-0.3,0.01,0.05" & return & \
+               "-0.3,0.01,-0.07" & return & "-0.56,0,-0.09" into tV
+         put "wing 1 2 3 two" & return & "wing 2 4 3 two" & return & "tip 3 4 5 two" into tF
+         break
+      case "fly body"
+         put "0,0,0.06" & return & "0,0,-0.07" & return & "0,0.012,0" & return & \
+               "0,-0.012,0" & return & "-0.012,0,0" & return & "0.012,0,0" into tV
+         put "body 1 3 6 out" & return & "body 1 6 4 out" & return & "body 1 4 5 out" & return & \
+               "body 1 5 3 out" & return & "body 2 6 3 out" & return & "body 2 4 6 out" & return & \
+               "body 2 5 4 out" & return & "body 2 3 5 out" into tF
+         break
+      case "fly wing r"
+         put "0,0,0.03" & return & "0,0,-0.03" & return & "0.1,0,0.07" & return & \
+               "0.13,0,0" & return & "0.08,0,-0.085" into tV
+         put "wing 1 4 3 two" & return & "wing 1 2 4 two" & return & "edge 2 5 4 two" into tF
+         break
+      case "fly wing l"
+         put "0,0,0.03" & return & "0,0,-0.03" & return & "-0.1,0,0.07" & return & \
+               "-0.13,0,0" & return & "-0.08,0,-0.085" into tV
+         put "wing 1 4 3 two" & return & "wing 1 2 4 two" & return & "edge 2 5 4 two" into tF
+         break
+      case "fish body"
+         put "0,0,0.18" & return & "0,0.005,-0.14" & return & "0,0.055,0.01" & return & \
+               "0,-0.04,0.01" & return & "-0.035,0.005,0.02" & return & "0.035,0.005,0.02" & return & \
+               "0,0.055,0.01" & return & "0,0.09,-0.04" & return & "0,0.05,-0.09" into tV
+         put "back 1 3 6 out" & return & "belly 1 6 4 out" & return & "belly 1 4 5 out" & return & \
+               "back 1 5 3 out" & return & "back 2 6 3 out" & return & "belly 2 4 6 out" & return & \
+               "belly 2 5 4 out" & return & "back 2 3 5 out" & return & "fin 7 8 9 two" into tF
+         break
+      case "fish tail"
+         put "0,0,0" & return & "0,0.07,-0.09" & return & "0,-0.06,-0.09" & return & "0,0,-0.06" into tV
+         put "fin 1 2 4 two" & return & "fin 1 4 3 two" into tF
+         break
+      default
+         return empty
+   end switch
+   put oiFlatObj(tV, tF) into sOiModels["critter:" & pName]
+   return sOiModels["critter:" & pName]
+end oiCritterObj
+
+-- OBJ text, each face with its own normal so it is lit flat. A face's
+-- last word says how it faces: "out" away from the middle of all the
+-- points, "two" both ways (a wing, seen from above and below), or
+-- "x,y,z" away from that point (the beak, away from its own middle).
+function oiFlatObj pVerts, pFaces
+   local tObj, tV, tCount, tLine, tA, tB, tC, tAx, tAy, tAz, tBx, tBy, tBz
+   local tNx, tNy, tNz, tLen, tMx, tMy, tMz, tRef, tMat, tVn, tHow, tSwap
+   put empty into tObj
+   put 0 into tCount
+   put 0 into tMx
+   put 0 into tMy
+   put 0 into tMz
+   set the itemDelimiter to comma
+   repeat for each line tLine in pVerts
+      add 1 to tCount
+      put tLine into tV[tCount]
+      add item 1 of tLine to tMx
+      add item 2 of tLine to tMy
+      add item 3 of tLine to tMz
+      put "v" && item 1 of tLine && item 2 of tLine && item 3 of tLine & return after tObj
+   end repeat
+   if tCount is 0 then return empty
+   -- render3dxt reads the material text only for a model that names one
+   put "mtllib critter.mtl" & return before tObj
+   put tMx / tCount & comma & tMy / tCount & comma & tMz / tCount into tMx
+   put empty into tMat
+   put 0 into tVn
+   repeat for each line tLine in pFaces
+      put word 2 of tLine into tA
+      put word 3 of tLine into tB
+      put word 4 of tLine into tC
+      put word 5 of tLine into tHow
+      -- the normal: (b - a) x (c - a)
+      put item 1 of tV[tB] - item 1 of tV[tA] into tAx
+      put item 2 of tV[tB] - item 2 of tV[tA] into tAy
+      put item 3 of tV[tB] - item 3 of tV[tA] into tAz
+      put item 1 of tV[tC] - item 1 of tV[tA] into tBx
+      put item 2 of tV[tC] - item 2 of tV[tA] into tBy
+      put item 3 of tV[tC] - item 3 of tV[tA] into tBz
+      put tAy * tBz - tAz * tBy into tNx
+      put tAz * tBx - tAx * tBz into tNy
+      put tAx * tBy - tAy * tBx into tNz
+      put sqrt(tNx * tNx + tNy * tNy + tNz * tNz) into tLen
+      if tLen <= 0 then next repeat
+      divide tNx by tLen
+      divide tNy by tLen
+      divide tNz by tLen
+      put false into tSwap
+      if tHow is not "two" then
+         if tHow is "out" or tHow is empty then put tMx into tRef
+         else put tHow into tRef
+         -- facing in: turn it round
+         if tNx * ((item 1 of tV[tA] + item 1 of tV[tB] + item 1 of tV[tC]) / 3 - item 1 of tRef) + \
+               tNy * ((item 2 of tV[tA] + item 2 of tV[tB] + item 2 of tV[tC]) / 3 - item 2 of tRef) + \
+               tNz * ((item 3 of tV[tA] + item 3 of tV[tB] + item 3 of tV[tC]) / 3 - item 3 of tRef) < 0 then
+            put true into tSwap
+         end if
+      end if
+      if tSwap then
+         put -tNx into tNx
+         put -tNy into tNy
+         put -tNz into tNz
+         get tB
+         put tC into tB
+         put it into tC
+      end if
+      if word 1 of tLine is not tMat then
+         put word 1 of tLine into tMat
+         put "usemtl" && tMat & return after tObj
+      end if
+      add 1 to tVn
+      put "vn" && tNx && tNy && tNz & return after tObj
+      put "f" && tA & "//" & tVn && tB & "//" & tVn && tC & "//" & tVn & return after tObj
+      if tHow is "two" then
+         add 1 to tVn
+         put "vn" && -tNx && -tNy && -tNz & return after tObj
+         put "f" && tA & "//" & tVn && tC & "//" & tVn && tB & "//" & tVn & return after tObj
+      end if
+   end repeat
+   return tObj
+end oiFlatObj
+
+-- a creature's colours, as material text: "name r g b" a line, 0 to 255
+function oiCritterMtl pKind
+   local tList, tLine, tOut
+   switch pKind
+      case "gull"
+         put "back 236 236 232,breast 250 250 246,belly 226 228 230,beak 246 186 52,tail 150 156 168,wing 196 202 212,tip 40 42 48" into tList
+         break
+      case "song1"
+         -- a robin: a brown back, an orange breast
+         put "back 120 86 60,breast 236 120 52,belly 220 196 170,beak 50 44 40,tail 92 66 48,wing 110 80 58,tip 70 52 40" into tList
+         break
+      case "song2"
+         -- a bluebird
+         put "back 60 110 200,breast 222 140 90,belly 236 228 218,beak 40 40 44,tail 46 84 160,wing 70 120 210,tip 30 50 110" into tList
+         break
+      case "fly1"
+         put "body 40 34 30,wing 248 150 40,edge 200 96 30" into tList
+         break
+      case "fly2"
+         put "body 40 34 30,wing 110 170 250,edge 70 110 210" into tList
+         break
+      case "fly3"
+         put "body 40 34 30,wing 250 230 110,edge 220 120 60" into tList
+         break
+      case "fish"
+         put "back 70 120 160,belly 220 228 232,fin 120 160 190" into tList
+         break
+   end switch
+   put empty into tOut
+   set the itemDelimiter to comma
+   repeat for each item tLine in tList
+      put "newmtl" && word 1 of tLine & return & "Kd" && format("%.3f %.3f %.3f", word 2 of tLine / 255, word 3 of tLine / 255, word 4 of tLine / 255) & return after tOut
+   end repeat
+   return tOut
+end oiCritterMtl
+
+-- ---------------------------------------------------------------------
+-- The creatures' frame
+-- ---------------------------------------------------------------------
+command oiTickLife
+   local tThing, tT, tE, tTg, tFx, tFy, tFz, tLen, tPlayer, tPx, tPy, tPz, tAt, tD
+   if sOiLife is not an array then exit oiTickLife
+   put sOiClockMS / 1000 into tT
+   -- where the camera is and which way it looks
+   put b3kCamEye() into tE
+   put b3kCamTarget() into tTg
+   set the itemDelimiter to comma
+   if tE is empty or tTg is empty then exit oiTickLife
+   put item 1 of tTg - item 1 of tE into tFx
+   put item 2 of tTg - item 2 of tE into tFy
+   put item 3 of tTg - item 3 of tE into tFz
+   put sqrt(tFx * tFx + tFy * tFy + tFz * tFz) into tLen
+   if tLen <= 0 then put 1 into tLen
+   put tFx / tLen & comma & tFy / tLen & comma & tFz / tLen into tFx
+   put b3kPlayer() into tPlayer
+   if tPlayer is not empty then
+      put b3kX(tPlayer) into tPx
+      put b3kY(tPlayer) into tPy
+      put b3kZ(tPlayer) into tPz
+   else
+      put 999 into tPx
+      put 999 into tPy
+      put 999 into tPz
+   end if
+   put sOiLifePosed into sOiLifePosedLast
+   put 0 into sOiLifePosed
+   put 1 - sOiLifeTurn into sOiLifeTurn
+   add 1 to sOiLifeFrame
+   repeat for each key tThing in sOiLife
+      -- one out of sight is looked at every fourth frame, a quarter of
+      -- them each frame: a gull or a butterfly is where its path says
+      -- whenever it is asked, a songbird hops a little less often unseen,
+      -- and none comes into the view more than three frames late
+      if sOiLifeShown[tThing] is false and (sOiLifeFrame + sOiLifeQuarter[tThing]) mod 4 is not 0 then next repeat
+      switch sOiLife[tThing]
+         case "gull"
+            put oiGullAt(tThing, tT) into tAt
+            break
+         case "song"
+            put oiSongAt(tThing, tT, tPx, tPy, tPz) into tAt
+            break
+         case "fly"
+            put oiFlyAt(tThing, tT) into tAt
+            break
+         case "fish"
+            put oiFishAt(tThing, tT) into tAt
+            break
+      end switch
+      if tAt is not empty then put item 1 to 3 of tAt into sOiLifeAt[tThing]
+      -- out of sight: hidden, and not posed (its anchor is static, so the
+      -- Kit leaves its nodes be)
+      put -1 into tD
+      if tAt is not empty then
+         put oiLifeSight(item 1 of tAt, item 2 of tAt, item 3 of tAt, tE, tFx, \
+               item itemOffset(sOiLife[tThing], kOiLifeKinds) of kOiLifeFar) into tD
+      end if
+      if tD < 0 then
+         oiLifeHide tThing
+         next repeat
+      end if
+      if sOiLifeShown[tThing] is not true then
+         b3kSetVisible tThing, true
+         put true into sOiLifeShown[tThing]
+      else if tD > kOiLifeNear and sOiLifeHalf[tThing] is not sOiLifeTurn then
+         -- far: its turn is the other frame
+         next repeat
+      end if
+      if oiLifePose(tThing, sOiLife[tThing], tAt, tT) then add 1 to sOiLifePosed
+   end repeat
+   oiTickClouds tT
+end oiTickLife
+
+command oiLifeHide pThing
+   if sOiLifeShown[pThing] is false then exit oiLifeHide
+   b3kSetVisible pThing, false
+   put false into sOiLifeShown[pThing]
+end oiLifeHide
+
+-- how far a point is from the camera when it is near enough (pFar) and
+-- in front of it (a cone a little wider than the view, so nothing pops in
+-- at its edge); -1 when it is not
+function oiLifeSight pX, pY, pZ, pEye, pFwd, pFar
+   local tDx, tDy, tDz, tD
+   put pX - item 1 of pEye into tDx
+   put pY - item 2 of pEye into tDy
+   put pZ - item 3 of pEye into tDz
+   put sqrt(tDx * tDx + tDy * tDy + tDz * tDz) into tD
+   if tD < 3 then return tD
+   if tD > pFar then return -1
+   if tDx * item 1 of pFwd + tDy * item 2 of pFwd + tDz * item 3 of pFwd > 0.5 * tD then return tD
+   return -1
+end oiLifeSight
+
+-- place, heading, pitch and the wings: "x,y,z,yaw,pitch,wing,fold"
+-- Only what changed is posed again: a songbird standing between hops, a
+-- gull's wings held still in a glide, cost nothing (a pose is some 100
+-- microseconds of script on a desktop, several times that in a web
+-- page). The result is true when anything was posed.
+function oiLifePose pThing, pKind, pAt, pT
+   local tWing, tFold, tS, tMoved
+   set the itemDelimiter to comma
+   put false into tMoved
+   if item 1 to 5 of pAt is not sOiLifeBody[pThing] then
+      b3kSetLookPose pThing, item 1 of pAt, item 2 of pAt - kOiLifeY, item 3 of pAt, item 5 of pAt, item 4 of pAt, 0
+      put item 1 to 5 of pAt into sOiLifeBody[pThing]
+      put true into tMoved
+   end if
+   if item 6 to 7 of pAt is sOiLifeWings[pThing] then return tMoved
+   put item 6 to 7 of pAt into sOiLifeWings[pThing]
+   -- the parts' places scale with their models (oiLifeMake's sizes)
+   put item itemOffset(pKind, "gull,song,fly,fish") of "1.5,0.55,1,1.6" into tS
+   put item 6 of pAt into tWing
+   put item 7 of pAt into tFold
+   switch pKind
+      case "gull"
+         b3kPoseLookPart pThing, "wing l", -0.07 * tS, 0.05 * tS, 0.03 * tS, 0, 0, -tWing
+         b3kPoseLookPart pThing, "wing r", 0.07 * tS, 0.05 * tS, 0.03 * tS, 0, 0, tWing
+         break
+      case "song"
+         -- folded, the wings lie back along the body, drawn in to half
+         -- their length
+         get 1 - 0.55 * tFold / 80
+         b3kPoseLookPart pThing, "wing l", -0.07 * tS, 0.05 * tS, 0.03 * tS, 0, -tFold, -tWing, it, 1, 1
+         b3kPoseLookPart pThing, "wing r", 0.07 * tS, 0.05 * tS, 0.03 * tS, 0, tFold, tWing, it, 1, 1
+         break
+      case "fly"
+         b3kPoseLookPart pThing, "wing l", 0, 0.008, 0, 0, 0, -tWing
+         b3kPoseLookPart pThing, "wing r", 0, 0.008, 0, 0, 0, tWing
+         break
+      case "fish"
+         b3kPoseLookPart pThing, "tail", 0, 0.005 * tS, -0.14 * tS, 0, tWing, 0
+         break
+   end switch
+   return true
+end oiLifePose
+
+-- A gull wheels round its circle, rising and falling a little; it flaps
+-- for a moment and glides the rest of a five-second round
+function oiGullAt pThing, pT
+   local tA, tCx, tCz, tR, tH, tW, tPh, tX, tY, tZ, tYaw, tU, tWing
+   set the itemDelimiter to comma
+   put item 1 of sOiLifeArg[pThing] into tCx
+   put item 2 of sOiLifeArg[pThing] into tCz
+   put item 3 of sOiLifeArg[pThing] into tR
+   put item 4 of sOiLifeArg[pThing] into tH
+   put item 5 of sOiLifeArg[pThing] into tW
+   put item 6 of sOiLifeArg[pThing] into tPh
+   put tPh + tW * pT into tA
+   put tCx + tR * cos(tA) into tX
+   put tCz + tR * sin(tA) into tZ
+   put tH + 0.9 * sin(0.5 * pT + tPh) into tY
+   -- the way it flies: the circle's tangent
+   put atan2(-tR * tW * sin(tA), tR * tW * cos(tA)) * 180 / pi into tYaw
+   put (pT + 3 * tPh) mod 5 into tU
+   -- gliding, the wings are held still (and so not posed again)
+   if tU < 1.4 then
+      put 32 * sin(2 * pi * 2.4 * tU) into tWing
+   else
+      put 8 into tWing
+   end if
+   return tX & comma & tY & comma & tZ & comma & tYaw & comma & (-8 * cos(0.5 * pT + tPh)) & comma & tWing & comma & 0
+end oiGullAt
+
+-- A butterfly wanders round its tuft, never straight, wings beating
+function oiFlyAt pThing, pT
+   local tCx, tY0, tCz, tPh, tX, tY, tZ, tX2, tZ2, tWing
+   set the itemDelimiter to comma
+   put item 1 of sOiLifeArg[pThing] into tCx
+   put item 2 of sOiLifeArg[pThing] into tY0
+   put item 3 of sOiLifeArg[pThing] into tCz
+   put item 4 of sOiLifeArg[pThing] into tPh
+   put tCx + 1.4 * sin(0.6 * pT + tPh) + 0.3 * sin(2.3 * pT) into tX
+   put tCz + 1.4 * sin(0.45 * pT + 2 * tPh) + 0.3 * cos(2.9 * pT + tPh) into tZ
+   put tY0 + 0.7 + 0.35 * sin(1.7 * pT + tPh) + 0.1 * sin(7 * pT) into tY
+   put tCx + 1.4 * sin(0.6 * (pT + 0.1) + tPh) + 0.3 * sin(2.3 * (pT + 0.1)) into tX2
+   put tCz + 1.4 * sin(0.45 * (pT + 0.1) + 2 * tPh) + 0.3 * cos(2.9 * (pT + 0.1) + tPh) into tZ2
+   put 25 + 55 * sin(2 * pi * 6.5 * pT + tPh) into tWing
+   return tX & comma & tY & comma & tZ & comma & (atan2(tX2 - tX, tZ2 - tZ) * 180 / pi) & comma & 0 & comma & tWing & comma & 0
+end oiFlyAt
+
+-- A songbird: on the ground it hops and pecks; a player within
+-- kOiSongNear sends it up to its perch on a tree top, calling; when the
+-- player has gone it flies back down. "fly" is an arc from sOiSongFrom
+-- to sOiSongTo over sOiSongFor ms.
+function oiSongAt pThing, pT, pPx, pPy, pPz
+   local tMs, tHome, tX, tY, tZ, tU, tFrom, tTo, tD, tA, tWing, tFold, tPitch, tUp
+   put sOiClockMS into tMs
+   set the itemDelimiter to comma
+   put sOiLifeArg[pThing] into tHome
+   put 0 into tWing
+   put 80 into tFold
+   put 0 into tPitch
+   put sOiSongFrom[pThing] into tFrom
+   put sOiSongTo[pThing] into tTo
+   put min(1, (tMs - sOiSongT0[pThing]) / max(1, sOiSongFor[pThing])) into tU
+   -- where it is now: along its hop or flight
+   put item 1 of tFrom + (item 1 of tTo - item 1 of tFrom) * tU into tX
+   put item 3 of tFrom + (item 3 of tTo - item 3 of tFrom) * tU into tZ
+   put item 2 of tFrom + (item 2 of tTo - item 2 of tFrom) * tU into tY
+   switch sOiSongMode[pThing]
+      case "ground"
+         -- a hop: a little arc
+         add 0.14 * 4 * tU * (1 - tU) to tY
+         if tMs < sOiSongPeck[pThing] then put 35 into tPitch
+         -- the player near: away, up to the perch
+         if abs(pPx - tX) < kOiSongNear and abs(pPz - tZ) < kOiSongNear and abs(pPy - tY) < 2.5 then
+            if sqrt((pPx - tX) ^ 2 + (pPz - tZ) ^ 2) < kOiSongNear then
+               oiSongFly pThing, tX & comma & tY & comma & tZ, item 4 to 6 of tHome, "perch"
+               add 1 to sOiSongFlights
+               oiCall "chirp", tX, tY, tZ, 3
+               return oiSongAt(pThing, pT, 999, 999, 999)
+            end if
+         end if
+         if tU >= 1 and tMs >= sOiSongNext[pThing] then
+            -- next: a hop (most often), a peck, or a song
+            put random(10) into tD
+            if tD <= 6 then
+               put random(360) * pi / 180 into tA
+               put tX + 0.45 * sin(tA) into tX
+               put tZ + 0.45 * cos(tA) into tZ
+               -- never far from home
+               if sqrt((tX - item 1 of tHome) ^ 2 + (tZ - item 2 of tHome) ^ 2) > 1.4 then
+                  put item 1 of tHome + 0.4 * sin(tA) into tX
+                  put item 2 of tHome + 0.4 * cos(tA) into tZ
+               end if
+               put atan2(tX - item 1 of tTo, tZ - item 3 of tTo) * 180 / pi into sOiSongYaw[pThing]
+               put tTo into sOiSongFrom[pThing]
+               put tX & comma & item 3 of tHome + 0.045 & comma & tZ into sOiSongTo[pThing]
+               put tMs into sOiSongT0[pThing]
+               put 220 into sOiSongFor[pThing]
+               put tMs + 300 + random(900) into sOiSongNext[pThing]
+            else if tD <= 9 then
+               put tMs + 260 into sOiSongPeck[pThing]
+               put tMs + 500 + random(700) into sOiSongNext[pThing]
+            else
+               oiCall "chirp", tX, tY, tZ, 1
+               put tMs + 900 + random(1500) into sOiSongNext[pThing]
+            end if
+         end if
+         break
+      case "fly"
+         -- an arc, higher in the middle, wings beating fast
+         put max(1.2, abs(item 2 of tTo - item 2 of tFrom) * 0.4) into tUp
+         add tUp * 4 * tU * (1 - tU) to tY
+         put 50 * sin(2 * pi * 9 * pT) into tWing
+         put 0 into tFold
+         put -12 into tPitch
+         if tU >= 1 then
+            if item 2 of tTo > item 3 of tHome + 1 then
+               put "perch" into sOiSongMode[pThing]
+               put tMs + 7000 + random(6000) into sOiSongNext[pThing]
+            else
+               put "ground" into sOiSongMode[pThing]
+               put tMs + 400 into sOiSongNext[pThing]
+            end if
+         end if
+         break
+      case "perch"
+         -- up in the tree: a song now and then; down again once the
+         -- player has gone
+         if tMs >= sOiSongNext[pThing] then
+            if sqrt((pPx - item 1 of tHome) ^ 2 + (pPz - item 2 of tHome) ^ 2) > 2.5 * kOiSongNear then
+               oiSongFly pThing, tTo, item 1 of tHome + (random(9) - 5) / 10 & comma & item 3 of tHome + 0.045 & comma & item 2 of tHome + (random(9) - 5) / 10, "ground"
+            else
+               oiCall "chirp", tX, tY, tZ, 2
+               put tMs + 2500 + random(4000) into sOiSongNext[pThing]
+            end if
+         end if
+         break
+   end switch
+   return tX & comma & tY & comma & tZ & comma & sOiSongYaw[pThing] & comma & tPitch & comma & tWing & comma & tFold
+end oiSongAt
+
+-- a songbird sets off from pFrom to pTo ("x,y,z"), about 4 m a second
+command oiSongFly pThing, pFrom, pTo, pWhy
+   local tD
+   set the itemDelimiter to comma
+   put sqrt((item 1 of pTo - item 1 of pFrom) ^ 2 + (item 2 of pTo - item 2 of pFrom) ^ 2 + (item 3 of pTo - item 3 of pFrom) ^ 2) into tD
+   put pFrom into sOiSongFrom[pThing]
+   put pTo into sOiSongTo[pThing]
+   put sOiClockMS into sOiSongT0[pThing]
+   put max(600, 1000 * tD / 4) into sOiSongFor[pThing]
+   put atan2(item 1 of pTo - item 1 of pFrom, item 3 of pTo - item 3 of pFrom) * 180 / pi into sOiSongYaw[pThing]
+   put "fly" into sOiSongMode[pThing]
+end oiSongFly
+
+-- A fish: hidden under the sea until its time, then one leap in an arc
+-- off the shore, a splash where it leaves the water and where it falls
+function oiFishAt pThing, pT
+   local tMs, tL, tU, tX, tY, tZ, tSide, tA, tVy
+   put sOiClockMS into tMs
+   set the itemDelimiter to comma
+   if sOiFishLeap[pThing] is empty then
+      if tMs < sOiFishNext[pThing] then return empty
+      -- a leap: somewhere off one of the four shores, 3 to 7 m out
+      put random(4) into tSide
+      put (random(400) - 200) / 10 into tA
+      put 33 + random(4) into tU
+      switch tSide
+         case 1
+            put tA & comma & -tU & comma & 1 & comma & 0 into tL
+            break
+         case 2
+            put tA & comma & tU & comma & -1 & comma & 0 into tL
+            break
+         case 3
+            put -tU & comma & tA & comma & 0 & comma & 1 into tL
+            break
+         default
+            put tU & comma & tA & comma & 0 & comma & -1 into tL
+      end switch
+      put tL & comma & tMs into sOiFishLeap[pThing]
+      add 1 to sOiFishLeaps
+      oiSplash item 1 of tL, item 2 of tL
+   end if
+   put sOiFishLeap[pThing] into tL
+   put (tMs - item 5 of tL) / 1100 into tU
+   if tU >= 1 then
+      oiSplash item 1 of tL + 2.6 * item 3 of tL, item 2 of tL + 2.6 * item 4 of tL
+      put empty into sOiFishLeap[pThing]
+      put tMs + 5000 + random(7000) into sOiFishNext[pThing]
+      return empty
+   end if
+   put item 1 of tL + 2.6 * tU * item 3 of tL into tX
+   put item 2 of tL + 2.6 * tU * item 4 of tL into tZ
+   put -4.1 + 2.4 * 4 * tU * (1 - tU) into tY
+   -- nose up as it rises, down as it falls
+   put 2.4 * 4 * (1 - 2 * tU) into tVy
+   return tX & comma & tY & comma & tZ & comma & (atan2(item 3 of tL, item 4 of tL) * 180 / pi) & comma & \
+         (-atan2(tVy, 2.6) * 180 / pi) & comma & (25 * sin(2 * pi * 5 * pT)) & comma & 0
+end oiFishAt
+
+-- white water where a fish breaks the sea, heard when near
+command oiSplash pX, pZ
+   oiDustBurst pX, -4, pZ, 4, "236,246,255", true
+   oiCall "splash", pX, -4, pZ, 1
+end oiSplash
+
+-- The clouds drift to and fro, slowly, never far (a cloud that wrapped
+-- round would pop in somewhere the fog does not hide)
+command oiTickClouds pT
+   local tCloud, tI
+   put 0 into tI
+   add 1 to sOiCloudTurn
+   set the itemDelimiter to comma
+   repeat for each line tCloud in sOiClouds
+      add 1 to tI
+      -- each cloud every fourth frame is enough: a few centimetres a step
+      -- (half a metre a second at most), and a quarter of the posing
+      if sOiCloudTurn mod 4 is not tI mod 4 then next repeat
+      get oiCloudDrift(tI, pT)
+      b3kSetLookPose tCloud, item 1 of it, 0, item 2 of it
+   end repeat
+end oiTickClouds
+
+-- how far cloud pCloud (1 to 4) has drifted at pT seconds: "x,z" metres,
+-- at most 9 and 4
+function oiCloudDrift pCloud, pT
+   return 9 * sin(2 * pi * pT / 110 + 1.7 * pCloud) & comma & 4 * sin(2 * pi * pT / 150 + pCloud)
+end oiCloudDrift
+
+-- ---------------------------------------------------------------------
+-- The creatures' calls: each made once, as samples (audioxt), and
+-- cloned to play, quieter the farther off and panned to its side
+-- ---------------------------------------------------------------------
+command oiCallsMake
+   put empty into sOiCallPCM
+   if not oiSoundOn() then exit oiCallsMake
+   put oiCallSound(oiChirpPCM()) into sOiCallPCM["chirp"]
+   put oiCallSound(oiGullPCM()) into sOiCallPCM["gull"]
+end oiCallsMake
+
+function oiCallSound pData
+   local tSound
+   if pData is empty then return 0
+   put auSoundFromPCM(sOiAudio, pData, "s16", kOiMusicRate, 1) into tSound
+   if tSound is not an integer or tSound <= 0 then return 0
+   return tSound
+end oiCallSound
+
+-- a songbird's call: three quick rising whistles, s16 mono
+function oiChirpPCM
+   local tOut, tI, tN, tF, tPh, tS, tAmp, tNote, tLen
+   put empty into tOut
+   put 0 into tPh
+   repeat with tNote = 0 to 2
+      put round(0.07 * kOiMusicRate) into tLen
+      repeat with tI = 0 to tLen - 1
+         -- a whistle that sweeps up 2.6 to 4.2 kHz, softly in and out
+         put 2600 + 1600 * tI / tLen + 300 * tNote into tF
+         add 2 * pi * tF / kOiMusicRate to tPh
+         put sin(pi * tI / tLen) into tAmp
+         put round(9000 * tAmp * sin(tPh)) into tS
+         put binaryEncode("s", tS) after tOut
+      end repeat
+      -- a little gap
+      repeat with tI = 1 to round(0.035 * kOiMusicRate)
+         put binaryEncode("s", 0) after tOut
+      end repeat
+   end repeat
+   return tOut
+end oiChirpPCM
+
+-- a gull's cry: a falling, rough "kee-ow"
+function oiGullPCM
+   local tOut, tI, tLen, tF, tPh, tAmp, tU
+   put empty into tOut
+   put 0 into tPh
+   put round(0.42 * kOiMusicRate) into tLen
+   repeat with tI = 0 to tLen - 1
+      put tI / tLen into tU
+      put 1500 - 700 * tU + 120 * sin(2 * pi * 30 * tI / kOiMusicRate) into tF
+      add 2 * pi * tF / kOiMusicRate to tPh
+      put min(1, 8 * tU) * (1 - tU) into tAmp
+      -- a square-ish edge for the roughness of a gull
+      put binaryEncode("s", round(7000 * tAmp * (sin(tPh) + 0.3 * sin(3 * tPh)))) after tOut
+   end repeat
+   return tOut
+end oiGullPCM
+
+-- One call at a place: louder near, gone past 30 m; pTimes for a burst.
+-- A splash is the sea's own noise, short.
+command oiCall pName, pX, pY, pZ, pTimes
+   local tE, tD, tVol, tSound, tI, tPan, tNow, tYaw
+   put pName & return after sOiPlayed
+   add 1 to sOiCalls
+   if not oiSoundOn() then exit oiCall
+   put b3kCamEye() into tE
+   set the itemDelimiter to comma
+   if tE is empty then exit oiCall
+   put sqrt((pX - item 1 of tE) ^ 2 + (pY - item 2 of tE) ^ 2 + (pZ - item 3 of tE) ^ 2) into tD
+   if tD > 30 then exit oiCall
+   put 1 - tD / 30 into tVol
+   if pName is "splash" then
+      put auSoundNoise(sOiAudio, "pink", 0.25 * tVol) into tSound
+      if tSound is not an integer or tSound <= 0 then exit oiCall
+      put auEngineTime(sOiAudio) into tNow
+      auSoundStart tSound
+      auSoundFade tSound, 1, 0, 0.35
+      auSoundStopAt tSound, tNow + 0.35
+      put tSound & comma & round(sOiClockMS + 850) & return after sOiCallVoices
+      exit oiCall
+   end if
+   if b3kNum(sOiCallPCM[pName], 0) <= 0 then exit oiCall
+   -- left or right of the camera's heading
+   put b3kCamYaw() * pi / 180 into tYaw
+   put max(-0.8, min(0.8, ((pX - item 1 of tE) * cos(tYaw) - (pZ - item 3 of tE) * sin(tYaw)) / max(1, tD))) into tPan
+   put auEngineTime(sOiAudio) into tNow
+   repeat with tI = 0 to max(1, pTimes) - 1
+      put auSoundClone(sOiCallPCM[pName]) into tSound
+      if tSound is not an integer or tSound <= 0 then exit repeat
+      auSoundSetVolume tSound, 0.5 * tVol
+      auSoundSetPan tSound, tPan
+      auSoundSetPitch tSound, 0.9 + random(25) / 100
+      if tI is 0 then
+         auSoundStart tSound
+      else
+         auSoundStartAt tSound, tNow + 0.33 * tI
+      end if
+      put tSound & comma & round(sOiClockMS + 1000 * (0.33 * tI + 0.6) + 500) & return after sOiCallVoices
+   end repeat
+end oiCall
+
+-- now and then a gull cries: the nearest gull, if near enough to hear
+command oiTickCries
+   local tThing, tBest, tD, tE, tAt, tNear
+   if not oiSoundOn() then exit oiTickCries
+   if sOiClockMS < sOiCryAt then exit oiTickCries
+   put sOiClockMS + 6000 + random(9000) into sOiCryAt
+   put b3kCamEye() into tE
+   set the itemDelimiter to comma
+   if tE is empty then exit oiTickCries
+   put 999 into tBest
+   put empty into tNear
+   repeat for each key tThing in sOiLife
+      if sOiLife[tThing] is not "gull" or sOiLifeAt[tThing] is empty then next repeat
+      put sOiLifeAt[tThing] into tAt
+      put sqrt((item 1 of tAt - item 1 of tE) ^ 2 + (item 2 of tAt - item 2 of tE) ^ 2 + (item 3 of tAt - item 3 of tE) ^ 2) into tD
+      if tD < tBest then
+         put tD into tBest
+         put tAt into tNear
+      end if
+   end repeat
+   if tNear is not empty then oiCall "gull", item 1 of tNear, item 2 of tNear, item 3 of tNear, 1
+end oiTickCries
+
+-- the test's view of the island's life
+function oiLifeCount pKind
+   local tThing, tN
+   put 0 into tN
+   repeat for each key tThing in sOiLife
+      if pKind is empty or sOiLife[tThing] is pKind then add 1 to tN
+   end repeat
+   return tN
+end oiLifeCount
+
+function oiLifeThings pKind
+   local tThing, tOut
+   put empty into tOut
+   repeat for each key tThing in sOiLife
+      if pKind is empty or sOiLife[tThing] is pKind then put tThing & return after tOut
+   end repeat
+   delete the last char of tOut
+   return tOut
+end oiLifeThings
+
+-- where a creature was last worked out to be, "x,y,z" (seen or not)
+function oiLifeAt pThing
+   return sOiLifeAt[pThing]
+end oiLifeAt
+
+-- a call's samples, 0 for none
+function oiCallOf pName
+   return b3kNum(sOiCallPCM[pName], 0)
+end oiCallOf
+
+function oiLifeShown pThing
+   return sOiLifeShown[pThing] is true
+end oiLifeShown
+
+-- creatures posed in the last frame and in the one before: "this,last"
+function oiLifePosed
+   return b3kNum(sOiLifePosed, 0) & comma & b3kNum(sOiLifePosedLast, 0)
+end oiLifePosed
+
+function oiSongMode pThing
+   return sOiSongMode[pThing]
+end oiSongMode
+
+function oiSongFlights
+   return b3kNum(sOiSongFlights, 0)
+end oiSongFlights
+
+function oiFishLeaps
+   return b3kNum(sOiFishLeaps, 0)
+end oiFishLeaps
+
+function oiCallsHeard
+   return b3kNum(sOiCalls, 0)
+end oiCallsHeard
+
+-- =====================================================================
 -- The Kit's messages
 -- =====================================================================
 on b3kFrame
@@ -2121,6 +3091,8 @@ on b3kFrame
    oiTickSkyLift
    oiTickUpLifts
    oiTickEnemies
+   oiTickLife
+   oiTickCries
    oiTickHero tMs
    oiTickDust tMs
    oiTickOrbBob
@@ -2294,6 +3266,7 @@ command oiSparks pX, pY, pZ
       b3kSpawnBall pX + 0.3 * sin(tA * pi / 180), pY + 0.2, pZ + 0.3 * cos(tA * pi / 180), 0.16, kOiOrbColor
       put the result into tSpark
       if tSpark is empty then next repeat
+      b3kSetDetail tSpark, 8
       b3kSetGlow tSpark, "255,180,40"
       b3kSetBounce tSpark, 0.7
       b3kPush tSpark, 3.2 * sin(tA * pi / 180), 4 + (tI mod 3), 3.2 * cos(tA * pi / 180)
@@ -2732,6 +3705,7 @@ command oiSoundStart pDevice
    put 0 into sOiSeaAt
    put true into sOiSeaUp
    oiMusicMake
+   oiCallsMake
    oiSoundLabel
 end oiSoundStart
 
@@ -2933,10 +3907,11 @@ end oiMusicSound
 -- would take minutes to reach) and the sea swells again from 0
 command oiSoundRebase
    local tLine
-   repeat for each line tLine in sOiVoices
+   repeat for each line tLine in sOiVoices & return & sOiCallVoices
       if item 1 of tLine is an integer then auSoundFree item 1 of tLine
    end repeat
    put empty into sOiVoices
+   put empty into sOiCallVoices
    put 0 into sOiSeaAt
 end oiSoundRebase
 
@@ -2945,7 +3920,9 @@ command oiSoundStop
    put 0 into sOiAudio
    put 0 into sOiSea
    put 0 into sOiMusic
+   put empty into sOiCallPCM
    put empty into sOiVoices
+   put empty into sOiCallVoices
    oiSoundLabel
 end oiSoundStop
 
@@ -2963,6 +3940,12 @@ end oiSoundsPlayed
 function oiSoundVoices
    return the number of lines of sOiVoices
 end oiSoundVoices
+
+-- the birds' calls and the splashes still playing, kept apart from the
+-- game's own sounds: the island calls whenever it likes
+function oiCallVoices
+   return the number of lines of sOiCallVoices
+end oiCallVoices
 
 command oiToggleSound
    if not oiSoundOn() then
@@ -3010,15 +3993,27 @@ command oiSoundTick
       put not sOiSeaUp into sOiSeaUp
       put sOiClockMS + 4000 into sOiSeaAt
    end if
-   if sOiVoices is empty then exit oiSoundTick
-   repeat for each line tLine in sOiVoices
-      if sOiClockMS >= item 2 of tLine then
-         auSoundFree item 1 of tLine
-      else
-         put tLine & return after tKeep
-      end if
-   end repeat
-   put tKeep into sOiVoices
+   if sOiVoices is not empty then
+      repeat for each line tLine in sOiVoices
+         if sOiClockMS >= item 2 of tLine then
+            auSoundFree item 1 of tLine
+         else
+            put tLine & return after tKeep
+         end if
+      end repeat
+      put tKeep into sOiVoices
+   end if
+   if sOiCallVoices is not empty then
+      put empty into tKeep
+      repeat for each line tLine in sOiCallVoices
+         if sOiClockMS >= item 2 of tLine then
+            auSoundFree item 1 of tLine
+         else
+            put tLine & return after tKeep
+         end if
+      end repeat
+      put tKeep into sOiCallVoices
+   end if
 end oiSoundTick
 
 -- one voice: a tone or a noise that starts pAt seconds from now, lasts
@@ -3602,6 +4597,7 @@ end oiModelData
 --         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
 --         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
 --         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+--         b3kSetBrowserTurns flag / b3kBrowserTurns() /
 --         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
@@ -3628,6 +4624,7 @@ end oiModelData
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
 --         b3kSetGlow thing,color / b3kGlow(thing) /
+--         b3kSetDetail thing,sides / b3kDetail(thing) /
 --         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
 --         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
 --         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
@@ -3702,6 +4699,8 @@ local sSub, sAccum, sLast, sFrameMS, sFrames, sFpsCount, sFpsStart, sFps
 -- the step mode (empty or "fixed", or "smooth") and how far the smooth
 -- steps have taken the simulation clock from sFrames whole sixtieths
 local sStepMode, sSimDrift
+-- true when the loop gives the browser a turn inside a frame (b3kSetBrowserTurns)
+local sTurns
 local sFrameObj, sFrameAuto, sContactObj, sKillY, sKillTick
 local sLastError, sFrameError, sSpawnCount, sEvents
 -- the things: every table is keyed by the thing (its body handle)
@@ -3724,6 +4723,14 @@ local sLook, sLookMtl, sLookScale, sLookKey
 -- node, pose; [thing] -> the whole look's pose; [thing] -> true when posed
 local sPartSrc, sPartMtl, sPartScale, sPartKey, sPartNode, sPartPose
 local sPose, sPosed
+-- [thing] -> true while a posed thing's pose has changed since its nodes
+-- were last placed; a STATIC posed thing that is not stale is skipped by
+-- b3kPosedSyncAll, because nothing else moves its nodes (box3dxt's move
+-- list carries only bodies that are awake, never a static one)
+local sPoseStale
+-- [thing] -> the sides its round shape is drawn with (b3kSetDetail); none
+-- set draws the Kit's own, so a game that never calls it draws as before
+local sSides
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -4284,6 +5291,57 @@ function b3kStepMode
 end b3kStepMode
 
 /**
+Summary: Let the browser take a turn in the middle of each frame, so the page's sound plays smoothly (web only).
+
+pOn: true to give the browser its turns, false (the default) not to.
+
+Example:
+b3kSetBrowserTurns true
+
+Description:
+In a web page the engine, the picture and any sound made by an
+extension (audioxt mixes on the page's own thread there) take turns on
+one thread. A frame that runs longer than the sound's buffer lasts
+(about 46 ms), as a busy 3D frame can, leaves the sound with nothing to
+play, and it crackles. With turns on, the running loop waits 1
+millisecond in each frame, after b3kFrame and before the picture is
+rendered, which splits the frame in two; the engine gives the browser
+its turn in that wait and handles no message of the game's. The turn
+costs the frame about 4 ms, the browser's shortest timer, so a game
+with no sound has no need of it. Anywhere but a web page it does
+nothing, and the setting is kept until it is set again.
+
+References: b3kBrowserTurns (handler), b3kStart (handler)
+*/
+command b3kSetBrowserTurns pOn
+   put (pOn is true) into sTurns
+end b3kSetBrowserTurns
+
+/**
+Summary: Report whether the loop gives the browser turns, as set by <b3kSetBrowserTurns>.
+
+Returns: true or false.
+
+Example:
+put b3kBrowserTurns() into tTurns
+
+References: b3kSetBrowserTurns (handler)
+*/
+function b3kBrowserTurns
+   return sTurns is true
+end b3kBrowserTurns
+
+-- a turn for the browser inside a frame, when the game asked for them
+-- and this is a web page. Not 0 ms: the web engine yields in a wait of
+-- 0 ms only when a sixtieth has gone by since its last turn, which the
+-- first half of a frame seldom takes, so a frame of 35 ms stayed one
+-- block and the sound still broke up (measured in the gallery's player,
+-- 2026-11-27: four waits of 0 ms a frame yielded 50 times in 1100).
+private command b3kBrowserTurn
+   if sTurns is true and the platform is "HTML5" then wait 1 milliseconds
+end b3kBrowserTurn
+
+/**
 Summary: Choose the object that receives b3kFrame and b3kFell.
 
 pObject: A reference to an object, such as the long id of this card;
@@ -4438,6 +5496,8 @@ private command b3kTablesReset
    put empty into sPartPose
    put empty into sPose
    put empty into sPosed
+   put empty into sPoseStale
+   put empty into sSides
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -5280,10 +6340,12 @@ private command b3kFrameDraw
       b3kPosedSyncAll
       if sStale is true then
          put false into sStale
+         b3kBrowserTurn
          put (r3SceneRenderBegin(sScene, sViewW, sViewH) > 0) into sBegun
       end if
    else if sStale is true then
       put false into sStale
+      b3kBrowserTurn
       b3kOwnRender
    end if
 end b3kFrameDraw
@@ -6176,7 +7238,7 @@ end b3kThingAdd
 
 -- the picture of a thing, when render3dxt draws
 private command b3kVisualMake pThing
-   local tD, tKey, tMesh, tNode, tScale
+   local tD, tKey, tMesh, tNode, tScale, tSides, tD2
    if sRenderer is not "render3dxt" or sScene is empty then exit b3kVisualMake
    if sNode[pThing] is not empty then exit b3kVisualMake
    set the itemDelimiter to comma
@@ -6206,6 +7268,9 @@ private command b3kVisualMake pThing
       end if
    end if
    if tD is not "look" then
+      -- sides set by b3kSetDetail make a mesh of their own, keyed apart;
+      -- unset, the keys and the meshes are the ones they always were
+      put sSides[pThing] into tSides
       switch sGeo[pThing]
          case "box"
             put "box:" & tD into tKey
@@ -6213,18 +7278,36 @@ private command b3kVisualMake pThing
             put sMeshes[tKey] into tMesh
             break
          case "ball"
-            put "ball:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
+            if tSides is a number then
+               put "ball:" & tD & ":" & tSides into tKey
+            else
+               put "ball:" & tD into tKey
+               put 24 into tSides
+            end if
+            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, tSides, tSides div 2) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "capsule"
-            put "capsule:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
+            -- the Kit's own capsule is 20 round and 6 bands, not a quarter
+            if tSides is a number then
+               put "capsule:" & tD & ":" & tSides into tKey
+               put max(2, tSides div 4) into tD2
+            else
+               put "capsule:" & tD into tKey
+               put 20 into tSides
+               put 6 into tD2
+            end if
+            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, tSides, tD2) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "cylinder"
-            put "cylinder:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
+            if tSides is a number then
+               put "cylinder:" & tD & ":" & tSides into tKey
+            else
+               put "cylinder:" & tD into tKey
+               put 24 into tSides
+            end if
+            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, tSides) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "model"
@@ -7368,6 +8451,7 @@ command b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale
    put max(0.0001, b3kNum(pScale, 1)) into sPartScale[pThing][pPart]
    put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sPartKey[pThing][pPart]
    put true into sPosed[pThing]
+   put true into sPoseStale[pThing]
    -- the first part takes the place of the shape's picture
    if the number of lines of the keys of sPartSrc[pThing] is 1 and sLookKey[pThing] is empty then
       b3kVisualRemake pThing
@@ -7415,6 +8499,7 @@ References: b3kAddLookPart (handler), b3kSetLookPose (handler)
 command b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
    if sPartSrc[pThing][pPart] is empty then exit b3kPoseLookPart
    put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPartPose[pThing][pPart]
+   put true into sPoseStale[pThing]
    put true into sStale
 end b3kPoseLookPart
 
@@ -7456,6 +8541,7 @@ command b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
    if sKind[pThing] is empty then exit b3kSetLookPose
    put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPose[pThing]
    put true into sPosed[pThing]
+   put true into sPoseStale[pThing]
    put true into sStale
 end b3kSetLookPose
 
@@ -7542,10 +8628,17 @@ end b3kVisualRemake
 
 -- every posed thing placed, once a picture: the moves of the steps put a
 -- tagged node at its body, and a part's node is untagged; a pose changed
--- by the game a dozen times a frame is placed once, here
+-- by the game a dozen times a frame is placed once, here. A static thing
+-- whose pose has not changed since it was last placed is skipped: no
+-- step's move touches a static body's node, so placing it again would set
+-- the same numbers (an orb between bobs, a creature out of sight; the
+-- pictures are the same, 2026-11-27)
 private command b3kPosedSyncAll
    local tThing
    repeat for each key tThing in sPosed
+      if sPoseStale[tThing] is not true then
+         if b3BodyType(tThing) is 0 then next repeat
+      end if
       b3kPoseSync tThing
    end repeat
 end b3kPosedSyncAll
@@ -7593,7 +8686,63 @@ private command b3kPoseSync pThing
       put sPartScale[pThing][tPart] into tScale
       r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
    end repeat
+   -- placed: until its pose changes again, a static thing is left alone
+   delete variable sPoseStale[pThing]
 end b3kPoseSync
+
+/**
+Summary: Draw a round thing with fewer or more sides (render3dxt only).
+
+pThing: The thing: a ball, a capsule or a cylinder.
+
+pSides: How many sides go round it, 6 to 64; empty puts back the Kit's own (24 round a ball or a cylinder, 20 round a capsule).
+
+Example:
+b3kSetDetail tOrb, 12   -- a small ball far off needs no more
+
+Description:
+A ball is drawn with as many sides round it as asked and half as many
+bands from pole to pole, and a capsule with a quarter as many bands in
+each of its ends. A small or distant round thing drawn with 12 sides looks the same
+and costs a quarter of the triangles. Only the picture changes: the
+thing collides as the round shape it is. Things of one size and the
+same sides share one mesh. Boxes, cones, hulls, models and looks have
+no round sides and keep their picture; box3dxt's renderer ignores it.
+
+References: b3kDetail (handler), b3kSetLook (handler)
+*/
+command b3kSetDetail pThing, pSides
+   if sKind[pThing] is empty then exit b3kSetDetail
+   if pSides is empty then
+      if sSides[pThing] is empty then exit b3kSetDetail
+      delete variable sSides[pThing]
+   else
+      if pSides is not a number then exit b3kSetDetail
+      put max(6, min(64, round(pSides))) into pSides
+      if sSides[pThing] is pSides then exit b3kSetDetail
+      put pSides into sSides[pThing]
+   end if
+   -- a round shape's picture is made again; any other keeps its own
+   if sGeo[pThing] is among the items of "ball,capsule,cylinder" and sLookKey[pThing] is empty and sPartSrc[pThing] is not an array then
+      b3kVisualRemake pThing
+   end if
+end b3kSetDetail
+
+/**
+Summary: Report how many sides a round thing is drawn with.
+
+pThing: The thing.
+
+Returns: The sides set by <b3kSetDetail>, or empty for the Kit's own.
+
+Example:
+if b3kDetail(tOrb) is empty then b3kSetDetail tOrb, 12
+
+References: b3kSetDetail (handler)
+*/
+function b3kDetail pThing
+   return sSides[pThing]
+end b3kDetail
 
 /**
 Summary: Show or hide a thing's picture.
@@ -8207,6 +9356,8 @@ command b3kRemove pThing
    delete variable sPartPose[pThing]
    delete variable sPose[pThing]
    delete variable sPosed[pThing]
+   delete variable sPoseStale[pThing]
+   delete variable sSides[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]
