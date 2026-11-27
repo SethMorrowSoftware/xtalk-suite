@@ -112,6 +112,7 @@ command prRunAll pR3, pB3, pGp, pAu
    prFall
    prPad
    prLevels
+   prLife pAu
    prToys
    prCorners
    prKick
@@ -163,6 +164,7 @@ command prBuild pR3
    -- on one thread inside the frame
    prCheck "this engine is not a web page", oiOnWeb() is false, the platform
    prCheck "the game spends each frame's time in equal steps", b3kStepMode() is "smooth", b3kStepMode()
+   prCheck "and gives the browser a turn each frame, so a web page's sound plays smoothly", b3kBrowserTurns() is true, b3kBrowserTurns()
    -- the dark-appearance rule: a control that leaves its colours to the
    -- appearance draws light words in the dark one, white on the light page
    put empty into tBad
@@ -211,8 +213,8 @@ command prBuild pR3
       prCheck "the island has its orb " & tName, b3kThingNamed("orb " & tName) is not empty, tName
    end repeat
    put b3kThingCount() into tCount
-   prCheck "the island is 233 things with the player", tCount is 233, tCount
-   prCheck "C may drop sixty more", oiMaxThings() is 291, oiMaxThings()
+   prCheck "the island is 249 things with the player (16 of them creatures)", tCount is 249, tCount
+   prCheck "C may drop sixty more", oiMaxThings() is 307, oiMaxThings()
    prCheck "the player stands at the start", b3kPlayer() is not empty and \
          prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 22, 0.01), b3kPosition(b3kPlayer())
    prCheck "the player walks faster than the Kit's default", b3kPlayerGet("moveSpeed") is 6.5, b3kPlayerGet("moveSpeed")
@@ -429,13 +431,13 @@ command prButtonsAndKeys
    prCheck "and ticks again", the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
    dispatch "keyDown" to stack "OrbIsland" with "r"
-   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 233 and b3kIsRunning() is true, \
+   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 249 and b3kIsRunning() is true, \
          prField("oiScore") && b3kThingCount() && b3kIsRunning()
    prCheck "with the clock and falls at zero", prField("oiTime") is "Time  0.0 s      Falls  0", prField("oiTime")
    b3kPause
    prSteps 30
    dispatch "mouseUp" to button "oiRestart" of card 1 of stack "OrbIsland" with 1
-   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 233, \
+   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 249, \
          prField("oiScore") && b3kThingCount()
    b3kPause
    dispatch "keyDown" to stack "OrbIsland" with "a"
@@ -546,6 +548,177 @@ command prLevels
    b3kPlayerRespawn 0, 1, 22
    prSteps 30
 end prLevels
+
+-- ---------------------------------------------------------------------
+-- The living island (version 1.5): gulls, songbirds, butterflies, fish
+-- and the clouds. The creatures are not physics: each is a still sensor
+-- far above the island, drawn where it is by its pose.
+command prLife pAu
+   local tThing, tOk, tAt, tNext, tYaw, tBad, tSong, tHome, tBest, tD, tI
+   local tShown, tHidden, tLeaps, tDrift, tMax, tCam
+   prCheck "4 gulls, 5 songbirds, 5 butterflies and 2 fish", oiLifeCount("gull") is 4 and oiLifeCount("song") is 5 and \
+         oiLifeCount("fly") is 5 and oiLifeCount("fish") is 2 and oiLifeCount() is 16, \
+         oiLifeCount("gull") && oiLifeCount("song") && oiLifeCount("fly") && oiLifeCount("fish")
+   put true into tOk
+   repeat for each line tThing in oiLifeThings()
+      if b3kKind(tThing) is not "sensor" or b3kType(tThing) is not "static" or not prNear(b3kY(tThing), 80, 0.001) then
+         put false into tOk
+         put tThing && b3kKind(tThing) && b3kType(tThing) && b3kY(tThing) into tBad
+      end if
+   end repeat
+   prCheck "every creature is a still sensor 80 m up, out of everyone's reach", tOk, tBad
+   -- a gull keeps to the sky over the island and flies the way it faces
+   put true into tOk
+   repeat for each line tThing in oiLifeThings("gull")
+      repeat with tI = 0 to 40
+         put oiGullAt(tThing, tI * 1.7) into tAt
+         put oiGullAt(tThing, tI * 1.7 + 0.05) into tNext
+         put item 4 of tAt into tYaw
+         put atan2(item 1 of tNext - item 1 of tAt, item 3 of tNext - item 3 of tAt) * 180 / pi into tD
+         put abs(tD - tYaw) mod 360 into tD
+         if tD > 180 then put 360 - tD into tD
+         if item 2 of tAt < 19 or item 2 of tAt > 31 or abs(item 1 of tAt) > 50 or abs(item 3 of tAt) > 50 or tD > 3 then
+            put false into tOk
+            put tAt && tD into tBad
+         end if
+      end repeat
+   end repeat
+   prCheck "the gulls wheel 19 to 31 m up over the island, facing the way they fly", tOk, tBad
+   put true into tOk
+   repeat for each line tThing in oiLifeThings("fly")
+      repeat with tI = 0 to 60
+         put oiFlyAt(tThing, tI * 0.83) into tAt
+         -- above the grass (or the level it flutters over), wings beating
+         -- within their swing
+         if item 2 of tAt < 0.2 or (item 2 of tAt > 7 and item 2 of tAt < 9.2) or item 6 of tAt < -31 or item 6 of tAt > 81 then
+            put false into tOk
+            put tAt into tBad
+         end if
+      end repeat
+   end repeat
+   prCheck "the butterflies flutter above the ground, wings beating", tOk, tBad
+   -- the camera at the start looks north: some life is in sight and posed,
+   -- the rest hidden and left alone
+   b3kPlayerRespawn 0, 1, 22
+   b3kCamOrbit 0, 17, 10, 0, 1.8, 22
+   prSteps 3
+   put 0 into tShown
+   put 0 into tHidden
+   repeat for each line tThing in oiLifeThings()
+      if oiLifeShown(tThing) and b3kIsVisible(tThing) then add 1 to tShown
+      if not oiLifeShown(tThing) and not b3kIsVisible(tThing) then add 1 to tHidden
+   end repeat
+   prInfo "creatures in sight at the start: " & tShown & "; posed in the last frame: " & oiLifePosed()
+   -- far life is posed every other picture and an unchanged pose not at
+   -- all, so two pictures together pose some and never more than is seen
+   prCheck "life in sight is drawn and posed", tShown > 0 and item 1 of oiLifePosed() + item 2 of oiLifePosed() > 0 and \
+         item 1 of oiLifePosed() <= tShown and item 2 of oiLifePosed() <= tShown, tShown && oiLifePosed()
+   prCheck "and life out of sight is hidden", tHidden > 0 and tShown + tHidden is 16, tShown && tHidden
+   -- a songbird: the robin by the first stand of trees
+   put 999 into tBest
+   repeat for each line tThing in oiLifeThings("song")
+      put oiLifeAt(tThing) into tAt
+      put sqrt((item 1 of tAt + 7) ^ 2 + (item 3 of tAt - 22.5) ^ 2) into tD
+      if tD < tBest then
+         put tD into tBest
+         put tThing into tSong
+      end if
+   end repeat
+   prCheck "a songbird hops on the grass near its home", tBest < 1.5 and oiSongMode(tSong) is "ground" and \
+         prNear(item 2 of oiLifeAt(tSong), 0.05, 0.16), tBest && oiSongMode(tSong) && oiLifeAt(tSong)
+   put oiLifeAt(tSong) into tHome
+   put item 1 of tHome & comma & item 3 of tHome into tHome
+   put oiSongFlights() into tI
+   b3kPlayerRespawn item 1 of tHome + 1.2, 1, item 2 of tHome
+   prSteps 4
+   prCheck "the player comes near and it flies off", oiSongMode(tSong) is "fly" and oiSongFlights() is tI + 1, \
+         oiSongMode(tSong) && oiSongFlights()
+   prCheck "calling", "chirp" is among the lines of oiSoundsPlayed(), prLine(oiSoundsPlayed())
+   put 0 into tI
+   repeat while oiSongMode(tSong) is "fly" and tI < 400
+      prSteps 5
+      add 5 to tI
+   end repeat
+   prCheck "up to the tip of a tree", oiSongMode(tSong) is "perch" and prNear(item 2 of oiLifeAt(tSong), item 2 of oiTreeTop(1), 0.01), \
+         oiSongMode(tSong) && oiLifeAt(tSong) && oiTreeTop(1)
+   -- while the player stays, it stays up there
+   prSteps 400
+   prCheck "where it stays while the player is near", oiSongMode(tSong) is "perch", oiSongMode(tSong)
+   b3kPlayerRespawn 0, 1, 0
+   put 0 into tI
+   repeat while oiSongMode(tSong) is not "ground" and tI < 2400
+      prSteps 10
+      add 10 to tI
+   end repeat
+   prSteps 2
+   put oiLifeAt(tSong) into tAt
+   prCheck "once the player has gone it comes back down", oiSongMode(tSong) is "ground" and \
+         sqrt((item 1 of tAt - item 1 of tHome) ^ 2 + (item 3 of tAt - item 2 of tHome) ^ 2) < 1.6 and prNear(item 2 of tAt, 0.05, 0.16), \
+         oiSongMode(tSong) && tAt && tI
+   put true into tOk
+   repeat for each line tThing in oiLifeThings("song")
+      if tThing is not tSong and oiSongMode(tThing) is not "ground" then
+         put false into tOk
+         put tThing && oiSongMode(tThing) && oiLifeAt(tThing) into tBad
+      end if
+   end repeat
+   prCheck "and the birds the player never went near stayed on the ground", tOk, tBad
+   -- the fish: two more leaps, with splashes
+   put oiFishLeaps() into tLeaps
+   put 0 into tI
+   repeat while oiFishLeaps() < tLeaps + 2 and tI < 1500
+      prSteps 10
+      add 10 to tI
+   end repeat
+   prCheck "fish leap from the sea", oiFishLeaps() >= tLeaps + 2, oiFishLeaps() && tI
+   prCheck "with a splash", "splash" is among the lines of oiSoundsPlayed(), prLine(oiSoundsPlayed())
+   put true into tOk
+   repeat for each line tThing in oiLifeThings("fish")
+      put oiLifeAt(tThing) into tAt
+      if tAt is not empty then
+         -- off the shore, and never higher than 2.5 m over the sea
+         if max(abs(item 1 of tAt), abs(item 3 of tAt)) < 32 or item 2 of tAt > -1.6 then
+            put false into tOk
+            put tAt into tBad
+         end if
+      end if
+   end repeat
+   prCheck "off the shore, a leap never higher than 2.5 m over the sea", tOk, tBad
+   -- the clouds drift, a little
+   put 0 into tMax
+   put true into tOk
+   repeat with tI = 1 to 4
+      put 0 into tD
+      repeat while tD <= 300
+         put oiCloudDrift(tI, tD) into tDrift
+         if abs(item 1 of tDrift) > 9 or abs(item 2 of tDrift) > 4 then put false into tOk
+         put max(tMax, abs(item 1 of tDrift)) into tMax
+         add 7 to tD
+      end repeat
+   end repeat
+   prCheck "the clouds drift to and fro, never more than 9 m", tOk and tMax > 6, tMax
+   if pAu is true then
+      prCheck "the birds' calls are made once, as samples", oiCallOf("chirp") > 0 and oiCallOf("gull") > 0, \
+            oiCallOf("chirp") && oiCallOf("gull")
+      prCheck "a chirp is three short whistles", prNear(auSoundLength(oiCallOf("chirp")), 0.315, 0.01), auSoundLength(oiCallOf("chirp"))
+      prCheck "a gull's cry, under half a second", prNear(auSoundLength(oiCallOf("gull")), 0.42, 0.01), auSoundLength(oiCallOf("gull"))
+      prCheck "calls were heard", oiCallsHeard() > 0, oiCallsHeard()
+      -- after a minute of birdsong and splashes, only the last few still
+      -- play: each is freed once it is done, apart from the game's sounds
+      prCheck "and freed once played, never piling up", oiCallVoices() <= 6, oiCallVoices()
+   else
+      prCheck "without audioxt the birds are silent, and nothing throws", oiCallOf("chirp") is 0, oiCallOf("chirp")
+   end if
+   -- a picture drawn now, with still things skipped, is the one placing
+   -- every thing's nodes again gives
+   b3kDraw
+   put the imageData of image "b3kView" of card 1 of stack "OrbIsland" into tCam
+   b3kSync
+   prCheck "skipping still things leaves the picture as placing them all again gives it", \
+         the imageData of image "b3kView" of card 1 of stack "OrbIsland" is tCam, "the pictures differ"
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prLife
 
 -- ---------------------------------------------------------------------
 -- the music: a tune audioxt composes each session in an offline engine
@@ -791,11 +964,12 @@ end prMotion
 -- a found orb bursts into eight sparks that are gone in a second and a half
 command prSparks
    local tCount
-   put b3kThingCount() into tCount
+   -- a fish's splash may come or go meanwhile: its puffs are not counted
+   put b3kThingCount() - oiSplashCount() into tCount
    oiSparks 0, 2, 10
-   prCheck "a burst is eight sparks", b3kThingCount() is tCount + 8, tCount && b3kThingCount()
+   prCheck "a burst is eight sparks", b3kThingCount() - oiSplashCount() is tCount + 8, tCount && b3kThingCount() && oiSplashCount()
    prSteps 100
-   prCheck "and they are gone a second and a half later", b3kThingCount() is tCount, tCount && b3kThingCount()
+   prCheck "and they are gone a second and a half later", b3kThingCount() - oiSplashCount() is tCount, tCount && b3kThingCount() && oiSplashCount()
 end prSparks
 
 -- every sound the game plays is asked for (whether or not audioxt is

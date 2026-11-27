@@ -727,6 +727,28 @@ draws. The loop does both by itself.
   took 12 ms to redraw each time its words changed (headless Chromium,
   2026-11-26), and four writes a second were its hitches. Write a score or a
   clock once a second there, and only when the words change.
+- **Round things are drawn with 24 sides** (a ball also with 12 bands from
+  pole to pole: some 500 triangles). A small or far ball needs far fewer:
+  `b3kSetDetail thing, 12` draws it with a quarter of the triangles, and the
+  same call takes a capsule or a cylinder. Orb Island's 26 orbs were two
+  fifths of the triangles in its start view until they took 12 sides (version
+  1.5, 2026-11-27). It changes only the picture, and only for the thing it is
+  given: a game that never calls it draws exactly as before.
+- **A posed thing that stands still costs nothing.** Every picture places
+  each posed thing's nodes (`b3kSetLookPose`, `b3kPoseLookPart`), but a
+  static thing whose pose has not changed since it was last placed is
+  skipped: nothing else can have moved it. So a creature drawn by its pose
+  on a still anchor (Orb Island's birds) costs the frame only while the game
+  poses it; hide it and stop posing it when it is out of sight.
+- **Sound in a web page needs a turn.** There audioxt mixes on the page's
+  own thread, between the engine's turns, about 46 ms at a time; a frame
+  longer than that (a busy 3D frame runs 35 to 90 ms) leaves it nothing to
+  play, and it crackles. `b3kSetBrowserTurns true` makes the loop wait 1 ms
+  in each frame, before the picture is rendered, so the browser feeds the
+  sound halfway through. In the gallery's player Orb Island lost 3 to 5
+  stretches of sound in ten seconds of walking without it and none with it
+  (headless Chromium, 2026-11-27), for about 4 ms a frame (two pictures a
+  second of 25). It is off unless a game asks, and does nothing off the web.
 - `b3kStats()` is one line: pictures drawn in the last second, things, bodies
   awake, the renderer, and whether a frame has caught an error. Put it in a
   field while you build a game.
@@ -755,7 +777,10 @@ error in the extension's typed interface). And raw calls are in Box3D's terms
 
 `examples/box3dxt-orb-island.livecodescript` is a complete game on the Kit:
 walk a floating island 60 metres square, find its 26 golden orbs, and do not
-fall into the sea. The island has three levels in height (version 1.4): the
+fall into the sea. Version 1.5 makes it a living island: gulls wheel over it,
+songbirds hop and peck on the grass and fly up into the trees when you come
+near, butterflies flutter over the tufts, fish leap off the shore and the
+clouds drift, with the birds' calls. The island has three levels in height (version 1.4): the
 shore, two terraces 9 metres up joined by a bridge, and a summit 17 metres
 up; a stair of slabs, two lifts, a second jump pad and a climb lead from one
 to the next, two flying enemies patrol the upper levels, and a feather found
@@ -785,6 +810,10 @@ Each part of the Kit carries part of the game:
 | kicking a crate with the mouse | `b3kThingAt`, unless `b3kCamDragged()` |
 | the flying enemies, gliding to and fro and knocking the player back | `b3kAddPlatform` with `b3kGlideTo` and `b3kSetRotation`, then `b3kSetVelocity` on the player |
 | the second jump pad and the feather | sensors, `b3kPlayerJump` with a speed, `b3kPlayerSet "airJumps"` |
+| gulls, songbirds, butterflies and leaping fish, each a still sensor drawn where it flies by its pose | `b3kAddSensorBall`, `b3kAddLookPart` with OBJ text the game writes, `b3kSetLookPose`, `b3kPoseLookPart`, `b3kSetVisible` |
+| the drifting clouds | `b3kSetLookPose` on a still sensor |
+| orbs, lanterns, dust and sparks drawn with fewer sides | `b3kSetDetail` |
+| music and footsteps that play smoothly in a web page | `b3kSetBrowserTurns` |
 
 Two more of the suite's extensions join in when they are loaded, and the
 game runs without them: **gamepadxt** (a controller walks, looks, jumps and

@@ -39,6 +39,7 @@
 --         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
 --         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
 --         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+--         b3kSetBrowserTurns flag / b3kBrowserTurns() /
 --         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 -- TARGETS b3kFrameTarget obj / b3kContactTarget obj
 -- VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
@@ -65,6 +66,7 @@
 -- LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
 --         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
 --         b3kSetGlow thing,color / b3kGlow(thing) /
+--         b3kSetDetail thing,sides / b3kDetail(thing) /
 --         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
 --         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
 --         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
@@ -139,6 +141,8 @@ local sSub, sAccum, sLast, sFrameMS, sFrames, sFpsCount, sFpsStart, sFps
 -- the step mode (empty or "fixed", or "smooth") and how far the smooth
 -- steps have taken the simulation clock from sFrames whole sixtieths
 local sStepMode, sSimDrift
+-- true when the loop gives the browser a turn inside a frame (b3kSetBrowserTurns)
+local sTurns
 local sFrameObj, sFrameAuto, sContactObj, sKillY, sKillTick
 local sLastError, sFrameError, sSpawnCount, sEvents
 -- the things: every table is keyed by the thing (its body handle)
@@ -161,6 +165,14 @@ local sLook, sLookMtl, sLookScale, sLookKey
 -- node, pose; [thing] -> the whole look's pose; [thing] -> true when posed
 local sPartSrc, sPartMtl, sPartScale, sPartKey, sPartNode, sPartPose
 local sPose, sPosed
+-- [thing] -> true while a posed thing's pose has changed since its nodes
+-- were last placed; a STATIC posed thing that is not stale is skipped by
+-- b3kPosedSyncAll, because nothing else moves its nodes (box3dxt's move
+-- list carries only bodies that are awake, never a static one)
+local sPoseStale
+-- [thing] -> the sides its round shape is drawn with (b3kSetDetail); none
+-- set draws the Kit's own, so a game that never calls it draws as before
+local sSides
 -- the camera: a target, an orbit round it and a lens
 local sCamTarget, sCamYaw, sCamPitch, sCamDist, sCamFov
 local sCamEye, sCamF, sCamR, sCamU, sCamLast
@@ -721,6 +733,57 @@ function b3kStepMode
 end b3kStepMode
 
 /**
+Summary: Let the browser take a turn in the middle of each frame, so the page's sound plays smoothly (web only).
+
+pOn: true to give the browser its turns, false (the default) not to.
+
+Example:
+b3kSetBrowserTurns true
+
+Description:
+In a web page the engine, the picture and any sound made by an
+extension (audioxt mixes on the page's own thread there) take turns on
+one thread. A frame that runs longer than the sound's buffer lasts
+(about 46 ms), as a busy 3D frame can, leaves the sound with nothing to
+play, and it crackles. With turns on, the running loop waits 1
+millisecond in each frame, after b3kFrame and before the picture is
+rendered, which splits the frame in two; the engine gives the browser
+its turn in that wait and handles no message of the game's. The turn
+costs the frame about 4 ms, the browser's shortest timer, so a game
+with no sound has no need of it. Anywhere but a web page it does
+nothing, and the setting is kept until it is set again.
+
+References: b3kBrowserTurns (handler), b3kStart (handler)
+*/
+command b3kSetBrowserTurns pOn
+   put (pOn is true) into sTurns
+end b3kSetBrowserTurns
+
+/**
+Summary: Report whether the loop gives the browser turns, as set by <b3kSetBrowserTurns>.
+
+Returns: true or false.
+
+Example:
+put b3kBrowserTurns() into tTurns
+
+References: b3kSetBrowserTurns (handler)
+*/
+function b3kBrowserTurns
+   return sTurns is true
+end b3kBrowserTurns
+
+-- a turn for the browser inside a frame, when the game asked for them
+-- and this is a web page. Not 0 ms: the web engine yields in a wait of
+-- 0 ms only when a sixtieth has gone by since its last turn, which the
+-- first half of a frame seldom takes, so a frame of 35 ms stayed one
+-- block and the sound still broke up (measured in the gallery's player,
+-- 2026-11-27: four waits of 0 ms a frame yielded 50 times in 1100).
+private command b3kBrowserTurn
+   if sTurns is true and the platform is "HTML5" then wait 1 milliseconds
+end b3kBrowserTurn
+
+/**
 Summary: Choose the object that receives b3kFrame and b3kFell.
 
 pObject: A reference to an object, such as the long id of this card;
@@ -875,6 +938,8 @@ private command b3kTablesReset
    put empty into sPartPose
    put empty into sPose
    put empty into sPosed
+   put empty into sPoseStale
+   put empty into sSides
    put empty into sGeo
    put empty into sOwnLook
    put empty into sGlide
@@ -1717,10 +1782,12 @@ private command b3kFrameDraw
       b3kPosedSyncAll
       if sStale is true then
          put false into sStale
+         b3kBrowserTurn
          put (r3SceneRenderBegin(sScene, sViewW, sViewH) > 0) into sBegun
       end if
    else if sStale is true then
       put false into sStale
+      b3kBrowserTurn
       b3kOwnRender
    end if
 end b3kFrameDraw
@@ -2613,7 +2680,7 @@ end b3kThingAdd
 
 -- the picture of a thing, when render3dxt draws
 private command b3kVisualMake pThing
-   local tD, tKey, tMesh, tNode, tScale
+   local tD, tKey, tMesh, tNode, tScale, tSides, tD2
    if sRenderer is not "render3dxt" or sScene is empty then exit b3kVisualMake
    if sNode[pThing] is not empty then exit b3kVisualMake
    set the itemDelimiter to comma
@@ -2643,6 +2710,9 @@ private command b3kVisualMake pThing
       end if
    end if
    if tD is not "look" then
+      -- sides set by b3kSetDetail make a mesh of their own, keyed apart;
+      -- unset, the keys and the meshes are the ones they always were
+      put sSides[pThing] into tSides
       switch sGeo[pThing]
          case "box"
             put "box:" & tD into tKey
@@ -2650,18 +2720,36 @@ private command b3kVisualMake pThing
             put sMeshes[tKey] into tMesh
             break
          case "ball"
-            put "ball:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, 24, 12) into sMeshes[tKey]
+            if tSides is a number then
+               put "ball:" & tD & ":" & tSides into tKey
+            else
+               put "ball:" & tD into tKey
+               put 24 into tSides
+            end if
+            if sMeshes[tKey] is empty then put r3MeshSphere(item 1 of tD, tSides, tSides div 2) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "capsule"
-            put "capsule:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, 20, 6) into sMeshes[tKey]
+            -- the Kit's own capsule is 20 round and 6 bands, not a quarter
+            if tSides is a number then
+               put "capsule:" & tD & ":" & tSides into tKey
+               put max(2, tSides div 4) into tD2
+            else
+               put "capsule:" & tD into tKey
+               put 20 into tSides
+               put 6 into tD2
+            end if
+            if sMeshes[tKey] is empty then put r3MeshCapsule(item 1 of tD, item 2 of tD, tSides, tD2) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "cylinder"
-            put "cylinder:" & tD into tKey
-            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, 24) into sMeshes[tKey]
+            if tSides is a number then
+               put "cylinder:" & tD & ":" & tSides into tKey
+            else
+               put "cylinder:" & tD into tKey
+               put 24 into tSides
+            end if
+            if sMeshes[tKey] is empty then put r3MeshCylinder(item 1 of tD, item 2 of tD, tSides) into sMeshes[tKey]
             put sMeshes[tKey] into tMesh
             break
          case "model"
@@ -3805,6 +3893,7 @@ command b3kAddLookPart pThing, pPart, pSource, pMaterials, pScale
    put max(0.0001, b3kNum(pScale, 1)) into sPartScale[pThing][pPart]
    put "look:" & base64Encode(md5Digest(pSource & numToChar(1) & pMaterials)) into sPartKey[pThing][pPart]
    put true into sPosed[pThing]
+   put true into sPoseStale[pThing]
    -- the first part takes the place of the shape's picture
    if the number of lines of the keys of sPartSrc[pThing] is 1 and sLookKey[pThing] is empty then
       b3kVisualRemake pThing
@@ -3852,6 +3941,7 @@ References: b3kAddLookPart (handler), b3kSetLookPose (handler)
 command b3kPoseLookPart pThing, pPart, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
    if sPartSrc[pThing][pPart] is empty then exit b3kPoseLookPart
    put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPartPose[pThing][pPart]
+   put true into sPoseStale[pThing]
    put true into sStale
 end b3kPoseLookPart
 
@@ -3893,6 +3983,7 @@ command b3kSetLookPose pThing, pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz
    if sKind[pThing] is empty then exit b3kSetLookPose
    put b3kPoseText(pX, pY, pZ, pRx, pRy, pRz, pSx, pSy, pSz) into sPose[pThing]
    put true into sPosed[pThing]
+   put true into sPoseStale[pThing]
    put true into sStale
 end b3kSetLookPose
 
@@ -3979,10 +4070,17 @@ end b3kVisualRemake
 
 -- every posed thing placed, once a picture: the moves of the steps put a
 -- tagged node at its body, and a part's node is untagged; a pose changed
--- by the game a dozen times a frame is placed once, here
+-- by the game a dozen times a frame is placed once, here. A static thing
+-- whose pose has not changed since it was last placed is skipped: no
+-- step's move touches a static body's node, so placing it again would set
+-- the same numbers (an orb between bobs, a creature out of sight; the
+-- pictures are the same, 2026-11-27)
 private command b3kPosedSyncAll
    local tThing
    repeat for each key tThing in sPosed
+      if sPoseStale[tThing] is not true then
+         if b3BodyType(tThing) is 0 then next repeat
+      end if
       b3kPoseSync tThing
    end repeat
 end b3kPosedSyncAll
@@ -4030,7 +4128,63 @@ private command b3kPoseSync pThing
       put sPartScale[pThing][tPart] into tScale
       r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
    end repeat
+   -- placed: until its pose changes again, a static thing is left alone
+   delete variable sPoseStale[pThing]
 end b3kPoseSync
+
+/**
+Summary: Draw a round thing with fewer or more sides (render3dxt only).
+
+pThing: The thing: a ball, a capsule or a cylinder.
+
+pSides: How many sides go round it, 6 to 64; empty puts back the Kit's own (24 round a ball or a cylinder, 20 round a capsule).
+
+Example:
+b3kSetDetail tOrb, 12   -- a small ball far off needs no more
+
+Description:
+A ball is drawn with as many sides round it as asked and half as many
+bands from pole to pole, and a capsule with a quarter as many bands in
+each of its ends. A small or distant round thing drawn with 12 sides looks the same
+and costs a quarter of the triangles. Only the picture changes: the
+thing collides as the round shape it is. Things of one size and the
+same sides share one mesh. Boxes, cones, hulls, models and looks have
+no round sides and keep their picture; box3dxt's renderer ignores it.
+
+References: b3kDetail (handler), b3kSetLook (handler)
+*/
+command b3kSetDetail pThing, pSides
+   if sKind[pThing] is empty then exit b3kSetDetail
+   if pSides is empty then
+      if sSides[pThing] is empty then exit b3kSetDetail
+      delete variable sSides[pThing]
+   else
+      if pSides is not a number then exit b3kSetDetail
+      put max(6, min(64, round(pSides))) into pSides
+      if sSides[pThing] is pSides then exit b3kSetDetail
+      put pSides into sSides[pThing]
+   end if
+   -- a round shape's picture is made again; any other keeps its own
+   if sGeo[pThing] is among the items of "ball,capsule,cylinder" and sLookKey[pThing] is empty and sPartSrc[pThing] is not an array then
+      b3kVisualRemake pThing
+   end if
+end b3kSetDetail
+
+/**
+Summary: Report how many sides a round thing is drawn with.
+
+pThing: The thing.
+
+Returns: The sides set by <b3kSetDetail>, or empty for the Kit's own.
+
+Example:
+if b3kDetail(tOrb) is empty then b3kSetDetail tOrb, 12
+
+References: b3kSetDetail (handler)
+*/
+function b3kDetail pThing
+   return sSides[pThing]
+end b3kDetail
 
 /**
 Summary: Show or hide a thing's picture.
@@ -4644,6 +4798,8 @@ command b3kRemove pThing
    delete variable sPartPose[pThing]
    delete variable sPose[pThing]
    delete variable sPosed[pThing]
+   delete variable sPoseStale[pThing]
+   delete variable sSides[pThing]
    delete variable sScale[pThing]
    delete variable sVisible[pThing]
    delete variable sSensorOf[pThing]

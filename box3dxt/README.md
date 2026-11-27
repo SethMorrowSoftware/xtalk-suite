@@ -151,6 +151,20 @@ Joined the suite on 2026-11-20. What has run, and where:
   was not loaded, a click knocked crates over and a drag turned the camera. Neither has run
   in an IDE: a real window, keyboard and mouse there are verified statically; needs an OXT
   pass (the game's header lists what to look at).
+- **Orb Island 1.5 and the Kit's detail, still poses and browser turns** (2026-11-27): a
+  living island (four gulls, five songbirds that fly up into the trees when the player
+  comes near and come back down, five butterflies, two fish that leap with a splash,
+  drifting clouds, the birds' calls made once as samples), `b3kSetDetail` (round things
+  with fewer sides), still posed things no longer placed again each picture, and
+  `b3kSetBrowserTurns`, which stopped the music and footsteps crackling in a web page while
+  the player walked. On OXT-Beyond 0.2.8-dp.2.1's Linux server engine (9.7.1-BeyondEngine)
+  with locally built libraries: `tests/engine-kit.lc` passed 278 checks with render3dxt and
+  238 without, and `tests/engine-demo.lc` 287 with render3dxt and audioxt (its silent
+  device), 262 with box3dxt alone and 6 with no extension. In the gallery's web Stack Player
+  (web-2026.11.22, headless Chromium) the page's sound callbacks ran on time through two
+  runs of walking (3 to 5 late in ten seconds before) at 22 to 25 pictures a second, where
+  1.4 drew 24 to 27. Heard by ear, and in a desktop IDE: verified statically; needs an OXT
+  pass.
 - **Orb Island 1.4** (2026-11-27): three levels in height on the one island (the shore,
   terraces at 9 m, a summit at 17 m), 26 orbs, two flying enemies, a feather that gives a
   double jump, two more lifts, a second jump pad, six more of Kenney's CC0 models, and a tune

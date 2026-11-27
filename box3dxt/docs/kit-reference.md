@@ -1,6 +1,6 @@
 # box3dxt Kit reference (`b3k...`)
 
-The 180 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
+The 184 handlers of the Kit's API, from the doc blocks in `src/box3dxt-kit.livecodescript`
 (OXT-Beyond's dictionary reads the same blocks; `tools/build-kit-reference.py` writes this
 file from them, and its `--check` is a gate). New to the Kit? Read
 [kit-guide.md](kit-guide.md) first: it goes from an empty stack to a game. The raw binding
@@ -42,6 +42,7 @@ WORLD   b3kSetup [gx,gy,gz] / b3kQuickStart [gy] / b3kStart / b3kStop /
         b3kPause / b3kResume / b3kStepOnce / b3kIsRunning() / b3kIsPaused() /
         b3kClear / b3kTeardown / b3kSetGravity gx,gy,gz / b3kGravity() /
         b3kSetSubsteps n / b3kSetStepMode fixed|smooth / b3kStepMode() /
+        b3kSetBrowserTurns flag / b3kBrowserTurns() /
         b3kKillFloor y / b3kWorld() / b3kEnsureNativeLib
 TARGETS b3kFrameTarget obj / b3kContactTarget obj
 VIEW    b3kViewMake l,t,w,h / b3kViewAttach img / b3kView() /
@@ -68,6 +69,7 @@ SENSOR  b3kAddSensorBox x,y,z,w,h,d / b3kAddSensorBall x,y,z,diam
 LOOK    b3kSetColor thing,color / b3kColor(thing) / b3kSetChecker thing,a,b[,cells] /
         b3kSetTexture thing,path / b3kSetVisible thing,flag / b3kIsVisible(thing) /
         b3kSetGlow thing,color / b3kGlow(thing) /
+        b3kSetDetail thing,sides / b3kDetail(thing) /
         b3kSetLook thing,objTextOrPath[,mtlText,scale] /
         b3kAddLookPart thing,part,objTextOrPath[,mtlText,scale] /
         b3kPoseLookPart thing,part,x,y,z[,rx,ry,rz,sx,sy,sz] /
@@ -475,6 +477,36 @@ put b3kStepMode() into field "Mode"
 ```
 
 See also: [`b3kSetStepMode`](#b3ksetstepmode)
+
+### `b3kSetBrowserTurns`
+
+`b3kSetBrowserTurns pOn`
+
+Let the browser take a turn in the middle of each frame, so the page's sound plays smoothly (web only).
+
+- `pOn`: true to give the browser its turns, false (the default) not to.
+
+In a web page the engine, the picture and any sound made by an extension (audioxt mixes on the page's own thread there) take turns on one thread. A frame that runs longer than the sound's buffer lasts (about 46 ms), as a busy 3D frame can, leaves the sound with nothing to play, and it crackles. With turns on, the running loop waits 1 millisecond in each frame, after b3kFrame and before the picture is rendered, which splits the frame in two; the engine gives the browser its turn in that wait and handles no message of the game's. The turn costs the frame about 4 ms, the browser's shortest timer, so a game with no sound has no need of it. Anywhere but a web page it does nothing, and the setting is kept until it is set again.
+
+```
+b3kSetBrowserTurns true
+```
+
+See also: [`b3kBrowserTurns`](#b3kbrowserturns), [`b3kStart`](#b3kstart)
+
+### `b3kBrowserTurns`
+
+`b3kBrowserTurns()`
+
+Report whether the loop gives the browser turns, as set by [`b3kSetBrowserTurns`](#b3ksetbrowserturns).
+
+Returns: true or false.
+
+```
+put b3kBrowserTurns() into tTurns
+```
+
+See also: [`b3kSetBrowserTurns`](#b3ksetbrowserturns)
 
 ### `b3kFrameTarget`
 
@@ -1869,6 +1901,39 @@ b3kSetLookPose b3kPlayer(), 0, -0.1, 0, 0, 0, 0, 1.2, 0.8, 1.2
 ```
 
 See also: [`b3kSetLook`](#b3ksetlook), [`b3kPoseLookPart`](#b3kposelookpart)
+
+### `b3kSetDetail`
+
+`b3kSetDetail pThing, pSides`
+
+Draw a round thing with fewer or more sides (render3dxt only).
+
+- `pThing`: The thing: a ball, a capsule or a cylinder.
+- `pSides`: How many sides go round it, 6 to 64; empty puts back the Kit's own (24 round a ball or a cylinder, 20 round a capsule).
+
+A ball is drawn with as many sides round it as asked and half as many bands from pole to pole, and a capsule with a quarter as many bands in each of its ends. A small or distant round thing drawn with 12 sides looks the same and costs a quarter of the triangles. Only the picture changes: the thing collides as the round shape it is. Things of one size and the same sides share one mesh. Boxes, cones, hulls, models and looks have no round sides and keep their picture; box3dxt's renderer ignores it.
+
+```
+b3kSetDetail tOrb, 12   -- a small ball far off needs no more
+```
+
+See also: [`b3kDetail`](#b3kdetail), [`b3kSetLook`](#b3ksetlook)
+
+### `b3kDetail`
+
+`b3kDetail(pThing)`
+
+Report how many sides a round thing is drawn with.
+
+- `pThing`: The thing.
+
+Returns: The sides set by [`b3kSetDetail`](#b3ksetdetail), or empty for the Kit's own.
+
+```
+if b3kDetail(tOrb) is empty then b3kSetDetail tOrb, 12
+```
+
+See also: [`b3kSetDetail`](#b3ksetdetail)
 
 ### `b3kSetVisible`
 

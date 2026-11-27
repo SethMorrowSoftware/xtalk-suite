@@ -1055,6 +1055,187 @@ command testLookParts
    check "b3kClear after parts is clean", b3kThingCount() is 0, b3kThingCount()
 end testLookParts
 
+-- b3kSetDetail: a round thing drawn with fewer or more sides, opt-in. Its
+-- default must be the Kit's own picture, pixel for pixel, so a game that
+-- never calls it draws exactly as before (version 1.5 of Orb Island,
+-- 2026-11-27).
+command testDetail
+   local tBall, tOther, tPic, tCounts, tPost, tSix, tBack
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kSpawnBall 0, 0.5, 0, 1, "200,200,200"
+   put the result into tBall
+   b3kSetType tBall, "static"
+   b3kCamLookAt 0, 0.5, 3, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   check "a thing starts with the Kit's own sides", b3kDetail(tBall) is empty, b3kDetail(tBall)
+   b3kSetDetail tBall, 12
+   check "b3kSetDetail sets the sides", b3kDetail(tBall) is 12, b3kDetail(tBall)
+   b3kSetDetail tBall, 3
+   check "at least 6", b3kDetail(tBall) is 6, b3kDetail(tBall)
+   b3kSetDetail tBall, 500
+   check "at most 64", b3kDetail(tBall) is 64, b3kDetail(tBall)
+   b3kSetDetail tBall, "lots"
+   check "a word is not a number of sides", b3kDetail(tBall) is 64, b3kDetail(tBall)
+   b3kSetDetail tBall, 17.6
+   check "a fraction is rounded", b3kDetail(tBall) is 18, b3kDetail(tBall)
+   b3kSetDetail tBall, empty
+   check "empty puts the Kit's own back", b3kDetail(tBall) is empty, b3kDetail(tBall)
+   b3kSetDetail 987654, 12
+   check "no thing is harmless", b3kDetail(987654) is empty and b3kFrameError() is empty, b3kDetail(987654) && b3kFrameError()
+   if sR3 then
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      -- 24 is what the Kit draws a ball with: asked for, it is the same picture
+      b3kSetDetail tBall, 24
+      b3kDraw
+      check "24 sides is the Kit's own ball, pixel for pixel", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+      b3kSetDetail tBall, 6
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tSix
+      check "6 sides is a coarser ball", tSix is not tPic, "the same picture"
+      -- a second ball of the same size and sides shares the mesh
+      put item 3 of r3LiveCounts() into tCounts
+      b3kSpawnBall 3, 0.5, 0, 1, "200,200,200"
+      put the result into tOther
+      b3kSetType tOther, "static"
+      b3kSetDetail tOther, 6
+      check "things of one size and sides share a mesh", item 3 of r3LiveCounts() is tCounts, tCounts && r3LiveCounts()
+      b3kRemove tOther
+      b3kSetDetail tBall, empty
+      b3kDraw
+      check "empty draws the Kit's own ball again", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+      -- a cylinder and a capsule take it too; a box keeps its picture
+      b3kSpawnCylinder 0, 0.5, 0, 1, 0.6, "200,200,200"
+      put the result into tPost
+      b3kSetType tPost, "static"
+      b3kRemove tBall
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSetDetail tPost, 24
+      b3kDraw
+      check "24 sides is the Kit's own cylinder, pixel for pixel", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+      b3kSetDetail tPost, 6
+      b3kDraw
+      check "a cylinder of 6 sides is a hexagon", the imageData of image "b3kView" of stack "B3kHost" is not tPic, "the same picture"
+      b3kRemove tPost
+      b3kSpawnCapsule 0, 0.6, 0, 0.6, 0.4, "200,200,200"
+      put the result into tPost
+      b3kSetType tPost, "static"
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSetDetail tPost, 8
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tBack
+      b3kSetDetail tPost, empty
+      b3kDraw
+      check "a capsule takes it, and gives it back", tBack is not tPic and the imageData of image "b3kView" of stack "B3kHost" is tPic, \
+            (tBack is not tPic) && (the imageData of image "b3kView" of stack "B3kHost" is tPic)
+      b3kRemove tPost
+      b3kAddStaticBox 0, 0.5, 0, 0.6, 0.6, 0.6, "200,200,200"
+      put the result into tPost
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSetDetail tPost, 6
+      b3kDraw
+      check "a box keeps its picture", the imageData of image "b3kView" of stack "B3kHost" is tPic and b3kDetail(tPost) is 6, b3kDetail(tPost)
+   else
+      b3kSetDetail tBall, 8
+      b3kDraw
+      check "box3dxt's renderer takes it harmlessly", b3kFrameError() is empty, b3kFrameError()
+   end if
+   b3kClear
+   check "b3kClear forgets the sides", b3kDetail(tBall) is empty, b3kDetail(tBall)
+end testDetail
+
+-- A posed thing that is static and has not been posed again is not placed
+-- again each picture (b3kPosedSyncAll skips it): nothing else moves its
+-- nodes, so the picture must be what placing every node again gives
+-- (b3kSync places every one). Moving it by hand still moves it.
+command testPoseSkip
+   local tBox, tSq, tRed, tPic, tBall
+   freshWorld
+   b3kViewMake 0, 0, 160, 120
+   b3kAddStaticBox 0, 0.5, 0, 0.4, 0.4, 0.4, "40,40,40"
+   put the result into tBox
+   b3kCamLookAt 0, 0.5, 4, 0, 0.5, 0, 40
+   b3kSetBackground "0,0,0"
+   b3kSetAmbient "40,40,40"
+   b3kSetLight 0, 0, -1
+   put "mtllib m.mtl" & return & "v -0.2 -0.2 0.6" & return & "v 0.2 -0.2 0.6" & return & "v 0.2 0.2 0.6" & return & "v -0.2 0.2 0.6" & return & \
+         "vn 0 0 1" & return & "usemtl c" & return & "f 1//1 2//1 3//1" & return & "f 1//1 3//1 4//1" & return into tSq
+   put "newmtl c" & return & "Kd 0.9 0.1 0.1" & return into tRed
+   b3kAddLookPart tBox, "a", tSq, tRed
+   b3kPoseLookPart tBox, "a", 1, 0, 0
+   b3kSetLookPose tBox, 0, 0.2, 0, 0, 0, 10
+   -- a ball falling beside it: the steps' moves touch only what is awake
+   b3kSpawnBall -1, 2, 0, 0.4, "200,200,40"
+   put the result into tBall
+   repeat 20 times
+      b3kStepOnce
+   end repeat
+   if sR3 then
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSync
+      check "a still, posed thing left alone is where placing it again puts it", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+      b3kMoveTo tBox, 0, 1.5, 0
+      b3kDraw
+      check "and moved by hand it moves", the imageData of image "b3kView" of stack "B3kHost" is not tPic, "the same picture"
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSync
+      check "to where placing it again puts it", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+      b3kPoseLookPart tBox, "a", -1, 0, 0
+      b3kDraw
+      check "a new pose of a still thing is drawn", the imageData of image "b3kView" of stack "B3kHost" is not tPic, "the same picture"
+      b3kSetType tBox, "kinematic"
+      b3kSetVelocity tBox, 0, -1, 0
+      repeat 10 times
+         b3kStepOnce
+      end repeat
+      b3kDraw
+      put the imageData of image "b3kView" of stack "B3kHost" into tPic
+      b3kSync
+      check "a moving posed thing is placed every picture", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+   end if
+   b3kClear
+end testPoseSkip
+
+-- The browser's turns (b3kSetBrowserTurns): off until asked for, kept
+-- across a teardown and a new world, true only for true. Off the web the
+-- loop must run as it did: the turn is a wait taken in a web page only,
+-- so a running loop with turns on draws the picture it draws without.
+command testBrowserTurns
+   local tPic, tBall, tT, tY0
+   check "the browser's turns start off", b3kBrowserTurns() is false, b3kBrowserTurns()
+   b3kSetBrowserTurns true
+   check "b3kSetBrowserTurns true turns them on", b3kBrowserTurns() is true, b3kBrowserTurns()
+   b3kSetBrowserTurns "yes"
+   check "anything but true turns them off", b3kBrowserTurns() is false, b3kBrowserTurns()
+   b3kSetBrowserTurns true
+   freshWorld
+   check "and the setting outlives a new world", b3kBrowserTurns() is true, b3kBrowserTurns()
+   b3kViewMake 0, 0, 160, 120
+   b3kCamLookAt 0, 1, 5, 0, 0.5, 0, 50
+   b3kSpawnBall 0, 2, 0, 0.6, "200,60,60"
+   put the result into tBall
+   put b3kY(tBall) into tY0
+   b3kStart
+   put the milliseconds into tT
+   repeat until the milliseconds - tT > 500
+      wait 20 milliseconds with messages
+   end repeat
+   b3kPause
+   check "with turns on, the loop runs here as it did", b3kY(tBall) < tY0 - 0.3 and b3kFrameError() is empty, tY0 && b3kY(tBall) && b3kFrameError()
+   b3kDraw
+   put the imageData of image "b3kView" of stack "B3kHost" into tPic
+   b3kSetBrowserTurns false
+   b3kDraw
+   check "and draws the same picture", the imageData of image "b3kView" of stack "B3kHost" is tPic, "the pictures differ"
+   b3kStop
+   b3kClear
+end testBrowserTurns
+
 function prIsRed pRgb
    return item 1 of pRgb > item 2 of pRgb + 80 and item 1 of pRgb > item 3 of pRgb + 80
 end prIsRed
@@ -1215,6 +1396,9 @@ try
       testLampsAndGlow
       testLook
       testLookParts
+      testDetail
+      testPoseSkip
+      testBrowserTurns
       testStepMode
       testTeardown
       check "nothing above tripped a Box3D assert or lost a body", b3AssertCount() is 0 and b3UnstableCount() is 0, \
