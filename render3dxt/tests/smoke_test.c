@@ -1337,6 +1337,30 @@ static void test_unchanged_pictures(void)
             printf("unchanged: supersampling %d camera %d hash %016llx (checked on x86_64 Linux only)\n",
                    ss + 1, c, (unsigned long long)got[ss][c]);
 #endif
+    /* five lamps of short range among the nodes (2026-11-27: a node beyond
+     * a lamp's range is lit without it, so it must come out the same): the
+     * hashes from the same renderer of f6c0b1a, supersampling 1 (camera 2
+     * sees no lamp light, so its hash is the one without them) */
+    static const uint64_t k_lamps[5] = {
+        0x76f13b52fb3b3184ull, 0xe65872a34029a290ull, 0xc2157a2e1a1aed8eull, 0xe4a0d1efaface421ull, 0x42d8a47633f69e67ull };
+    static const double lamps[5][4] = {
+        { -3, 1, -2, 2.5 }, { 4, 0.5, 1, 3.5 }, { 1, 2.5, -8, 5 }, { -9, 1, 4, 4 }, { 8, 3, -14, 6 } };
+    int lampH[5];
+    for (int i = 0; i < 5; i++)
+        lampH[i] = r3x_light_create_point(s, lamps[i][0], lamps[i][1], lamps[i][2], 255, 230, 160, 2.0, lamps[i][3]);
+    r3x_scene_set_supersample(s, 1);
+    for (int c = 0; c < 5; c++) {
+        r3x_scene_set_camera(s, cams[c][0], cams[c][1], cams[c][2], cams[c][3], cams[c][4], cams[c][5], 55);
+        r3x_scene_render(s, 160, 96);
+        uint64_t h = frame_hash(s);
+#if defined(__linux__) && defined(__x86_64__) && defined(__GNUC__)
+        CHECK(h == k_lamps[c], "unchanged: with lamps, camera %d hash %016llx, before %016llx",
+              c, (unsigned long long)h, (unsigned long long)k_lamps[c]);
+#else
+        printf("unchanged: with lamps, camera %d hash %016llx (checked on x86_64 Linux only)\n", c, (unsigned long long)h);
+#endif
+    }
+    for (int i = 0; i < 5; i++) r3x_light_destroy(lampH[i]);
     /* nodes wholly outside the view: behind the eye, beside, above and
      * below the picture, and behind the near plane */
     r3x_scene_set_supersample(s, 1);

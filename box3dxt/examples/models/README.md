@@ -1,7 +1,8 @@
 # Orb Island's models
 
 The game's character, checkpoint flags, platforms, gate, clouds, trees,
-grass, round isles, lift pads and vault walls are built from these models
+grass, round isles, lift pads, vault walls, terraces, slabs, flying
+enemies, fountain and coin blocks are built from these models
 by [Kenney](https://kenney.nl), from three of his starter kits:
 
 | Kit | Commit |
@@ -27,6 +28,12 @@ domain). The kits' code is MIT; none of their code is used here.
 | `platform-grass-large-round.glb` | the sky isle, the east islet and the floating platform |
 | `platform-medium.glb` | the two lifts |
 | `wall-high.glb` | the vault's walls (FPS) |
+| `platform-large-grass.glb` | the two terraces of the second level (FPS) |
+| `platform-large.glb` | the slabs of the west stair, the bridge and the climb to the summit |
+| `enemy-flying.glb` | the two flying enemies (FPS) |
+| `pavement-fountain.glb` | the fountain on the summit (City Builder) |
+| `block-coin.glb` | the coin blocks |
+| `grass-small.glb` | the small tufts on the upper levels |
 | `colormap.png` | the palette the Platformer and City Builder models take their colours from (the two kits share it) |
 | `colormap-fps.png` | the FPS kit's palette, renamed from its `colormap.png` |
 

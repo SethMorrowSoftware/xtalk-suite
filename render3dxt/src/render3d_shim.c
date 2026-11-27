@@ -2249,9 +2249,11 @@ typedef struct Frame {
     int outW, outH, ss;
 } Frame;
 
-/* Gouraud lighting at one point: diffuse into d, highlight into sp. */
-static void shade_vertex(const Frame *fr, const Material *mat, const float P[3], const float N[3],
-                         float d[3], float sp[3])
+/* Gouraud lighting at one point: diffuse into d, highlight into sp, from
+ * the lights Ls (the frame's, or the ones that can reach a node: see
+ * draw_node). */
+static void shade_vertex(const Frame *fr, const LightW *Ls, int nL, const Material *mat,
+                         const float P[3], const float N[3], float d[3], float sp[3])
 {
     d[0] = fr->amb[0]; d[1] = fr->amb[1]; d[2] = fr->amb[2];
     sp[0] = sp[1] = sp[2] = 0;
@@ -2259,8 +2261,8 @@ static void shade_vertex(const Frame *fr, const Material *mat, const float P[3],
     float V[3] = { fr->eye[0] - P[0], fr->eye[1] - P[1], fr->eye[2] - P[2] };
     float vl = sqrtf(V[0] * V[0] + V[1] * V[1] + V[2] * V[2]);
     if (vl > 0) { V[0] /= vl; V[1] /= vl; V[2] /= vl; }
-    for (int i = 0; i < fr->nL; i++) {
-        const LightW *L = &fr->L[i];
+    for (int i = 0; i < nL; i++) {
+        const LightW *L = &Ls[i];
         float Ld[3], att = 1.0f;
         if (L->kind == R3X_LIGHT_DIRECTIONAL) {
             Ld[0] = -L->v[0]; Ld[1] = -L->v[1]; Ld[2] = -L->v[2];
@@ -3073,7 +3075,7 @@ static void clip_and_draw(Frame *fr, const DrawSt *ds, const CV *in, float nearZ
  * The margin covers the rounding of the projection; a node near an edge is
  * drawn as before. */
 static int node_outside_view(const Scene *sc, const CamFrame *cam, const Node *nd, Mesh *m,
-                             const double R[9], double aspect)
+                             const double R[9], double aspect, double centre[3], double *radius)
 {
     mesh_bounds(m);
     const double *S = nd->scale, *T = nd->pos;
@@ -3087,6 +3089,8 @@ static int node_outside_view(const Scene *sc, const CamFrame *cam, const Node *n
     double wc[3] = { R[0] * c[0] + R[1] * c[1] + R[2] * c[2] + T[0] - cam->eye[0],
                      R[3] * c[0] + R[4] * c[1] + R[5] * c[2] + T[1] - cam->eye[1],
                      R[6] * c[0] + R[7] * c[1] + R[8] * c[2] + T[2] - cam->eye[2] };
+    for (int k = 0; k < 3; k++) centre[k] = wc[k] + cam->eye[k];
+    *radius = sqrt(e2);
     double vx = wc[0] * cam->r[0] + wc[1] * cam->r[1] + wc[2] * cam->r[2];
     double vy = wc[0] * cam->u[0] + wc[1] * cam->u[1] + wc[2] * cam->u[2];
     double vz = wc[0] * cam->f[0] + wc[1] * cam->f[1] + wc[2] * cam->f[2];
@@ -3107,9 +3111,26 @@ static void draw_node(Frame *fr, const Scene *sc, const CamFrame *cam, const Nod
 {
     Mesh *m = meshes_get(nd->mesh);
     if (!m || m->nt == 0 || !scratch_reserve(m->nv)) return;
-    double R[9];
+    double R[9], centre[3], radius = -1;
     quat_matrix(nd->rot, R);
-    if (node_outside_view(sc, cam, nd, m, R, aspect)) return;
+    if (node_outside_view(sc, cam, nd, m, R, aspect, centre, &radius)) return;
+    /* The lights that can reach this node, in the frame's order. A point
+     * light with a range adds nothing to a vertex as far as its range or
+     * farther (shade_vertex skips it there), so one whose range ends well
+     * short of the node's bounding sphere is left out of the loop: the
+     * sums are the same sums, and the picture the same to the byte. The
+     * margin is generous, as node_outside_view's is. */
+    LightW nodeL[R3X_MAX_LIGHTS];
+    int nNodeL = 0;
+    for (int i = 0; i < fr->nL; i++) {
+        const LightW *L = &fr->L[i];
+        if (L->kind != R3X_LIGHT_DIRECTIONAL && L->range > 0 && isfinite(radius) && radius >= 0) {
+            double dx = L->v[0] - centre[0], dy = L->v[1] - centre[1], dz = L->v[2] - centre[2];
+            double gap = sqrt(dx * dx + dy * dy + dz * dz) - radius * 1.001 - 1e-3;
+            if (isfinite(gap) && gap > (double)L->range * 1.001 + 1e-3) continue;
+        }
+        nodeL[nNodeL++] = *L;
+    }
     const double *S = nd->scale, *T = nd->pos;
     /* normals go through R * S^-1 */
     double inv[3] = { 1.0 / S[0], 1.0 / S[1], 1.0 / S[2] };
@@ -3176,14 +3197,14 @@ static void draw_node(Frame *fr, const Scene *sc, const CamFrame *cam, const Nod
             if (mat && mat->unlit) {
                 v->d[0] = v->d[1] = v->d[2] = 1; v->s[0] = v->s[1] = v->s[2] = 0;
             } else if (flat) {
-                shade_vertex(fr, mat, s_vw + vi * 3, fn, v->d, v->s);
+                shade_vertex(fr, nodeL, nNodeL, mat, s_vw + vi * 3, fn, v->d, v->s);
             } else {
                 int key = mh * 2 + back;
                 float *lit = s_lit + (size_t)vi * 6;
                 if (s_litKey[vi] != key) {
                     float N[3] = { s_vn[vi * 3], s_vn[vi * 3 + 1], s_vn[vi * 3 + 2] };
                     if (back) { N[0] = -N[0]; N[1] = -N[1]; N[2] = -N[2]; }
-                    shade_vertex(fr, mat, s_vw + vi * 3, N, lit, lit + 3);
+                    shade_vertex(fr, nodeL, nNodeL, mat, s_vw + vi * 3, N, lit, lit + 3);
                     s_litKey[vi] = key;
                 }
                 memcpy(v->d, lit, 3 * sizeof(float));

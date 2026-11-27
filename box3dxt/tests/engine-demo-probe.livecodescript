@@ -104,12 +104,14 @@ command prRunAll pR3, pB3, pGp, pAu
    prBuild pR3
    if gPrFailed > 0 then exit prRunAll
    prSound pAu
+   prMusic pAu
    prDraw
    prLook pR3
    prWalk
    prOrbs
    prFall
    prPad
+   prLevels
    prToys
    prCorners
    prKick
@@ -151,7 +153,7 @@ command prBuild pR3
          the rect of image "b3kView" of card 1 of stack "OrbIsland"
    prCheck "the win banner waits hidden", the visible of field "oiBanner" of card 1 of stack "OrbIsland" is false, \
          the visible of field "oiBanner" of card 1 of stack "OrbIsland"
-   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 3, the uOiUIVersion of stack "OrbIsland"
+   prCheck "the chrome carries its version stamp", the uOiUIVersion of stack "OrbIsland" is 4, the uOiUIVersion of stack "OrbIsland"
    -- the view's card has no soft shadow (the engine redrew it under every
    -- frame: 10 ms a frame in the web player); the side panel keeps its own,
    -- which shows this engine reads the property at all
@@ -197,20 +199,20 @@ command prBuild pR3
    end if
    prCheck "the renderer button names it", the label of button "oiRender" of card 1 of stack "OrbIsland" is ("Renderer: " & b3kRenderer() & " (V)"), \
          the label of button "oiRender" of card 1 of stack "OrbIsland"
-   prCheck "the HUD counts sixteen orbs to find", prField("oiScore") is "Orbs  0 / 16", prField("oiScore")
-   prCheck "the status line invites the hunt", prStatus() begins with "Find the 16 golden orbs.", prStatus()
+   prCheck "the HUD counts 26 orbs to find", prField("oiScore") is "Orbs  0 / 26", prField("oiScore")
+   prCheck "the status line invites the hunt", prStatus() begins with "Find the 26 golden orbs.", prStatus()
    prCheck "and it is green", the foregroundColor of field "uiStatus" of card 1 of stack "OrbIsland" is "23,128,63", \
          the foregroundColor of field "uiStatus" of card 1 of stack "OrbIsland"
    repeat for each item tName in "hub,arm,lift,sky lift,wrecking ball,jump pad,first domino,hill,sail 0,sail 90,beacon beam," & \
          "sea north,sea south,sea west,sea east"
       prCheck "the island has its " & tName, b3kThingNamed(tName) is not empty, tName
    end repeat
-   repeat for each item tName in "A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P"
+   repeat for each item tName in "A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"
       prCheck "the island has its orb " & tName, b3kThingNamed("orb " & tName) is not empty, tName
    end repeat
    put b3kThingCount() into tCount
-   prCheck "the island is 181 things with the player", tCount is 181, tCount
-   prCheck "C may drop sixty more", oiMaxThings() is 239, oiMaxThings()
+   prCheck "the island is 233 things with the player", tCount is 233, tCount
+   prCheck "C may drop sixty more", oiMaxThings() is 291, oiMaxThings()
    prCheck "the player stands at the start", b3kPlayer() is not empty and \
          prNear(b3kX(b3kPlayer()), 0, 0.01) and prNear(b3kZ(b3kPlayer()), 22, 0.01), b3kPosition(b3kPlayer())
    prCheck "the player walks faster than the Kit's default", b3kPlayerGet("moveSpeed") is 6.5, b3kPlayerGet("moveSpeed")
@@ -241,15 +243,15 @@ command prWalk
    prSteps 30
    put b3kZ(b3kPlayer()) into tZ1
    prCheck "W walks the player north, away from the camera", tZ1 < tZ0 - 3, tZ0 && tZ1
-   prCheck "walking into orb A collects it", b3kThingNamed("orb A") is empty and prField("oiScore") is "Orbs  1 / 16", \
+   prCheck "walking into orb A collects it", b3kThingNamed("orb A") is empty and prField("oiScore") is "Orbs  1 / 26", \
          prField("oiScore") && b3kThingNamed("orb A")
-   prCheck "the status line counts it", prStatus() is "Orb found: 1 of 16.", prStatus()
+   prCheck "the status line counts it", prStatus() is "Orb found: 1 of 26.", prStatus()
    prCheck "walking north faces north", prNear(abs(b3kPlayerFacing()), 180, 20), b3kPlayerFacing()
 end prWalk
 
 command prOrbs
    local tLetter, tOrb, tP, tTime
-   repeat for each item tLetter in "B,C,D,E,F,G,H,I,J,K,L,M,N,O,P"
+   repeat for each item tLetter in "B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"
       put b3kThingNamed("orb " & tLetter) into tOrb
       put b3kPosition(tOrb) into tP
       b3kPlayerRespawn item 1 of tP, item 2 of tP, item 3 of tP
@@ -257,9 +259,9 @@ command prOrbs
       prCheck "touching orb " & tLetter & " collects it", tOrb is not empty and b3kThingNamed("orb " & tLetter) is empty, \
             tOrb && tP && b3kPosition(b3kPlayer())
    end repeat
-   prCheck "the HUD shows all sixteen", prField("oiScore") is "Orbs  16 / 16", prField("oiScore")
+   prCheck "the HUD shows all 26", prField("oiScore") is "Orbs  26 / 26", prField("oiScore")
    prCheck "the banner shows the time", the visible of field "oiBanner" of card 1 of stack "OrbIsland" is true and \
-         prField("oiBanner") begins with "All 16 orbs in", prField("oiBanner")
+         prField("oiBanner") begins with "All 26 orbs in", prField("oiBanner")
    prCheck "and the status line too", prStatus() begins with "Every orb found in", prStatus()
    put prField("oiTime") into tTime
    prSteps 60
@@ -427,18 +429,169 @@ command prButtonsAndKeys
    prCheck "and ticks again", the hilite of button "oiLook" of card 1 of stack "OrbIsland" is true, \
          the hilite of button "oiLook" of card 1 of stack "OrbIsland"
    dispatch "keyDown" to stack "OrbIsland" with "r"
-   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 181 and b3kIsRunning() is true, \
+   prCheck "R starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 233 and b3kIsRunning() is true, \
          prField("oiScore") && b3kThingCount() && b3kIsRunning()
    prCheck "with the clock and falls at zero", prField("oiTime") is "Time  0.0 s      Falls  0", prField("oiTime")
    b3kPause
    prSteps 30
    dispatch "mouseUp" to button "oiRestart" of card 1 of stack "OrbIsland" with 1
-   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 16" and b3kThingCount() is 181, \
+   prCheck "the Restart button starts a new run", prField("oiScore") is "Orbs  0 / 26" and b3kThingCount() is 233, \
          prField("oiScore") && b3kThingCount()
    b3kPause
    dispatch "keyDown" to stack "OrbIsland" with "a"
    prCheck "a walking key is passed on, not eaten", it is "passed", it
 end prButtonsAndKeys
+
+-- ---------------------------------------------------------------------
+-- version 1.4's three levels: the shore, the terraces (9 m) and the
+-- summit (17 m). Each upper place is stood on (a player put there comes
+-- to rest on its top), the lifts carry between them, the feather gives
+-- a double jump, the second pad throws higher than the first and the
+-- flying enemies knock the player back.
+command prLevels
+   local tY, tLift, tLow, tHigh, tE, tP, tFast, tI
+   prCheck "a height names its level", oiTierAt(0.8) is 1 and oiTierAt(9.8) is 2 and oiTierAt(17.5) is 3, \
+         oiTierAt(0.8) && oiTierAt(9.8) && oiTierAt(17.5)
+   prCheck "and the levels have names", oiTierName(1) is "the shore" and oiTierName(2) is "the terraces" and \
+         oiTierName(3) is "the summit", oiTierName(1) & "/" & oiTierName(2) & "/" & oiTierName(3)
+   -- an orb's level is its height: T, on the west stair at 6.8 m, is the
+   -- shore's; X, on the climb at 12 m, the terraces'
+   prCheck "17 orbs on the shore, 6 on the terraces, 3 on the summit", \
+         item 2 of oiTierOrbs(1) is 17 and item 2 of oiTierOrbs(2) is 6 and item 2 of oiTierOrbs(3) is 3, \
+         oiTierOrbs(1) & "/" & oiTierOrbs(2) & "/" & oiTierOrbs(3)
+   prCheck "and every one was found", item 1 of oiTierOrbs(1) is 17 and item 1 of oiTierOrbs(2) is 6 and \
+         item 1 of oiTierOrbs(3) is 3, oiTierOrbs(1) & "/" & oiTierOrbs(2) & "/" & oiTierOrbs(3)
+   -- stand on each upper place: "x,top,z,name,level"
+   repeat for each line tP in "-21.8,4,-7.4,the first stair slab,1" & return & \
+         "-25.5,8,-23,the last stair slab,2" & return & \
+         "-18,9,-20,the west terrace,2" & return & \
+         "14,9,-24,the east terrace,2" & return & \
+         "-10.4,9,-21,the bridge's first slab,2" & return & \
+         "6.2,9,-23.6,the bridge's last slab,2" & return & \
+         "0.2,11.9,-31,the climb's last slab,2" & return & \
+         "0.5,16.7,-38,the summit,3" & return & \
+         "-3.4,18.3,-37,the fountain,3"
+      b3kPlayerRespawn item 1 of tP, item 2 of tP + 1.2, item 3 of tP
+      prSteps 45
+      put b3kY(b3kPlayer()) into tY
+      prCheck "the player stands on " & item 4 of tP, prNear(tY, item 2 of tP + 0.8, 0.25) and b3kPlayerOnGround(), \
+            b3kPosition(b3kPlayer()) && b3kPlayerOnGround()
+      prCheck "which is level " & item 5 of tP, oiTier() is item 5 of tP, oiTier()
+   end repeat
+   b3kFrame
+   oiHud
+   prCheck "the HUD names the level", line 1 of prField("oiLevel") is "On level 3, the summit", prLine(prField("oiLevel"))
+   prCheck "and each level's orbs", line 2 of prField("oiLevel") is "shore  17 / 17     terraces  6 / 6     summit  3 / 3", \
+         prLine(prField("oiLevel"))
+   -- the two lifts
+   repeat for each line tP in "upper lift,5,8.8" & return & "summit lift,12,16.5"
+      put b3kThingNamed(item 1 of tP) into tLift
+      put 99 into tLow
+      put -99 into tHigh
+      repeat 80 times
+         prSteps 10
+         put b3kY(tLift) into tY
+         put min(tLow, tY) into tLow
+         put max(tHigh, tY) into tHigh
+      end repeat
+      prCheck "the " & item 1 of tP & " rides from " & item 2 of tP & " m to " & item 3 of tP & " m", \
+            tLift is not empty and tLow < item 2 of tP + 0.1 and tHigh > item 3 of tP - 0.1, tLift && tLow && tHigh
+   end repeat
+   -- the feather: one jump more in the air
+   prCheck "the player starts without a jump in the air", b3kPlayerGet("airJumps") is 0, b3kPlayerGet("airJumps")
+   b3kPlayerRespawn -21, 9.9, -23.5
+   prSteps 4
+   prCheck "the feather gives a double jump", b3kPlayerGet("airJumps") is 1 and b3kThingNamed("feather") is empty, \
+         b3kPlayerGet("airJumps") && b3kThingNamed("feather")
+   prCheck "and says so", "feather" is among the lines of oiSoundsPlayed(), prLine(oiSoundsPlayed())
+   -- the second pad throws higher than the first (8 m/s)
+   b3kPlayerRespawn 0.8, 4.6, -19.5
+   put -99 into tFast
+   repeat 10 times
+      prSteps 1
+      put max(tFast, item 2 of b3kVelocity(b3kPlayer())) into tFast
+   end repeat
+   prCheck "the high jump pad throws the player up fast", tFast > 11, tFast
+   prSteps 30
+   prCheck "level with the terraces", b3kY(b3kPlayer()) > 9, b3kY(b3kPlayer())
+   prSteps 90
+   -- a flying enemy: put the player in its way, and it is knocked back
+   repeat for each item tE in "enemy bridge,enemy summit"
+      put b3kThingNamed(tE) into tP
+      prCheck "the " & tE & " flies", tP is not empty, tE
+      if tP is empty then next repeat
+      b3kPlayerRespawn b3kX(tP) + 0.6, b3kY(tP), b3kZ(tP)
+      put 0 into tFast
+      repeat 6 times
+         prSteps 1
+         put max(tFast, abs(item 1 of b3kVelocity(b3kPlayer())) + abs(item 3 of b3kVelocity(b3kPlayer()))) into tFast
+      end repeat
+      prCheck "the " & tE & " knocks the player back", tFast > 4, tFast
+      prSteps 60
+   end repeat
+   prCheck "with an ouch", "ouch" is among the lines of oiSoundsPlayed(), prLine(oiSoundsPlayed())
+   prCheck "reaching a level is announced", "tier" is among the lines of oiSoundsPlayed(), prLine(oiSoundsPlayed())
+   -- the enemies glide to and fro
+   put b3kThingNamed("enemy summit") into tE
+   put b3kX(tE) into tLow
+   put tLow into tHigh
+   repeat 80 times
+      prSteps 10
+      put min(tLow, b3kX(tE)) into tLow
+      put max(tHigh, b3kX(tE)) into tHigh
+   end repeat
+   prCheck "the summit's enemy patrols from one end to the other", tLow < -6.4 and tHigh > -0.4, tLow && tHigh
+   -- the later checks jump as a player without the feather does
+   b3kPlayerSet "airJumps", 0
+   b3kPlayerRespawn 0, 1, 22
+   prSteps 30
+end prLevels
+
+-- ---------------------------------------------------------------------
+-- the music: a tune audioxt composes each session in an offline engine
+command prMusic pAu
+   local tEngine, tData, tPeak, tI, tV, tOther
+   if pAu is not true then
+      prCheck "without audioxt there is no tune", oiMusicSound() is 0 and oiMusicSecs() is 0, oiMusicSound() && oiMusicSecs()
+      dispatch "keyDown" to stack "OrbIsland" with "n"
+      prCheck "and N says why", prStatus() begins with "No music", prStatus()
+      exit prMusic
+   end if
+   prInfo "composing the tune took " & oiMusicMs() & " ms"
+   prCheck "the tune is made", oiMusicSound() > 0, oiMusicSound()
+   prCheck "eight bars of eight 0.3 s steps", prNear(oiMusicSecs(), 19.2, 0.01), oiMusicSecs()
+   prCheck "it loops", auSoundIsLooping(oiMusicSound()) is true, auSoundIsLooping(oiMusicSound())
+   prCheck "and plays", auSoundIsPlaying(oiMusicSound()) is true, auSoundIsPlaying(oiMusicSound())
+   prCheck "softly, under the game's sounds", prNear(auSoundVolume(oiMusicSound()), 0.32, 0.001), auSoundVolume(oiMusicSound())
+   prCheck "the music button says it is on", the label of button "oiMusic" of card 1 of stack "OrbIsland" is "Music: on (N)", \
+         the label of button "oiMusic" of card 1 of stack "OrbIsland"
+   -- the samples themselves: as long as the steps, loud enough, not clipped
+   put auEngineCreateOffline(22050, 1) into tEngine
+   put oiMusicCompose(tEngine) into tData
+   put 0 into tPeak
+   put 1 into tI
+   repeat while tI < the number of bytes of tData
+      put byteToNum(byte tI of tData) + 256 * byteToNum(byte tI + 1 of tData) into tV
+      if tV >= 32768 then subtract 65536 from tV
+      put max(tPeak, abs(tV)) into tPeak
+      add 98 to tI
+   end repeat
+   prCheck "the tune is 64 steps of 6615 samples", the number of bytes of tData is 64 * 6615 * 2, the number of bytes of tData
+   prCheck "it is heard and not clipped", tPeak > 6000 and tPeak < 32000, tPeak
+   prCheck "the offline engine has given back every voice", auEngineSoundCount(tEngine) is 0, auEngineSoundCount(tEngine)
+   put oiMusicCompose(tEngine) into tOther
+   auEngineFree tEngine
+   prCheck "each composing is a new tune", tOther is not tData and the number of bytes of tOther is the number of bytes of tData, \
+         the number of bytes of tOther
+   dispatch "keyDown" to stack "OrbIsland" with "n"
+   prCheck "N stops the music", auSoundIsPlaying(oiMusicSound()) is false and \
+         the label of button "oiMusic" of card 1 of stack "OrbIsland" is "Music: off (N)", \
+         auSoundIsPlaying(oiMusicSound()) && the label of button "oiMusic" of card 1 of stack "OrbIsland"
+   dispatch "mouseUp" to button "oiMusic" of card 1 of stack "OrbIsland" with 1
+   prCheck "and the Music button plays it again", auSoundIsPlaying(oiMusicSound()) is true and \
+         the label of button "oiMusic" of card 1 of stack "OrbIsland" is "Music: on (N)", \
+         auSoundIsPlaying(oiMusicSound()) && the label of button "oiMusic" of card 1 of stack "OrbIsland"
+end prMusic
 
 -- ---------------------------------------------------------------------
 -- the sound: audioxt's silent test device when audioxt is loaded (a test
@@ -459,9 +612,9 @@ end prSound
 -- the late-afternoon look: lamps, glowing orbs that pulse, the sea
 command prLook pR3
    local tOrb, tGlow, tSea
-   prCheck "the island hangs five lamps", the number of lines of b3kLamps() is 5, b3kLamps()
+   prCheck "the island hangs six lamps", the number of lines of b3kLamps() is 6, b3kLamps()
    if pR3 then
-      prCheck "render3dxt lights it with the sun and the five lamps", item 6 of r3LiveCounts() is 6, r3LiveCounts()
+      prCheck "render3dxt lights it with the sun and the six lamps", item 6 of r3LiveCounts() is 7, r3LiveCounts()
    end if
    put b3kThingNamed("orb B") into tOrb
    put b3kGlow(tOrb) into tGlow

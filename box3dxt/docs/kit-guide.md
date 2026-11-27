@@ -754,8 +754,12 @@ error in the extension's typed interface). And raw calls are in Box3D's terms
 ## 18. The example game: Orb Island
 
 `examples/box3dxt-orb-island.livecodescript` is a complete game on the Kit:
-walk a floating island 60 metres square, find sixteen golden orbs, and do not
-fall into the sea. It is one file: open it from the suite's start-here
+walk a floating island 60 metres square, find its 26 golden orbs, and do not
+fall into the sea. The island has three levels in height (version 1.4): the
+shore, two terraces 9 metres up joined by a bridge, and a summit 17 metres
+up; a stair of slabs, two lifts, a second jump pad and a climb lead from one
+to the next, two flying enemies patrol the upper levels, and a feather found
+on the west terrace gives a double jump (`b3kPlayerSet "airJumps", 1`). It is one file: open it from the suite's start-here
 launcher, or paste it into a new stack's script and reopen the stack.
 
 Each part of the Kit carries part of the game:
@@ -779,12 +783,19 @@ Each part of the Kit carries part of the game:
 | the player's shadow | `b3kRayHit` down from the player |
 | the player, and a gamepad's stick | `b3kPlayerMake`, `b3kPlayerJump`, `b3kPlayerSteer`, `b3kPlayerRespawn` on `b3kFell` |
 | kicking a crate with the mouse | `b3kThingAt`, unless `b3kCamDragged()` |
+| the flying enemies, gliding to and fro and knocking the player back | `b3kAddPlatform` with `b3kGlideTo` and `b3kSetRotation`, then `b3kSetVelocity` on the player |
+| the second jump pad and the feather | sensors, `b3kPlayerJump` with a speed, `b3kPlayerSet "airJumps"` |
 
 Two more of the suite's extensions join in when they are loaded, and the
 game runs without them: **gamepadxt** (a controller walks, looks, jumps and
 blasts, and rumbles when an orb is found) and **audioxt** (a sea that swells,
 a chime a note higher for each orb, jumps, blasts, a splash and a fanfare,
-all tones and noise made on the spot).
+all tones and noise made on the spot, and a tune). The tune is composed anew
+each time the game starts: eight bars of a bass, chord stabs, a shaker and a
+melody drawn at random from the pentatonic scale, played step by step into
+an offline engine (`auEngineCreateOffline`, `auEngineRender`) and then looped
+on the live one as one sound (`auSoundFromPCM`). It takes some 30 ms on a
+desktop, once; N turns it off.
 
 The models are Kenney's (kenney.nl), from his Platformer, City Builder and
 FPS starter kits, CC0 (public domain): `examples/models/` holds them and says
