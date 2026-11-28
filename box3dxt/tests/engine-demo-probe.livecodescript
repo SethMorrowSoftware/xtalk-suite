@@ -654,8 +654,11 @@ command prLife pAu
    end repeat
    prSteps 2
    put oiLifeAt(tSong) into tAt
+   -- near its home (-7, 22.5), where it lands within 0.4 m and never hops
+   -- more than 1.4 m from: not near where it was found, which can itself be
+   -- 1.4 m off on the far side (a CI run found it 1.7 m away, 2026-11-28)
    prCheck "once the player has gone it comes back down", oiSongMode(tSong) is "ground" and \
-         sqrt((item 1 of tAt - item 1 of tHome) ^ 2 + (item 3 of tAt - item 2 of tHome) ^ 2) < 1.6 and prNear(item 2 of tAt, 0.05, 0.16), \
+         sqrt((item 1 of tAt + 7) ^ 2 + (item 3 of tAt - 22.5) ^ 2) < 1.5 and prNear(item 2 of tAt, 0.05, 0.16), \
          oiSongMode(tSong) && tAt && tI
    put true into tOk
    repeat for each line tThing in oiLifeThings("song")
