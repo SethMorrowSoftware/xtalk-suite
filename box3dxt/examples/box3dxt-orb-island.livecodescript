@@ -3744,11 +3744,31 @@ end oiPadWords
 -- once, inside a try. In a web page the browser lets sound start at the
 -- first click or key press, which is its rule.
 -- =====================================================================
+-- In a web page the sound plays through a buffer the page refills, about
+-- 46 ms of it, and a frame of the island can hold the page longer, so the
+-- music crackled now and then. Version 1.6 asks audioxt for 80 ms (4096
+-- frames at 44.1 kHz, 93 ms, a power of two), before the engine is made:
+-- a tenth of a second more before a sound is heard, and no gap. An
+-- audioxt from before 2026-11-28 does not read it and plays as it did.
+constant kOiWebBuffer = 80
+
+-- the JavaScript that asks for that buffer (oiSoundStart runs it in a web
+-- page only)
+function oiWebBufferAsk
+   return "window.audioxtWebBuffer = " & kOiWebBuffer
+end oiWebBufferAsk
+
 command oiSoundStart pDevice
    local tEngine, tErr
    if pDevice is an integer then put pDevice into sOiAudioDevice
    if sOiAudioDevice is not an integer then put 0 into sOiAudioDevice
    oiSoundStop
+   if oiOnWeb() then
+      try
+         do oiWebBufferAsk() as "JavaScript"
+      catch tErr
+      end try
+   end if
    try
       put auEngineCreate(sOiAudioDevice, 0, 2) into tEngine
    catch tErr

@@ -30,7 +30,11 @@
  *     page, which the test drives through evaluate, cannot show the hold
  *     (its INFO line prints the clock before the click); these pages
  *     open the device themselves (index.html?atload) and print their
- *     clock to the console, and the test never calls into them.
+ *     clock to the console, and the test never calls into them;
+ *   - a page that sets window.audioxtWebBuffer (milliseconds) before it
+ *     opens an engine gets a ScriptProcessorNode buffer that long or
+ *     longer, a power of two; one that sets nonsense, or nothing, keeps
+ *     miniaudio's own.
  *
  * What this is NOT: OXT-Beyond's web engine. It is the archive that engine
  * will link, called from C as that engine will call it.
@@ -93,6 +97,8 @@ function check(name, ok, detail) {
     const rate = await call('w_start');
     check('the device opens before any click', rate >= 8000, rate + ' ' + (await call('w_error', 'string')));
     check('a tone is started on it', (await call('w_playing')) === 1, 'not playing');
+    const buffer = await call('w_buffer');
+    check('with no buffer asked for, the device keeps miniaudio\'s own (under 4096 frames)', buffer >= 256 && buffer < 4096, String(buffer));
     await page.waitForTimeout(300);
     console.log('INFO clock before the click: ' + (await call('w_time')) + ' s (a browser may hold it at 0 until then)');
 
@@ -147,6 +153,27 @@ function check(name, ok, detail) {
         check('no AudioContext for the page: a playback device is refused, with the reason', eng === 0 && why.includes('Web Audio'), eng + " '" + why + "'");
         const mic = await c('w_try_mic');
         check('and so is a microphone', mic === 0 && (await c('w_error', 'string')).includes('Web Audio'), String(mic));
+        check('that page raised no error', errs.length === 0, errs.join(' | '));
+      });
+
+    // A page that asks for a longer buffer (window.audioxtWebBuffer, in
+    // milliseconds) before it opens an engine gets one; nonsense is ignored.
+    await hobbled(() => { window.audioxtWebBuffer = 80; },
+      async (c, errs) => {
+        const rate = await c('w_start');
+        const buf = await c('w_buffer');
+        check('a page that asks for 80 ms gets a buffer of 80 ms or more, a power of two', rate >= 8000 && buf >= rate * 0.08 && (buf & (buf - 1)) === 0,
+          rate + ' Hz ' + buf + ' frames ' + (await c('w_error', 'string')));
+        check('and its tone plays', (await c('w_playing')) === 1, 'not playing');
+        check('and closes', (await c('w_stop')) === 1, 'the engine is still valid');
+        check('that page raised no error', errs.length === 0, errs.join(' | '));
+      });
+    await hobbled(() => { window.audioxtWebBuffer = 'lots'; },
+      async (c, errs) => {
+        await c('w_start');
+        const buf = await c('w_buffer');
+        check('a page that asks with nonsense keeps miniaudio\'s own', buf >= 256 && buf < 4096, String(buf));
+        check('and closes', (await c('w_stop')) === 1, 'the engine is still valid');
         check('that page raised no error', errs.length === 0, errs.join(' | '));
       });
 

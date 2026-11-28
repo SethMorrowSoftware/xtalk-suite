@@ -618,6 +618,38 @@ static int web_device_ok(int capture)
         return fail("this browser has no Web Audio for this page");
     return 1;
 }
+
+/* THE WEB: A LONGER BUFFER, WHEN THE PAGE ASKS FOR ONE. miniaudio plays a
+ * Web Audio device through a ScriptProcessorNode, whose callback runs on
+ * the page's main thread, the thread the web engine runs on. Its buffer
+ * is some 33 ms rounded up to a power of two (2048 frames at 44.1 kHz,
+ * 46 ms), so a frame of a game that holds the thread longer than that
+ * leaves the callback late and the sound crackles. An AudioWorklet would
+ * not wait on the page, but needs a cross-origin isolated page, which a
+ * stack player in a sandboxed frame is not. So a page may ask for a longer
+ * buffer, at the cost of as much more latency, BEFORE it opens an engine:
+ *     do "window.audioxtWebBuffer = 80" as "JavaScript"
+ * (milliseconds, 10 to 400; miniaudio rounds the frames up to a power of
+ * two, so 80 is 4096 frames at 44.1 kHz, 93 ms). Unset, zero or not a
+ * number, an engine opens as it always did. Off the web there is no such
+ * page and nothing changes. tests/web/run-web-test.cjs holds both. */
+static ma_uint32 web_buffer_ms(void)
+{
+    int ms = EM_ASM_INT({
+        try {
+            if (typeof window === 'undefined') return 0;
+            var v = Number(window.audioxtWebBuffer);
+            if (!isFinite(v) || v <= 0) return 0;
+            return Math.round(v);
+        } catch (e) {
+            return 0;
+        }
+    });
+    if (ms <= 0) return 0;
+    if (ms < 10) ms = 10;
+    if (ms > 400) ms = 400;
+    return (ma_uint32)ms;
+}
 #endif
 
 /* Which context and device id a device index names. Returns 0 (refused,
@@ -790,6 +822,9 @@ static int engine_make(int offline, int device, int sampleRate, int channels)
     } else {
         cfg.pContext = ctx;
         cfg.pPlaybackDeviceID = id;
+#if defined(__EMSCRIPTEN__)
+        cfg.periodSizeInMilliseconds = web_buffer_ms();
+#endif
     }
     ma_result r = ma_engine_init(&cfg, &e->engine);
     if (r != MA_SUCCESS) {

@@ -161,6 +161,8 @@ An engine is one mixer playing into one device. Every sound belongs to an engine
 
 In a web browser the sound starts with the visitor's first click, tap or key press on the page, which is the browser's rule; sounds started before that are heard from then on. A browser that gives the page no Web Audio refuses the device.
 
+A web page plays through a buffer of some 46 ms that the page's own work refills, so a stack that holds the page longer than that (a frame of a 3D game, say) is heard to crackle. Such a stack can ask for a longer buffer before it creates the engine, at the cost of as much more delay before a sound is heard, by setting window.audioxtWebBuffer to a number of milliseconds from 10 to 400 with do as "JavaScript". Off the web, or with nothing set, nothing changes.
+
 Device -1 is a silent test device that needs no sound card: everything works and nothing is heard.
 
 ```

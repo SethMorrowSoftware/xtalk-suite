@@ -164,6 +164,7 @@ command prBuild pR3
    -- smooth edges are dropped only in a web page, where render3dxt draws
    -- on one thread inside the frame
    prCheck "this engine is not a web page", oiOnWeb() is false, the platform
+   prCheck "in a web page the game would ask audioxt for an 80 ms sound buffer", oiWebBufferAsk() is "window.audioxtWebBuffer = 80", oiWebBufferAsk()
    prCheck "the game spends each frame's time in equal steps", b3kStepMode() is "smooth", b3kStepMode()
    prCheck "and gives the browser a turn each frame, so a web page's sound plays smoothly", b3kBrowserTurns() is true, b3kBrowserTurns()
    -- the dark-appearance rule: a control that leaves its colours to the
