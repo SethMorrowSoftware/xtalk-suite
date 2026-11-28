@@ -104,6 +104,12 @@ Joined the suite on 2026-11-20. What has run, and where:
 - **In a browser**, the same day: the web archive, called from C as the web engine will call
   it, opened Web Audio in headless Chromium, played a tone after one click and recorded from
   Chromium's fake microphone (`tests/web/`).
+- **A longer web buffer**, 2026-11-28 (0.1.1): a page that sets `window.audioxtWebBuffer`
+  (milliseconds) before it makes an engine gets a buffer that long or longer, so a stack that
+  holds the page for a long frame is not heard to crackle. In headless Chromium a page that
+  asked for 80 ms got 4096 frames, and one that asked for nothing kept 2048
+  (`tests/web/run-web-test.cjs`, 38 checks). No web engine has linked this archive yet:
+  verified statically; needs an OXT pass.
 - **In the IDE on Windows**, 2026-11-21: on the maintainer's PC, in their installed 64-bit
   OXT-Beyond (its version not recorded), the binding compiled with that install's
   `lc-compile` over a CI-built `x86_64-win32` DLL (the native lane's build of 7dcbb41) loaded

@@ -76,6 +76,25 @@ EMSCRIPTEN_KEEPALIVE double w_mic_peak(void) { return aux_capture_peak(s_mic); }
 EMSCRIPTEN_KEEPALIVE int w_try_engine(void) { return aux_engine_create(0, 0, 0); }
 EMSCRIPTEN_KEEPALIVE int w_try_mic(void) { return aux_capture_open(0, "s16", 16000, 1, 2.0); }
 
+/* The size of the open device's ScriptProcessorNode buffer, in frames, or
+ * 0 when none is open: the page's window.audioxtWebBuffer (milliseconds)
+ * asks the shim for a longer one, which run-web-test.cjs holds. */
+EMSCRIPTEN_KEEPALIVE int w_buffer(void)
+{
+    return EM_ASM_INT({
+        try {
+            var ma = window.miniaudio;
+            if (!ma || !ma.devices) return 0;
+            for (var i = 0; i < ma.devices.length; ++i) {
+                var d = ma.devices[i];
+                if (d != null && d.scriptNode != null) return d.scriptNode.bufferSize;
+            }
+        } catch (e) {
+        }
+        return 0;
+    });
+}
+
 /* Returns 1 if everything was closed. */
 EMSCRIPTEN_KEEPALIVE int w_stop(void)
 {

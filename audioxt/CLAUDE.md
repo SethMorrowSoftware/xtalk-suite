@@ -92,6 +92,13 @@ stack hears is out of bounds.
   The shim adds one capture-phase listener per page for `keydown` and `mousedown` that
   resumes miniaudio's started devices and removes itself after the first resume that
   succeeds. Escape is no gesture: its resume stays pending until a real one.
+- **A web page may ask for a longer buffer** (2026-11-28, 0.1.1): the ScriptProcessorNode's
+  callback runs on the page's main thread, the web engine's, with some 33 ms rounded up to a
+  power of two (2048 frames at 44.1 kHz), so a game frame longer than that left it late and
+  the sound crackled. A page that sets `window.audioxtWebBuffer` (milliseconds, 10 to 400)
+  before an engine is made gets that much or more (`web_buffer_ms`); unset or nonsense, an
+  engine opens as before. A JavaScript property, not an export: the ABI and every desktop
+  library are unchanged, and only the web archive was rebuilt.
 - **JACK is compiled out** (`MA_NO_JACK`): asking for a JACK server can start one.
 - **No Ogg Vorbis.** miniaudio decodes it only through stb_vorbis, which is not in the header
   and has a history of memory-safety reports; WAV, FLAC and MP3 are miniaudio's own.

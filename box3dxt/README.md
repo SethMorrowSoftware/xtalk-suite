@@ -151,6 +151,17 @@ Joined the suite on 2026-11-20. What has run, and where:
   was not loaded, a click knocked crates over and a drag turned the camera. Neither has run
   in an IDE: a real window, keyboard and mouse there are verified statically; needs an OXT
   pass (the game's header lists what to look at).
+- **Orb Island 1.6 and the Kit's quicker poses** (2026-11-28): an orb bobs only while the
+  camera can see it, one farther than 24 m every fourth frame, the Kit places a posed
+  thing with less script (about a seventh less per thing on the server engine), and in a web
+  page the game asks audioxt (0.1.1) for an 80 ms sound buffer. On the same
+  Linux server engine and libraries as 1.5: `tests/engine-kit.lc` passed 278 checks with
+  render3dxt and 238 without, and `tests/engine-demo.lc` 289 with render3dxt and audioxt,
+  264 with box3dxt alone and 6 with no extension. In the gallery's Stack Player with
+  OXT-Beyond's short waits (web-2026.11.22's player patched locally as its pull request 650
+  does, headless Chromium), 1.6 drew 23 to 31 pictures a second and 1.5 25 to 31: the same
+  within the runs' spread, as there the picture sets the pace, not the script. In an IDE and
+  by ear: verified statically; needs an OXT pass.
 - **Orb Island 1.5 and the Kit's detail, still poses and browser turns** (2026-11-27): a
   living island (four gulls, five songbirds that fly up into the trees when the player
   comes near and come back down, five butterflies, two fish that leap with a splash,

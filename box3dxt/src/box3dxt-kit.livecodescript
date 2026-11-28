@@ -749,7 +749,8 @@ play, and it crackles. With turns on, the running loop waits 1
 millisecond in each frame, after b3kFrame and before the picture is
 rendered, which splits the frame in two; the engine gives the browser
 its turn in that wait and handles no message of the game's. The turn
-costs the frame about 4 ms, the browser's shortest timer, so a game
+costs the frame about 1 ms on OXT-Beyond's web engines after 0.2.8-dp.3
+and about 4 ms, the browser's shortest timer, on older ones, so a game
 with no sound has no need of it. Anywhere but a web page it does
 nothing, and the setting is kept until it is set again.
 
@@ -4088,16 +4089,24 @@ end b3kPosedSyncAll
 -- a posed thing's nodes placed: the body, then the whole look's pose,
 -- then each part's own
 private command b3kPoseSync pThing
-   local tXf, tBq, tRoot, tRq, tRs, tP, tQ, tNode, tPart, tPose, tAt, tLook, tParts, tScale
+   local tXf, tBx, tBy, tBz, tBq, tRoot, tRq, tSx, tSy, tSz, tP, tQ, tNode, tPart, tPose, tAt, tParts, tScale
    if sRenderer is not "render3dxt" or sScene is empty or sNode[pThing] is empty then exit b3kPoseSync
    put b3BodyTransform(pThing) into tXf
    if tXf is empty then exit b3kPoseSync
    set the itemDelimiter to comma
+   -- the numbers each node reads, taken out of their lists once (a part
+   -- read them again, a body's turn and the root's twice over: the same
+   -- numbers, a third of the script, 2026-11-28)
+   put item 1 of tXf into tBx
+   put item 2 of tXf into tBy
+   put item 3 of tXf into tBz
    put item 4 to 7 of tXf into tBq
    put sPose[pThing] into tRoot
    if tRoot is empty then put "0,0,0,0,0,0,1,1,1,1" into tRoot
    put item 4 to 7 of tRoot into tRq
-   put item 8 to 10 of tRoot into tRs
+   put item 8 of tRoot into tSx
+   put item 9 of tRoot into tSy
+   put item 10 of tRoot into tSz
    -- the look's own node (not a part): the root pose alone
    put empty into tParts
    repeat for each key tPart in sPartNode[pThing]
@@ -4105,28 +4114,34 @@ private command b3kPoseSync pThing
    end repeat
    put b3kNum(sLookScale[pThing], b3kNum(sScale[pThing], 1)) into tScale
    put b3kQuatTurn(tBq, item 1 of tRoot, item 2 of tRoot, item 3 of tRoot) into tP
-   put b3kQuatMul(tBq, tRq) into tQ
+   -- the body's turn and the root's: the look's, and the start of each part's
+   put b3kQuatMul(tBq, tRq) into tRq
    repeat for each item tNode in sNode[pThing]
-      if (comma & tParts) contains (comma & tNode & comma) then next repeat
-      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
-            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      if tParts is not empty and (comma & tParts) contains (comma & tNode & comma) then next repeat
+      r3NodeSetTransform tNode, tBx + item 1 of tP, tBy + item 2 of tP, tBz + item 3 of tP, \
+            item 1 of tRq, item 2 of tRq, item 3 of tRq, item 4 of tRq
       if sLookKey[pThing] is not empty or sPose[pThing] is not empty then
-         r3NodeSetScale tNode, tScale * item 1 of tRs, tScale * item 2 of tRs, tScale * item 3 of tRs
+         r3NodeSetScale tNode, tScale * tSx, tScale * tSy, tScale * tSz
       end if
    end repeat
    -- each part: its place stretched and turned by the root pose, then the
    -- body's turn; its turn the body's, the root's and its own
+   if tParts is empty then
+      delete variable sPoseStale[pThing]
+      exit b3kPoseSync
+   end if
+   put item 4 to 7 of tRoot into tQ
    repeat for each key tPart in sPartNode[pThing]
       put sPartNode[pThing][tPart] into tNode
       put sPartPose[pThing][tPart] into tPose
       if tPose is empty then put "0,0,0,0,0,0,1,1,1,1" into tPose
-      put b3kQuatTurn(tRq, item 1 of tPose * item 1 of tRs, item 2 of tPose * item 2 of tRs, item 3 of tPose * item 3 of tRs) into tAt
+      put b3kQuatTurn(tQ, item 1 of tPose * tSx, item 2 of tPose * tSy, item 3 of tPose * tSz) into tAt
       put b3kQuatTurn(tBq, item 1 of tRoot + item 1 of tAt, item 2 of tRoot + item 2 of tAt, item 3 of tRoot + item 3 of tAt) into tP
-      put b3kQuatMul(b3kQuatMul(tBq, tRq), item 4 to 7 of tPose) into tQ
-      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
-            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      put b3kQuatMul(tRq, item 4 to 7 of tPose) into tAt
+      r3NodeSetTransform tNode, tBx + item 1 of tP, tBy + item 2 of tP, tBz + item 3 of tP, \
+            item 1 of tAt, item 2 of tAt, item 3 of tAt, item 4 of tAt
       put sPartScale[pThing][tPart] into tScale
-      r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
+      r3NodeSetScale tNode, tScale * item 8 of tPose * tSx, tScale * item 9 of tPose * tSy, tScale * item 10 of tPose * tSz
    end repeat
    -- placed: until its pose changes again, a static thing is left alone
    delete variable sPoseStale[pThing]
