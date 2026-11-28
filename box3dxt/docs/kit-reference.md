@@ -486,7 +486,7 @@ Let the browser take a turn in the middle of each frame, so the page's sound pla
 
 - `pOn`: true to give the browser its turns, false (the default) not to.
 
-In a web page the engine, the picture and any sound made by an extension (audioxt mixes on the page's own thread there) take turns on one thread. A frame that runs longer than the sound's buffer lasts (about 46 ms), as a busy 3D frame can, leaves the sound with nothing to play, and it crackles. With turns on, the running loop waits 1 millisecond in each frame, after b3kFrame and before the picture is rendered, which splits the frame in two; the engine gives the browser its turn in that wait and handles no message of the game's. The turn costs the frame about 4 ms, the browser's shortest timer, so a game with no sound has no need of it. Anywhere but a web page it does nothing, and the setting is kept until it is set again.
+In a web page the engine, the picture and any sound made by an extension (audioxt mixes on the page's own thread there) take turns on one thread. A frame that runs longer than the sound's buffer lasts (about 46 ms), as a busy 3D frame can, leaves the sound with nothing to play, and it crackles. With turns on, the running loop waits 1 millisecond in each frame, after b3kFrame and before the picture is rendered, which splits the frame in two; the engine gives the browser its turn in that wait and handles no message of the game's. The turn costs the frame about 1 ms on OXT-Beyond's web engines after 0.2.8-dp.3 and about 4 ms, the browser's shortest timer, on older ones, so a game with no sound has no need of it. Anywhere but a web page it does nothing, and the setting is kept until it is set again.
 
 ```
 b3kSetBrowserTurns true

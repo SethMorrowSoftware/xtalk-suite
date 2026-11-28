@@ -107,6 +107,7 @@ command prRunAll pR3, pB3, pGp, pAu
    prMusic pAu
    prDraw
    prLook pR3
+   prOrbBob
    prWalk
    prOrbs
    prFall
@@ -781,6 +782,62 @@ command prSound pAu
             the label of button "oiSound" of card 1 of stack "OrbIsland"
    end if
 end prSound
+
+-- the orbs bob only in view (version 1.6), before any is found: from the
+-- start view (looking north over the island) and turned round (out to
+-- sea), each time after eight frames, every orb in sight and near has
+-- bobbed in the last two, one in sight and far in the last four, and none
+-- out of sight in the eight
+command prOrbBob
+   local tNorth, tSouth
+   b3kPlayerRespawn 0, 1, 22
+   b3kCamOrbit 0, 17, 10, 0, 1.8, 22
+   prSteps 11
+   put prOrbBobSeen() into tNorth
+   b3kCamOrbit 180, 17, 10, 0, 1.8, 22
+   prSteps 11
+   put prOrbBobSeen() into tSouth
+   b3kCamOrbit 0, 17, 10, 0, 1.8, 22
+   prSteps 2
+   prInfo "orbs near, far and out of sight, looking north: " & item 1 to 3 of tNorth & "; looking out to sea: " & item 1 to 3 of tSouth
+   prCheck "an orb bobs in view, a far one less often, and none out of sight", item 4 of tNorth is empty and item 4 of tSouth is empty and \
+         item 1 of tNorth + item 2 of tNorth > 0 and item 3 of tSouth > 0, tNorth && tSouth
+end prOrbBob
+
+-- "near,far,out,the orbs that broke the rule" for the view now
+function prOrbBobSeen
+   local tE, tFwd, tL, tOrb, tAt, tD, tNear, tFar, tOut, tBad, tB
+   put b3kCamEye() into tE
+   put oiViewFwd() into tFwd
+   set the itemDelimiter to comma
+   put 0 into tNear
+   put 0 into tFar
+   put 0 into tOut
+   repeat for each item tL in "A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z"
+      put b3kThingNamed("orb " & tL) into tOrb
+      if tOrb is empty then next repeat
+      put oiOrbAt(tOrb) into tAt
+      put oiLifeSight(item 1 of tAt, item 2 of tAt, item 3 of tAt, tE, tFwd, 84) into tD
+      put oiOrbBobbed(tOrb) into tB
+      if tD < 0 then
+         add 1 to tOut
+         if item 1 of tB > item 2 of tB - 8 then
+            put tL & ":out/" & item 1 of tB & "/" & item 2 of tB & " " after tBad
+         end if
+      else if tD <= 24 then
+         add 1 to tNear
+         if item 1 of tB < item 2 of tB - 1 then
+            put tL & ":near/" & item 1 of tB & "/" & item 2 of tB & " " after tBad
+         end if
+      else
+         add 1 to tFar
+         if item 1 of tB < item 2 of tB - 3 then
+            put tL & ":far/" & item 1 of tB & "/" & item 2 of tB & " " after tBad
+         end if
+      end if
+   end repeat
+   return tNear & comma & tFar & comma & tOut & comma & tBad
+end prOrbBobSeen
 
 -- the late-afternoon look: lamps, glowing orbs that pulse, the sea
 command prLook pR3

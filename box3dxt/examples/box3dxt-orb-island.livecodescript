@@ -51,6 +51,14 @@
 -- and the Kit no longer places again a still thing whose pose has not
 -- changed.
 --
+-- Version 1.6 (2026-11-28) is smoother, above all in a web page. An orb
+-- bobs only where the camera can see it, and one far off every fourth
+-- frame (oiTickOrbBob); the Kit places a posed thing with less script
+-- (each number read out of its list once); and on OXT-Beyond's web
+-- engines after 0.2.8-dp.3 (the gallery's Stack Player from
+-- web-2026.11.28) the game's turns to the page cost about 1 ms, not the
+-- browser's 4 ms timer.
+--
 -- WHY THIS EXAMPLE EXISTS: it is the Kit's showcase, the 3D sibling of
 -- box2dxt's games. Every system the Kit has carries part of the game:
 --   * the world and the loop: b3kSetup, b3kSetStepMode, b3kStart, b3kPause,
@@ -741,6 +749,9 @@ local sOiShadow       -- the blob shadow under the player
 local sOiDust         -- [puff] -> "vx,vz,born ms"
 local sOiDustAt       -- the clock time of the last running puff
 local sOiOrbPhase     -- [orb] -> its bob's phase
+local sOiOrbAt        -- [orb] -> "x,y,z", where it stands (orbs never move)
+local sOiBobFrame     -- counts the frames, for the far orbs' quarters
+local sOiOrbBobAt     -- [orb] -> the frame (sOiBobFrame) it last bobbed in
 -- version 1.4's three levels: the shore, the terraces (9 m) and the summit
 local sOiOrbTier      -- [orb] -> its level, 1 to 3
 local sOiTierCount    -- [level] -> how many orbs it has
@@ -871,6 +882,9 @@ command oiNewGame
    put empty into sOiDust
    put 0 into sOiDustAt
    put empty into sOiOrbPhase
+   put empty into sOiOrbAt
+   put 0 into sOiBobFrame
+   put empty into sOiOrbBobAt
    put empty into sOiOrbTier
    put empty into sOiTierCount
    put empty into sOiTierFound
@@ -1464,6 +1478,7 @@ command oiOrb pLetter, pX, pY, pZ
    b3kName tOrb, "orb " & pLetter
    put pLetter into sOiOrb[tOrb]
    put sOiOrbCount * 0.9 into sOiOrbPhase[tOrb]
+   put pX & comma & pY & comma & pZ into sOiOrbAt[tOrb]
    add 1 to sOiOrbCount
    put oiTierAt(pY) into sOiOrbTier[tOrb]
    add 1 to sOiTierCount[sOiOrbTier[tOrb]]
@@ -1780,22 +1795,61 @@ command oiTickDust pMs
    end repeat
 end oiTickDust
 
+-- an orb bobs while it is in view and nearer than kOiOrbFar (where the
+-- fog, 36 to 84 m, has all but swallowed it), and farther than
+-- kOiOrbNear only every fourth frame: a four-frame step of its bob is
+-- under a pixel there (version 1.6)
+constant kOiOrbFar = 84
+constant kOiOrbNear = 24
+
 -- the orbs bob, each a little after the last
 -- Half the orbs a frame, in turn: a bob moves an orb about a hundredth of
 -- a metre a frame, so each is posed every other frame and no step shows,
--- and the posing (script, in a web page) costs half
+-- and the posing (script, in a web page) costs half. Since version 1.6
+-- an orb only bobs where the camera can see it (oiLifeSight's cone, to
+-- where the fog has it), and one farther than kOiOrbNear every fourth
+-- frame, a quarter of them each frame: there a step is under a pixel.
+-- One out of sight keeps its last place, and is posed again within four
+-- frames of coming into the cone, which is wider than the view. The
+-- start view sees about a third of the 26 (2026-11-28).
 command oiTickOrbBob
-   local tOrb, tT, tI
+   local tOrb, tT, tI, tE, tFwd, tAt, tD
    put sOiClockMS / 1000 into tT
    put 1 - sOiBobHalf into sOiBobHalf
+   add 1 to sOiBobFrame
+   put oiViewFwd() into tFwd
+   put b3kCamEye() into tE
+   set the itemDelimiter to comma
    put 0 into tI
    repeat for each key tOrb in sOiOrb
       add 1 to tI
-      if tI mod 2 is sOiBobHalf then
-         b3kSetLookPose tOrb, 0, 0.12 * sin(tT * 2.6 + sOiOrbPhase[tOrb]), 0
+      if tI mod 2 is not sOiBobHalf then next repeat
+      if tFwd is not empty and tE is not empty and sOiOrbAt[tOrb] is not empty then
+         put sOiOrbAt[tOrb] into tAt
+         put oiLifeSight(item 1 of tAt, item 2 of tAt, item 3 of tAt, tE, tFwd, kOiOrbFar) into tD
+         if tD < 0 then next repeat
+         if tD > kOiOrbNear and (sOiBobFrame + tI) mod 4 > 1 then next repeat
       end if
+      b3kSetLookPose tOrb, 0, 0.12 * sin(tT * 2.6 + sOiOrbPhase[tOrb]), 0
+      put sOiBobFrame into sOiOrbBobAt[tOrb]
    end repeat
 end oiTickOrbBob
+
+-- which way the camera looks, "x,y,z" of length 1, or empty when there
+-- is no camera yet
+function oiViewFwd
+   local tE, tTg, tFx, tFy, tFz, tLen
+   put b3kCamEye() into tE
+   put b3kCamTarget() into tTg
+   if tE is empty or tTg is empty then return empty
+   set the itemDelimiter to comma
+   put item 1 of tTg - item 1 of tE into tFx
+   put item 2 of tTg - item 2 of tE into tFy
+   put item 3 of tTg - item 3 of tE into tFz
+   put sqrt(tFx * tFx + tFy * tFy + tFz * tFz) into tLen
+   if tLen <= 0 then put 1 into tLen
+   return tFx / tLen & comma & tFy / tLen & comma & tFz / tLen
+end oiViewFwd
 
 function oiHeroAct
    return sOiAct
@@ -3052,6 +3106,17 @@ end oiCallOf
 function oiLifeShown pThing
    return sOiLifeShown[pThing] is true
 end oiLifeShown
+
+-- the frame an orb last bobbed in, and the frame now (oiTickOrbBob's
+-- count), for the tests: "then,now"
+function oiOrbBobbed pOrb
+   return b3kNum(sOiOrbBobAt[pOrb], 0) & comma & b3kNum(sOiBobFrame, 0)
+end oiOrbBobbed
+
+-- where an orb stands, "x,y,z"
+function oiOrbAt pOrb
+   return sOiOrbAt[pOrb]
+end oiOrbAt
 
 -- creatures posed in the last frame and in the one before: "this,last"
 function oiLifePosed
@@ -5307,7 +5372,8 @@ play, and it crackles. With turns on, the running loop waits 1
 millisecond in each frame, after b3kFrame and before the picture is
 rendered, which splits the frame in two; the engine gives the browser
 its turn in that wait and handles no message of the game's. The turn
-costs the frame about 4 ms, the browser's shortest timer, so a game
+costs the frame about 1 ms on OXT-Beyond's web engines after 0.2.8-dp.3
+and about 4 ms, the browser's shortest timer, on older ones, so a game
 with no sound has no need of it. Anywhere but a web page it does
 nothing, and the setting is kept until it is set again.
 
@@ -8646,16 +8712,24 @@ end b3kPosedSyncAll
 -- a posed thing's nodes placed: the body, then the whole look's pose,
 -- then each part's own
 private command b3kPoseSync pThing
-   local tXf, tBq, tRoot, tRq, tRs, tP, tQ, tNode, tPart, tPose, tAt, tLook, tParts, tScale
+   local tXf, tBx, tBy, tBz, tBq, tRoot, tRq, tSx, tSy, tSz, tP, tQ, tNode, tPart, tPose, tAt, tParts, tScale
    if sRenderer is not "render3dxt" or sScene is empty or sNode[pThing] is empty then exit b3kPoseSync
    put b3BodyTransform(pThing) into tXf
    if tXf is empty then exit b3kPoseSync
    set the itemDelimiter to comma
+   -- the numbers each node reads, taken out of their lists once (a part
+   -- read them again, a body's turn and the root's twice over: the same
+   -- numbers, a third of the script, 2026-11-28)
+   put item 1 of tXf into tBx
+   put item 2 of tXf into tBy
+   put item 3 of tXf into tBz
    put item 4 to 7 of tXf into tBq
    put sPose[pThing] into tRoot
    if tRoot is empty then put "0,0,0,0,0,0,1,1,1,1" into tRoot
    put item 4 to 7 of tRoot into tRq
-   put item 8 to 10 of tRoot into tRs
+   put item 8 of tRoot into tSx
+   put item 9 of tRoot into tSy
+   put item 10 of tRoot into tSz
    -- the look's own node (not a part): the root pose alone
    put empty into tParts
    repeat for each key tPart in sPartNode[pThing]
@@ -8663,28 +8737,34 @@ private command b3kPoseSync pThing
    end repeat
    put b3kNum(sLookScale[pThing], b3kNum(sScale[pThing], 1)) into tScale
    put b3kQuatTurn(tBq, item 1 of tRoot, item 2 of tRoot, item 3 of tRoot) into tP
-   put b3kQuatMul(tBq, tRq) into tQ
+   -- the body's turn and the root's: the look's, and the start of each part's
+   put b3kQuatMul(tBq, tRq) into tRq
    repeat for each item tNode in sNode[pThing]
-      if (comma & tParts) contains (comma & tNode & comma) then next repeat
-      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
-            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      if tParts is not empty and (comma & tParts) contains (comma & tNode & comma) then next repeat
+      r3NodeSetTransform tNode, tBx + item 1 of tP, tBy + item 2 of tP, tBz + item 3 of tP, \
+            item 1 of tRq, item 2 of tRq, item 3 of tRq, item 4 of tRq
       if sLookKey[pThing] is not empty or sPose[pThing] is not empty then
-         r3NodeSetScale tNode, tScale * item 1 of tRs, tScale * item 2 of tRs, tScale * item 3 of tRs
+         r3NodeSetScale tNode, tScale * tSx, tScale * tSy, tScale * tSz
       end if
    end repeat
    -- each part: its place stretched and turned by the root pose, then the
    -- body's turn; its turn the body's, the root's and its own
+   if tParts is empty then
+      delete variable sPoseStale[pThing]
+      exit b3kPoseSync
+   end if
+   put item 4 to 7 of tRoot into tQ
    repeat for each key tPart in sPartNode[pThing]
       put sPartNode[pThing][tPart] into tNode
       put sPartPose[pThing][tPart] into tPose
       if tPose is empty then put "0,0,0,0,0,0,1,1,1,1" into tPose
-      put b3kQuatTurn(tRq, item 1 of tPose * item 1 of tRs, item 2 of tPose * item 2 of tRs, item 3 of tPose * item 3 of tRs) into tAt
+      put b3kQuatTurn(tQ, item 1 of tPose * tSx, item 2 of tPose * tSy, item 3 of tPose * tSz) into tAt
       put b3kQuatTurn(tBq, item 1 of tRoot + item 1 of tAt, item 2 of tRoot + item 2 of tAt, item 3 of tRoot + item 3 of tAt) into tP
-      put b3kQuatMul(b3kQuatMul(tBq, tRq), item 4 to 7 of tPose) into tQ
-      r3NodeSetTransform tNode, item 1 of tXf + item 1 of tP, item 2 of tXf + item 2 of tP, item 3 of tXf + item 3 of tP, \
-            item 1 of tQ, item 2 of tQ, item 3 of tQ, item 4 of tQ
+      put b3kQuatMul(tRq, item 4 to 7 of tPose) into tAt
+      r3NodeSetTransform tNode, tBx + item 1 of tP, tBy + item 2 of tP, tBz + item 3 of tP, \
+            item 1 of tAt, item 2 of tAt, item 3 of tAt, item 4 of tAt
       put sPartScale[pThing][tPart] into tScale
-      r3NodeSetScale tNode, tScale * item 8 of tPose * item 1 of tRs, tScale * item 9 of tPose * item 2 of tRs, tScale * item 10 of tPose * item 3 of tRs
+      r3NodeSetScale tNode, tScale * item 8 of tPose * tSx, tScale * item 9 of tPose * tSy, tScale * item 10 of tPose * tSz
    end repeat
    -- placed: until its pose changes again, a static thing is left alone
    delete variable sPoseStale[pThing]
